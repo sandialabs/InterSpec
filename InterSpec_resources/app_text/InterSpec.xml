@@ -203,6 +203,10 @@
   <message id="app-tab-tt-terminal">Numeric, algebraic, and text-based spectrum interaction terminal.</message>
   <message id="app-tab-tt-rel-eff">Relative Efficiency analysis, from peaks you have fit.</message>
   <message id="app-tab-tt-llm-assistant">Chat with the Large Language Model assistant for spectrum analysis help.</message>
+  <message id="app-llm-side-to-tabs-tt">Move the assistant into the tool tabs, below the spectrum</message>
+  <message id="app-llm-side-to-window-tt">Move the assistant into its own window</message>
+  <message id="app-llm-side-to-full-tt">Make the assistant full-screen</message>
+  <message id="app-llm-side-close-tt">Close the assistant</message>
 
 
   <!-- App-level menu names -->

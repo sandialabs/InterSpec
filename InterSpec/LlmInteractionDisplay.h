@@ -169,6 +169,12 @@ protected:
   /** Get the title text for this turn - derived classes should override */
   virtual Wt::WString getTitleText() const = 0;
 
+  /** Sets the panel title (i.e., from #getTitleText), marking its text so CSS can limit it to two
+   lines with an ellipsis - a list of tool names can otherwise overflow the title bar, especially
+   in the narrow LLM side panel.
+   */
+  void setTurnTitle( const Wt::WString &title );
+
   /** Create and show a dialog displaying JSON content */
   void showJsonDialog( const Wt::WString &title,
                       const std::string &jsonStr,

@@ -19,6 +19,14 @@ area shows the conversation, and you type into the input field at the bottom.  R
 calls, and the assistant's reasoning appear in the conversation as you go.
 </div>
 
+<div style="padding-top: 10px">
+You can instead show the assistant in a full-height panel to the right of the spectrum, using the
+button next to its menu icon (on phones held in landscape, use the shrink button at the top of the
+full-screen assistant); drag the panel's left edge to change its width.  The button at the top of
+the panel moves the assistant back.  <b>InterSpec</b> remembers where you last had the assistant,
+and the panel's width, for the next time you open it.
+</div>
+
 <div align="center" style="padding-top: 15px">
 <h2 id="llm-assistant-configuring"><b>Configuring a Provider</b></h2>
 </div>

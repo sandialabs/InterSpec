@@ -1044,6 +1044,19 @@ height: 16px;
   background-color: transparent;
 }
 
+/* Likewise for the column splitter between the charts and the LLM assistant side panel (see
+ * InterSpec::addLlmSidePanelToLayout); scoped so other tools splitters keep Wt's look.
+ */
+.HasLlmSidePanel > div > .Wt-vrh2
+{
+  background-color: transparent;
+}
+
+.HasLlmSidePanel > div > .Wt-vrh2:hover
+{
+  background-color: var(--interspec-hover-background);
+}
+
 
 .InfoLink
 {

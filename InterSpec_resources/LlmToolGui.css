@@ -327,6 +327,18 @@
   flex-shrink: 0;
 }
 
+/* A turn's title (e.g., the tools called) is limited to two lines, with an ellipsis, so it does not
+   overflow the title bar when the conversation is narrow (e.g., in the side panel). */
+.LlmInteractionTurnDisplay.Wt-panel > .titlebar .LlmTurnTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
 /* Status at the right of a turn's title: a live "Pending LLM response... 5s" counter, or the call
    duration once done.  It takes over the auto margin from the menu icon that follows it. */
 .LlmTurnStatus {
@@ -951,6 +963,108 @@
    on either ground. */
 .LlmMarkdownBody .katex-error {
   color: var(--interspec-error-color) !important;
+}
+
+
+/* ============================================ */
+/* Side panel (InterSpec's LlmSidePanel)        */
+/* ============================================ */
+
+/* Not phones: next to the menu icon, a button to move the assistant to the right of the charts. */
+button.LlmSideDockBtn,
+button.LlmSideDockBtn:hover {
+  position: absolute;
+  top: 2px;
+  right: 48px;
+  z-index: 100;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background-color: transparent;
+  background-image: url('images/llm_dock_right.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 18px 18px;
+  cursor: pointer;
+}
+
+button.LlmSideDockBtn { opacity: 0.6; }
+button.LlmSideDockBtn:hover { opacity: 0.9; }
+
+.LlmSidePanel button.LlmSideDockBtn { display: none; }
+
+/* The panel, right of the charts and tool tabs, with a draggable splitter to its left.  Opaque, as
+   Wt's full-width splitter between the charts and the tool tabs is underneath it. */
+.LlmSidePanel {
+  box-sizing: border-box;
+  background-color: var(--interspec-background-color);
+  border-left: 1px solid var(--interspec-border-color);
+}
+
+/* Title, then the move-out-of-the-panel button, then the close icon.
+   Wt's layout leaves a 5px gap right of the panel (it reserves 10px for the splitter, but uses 5px);
+   the gap shows the app background, same as the panel, so only the header bar needs extending -
+   with a shadow, as changing the panels size or position would upset Wt's measuring of it. */
+.LlmSidePanelHeader {
+  box-shadow: 5px 0 0 0 var(--interspec-titlebar-background);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  background: var(--interspec-titlebar-background);
+  color: var(--interspec-button-text-color);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.LlmSidePanelTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.LlmSidePanelHeader > button.LlmSidePanelBtn,
+.LlmSidePanelHeader > button.LlmSidePanelBtn:hover {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 18px 18px;
+  cursor: pointer;
+}
+
+.LlmSidePanelHeader > button.LlmSidePanelBtn { opacity: 0.7; }
+.LlmSidePanelHeader > button.LlmSidePanelBtn:hover { opacity: 1; }
+
+.LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToTabs { background-image: url('images/llm_dock_bottom.svg'); }
+.LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToWindow { background-image: url('images/llm_dock_window.svg'); }
+.LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToFullScreen { background-image: url('images/llm_expand.svg'); }
+
+.LlmSidePanelHeader > .LlmSidePanelClose,
+.LlmSidePanelHeader > .LlmSidePanelClose:hover {
+  flex-shrink: 0;
+  margin: 0 0 0 2px;
+  cursor: pointer;
+}
+
+/* Phones (landscape): the panel header has the full-screen button, so the input rows one is not
+   needed.  As when docked in the tool tabs, the menu icon is only shown when full-screen. */
+.LlmSidePanel .LlmDocked .LlmExpandBtn,
+.LlmSidePanel .LlmDocked .LlmExpandBtn:hover {
+  display: none;
 }
 
 

@@ -616,6 +616,25 @@ void LlmInteractionTurnDisplay::handleExpansion( bool expanded )
 }//handleExpansion(...)
 
 
+void LlmInteractionTurnDisplay::setTurnTitle( const WString &title )
+{
+  setTitle( title );
+
+  // WPanel gives its title text no style class; it is the first WText in the title bar (after the
+  //  collapse icon, and before our status text).
+  WContainerWidget * const titleBar = titleBarWidget();
+  for( int i = 0; titleBar && (i < titleBar->count()); ++i )
+  {
+    WText * const text = dynamic_cast<WText *>( titleBar->widget(i) );
+    if( text && !text->hasStyleClass( "LlmTurnStatus" ) )
+    {
+      text->addStyleClass( "LlmTurnTitle" );
+      break;
+    }
+  }//for( loop over title bar widgets )
+}//void setTurnTitle( const WString &title )
+
+
 void LlmInteractionTurnDisplay::createMenuIcon()
 {
   // Create menu button in title bar.  The menu itself is built lazily on first
@@ -764,7 +783,7 @@ LlmInteractionFinalResponseDisplay::LlmInteractionFinalResponseDisplay(
   addStyleClass( "LlmFinalResponseDisplay" );
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // NOT collapsed by default
   setCollapsible( true );
@@ -898,7 +917,7 @@ LlmToolRequestDisplay::LlmToolRequestDisplay( shared_ptr<LlmToolRequest> request
   addStyleClass( "LlmToolRequestDisplay" );
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // Collapsed by default
   setCollapsible( true );
@@ -1011,7 +1030,7 @@ LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results
   }//if( m_phoneVisuals )
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // Collapsed by default, but expand if any tool call has visual content
   setCollapsible( true );
@@ -1628,7 +1647,7 @@ LlmInteractionErrorDisplay::LlmInteractionErrorDisplay( shared_ptr<LlmInteractio
   addStyleClass( "LlmErrorDisplay" );
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // NOT collapsed by default
   setCollapsible( true );

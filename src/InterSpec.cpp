@@ -388,6 +388,29 @@ static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif // InterSpec_PHONE_ROTATE_FOR_TABS
 
 
+#if( USE_LLM_INTERFACE )
+  /** Calls `fcn` with this sessions InterSpec on the next pass of the event loop - for requests
+   from widgets that `fcn` will delete.  Only the session and widget ids are captured; if the
+   InterSpec has since been replaced (e.g., "Clear Session..."), nothing is done.
+   */
+  void postToInterSpec( InterSpec *viewer, std::function<void(InterSpec *)> fcn )
+  {
+    assert( viewer && wApp );
+    const string sessionId = wApp->sessionId();
+    const string viewerId = viewer->id();
+    WServer::instance()->post( sessionId, [sessionId, viewerId, fcn](){
+      WApplication * const app = WApplication::instance();
+      InterSpec * const viewer = InterSpec::instance();
+      if( !app || (app->sessionId() != sessionId) || !viewer || (viewer->id() != viewerId) )
+        return;
+
+      fcn( viewer );
+      app->triggerUpdate();
+    } );
+  }//void postToInterSpec(...)
+#endif //USE_LLM_INTERFACE
+
+
   /** The peak-fit prefs for a spectrum, when nothing more specific (file, DRF, or user) gives them:
    the defaults for its detector type, or else the application defaults.
    */
@@ -576,6 +599,9 @@ InterSpec::InterSpec()
   m_llmToolMenuItem( nullptr ),
   m_llmTool( nullptr ),
   m_llmToolWindow( nullptr ),
+  m_llmSidePanel( nullptr ),
+  m_llmSidePanelWidth( 0 ),
+  m_llmSidePanelWidthGuessed( false ),
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -1442,8 +1468,13 @@ InterSpec::~InterSpec() noexcept(true)
   //  The exceptions are the tools that persist user state on close - handled above (shielding/
   //  rel-act) or just below (LLM history).
 #if( USE_LLM_INTERFACE )
+  // In a tab or the side panel, the tool is in our layout, so goes with it; just save the
+  //  conversation (handleLlmToolClose() would also rearrange the layout, which, mid-teardown, gives
+  //  a client-side layout exception).
   if( m_llmToolWindow )
     handleLlmToolClose();   //syncs conversation history into the SpecMeas before deleting
+  else if( m_llmTool )
+    syncLlmHistoryToSpecMeas();
 #endif
 
   AuxWindow::deleteAuxWindow( m_specFileQueryDialog.get() );
@@ -1685,8 +1716,17 @@ void InterSpec::layoutSizeChanged( int w, int h )
 {
   m_renderedWidth = w;
   m_renderedHeight = h;
-  
-  
+
+#if( USE_LLM_INTERFACE )
+  // A side panel shown before we were laid out was sized from the screen width; now size it right.
+  if( m_llmSidePanel && m_llmSidePanelWidthGuessed && (w > 100) )
+  {
+    m_llmSidePanelWidth = llmSidePanelInitialWidth();
+    m_llmSidePanel->setWidth( WLength( m_llmSidePanelWidth, WLength::Unit::Pixel ) );
+    updateMobileButtonsForLlmSidePanel( true );
+  }
+#endif
+
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
   if( isPhone() )
   {
@@ -4674,7 +4714,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   #endif
   #if( USE_LLM_INTERFACE )
           case UserState::kLlmAssistantTab:
-            if( m_llmTool )
+            if( m_llmTool && (m_toolsTabs->indexOf( m_llmTool.get() ) >= 0) )
               m_toolsTabs->setCurrentWidget( m_llmTool.get() );
             break;
   #endif
@@ -7160,7 +7200,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     const bool phone = isPhone();
 #endif
-  
+
+#if( USE_LLM_INTERFACE )
+  // The LLM side panel is part of m_layout, which is about to be replaced; hold onto the panel until
+  //  the new layout is ready.
+  std::unique_ptr<WWidget> llmSidePanel;
+  if( m_llmSidePanel )
+  {
+    llmSidePanel = m_layout->removeWidget( m_llmSidePanel.get() );
+    assert( llmSidePanel );
+  }
+#endif
+
   if( showToolTabs )
   { //We are showing the tool tabs
     if( m_menuDiv )
@@ -7334,6 +7385,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->addWidget( std::unique_ptr<WWidget>(toolsWrapper), ++row, 0 );
     m_layout->setRowStretch( row, 0 );
 
+#if( USE_LLM_INTERFACE )
+    if( llmSidePanel )
+      addLlmSidePanelToLayout( std::move(llmSidePanel) );
+#endif
+
     std::unique_ptr<WWidget> nuclide_search_widget;
     if( m_nuclideSearchWindow )
     {
@@ -7400,22 +7456,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( USE_LLM_INTERFACE )
     // If the assistant was showing in its own window (no tab strip), dock it back into the strip;
     //  except on phones, where the tab strip is too short for a conversation, so it stays a
-    //  full-screen window.
-    if( m_llmTool && !isPhone() )
-    {
-      std::unique_ptr<WWidget> llm_widget;
-      if( m_llmToolWindow )
-      {
-        llm_widget = m_llmToolWindow->stretcher()->removeWidget( m_llmTool.get() );
-        AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
-      }else
-      {
-        llm_widget = removeChild( m_llmTool.get() );
-      }
-      assert( llm_widget );
-      if( llm_widget )
-        addLlmToolTab( std::move(llm_widget), false );
-    }//if( m_llmTool )
+    //  full-screen window - but if the phone was rotated to portrait with the assistant docked
+    //  beside the charts, it stays docked, now in the tab strip.  On desktop, the side panel stays.
+    const bool llmMovedFromSidePanel = (m_llmTool && isPhone() && m_llmSidePanel);
+    if( llmMovedFromSidePanel || (m_llmTool && !isPhone() && m_llmToolWindow) )
+      addLlmToolTab( detachLlmTool(), llmMovedFromSidePanel );
 #endif
 
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -7441,7 +7486,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay.get() );
 #endif
-    
+
+#if( USE_LLM_INTERFACE )
+    // The user was just using the assistant, so keep it showing.
+    if( llmMovedFromSidePanel && m_llmTool )
+      m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+#endif
+
     if( m_referencePhotopeakLines && refNucXmlState.size() )
       m_referencePhotopeakLines->deSerialize( refNucXmlState );
   }else
@@ -7483,25 +7534,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
 
 #if( USE_LLM_INTERFACE )
+    // If the assistant is in a tab, it moves beside the charts (once the new layout is made below),
+    //  so the conversation stays in view; on phones this is the user, having docked the assistant,
+    //  rotating to landscape.  It must be taken out now, else m_toolsTabs (and with it m_llmTool) is
+    //  destroyed by the setLayout() below.
+    std::unique_ptr<WWidget> llmToolFromTab;
     if( m_llmTool && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
-    {
-      if( isPhone() )
-      {
-        // The user docked the assistant, and has now rotated to landscape (no tab strip); keep the
-        //  conversation going, back in its full-screen window.
-        showLlmToolInWindow( safeRemoveTab( m_toolsTabs, m_llmTool.get(), false ) );
-      }else
-      {
-        // Must persist the conversation *before* the widget goes away.  Otherwise m_toolsTabs (and
-        //  with it m_llmTool) is destroyed by the setLayout() below - Wt4's setLogicalLayout()
-        //  calls clear() first - handleLlmToolClose() never runs, and the whole in-tool
-        //  conversation is silently discarded instead of being written back to the SpecMeas.
-        syncLlmHistoryToSpecMeas();
-        safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
-        if( m_llmToolMenuItem )
-          m_llmToolMenuItem->enable();
-      }
-    }//if( m_llmTool )
+      llmToolFromTab = safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
@@ -7550,6 +7589,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), ++row, 0 );
     m_layout->addWidget( std::unique_ptr<WWidget>(m_charts), ++row, 0 );
     m_layout->setRowStretch( row, 1 );
+
+#if( USE_LLM_INTERFACE )
+    if( llmSidePanel )
+      addLlmSidePanelToLayout( std::move(llmSidePanel) );
+    else if( llmToolFromTab )
+      showLlmToolInSidePanel( std::move(llmToolFromTab) );
+#endif
   }//if( showToolTabs ) / else
   
   
@@ -7611,12 +7657,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   m_timeSeries->scheduleRenderAll();
 
-#if( USE_LLM_INTERFACE )
-  // A phones full-screen assistant can only be docked while there is a tab strip to dock into.
-  if( m_llmTool && isPhone() )
-    m_llmTool->setPhoneCanDock( m_toolsTabs != nullptr );
-#endif
-  
   // If we call `displayFeatureMarkerWindow(true);`, we'll get a JS exception - rather than
   //  figure this out, we'll just not re-open it.
   //if( showingFeatureMarkers )
@@ -15154,12 +15194,24 @@ void InterSpec::createLlmTool()
         m_llmTool->setConversationHistory( history );
     }
 
-    // On phones the (portrait-only) tool-tab strip is far too short to start a conversation in,
-    //  so the assistant starts as a full-screen window there (the user can dock it after).
-    //  Otherwise, with no tool-tab strip to dock into, the tool gets its own window - parking it
-    //  with addChild() would give it no DOM element, leaving the tool invisible *and* (since we
+    // The tool goes where the user last put it: beside the charts, or else in the tool tabs.
+    //  On phones the (portrait-only) tool-tab strip is far too short to start a conversation in,
+    //  so the assistant starts as a full-screen window there (the user can dock it after); in
+    //  landscape it starts beside the charts, if that is where the user last had it.
+    //  With no tool-tab strip to dock into, the tool gets its own window - parking it with
+    //  addChild() would give it no DOM element, leaving the tool invisible *and* (since we
     //  disable the menu item below) unreachable.
-    if( m_toolsTabs && !isPhone() )
+    bool onSide = false;
+    try
+    {
+      onSide = UserPreferences::preferenceValue<bool>( "LlmAssistantOnSide", this );
+    }catch( std::exception & )
+    {
+      // A default_preferences.xml from before this preference existed; dont lose the tool over it.
+    }
+    if( onSide && (!isPhone() || !m_toolsTabs) )
+      showLlmToolInSidePanel( std::move(llmTool) );
+    else if( m_toolsTabs && !isPhone() )
       addLlmToolTab( std::move(llmTool), true );
     else
       showLlmToolInWindow( std::move(llmTool) );
@@ -15168,10 +15220,10 @@ void InterSpec::createLlmTool()
   }catch( const std::exception &e )
   {
     std::cout << "Error creating LLM tool: " << e.what() << std::endl;
-    // `llmTool` still owns the widget unless it was handed to the tab strip / addChild above,
+    // `llmTool` still owns the widget unless it was handed to a tab, window, or side panel above,
     //  so it is freed when it goes out of scope; the observing_ptr auto-clears with it.
     if( m_llmTool && m_llmTool->parent() )
-      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+      detachLlmTool();
   }//try / catch
 }//void createLlmTool()
 
@@ -15222,7 +15274,6 @@ void InterSpec::showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool )
   if( isPhone() )
   {
     m_llmTool->setPhoneWindowHeader( m_llmToolWindow->footer() );
-    m_llmTool->setPhoneCanDock( m_toolsTabs != nullptr );
     m_llmToolWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
   }
 
@@ -15244,40 +15295,279 @@ void InterSpec::showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool )
 
 void InterSpec::setLlmToolDocked( const bool docked )
 {
-  // Deferred, as the buttons asking for this live in the window (or tab) being swapped out.  Only
-  //  the session id crosses into the posted function; we look ourselves up again when it runs.
-  const string sessionId = wApp->sessionId();
-  WServer::instance()->post( sessionId, [sessionId, docked](){
-    WApplication * const app = WApplication::instance();
-    InterSpec * const viewer = InterSpec::instance();
-    if( !app || (app->sessionId() != sessionId) || !viewer || !viewer->isPhone() || !viewer->m_llmTool )
-      return;
+  if( !isPhone() )
+    return;
 
-    const bool inTabs = viewer->m_toolsTabs
-                        && (viewer->m_toolsTabs->indexOf( viewer->m_llmTool.get() ) >= 0);
-    if( docked == inTabs )
-      return;
-
-    if( docked )
-    {
-      if( !viewer->m_toolsTabs || !viewer->m_llmToolWindow )
-        return;  // No tab strip to dock into (i.e., landscape)
-
-      // Bring the tools header controls back from the window before the window goes.
-      viewer->m_llmTool->setPhoneWindowHeader( nullptr );
-      std::unique_ptr<WWidget> tool
-                  = viewer->m_llmToolWindow->stretcher()->removeWidget( viewer->m_llmTool.get() );
-      AuxWindow::deleteAuxWindow( viewer->m_llmToolWindow.get() );
-      assert( !viewer->m_llmToolWindow );
-      viewer->addLlmToolTab( std::move(tool), true );
-    }else
-    {
-      viewer->showLlmToolInWindow( safeRemoveTab( viewer->m_toolsTabs, viewer->m_llmTool.get(), false ) );
-    }
-
-    app->triggerUpdate();
-  } );
+  // Docked is the tool tabs in portrait, or the side panel in landscape (see placeLlmTool()); only
+  //  the landscape choice is remembered, as portrait always starts full-screen.
+  moveLlmTool( docked ? LlmToolPlacement::ToolTab : LlmToolPlacement::Window, !m_toolsTabs );
 }//void setLlmToolDocked( const bool docked )
+
+
+void InterSpec::moveLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+{
+  // Deferred, as the buttons asking for this live in the window, tab, or panel being swapped out.
+  postToInterSpec( this, [where, rememberPreference]( InterSpec *viewer ){
+    viewer->placeLlmTool( where, rememberPreference );
+  } );
+}//void moveLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+
+
+void InterSpec::requestLlmToolClose()
+{
+  // Deferred, as the button asking for this is deleted with the tool's container.
+  postToInterSpec( this, []( InterSpec *viewer ){ viewer->handleLlmToolClose(); } );
+}//void requestLlmToolClose()
+
+
+void InterSpec::placeLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+{
+  if( !m_llmTool )
+    return;
+
+  // On phones, docked is the tool tabs in portrait, or the side panel in landscape (no tool tabs);
+  //  otherwise, with no tool tabs to go into, the tool goes to its own window.
+  LlmToolPlacement target = where;
+  if( isPhone() && (where != LlmToolPlacement::Window) )
+    target = m_toolsTabs ? LlmToolPlacement::ToolTab : LlmToolPlacement::SidePanel;
+  else if( (where == LlmToolPlacement::ToolTab) && !m_toolsTabs )
+    target = LlmToolPlacement::Window;
+
+  if( rememberPreference )
+    UserPreferences::setPreferenceValue( "LlmAssistantOnSide", (target == LlmToolPlacement::SidePanel), this );
+
+  const LlmToolPlacement from = llmToolPlacement();
+  if( target == from )
+    return;
+
+  // Let the user undo the move; not added while undoing or redoing (which call back into here).
+  //  Only placements are captured - the tool is looked up again, as it may have been closed (in
+  //  which case there is nothing to do), or re-opened, by then.
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [from, rememberPreference](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->placeLlmTool( from, rememberPreference );
+    };
+    auto redo = [target, rememberPreference](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->placeLlmTool( target, rememberPreference );
+    };
+    m_undo->addUndoRedoStep( undo, redo, "Move LLM Assistant" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+
+  // Taking the tool out of the tab strip changes the current tab, which would otherwise insert
+  //  a "Change tool tab" undo/redo step.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  std::unique_ptr<WWidget> tool = detachLlmTool();
+  assert( tool );
+  if( !tool )
+    return;
+
+  switch( target )
+  {
+    case LlmToolPlacement::ToolTab:
+      addLlmToolTab( std::move(tool), true );
+      break;
+
+    case LlmToolPlacement::SidePanel:
+      showLlmToolInSidePanel( std::move(tool) );
+      break;
+
+    case LlmToolPlacement::Window:
+      showLlmToolInWindow( std::move(tool) );
+      break;
+  }//switch( target )
+}//void placeLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+
+
+InterSpec::LlmToolPlacement InterSpec::llmToolPlacement() const
+{
+  if( m_llmSidePanel )
+    return LlmToolPlacement::SidePanel;
+
+  if( m_toolsTabs && m_llmTool && (m_toolsTabs->indexOf( m_llmTool.get() ) >= 0) )
+    return LlmToolPlacement::ToolTab;
+
+  return LlmToolPlacement::Window;
+}//LlmToolPlacement llmToolPlacement() const
+
+
+std::unique_ptr<Wt::WWidget> InterSpec::detachLlmTool()
+{
+  if( !m_llmTool )
+    return nullptr;
+
+  // Bring the tools phone header controls back from any window, before the window goes.
+  if( isPhone() )
+    m_llmTool->setPhoneWindowHeader( nullptr );
+
+  std::unique_ptr<WWidget> tool;
+  if( m_llmSidePanel )
+  {
+    std::unique_ptr<WWidget> panel = takeLlmSidePanelFromLayout();
+    assert( panel && m_llmTool->parent() );
+    if( m_llmTool->parent() )
+      tool = m_llmTool->removeFromParent();
+  }else if( m_llmToolWindow )
+  {
+    tool = m_llmToolWindow->stretcher()->removeWidget( m_llmTool.get() );
+    AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+    assert( !m_llmToolWindow );
+  }else if( m_toolsTabs && (m_toolsTabs->indexOf( m_llmTool.get() ) >= 0) )
+  {
+    tool = safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+  }
+
+  assert( tool && (tool.get() == m_llmTool.get()) );
+  return tool;
+}//std::unique_ptr<Wt::WWidget> detachLlmTool()
+
+
+void InterSpec::showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
+{
+  assert( !m_llmSidePanel && tool && (tool.get() == m_llmTool.get()) );
+  if( m_llmSidePanel || !tool )
+    return;
+
+  // On phones the panel is a docked placement, like the tool tab - so the conversation menu is only
+  //  shown full-screen, which the panel header's "expand" button goes to.
+  if( isPhone() )
+    m_llmTool->setPhoneWindowHeader( nullptr );
+
+  std::unique_ptr<LlmSidePanel> panel = std::make_unique<LlmSidePanel>( this, std::move(tool) );
+  m_llmSidePanel = panel.get();
+  m_llmSidePanelWidth = llmSidePanelInitialWidth();
+  addLlmSidePanelToLayout( std::move(panel) );
+}//void showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
+
+
+void InterSpec::addLlmSidePanelToLayout( std::unique_ptr<Wt::WWidget> panel )
+{
+  assert( m_layout && panel && (panel.get() == m_llmSidePanel.get()) );
+  if( !m_layout || !panel )
+    return;
+
+  LlmSidePanel * const sidePanel = dynamic_cast<LlmSidePanel *>( panel.get() );
+  assert( sidePanel );
+
+  // Column 0 has the menu (if not mobile), the charts, and the tool tabs (if showing); the panel
+  //  spans all but the menu, which instead spans both columns.
+  const int firstRow = m_menuDiv ? 1 : 0;
+  const int numRows = std::max( 1, m_layout->rowCount() - firstRow );
+
+  if( m_menuDiv )
+    m_layout->addWidget( m_layout->removeWidget( m_menuDiv ), 0, 0, 1, 2 );
+
+  // As column 1 does not stretch, the panels explicit width is its width; and once the user drags
+  //  the splitter, Wt pins the width of the non-stretching column (see finishResize() in Wt's
+  //  StdGridLayoutImpl2.js) - so either way, changes in window width go to the charts.
+  panel->setWidth( WLength( m_llmSidePanelWidth, WLength::Unit::Pixel ) );
+
+  // Wt's layout reserves 10px for each splitter, but only uses 5px (see the wtGetPS() workaround in
+  //  our constructor), which, when the charts/tool-tabs splitter is there, pushes the panel 5px past
+  //  the bottom; and when the tool tabs are showing, the charts are pulled up to the menu bar by a
+  //  negative top margin.  So line the panel up with the charts.  (The same leak leaves a 5px gap
+  //  right of the panel - see .LlmSidePanelHeader in LlmToolGui.css)
+  panel->setMargin( m_charts->margin( Wt::Side::Top ), Wt::Side::Top );
+  panel->setMargin( WLength( m_toolsTabs ? 5 : 0, WLength::Unit::Pixel ), Wt::Side::Bottom );
+
+  m_layout->addWidget( std::move(panel), firstRow, 1, numRows, 1 );
+  m_layout->setColumnStretch( 0, 1 );
+  m_layout->setColumnResizable( 0, true );
+
+  // Dont let the user drag the splitter so far the charts are unusable.
+  m_charts->setMinimumSize( WLength(300, WLength::Unit::Pixel), WLength::Auto );
+
+  addStyleClass( "HasLlmSidePanel" );
+  updateMobileButtonsForLlmSidePanel( true );
+  if( sidePanel )
+  {
+    sidePanel->updateMoveOutButton();  // where it goes depends on if the tool tabs are showing
+    sidePanel->watchSplitter();
+  }
+}//void addLlmSidePanelToLayout( std::unique_ptr<Wt::WWidget> panel )
+
+
+std::unique_ptr<Wt::WWidget> InterSpec::takeLlmSidePanelFromLayout()
+{
+  if( !m_llmSidePanel || !m_layout )
+    return nullptr;
+
+  std::unique_ptr<WWidget> panel = m_layout->removeWidget( m_llmSidePanel.get() );
+  assert( panel );
+
+  // Put the layout back how it was before the panel (the now-empty column 1 takes no space).
+  m_layout->setColumnResizable( 0, false );
+  m_layout->setColumnStretch( 0, 0 );
+  if( m_menuDiv )
+    m_layout->addWidget( m_layout->removeWidget( m_menuDiv ), 0, 0 );
+  m_charts->setMinimumSize( WLength::Auto, WLength::Auto );
+  removeStyleClass( "HasLlmSidePanel" );
+  updateMobileButtonsForLlmSidePanel( false );
+
+  return panel;
+}//std::unique_ptr<Wt::WWidget> takeLlmSidePanelFromLayout()
+
+
+int InterSpec::llmSidePanelInitialWidth()
+{
+  const int pct = std::max( 10, std::min( 90,
+                    UserPreferences::preferenceValue<int>( "LlmSidePanelPct", this ) ) );
+
+  // Before the first layout we dont know our width, so use the screen width, and correct things
+  //  in layoutSizeChanged().
+  m_llmSidePanelWidthGuessed = (m_renderedWidth <= 100);
+  const int appWidth = m_llmSidePanelWidthGuessed ? wApp->environment().screenWidth()
+                                                  : m_renderedWidth;
+  if( appWidth <= 100 )
+    return 400;
+
+  // Leave at least 300 px for the charts, but if the app is that narrow, the panel still gets 260.
+  const int minWidth = 260, maxWidth = appWidth - 300;
+  return std::max( minWidth, std::min( maxWidth, (pct * appWidth) / 100 ) );
+}//int llmSidePanelInitialWidth()
+
+
+void InterSpec::llmSidePanelResized( const int width )
+{
+  if( !m_llmSidePanel || (width <= 0) || (std::abs( width - m_llmSidePanelWidth ) <= 2) )
+    return;
+
+  m_llmSidePanelWidth = width;
+  updateMobileButtonsForLlmSidePanel( true );
+}//void llmSidePanelResized( const int width )
+
+
+void InterSpec::llmSidePanelDragged( const int width )
+{
+  if( !m_llmSidePanel || (width <= 0) || (m_renderedWidth <= 100) )
+    return;
+
+  llmSidePanelResized( width );
+
+  const int pct = static_cast<int>( std::round( (100.0 * width) / m_renderedWidth ) );
+  if( pct != UserPreferences::preferenceValue<int>( "LlmSidePanelPct", this ) )
+    UserPreferences::setPreferenceValue( "LlmSidePanelPct", pct, this );
+}//void llmSidePanelDragged( const int width )
+
+
+void InterSpec::updateMobileButtonsForLlmSidePanel( const bool panelShowing )
+{
+  // `.MobileNextSample` is fixed to the bottom-right of the window, which would put it over the
+  //  side panels input area, so move it left of the panel.  Wt only writes offsets once it knows the
+  //  position scheme, and then writes all four, so the CSS position and bottom offset are repeated.
+  if( !m_mobileForwardButton )
+    return;
+
+  const int right = 5 + (panelShowing ? m_llmSidePanelWidth : 0);
+  m_mobileForwardButton->setPositionScheme( Wt::PositionScheme::Fixed );
+  m_mobileForwardButton->setOffsets( WLength( 5, WLength::Unit::Pixel ), Wt::Side::Bottom );
+  m_mobileForwardButton->setOffsets( WLength( right, WLength::Unit::Pixel ), Wt::Side::Right );
+}//void updateMobileButtonsForLlmSidePanel( const bool panelShowing )
 
 
 LlmToolGui *InterSpec::currentLlmTool()
@@ -15351,6 +15641,12 @@ void InterSpec::handleLlmToolClose()
   {
     // The tool lives in the window's stretcher, so tearing the window down destroys it too.
     AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+  }else if( m_llmSidePanel )
+  {
+    // The tool lives in the panel, so dropping the panel destroys it too.
+    if( isPhone() )
+      m_llmTool->setPhoneWindowHeader( nullptr );
+    takeLlmSidePanelFromLayout();
   }else if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
   {
     safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );

@@ -232,9 +232,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_benchmarkRunner( nullptr ),
     m_jsSandboxBridge( nullptr ),
     m_menuIconHome( nullptr ),
-    m_phoneHeaderTools(),
-    m_phoneDockButton( nullptr ),
-    m_phoneCanDock( false )
+    m_phoneHeaderTools()
 {
   if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
@@ -516,7 +514,6 @@ void LlmToolGui::setPhoneWindowHeader( WContainerWidget *header )
     }
 
     const std::unique_ptr<WWidget> doomed = m_phoneHeaderTools->removeFromParent();
-    m_phoneDockButton = nullptr;
   }//if( m_phoneHeaderTools )
 
   // While docked, CSS hides the menu icon, and shows the expand button.
@@ -530,22 +527,13 @@ void LlmToolGui::setPhoneWindowHeader( WContainerWidget *header )
   m_phoneHeaderTools = header->addNew<WContainerWidget>();
   m_phoneHeaderTools->addStyleClass( "LlmHeaderTools" );
 
-  m_phoneDockButton = m_phoneHeaderTools->addNew<WPushButton>();
-  m_phoneDockButton->addStyleClass( "LlmDockBtn InvertInDark" );
-  m_phoneDockButton->setToolTip( WString::tr("lcw-phone-dock-tt") );
-  m_phoneDockButton->setHidden( !m_phoneCanDock );
-  m_phoneDockButton->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( true ); } );
+  WPushButton * const dockButton = m_phoneHeaderTools->addNew<WPushButton>();
+  dockButton->addStyleClass( "LlmDockBtn InvertInDark" );
+  dockButton->setToolTip( WString::tr("lcw-phone-dock-tt") );
+  dockButton->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( true ); } );
 
   movePhoneMenuIcon();
 }//void setPhoneWindowHeader( WContainerWidget *header )
-
-
-void LlmToolGui::setPhoneCanDock( const bool canDock )
-{
-  m_phoneCanDock = canDock;
-  if( m_phoneHeaderTools && m_phoneDockButton )
-    m_phoneDockButton->setHidden( !canDock );
-}//void setPhoneCanDock( const bool canDock )
 
 
 void LlmToolGui::addPhoneExpandButton( WContainerWidget *parent )
@@ -804,6 +792,18 @@ void LlmToolGui::initializeUI()
 
   // On phones, the icon goes in the windows header bar, if we have been given it.
   movePhoneMenuIcon();
+
+  // Not phones: a button, next to the menu icon, to move the assistant to the right of the charts
+  //  (CSS hides it once there; the side panel has its own button to move back).
+  if( !phone )
+  {
+    WPushButton * const sideDockButton = scrollWrapper->addNew<WPushButton>();
+    sideDockButton->addStyleClass( "LlmSideDockBtn InvertInDark" );
+    sideDockButton->setToolTip( WString::tr("lcw-dock-side-tt") );
+    sideDockButton->clicked().connect( this, [this](){
+      m_viewer->moveLlmTool( InterSpec::LlmToolPlacement::SidePanel, true );
+    } );
+  }//if( !phone )
 
   // Create scrollable container for conversation displays.  Wt4 removed WScrollArea; the
   //  replacement is a plain container with overflow:auto.
@@ -2502,6 +2502,106 @@ LlmJsSandboxBridge *LlmToolGui::jsSandboxBridge()
 {
   return m_jsSandboxBridge;
 }
+
+LlmSidePanel::LlmSidePanel( InterSpec *interspec, std::unique_ptr<Wt::WWidget> tool )
+  : WContainerWidget(),
+  m_interspec( interspec ),
+  m_width( 0 ),
+  m_moveOutButton( nullptr ),
+  m_dragged( this, "dragged" )
+{
+  assert( m_interspec && tool );
+  addStyleClass( "LlmSidePanel" );
+  setLayoutSizeAware( true );
+
+  m_dragged.connect( m_interspec, &InterSpec::llmSidePanelDragged );
+  setJavaScriptMember( "wtLlmDragged", "function(w){" + m_dragged.createCall( {"w"} ) + "}" );
+
+  // A flex box layout, as LlmToolGui uses (see LlmToolGui::createRoot()); the tool is added before
+  //  we are rendered, as Wt's flex layout only sizes items right when rendered together.
+  WVBoxLayout * const layout = setLayout( std::make_unique<WVBoxLayout>() );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+  layout->setSpacing( 0 );
+
+  auto header = std::make_unique<WContainerWidget>();
+  header->addStyleClass( "LlmSidePanelHeader" );
+
+  WText * const title = header->addNew<WText>( WString::tr("app-tab-llm-assistant") );
+  title->addStyleClass( "LlmSidePanelTitle" );
+
+  m_moveOutButton = header->addNew<WPushButton>();
+  m_moveOutButton->addStyleClass( "LlmSidePanelBtn InvertInDark" );
+  m_moveOutButton->clicked().connect( this, &LlmSidePanel::moveOut );
+
+  WContainerWidget * const closeIcon = header->addNew<WContainerWidget>();
+  closeIcon->addStyleClass( "closeicon-wtdefault LlmSidePanelClose" );
+  closeIcon->setToolTip( WString::tr("app-llm-side-close-tt") );
+  closeIcon->clicked().connect( m_interspec, &InterSpec::requestLlmToolClose );
+
+  layout->addWidget( std::move(header), 0 );
+
+  tool->setHidden( false );  //A widget taken out of the tool-tab strip comes out still hidden.
+  layout->addWidget( std::move(tool), 1 );
+}//LlmSidePanel constructor
+
+
+void LlmSidePanel::updateMoveOutButton()
+{
+  const bool phone = m_interspec->isPhone();
+  const bool tabs = m_interspec->toolTabsVisible();
+
+  m_moveOutButton->toggleStyleClass( "LlmSideToFullScreen", phone );
+  m_moveOutButton->toggleStyleClass( "LlmSideToTabs", !phone && tabs );
+  m_moveOutButton->toggleStyleClass( "LlmSideToWindow", !phone && !tabs );
+
+  const char * const tooltip = phone ? "app-llm-side-to-full-tt"
+                                     : (tabs ? "app-llm-side-to-tabs-tt" : "app-llm-side-to-window-tt");
+  m_moveOutButton->setToolTip( WString::tr(tooltip) );
+}//void LlmSidePanel::updateMoveOutButton()
+
+
+void LlmSidePanel::watchSplitter()
+{
+  doJavaScript( "(function(){"
+    "const host = " + jsRef() + ".parentElement;"
+    "if( !host || host.wtLlmSplitterWatched ) return;"
+    "host.wtLlmSplitterWatched = true;"
+    "const onDown = function(e){"
+      "if( !e.target.classList || !e.target.classList.contains('Wt-vrh2') || (e.target.parentElement !== host) ) return;"
+      "const onUp = function(){"
+        "document.removeEventListener('mouseup', onUp, true);"
+        "document.removeEventListener('touchend', onUp, true);"
+        "setTimeout( function(){"
+          "const panel = host.querySelector(':scope > .LlmSidePanel');"
+          "if( panel && panel.wtLlmDragged ) panel.wtLlmDragged( Math.round(panel.offsetWidth) );"
+        "}, 100 );"
+      "};"
+      "document.addEventListener('mouseup', onUp, true);"
+      "document.addEventListener('touchend', onUp, true);"
+    "};"
+    "host.addEventListener('mousedown', onDown, true);"
+    "host.addEventListener('touchstart', onDown, true);"
+  "})();" );
+}//void LlmSidePanel::watchSplitter()
+
+
+void LlmSidePanel::moveOut()
+{
+  if( m_interspec->isPhone() )
+    m_interspec->setLlmToolDocked( false );
+  else
+    m_interspec->moveLlmTool( InterSpec::LlmToolPlacement::ToolTab, true );
+}//void LlmSidePanel::moveOut()
+
+
+void LlmSidePanel::layoutSizeChanged( int width, int height )
+{
+  if( width == m_width )
+    return;
+
+  m_width = width;
+  m_interspec->llmSidePanelResized( width );
+}//void LlmSidePanel::layoutSizeChanged( int width, int height )
 
 
 #endif // USE_LLM_INTERFACE

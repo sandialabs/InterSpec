@@ -201,8 +201,9 @@
   <message id="lcw-duration-llm-tt">How long the LLM took to respond to this, including network, queueing, and generation time.</message>
   <message id="lcw-duration-tools">(tools: {1})</message>
   <message id="lcw-duration-tools-tt">How long InterSpec took to run these tools.</message>
-  <message id="lcw-phone-dock-tt">Shrink the assistant into the tools tab, to see the spectrum</message>
+  <message id="lcw-phone-dock-tt">Shrink the assistant, to see the spectrum alongside it</message>
   <message id="lcw-phone-expand-tt">Make the assistant full-screen</message>
+  <message id="lcw-dock-side-tt">Show the assistant to the right of the spectrum</message>
   <message id="lcw-welcome-learn-more">Learn more about the LLM Assistant</message>
   <message id="lcw-help-menu">Help</message>
 </messages>

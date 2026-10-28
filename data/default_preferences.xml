@@ -55,4 +55,7 @@
  <pref name="IsoByNucsShowBackground" type="Boolean">true</pref>
  <pref name="DynamicRefLine" type="Boolean">false</pref>
  <pref name="AskPreserveEnergyCal" type="Boolean">true</pref>
+ <pref name="LlmAssistantOnSide" type="Boolean">false</pref>
+ <pref name="LlmSidePanelPct" type="Integer">33</pref>
+ <pref name="LlmSidePanelPct_phone" type="Integer">45</pref>
 </preferences>

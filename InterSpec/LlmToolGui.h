@@ -111,15 +111,10 @@ public:
    When in a full-screen window, `header` is that windows header bar (otherwise empty on the right),
    and the tool puts its "dock" button (see InterSpec::setLlmToolDocked) and its conversation menu
    icon there, rather than floating the menu icon over the conversation, where it would cover the
-   first interactions title.  When docked in the tools tab strip, `header` is null, and the tool
-   instead shows an "expand to full-screen" button next to its text input.
+   first interactions title.  When docked - in the tools tab strip in portrait, or the side panel in
+   landscape - `header` is null, and the tool instead shows an "expand to full-screen" button.
    */
   void setPhoneWindowHeader( Wt::WContainerWidget *header );
-
-  /** Phones only: whether the "dock" button in the window header is shown - i.e., whether there is a
-   tool-tab strip to dock into (only in portrait).
-   */
-  void setPhoneCanDock( const bool canDock );
 
   /** Clear the conversation history display */
   void clearHistory();
@@ -306,12 +301,6 @@ private:
    full-screen window holding us (so owned by that header); see setPhoneWindowHeader().
    */
   Wt::Core::observing_ptr<Wt::WContainerWidget> m_phoneHeaderTools;
-
-  /** The dock button in m_phoneHeaderTools; only valid while m_phoneHeaderTools is. */
-  Wt::WPushButton *m_phoneDockButton;
-
-  /** See setPhoneCanDock(). */
-  bool m_phoneCanDock;
 
   /** Moves m_menuIcon into m_phoneHeaderTools, if both exist and it is not already there. */
   void movePhoneMenuIcon();
@@ -500,6 +489,46 @@ private:
   /** Disconnect the MCP progress signal and clear the active progress callback. */
   void disconnectMcpProgress();
 };
+
+
+
+/** Holds the LLM assistant (an #LlmToolGui) when it is shown to the right of the charts, as the
+ second column of InterSpec's layout (see InterSpec::showLlmToolInSidePanel): a slim header bar
+ (title, a button to move the assistant out of the panel, and a close button), with the assistant
+ filling the rest.  Tells InterSpec whenever its width changes, and when the user has dragged the
+ splitter beside it, so the width can be kept, and remembered.
+ */
+class LlmSidePanel : public Wt::WContainerWidget
+{
+public:
+  LlmSidePanel( InterSpec *interspec, std::unique_ptr<Wt::WWidget> tool );
+
+  /** On phones the move-out button goes to full-screen; otherwise to the tool tabs, if they are
+   showing, or else to a window.  Call when the tool tabs are shown or hidden.
+   */
+  void updateMoveOutButton();
+
+  /** Wt has no signal for the user dragging a splitter, so this watches the layout we have just been
+   put in (once per layout) for drags of its column splitter - i.e., the one beside us - and once Wt
+   has re-laid things out, sends our width to InterSpec::llmSidePanelDragged().  Call each time we
+   are added to a layout.
+   */
+  void watchSplitter();
+
+protected:
+  virtual void layoutSizeChanged( int width, int height ) override;
+
+private:
+  void moveOut();
+
+  InterSpec *m_interspec;
+
+  /** The width last passed to InterSpec::llmSidePanelResized(). */
+  int m_width;
+
+  Wt::WPushButton *m_moveOutButton;
+  Wt::JSignal<int> m_dragged;
+};//class LlmSidePanel
 
 #endif // USE_LLM_INTERFACE
 #endif // LlmToolGui_h
