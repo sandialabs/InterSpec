@@ -5959,10 +5959,11 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
   {
     std::shared_ptr<SpecMeas> meas = std::make_shared<SpecMeas>();
     
-    // TODO: If we call load_from_N42_document(...), the sample numbers get all messed up and we
-    //       cant match peaks and displayed samples up right - I'm not sure why this is at the
-    //       moment, probably some virtual call issue or something, but for the moment will just
-    //       patch through it and re-parse the XML a second time.
+    // Note: we can't just call load_from_N42_document(...) on the XML parsed below, as that skips
+    //       SpecMeas::load_N42_from_doc(...), which marks the file as written by InterSpec (so its
+    //       sample numbers are kept) and reconciles the sample numbers with the ones the
+    //       <DHS:InterSpec> info is keyed by - without these, peaks and displayed samples may not
+    //       line up.  So we parse the file twice.
     //const bool loaded = meas->load_from_N42_document( doc_node );
     const bool loaded = meas->load_file( filename, SpecUtils::ParserType::N42_2012, ".n42" );
     

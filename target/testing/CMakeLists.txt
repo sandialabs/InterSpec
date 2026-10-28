@@ -993,6 +993,13 @@ add_test( NAME TExportSpecFile
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_SpecMeasN42RoundTrip test_SpecMeasN42RoundTrip.cpp )
+target_link_libraries( test_SpecMeasN42RoundTrip PRIVATE InterSpecLib )
+add_test( NAME TSpecMeasN42RoundTrip
+  COMMAND $<TARGET_FILE:test_SpecMeasN42RoundTrip> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_EnergyCalTool test_EnergyCalTool.cpp )
 target_link_libraries( test_EnergyCalTool PRIVATE InterSpecLib )
 add_test( NAME TEnergyCalTool
