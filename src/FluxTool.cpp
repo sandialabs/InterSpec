@@ -1569,14 +1569,15 @@ void FluxToolWidget::refreshPeakTable()
     return;
   }
 
-  auto spec = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<const SpecUtils::Measurement> spec = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   if( !spec )
   {
     showMessageForEmptyTable( "ftw-no-foreground" );
     return;
   }
 
-  const float live_time = spec->gamma_live_time();
+
+  const float live_time = spec->live_time();
   if( live_time <= 0.0f )
   {
     showMessageForEmptyTable( "ftw-invalid-livetime" );
