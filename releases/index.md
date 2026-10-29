@@ -15,6 +15,13 @@ Nearly all new features, and many fixes are thanks to user requests, feedback, o
 <br/>
 Please email <a href="InterSpec@sandia.gov">InterSpec@sandia.gov</a> with any bug reports, issues, or other support.
 
+---
+
+## Known bugs
+
+- The **Flux Tool** divides peak counts by the sum live time of the spectrum file, and not just the displayed spectrum.  This doesn't have an effect for single spectrum files, but it makes the `CPS` and `Flux` values incorrect for spectrum files with multiple measurements.  Fixed in [commit 941d138](https://github.com/sandialabs/InterSpec/commit/941d138c91d41d18c4e3a5f280cdb3d2bc66fa73), with the [automated development build](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) having the fix as of 20261029.
+
+
 
 ---
 
