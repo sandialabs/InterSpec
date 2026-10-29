@@ -102,8 +102,9 @@ if not exist %BOOST_BUILT_FILE% (
     )
 
     if not exist %BOOST_DIR% (
-        tar -xzvf %BOOST_TAR% && (
-            echo Un-tarred %BOOST_TAR%
+        rem Windows tar fails on the UTF-8 named Boost.Wave test directory, so use .NET to extract
+        powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('%BOOST_TAR%', '.')" && (
+            echo Unzipped %BOOST_TAR%
         ) || (
             echo "Failed to unzip boost"
             GOTO :cmderr
