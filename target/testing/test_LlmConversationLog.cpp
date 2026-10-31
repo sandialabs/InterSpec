@@ -141,7 +141,10 @@ BOOST_AUTO_TEST_CASE( WriteLogFileRoundTrip )
   LlmConversationHistory history;
   const shared_ptr<LlmInteraction> first = history.addUserMessageToMainConversation( "What is in my spectrum?" );
   history.addAssistantMessageWithThinking( "Looks like Cs-137 & <Co-60>.", "thinking...", "", first );
-  LlmConversationHistory::addTokenUsage( first, 1200, 34, 1234, 1000, 5 );
+  LlmConversationHistory::addTokenUsage( first, 1200, 34, 1234, 1000, 5, 0.0012345 );
+  LlmConversationHistory::addTokenUsage( first, 100, 10, 110, 0, 0, 0.0000067 );  // costs accumulate
+  BOOST_REQUIRE( first->cost.has_value() );
+  BOOST_CHECK_CLOSE( first->cost.value(), 0.0012412, 1.0E-6 );
 
   const shared_ptr<LlmInteraction> second = history.addUserMessageToMainConversation( "Thanks" );
   history.addAssistantMessageWithThinking( "You're welcome.", "", "", second );
@@ -184,6 +187,11 @@ BOOST_AUTO_TEST_CASE( WriteLogFileRoundTrip )
   BOOST_CHECK( loaded[0]->cacheCreationTokens == first->cacheCreationTokens );
   BOOST_CHECK( first->totalTokens.has_value() );
   BOOST_CHECK( !loaded[1]->totalTokens.has_value() );
+
+  // As is the provider-reported cost, when there is one.
+  BOOST_REQUIRE( loaded[0]->cost.has_value() );
+  BOOST_CHECK_CLOSE( loaded[0]->cost.value(), first->cost.value(), 1.0E-6 );
+  BOOST_CHECK( !loaded[1]->cost.has_value() );
 }//WriteLogFileRoundTrip
 
 

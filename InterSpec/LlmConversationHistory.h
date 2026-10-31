@@ -287,6 +287,7 @@ protected:
   std::string m_errorMessage;
   ErrorType m_errorType;
   bool m_retryAttempted;  // True if JavaScript automatic retry was attempted
+  bool m_skippedByUser;   // True if the user chose Skip (or Cancel Agent) on it; runtime only
 
 public:
   LlmInteractionError( const std::string &errorMsg,
@@ -295,7 +296,8 @@ public:
     : LlmInteractionTurn(Type::Error, convo),
       m_errorMessage(errorMsg),
       m_errorType(type),
-      m_retryAttempted(false)
+      m_retryAttempted(false),
+      m_skippedByUser(false)
   {
   }
 
@@ -307,6 +309,11 @@ public:
 
   bool retryAttempted() const { return m_retryAttempted; }
   void setRetryAttempted( bool attempted ) { m_retryAttempted = attempted; }
+
+  /** If the user chose to move on from this error - Skip for the main agent, or Cancel Agent for a
+   sub-agent (whose invoking agent is then told the user cancelled it) - rather than Retry. */
+  bool skippedByUser() const { return m_skippedByUser; }
+  void setSkippedByUser( bool skipped ) { m_skippedByUser = skipped; }
 
   /** Returns true if this error supports automatic retry (timeout/network errors) */
   bool supportsAutomaticRetry() const
@@ -528,7 +535,10 @@ struct LlmInteraction
   // but nothing was served from cache.
   std::optional<size_t> cachedTokens;        // Prompt tokens served from cache (cache reads; all providers)
   std::optional<size_t> cacheCreationTokens; // Prompt tokens written to cache (Anthropic cache writes)
-  
+  // Provider-reported cost in USD (e.g. OpenRouter), accumulated like promptTokens (API calls +
+  // sub-agents); nullopt means the provider did not report cost.
+  std::optional<double> cost;
+
   /** The conversation turns sent to, or recieved from the LLM.
 
    The first entry is the initial prompt sent to the LLM to start the conversation, with following entries being
@@ -573,6 +583,13 @@ struct LlmInteraction
    to re-enable input.
    */
   Wt::Signal<> conversationFinished;
+
+  /** Signal emitted when this conversation's tool round is stopped (true) - it waits only on
+   sub-agents paused on an error (their request failed, or the user pressed Stop), until the user
+   picks Retry or Cancel Agent on one - or put back in flight (false).  See
+   LlmInterface::stopIdleRounds().
+   */
+  Wt::Signal<bool> stoppedChanged;
 
   /** Signal emitted when an API request is sent to the LLM for this conversation.
    Emits the turn the LLM is now responding to (the last InitialRequest, ToolResult, or AutoReply
@@ -699,13 +716,14 @@ public:
                        const std::shared_ptr<LlmInteraction> &convo );
 
 
-  /** Add token usage to a specific conversation by conversation ID (accumulates across API calls) */
+  /** Add token usage (and provider-reported cost, in USD) to a conversation; accumulates across API calls */
   static void addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                      std::optional<int> promptTokens,
                      std::optional<int> completionTokens,
                      std::optional<int> totalTokens,
                      std::optional<int> cachedTokens = std::nullopt,
-                     std::optional<int> cacheCreationTokens = std::nullopt );
+                     std::optional<int> cacheCreationTokens = std::nullopt,
+                     std::optional<double> cost = std::nullopt );
   
   /** Find a conversation start by conversation ID */
   std::shared_ptr<LlmInteraction> findConversationByConversationId(const std::string& conversationId);

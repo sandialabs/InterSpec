@@ -26,6 +26,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/RelActAutoGui.h"
+#include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -179,7 +180,7 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
           self_atten["material"] = curve.phys_model_self_atten->material->name;
         else
           self_atten["atomic_number"] = curve.phys_model_self_atten->atomic_number;
-        self_atten["areal_density"] = curve.phys_model_self_atten->areal_density;
+        self_atten["areal_density"] = round_to_sig_figs( curve.phys_model_self_atten->areal_density / PhysicalUnits::g_per_cm2, 6 );  // g/cm2, as input
         self_atten["fit_atomic_number"] = curve.phys_model_self_atten->fit_atomic_number;
         self_atten["fit_areal_density"] = curve.phys_model_self_atten->fit_areal_density;
         curve_json["self_attenuation"] = self_atten;
@@ -197,7 +198,7 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
               ext_json["material"] = ext->material->name;
             else
               ext_json["atomic_number"] = ext->atomic_number;
-            ext_json["areal_density"] = ext->areal_density;
+            ext_json["areal_density"] = round_to_sig_figs( ext->areal_density / PhysicalUnits::g_per_cm2, 6 );  // g/cm2, as input
             ext_json["fit_atomic_number"] = ext->fit_atomic_number;
             ext_json["fit_areal_density"] = ext->fit_areal_density;
             ext_atten_array.push_back( ext_json );
@@ -466,23 +467,48 @@ void saveRelActState(
 }//saveRelActState()
 
 
-/** Build JSON object with ROI information from fitted peaks.
+/** Build the "roi_info" result section: for each fit ROI, its bounds and data chi-square, and if `full`,
+ its peaks.
 
- Groups peaks by shared PeakContinuum, sorts by energy, and creates a JSON structure
- with energy ranges, chi²/dof, and peak details for each ROI.
+ Every gamma line of each nuclide that falls in a ROI is fit, so most of a ROI's peaks have a negligible
+ area; those are not listed (their total area is given when notable).  Peaks are positional rows, with
+ the columns given by the section's "peak_columns".
 
  @param peaks Vector of fitted peaks (typically from solution.m_fit_peaks_in_spectrums_cal)
- @param solution The solution the peaks are from; used to give the input ROI(s) each ROI was made from.
- @returns JSON object with "description" and "rois" array
+ @param solution The solution the peaks are from; gives each ROI's chi-square, and the input ROI(s) it
+        was made from.
+ @param full If true, each ROI also gets its number of channels, peak area, source areas, and peaks.
+ @returns JSON object with "note", "rois" array, and if `full`, "peak_columns"
  */
 nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks,
-                             const RelActCalcAuto::RelActAutoSolution &solution )
+                             const RelActCalcAuto::RelActAutoSolution &solution,
+                             const bool full )
 {
   using namespace std;
 
   const vector<RelActCalcAuto::RoiRange> &final_rois = solution.m_final_roi_ranges;
   const vector<RelActCalcAuto::RoiResolutionInfo> &final_info = solution.m_final_roi_info;
   const vector<RelActCalcAuto::RoiRange> &input_rois = solution.m_input_rois;
+  const bool have_roi_chi2 = (solution.m_roi_chi2_data.size() == final_rois.size())
+                             && (solution.m_roi_num_channels.size() == final_rois.size());
+
+  // With more than one rel. eff. curve, each curve's gammas are separate peaks; find which curve a peak
+  //  belongs to from the per-curve peaks (the same peaks, computed for one curve at a time).
+  const vector<vector<PeakDef>> &curve_peaks = solution.m_fit_peaks_in_spectrums_cal_for_each_curve;
+  const bool multiple_curves = (curve_peaks.size() > 1);
+  const auto peak_curve = [&curve_peaks]( const PeakDef &peak ) -> json {
+    for( size_t curve_index = 0; curve_index < curve_peaks.size(); ++curve_index )
+    {
+      for( const PeakDef &p : curve_peaks[curve_index] )
+      {
+        if( (fabs( p.mean() - peak.mean() ) < 1.0E-6)
+            && (fabs( p.amplitude() - peak.amplitude() ) <= 1.0E-6*std::max( 1.0, fabs( peak.amplitude() ) ))
+            && (p.sourceName() == peak.sourceName()) )
+          return curve_index;
+      }
+    }
+    return nullptr;  // e.g., a free-floating peak
+  };//peak_curve lambda
 
   // Group peaks by shared PeakContinuum
   map<shared_ptr<const PeakContinuum>, vector<const PeakDef *>> roi_groups;
@@ -497,24 +523,27 @@ nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks,
   // Build array of ROI objects, sorted by lower energy
   vector<pair<double, json>> rois_with_energy;
 
-  for( const auto &roi_pair : roi_groups )
+  for( auto &roi_pair : roi_groups )
   {
     const shared_ptr<const PeakContinuum> &continuum = roi_pair.first;
-    const vector<const PeakDef *> &roi_peaks = roi_pair.second;
+    vector<const PeakDef *> &roi_peaks = roi_pair.second;
 
     if( roi_peaks.empty() )
       continue;
 
-    json roi_obj;
-    roi_obj["lower_energy_kev"] = continuum->lowerEnergy();
-    roi_obj["upper_energy_kev"] = continuum->upperEnergy();
+    std::sort( begin(roi_peaks), end(roi_peaks), []( const PeakDef *lhs, const PeakDef *rhs ){
+      return lhs->mean() < rhs->mean();
+    } );
 
-    // The ROI(s) of the configuration this ROI was made from; for ROIs sized from the peak shape, or
-    //  split by lines, these bounds differ from the ones fit.  The fit ROI is the one closest in energy
-    //  (the peaks are in the spectrum's energy calibration, which a fit adjustment may differ from).
+    json roi_obj;
+    roi_obj["lower_keV"] = round_to_decimal_places( continuum->lowerEnergy(), 2 );
+    roi_obj["upper_keV"] = round_to_decimal_places( continuum->upperEnergy(), 2 );
+
+    // The fit ROI is the one closest in energy (the peaks are in the spectrum's energy calibration,
+    //  which a fit adjustment may differ from).
     size_t nearest = final_rois.size();
     double nearest_diff = std::numeric_limits<double>::infinity();
-    for( size_t i = 0; (i < final_rois.size()) && (final_info.size() == final_rois.size()); ++i )
+    for( size_t i = 0; i < final_rois.size(); ++i )
     {
       const double diff = fabs( final_rois[i].lower_energy - continuum->lowerEnergy() )
                           + fabs( final_rois[i].upper_energy - continuum->upperEnergy() );
@@ -525,70 +554,107 @@ nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks,
       }
     }//for( loop over final ROIs )
 
-    if( nearest < final_rois.size() )
+    // This ROI's part of the fit's data chi-square; the parameters are shared between ROIs, so there is
+    //  no per-ROI DOF - chi2/num_channels is comparable to, but a little lower than, the overall chi2/dof.
+    if( have_roi_chi2 && (nearest < final_rois.size()) )
     {
+      const double chi2 = solution.m_roi_chi2_data[nearest];
+      const size_t num_channels = solution.m_roi_num_channels[nearest];
+      roi_obj["chi2"] = round_to_sig_figs( chi2, 4 );
+      if( full )
+        roi_obj["num_channels"] = num_channels;
+      if( num_channels > 0 )
+        roi_obj["chi2_per_channel"] = round_to_sig_figs( chi2 / num_channels, 3 );
+    }//if( have_roi_chi2 )
+
+    // The ROI(s) of the configuration this ROI was made from, when they differ from the fit ROI - e.g.,
+    //  ROIs sized from the peak shape, or split by lines.
+    if( (nearest < final_rois.size()) && (final_info.size() == final_rois.size()) )
+    {
+      const vector<size_t> &indices = final_info[nearest].input_roi_indices;
+      bool same_as_fit = (indices.size() == 1);
       json from_rois = json::array();
-      for( const size_t index : final_info[nearest].input_roi_indices )
+      for( const size_t index : indices )
       {
-        if( index < input_rois.size() )
-          from_rois.push_back( json{ {"lower_energy", input_rois[index].lower_energy},
-                                     {"upper_energy", input_rois[index].upper_energy},
-                                     {"range_type", RelActCalcAuto::RoiRange::to_str( input_rois[index].range_limits_type )} } );
+        if( index >= input_rois.size() )
+          continue;
+        const RelActCalcAuto::RoiRange &input = input_rois[index];
+        same_as_fit = same_as_fit
+                      && (fabs( input.lower_energy - continuum->lowerEnergy() ) < 0.01)
+                      && (fabs( input.upper_energy - continuum->upperEnergy() ) < 0.01);
+        from_rois.push_back( json::array( { round_to_decimal_places( input.lower_energy, 2 ),
+                                            round_to_decimal_places( input.upper_energy, 2 ),
+                                            RelActCalcAuto::RoiRange::to_str( input.range_limits_type ) } ) );
       }
-      if( !from_rois.empty() )
+      if( !from_rois.empty() && !same_as_fit )
         roi_obj["from_input_rois"] = from_rois;
     }//if( nearest < final_rois.size() )
 
-    // Get chi²/dof from any peak (all peaks in ROI share this value)
-    if( roi_peaks[0]->chi2Defined() )
-      roi_obj["chi2_per_dof"] = roi_peaks[0]->chi2dof();
+    if( !full )
+    {
+      rois_with_energy.push_back( make_pair( continuum->lowerEnergy(), roi_obj ) );
+      continue;
+    }
 
-    // Calculate sum of peak areas in ROI
     double total_area = 0.0;
     for( const PeakDef *peak : roi_peaks )
       total_area += peak->amplitude();
-    roi_obj["total_peak_area"] = total_area;
+    roi_obj["peak_area"] = compact_rate( total_area );
 
-    // Group peaks by source and calculate counts per source
+    // Area of each source in the ROI, including from its negligible peaks; sources with under 1% of the
+    //  ROI's area (or under 1 count) are left out.
     map<string, double> source_areas;
     for( const PeakDef *peak : roi_peaks )
     {
-      if( peak->hasSourceGammaAssigned() )
-      {
-        const string source_name = peak->sourceName();
-        if( !source_name.empty() )
-          source_areas[source_name] += peak->amplitude();
-      }
+      if( peak->hasSourceGammaAssigned() && !peak->sourceName().empty() )
+        source_areas[peak->sourceName()] += peak->amplitude();
     }
 
-    // Build source_counts array (sorted by source name via map)
-    json source_counts_array = json::array();
+    json source_areas_obj = json::object();
     for( const auto &source_pair : source_areas )
     {
-      json source_obj;
-      source_obj["source_name"] = source_pair.first;
-      source_obj["source_sum_area_in_roi"] = source_pair.second;
-      source_counts_array.push_back( source_obj );
+      if( source_pair.second >= std::max( 1.0, 1.0E-2 * total_area ) )
+        source_areas_obj[source_pair.first] = compact_rate( source_pair.second );
     }
-    roi_obj["source_counts"] = source_counts_array;
+    roi_obj["source_areas"] = source_areas_obj;
 
-    // Build peaks array
+    // A peak is negligible if it has under 1% of the ROI's peak area, or is centered more than a FWHM
+    //  outside the ROI (only its tail is in the ROI, and its area is mostly outside it).
+    const double negligible_area = std::max( 1.0, 1.0E-2 * total_area );
+    double omitted_area = 0.0;
     json peaks_array = json::array();
     for( const PeakDef *peak : roi_peaks )
     {
-      json peak_obj;
-      peak_obj["energy_kev"] = peak->mean();
-      peak_obj["amplitude"] = peak->amplitude();
-      peak_obj["amplitude_uncert"] = peak->amplitudeUncert();
-      if( peak->gausPeak() )
-        peak_obj["fwhm_kev"] = peak->fwhm();
-      peaks_array.push_back( peak_obj );
-    }
+      const double margin = peak->gausPeak() ? peak->fwhm() : 0.0;
+      const bool outside_roi = (peak->mean() < (continuum->lowerEnergy() - margin))
+                               || (peak->mean() > (continuum->upperEnergy() + margin));
+      if( outside_roi || (peak->amplitude() < negligible_area) )
+      {
+        omitted_area += peak->amplitude();
+        continue;
+      }
+
+      const string source = peak->hasSourceGammaAssigned() ? peak->sourceName() : string();
+      json row = json::array( {
+        round_to_decimal_places( peak->mean(), 2 ),
+        compact_rate( peak->amplitude() ),
+        compact_rate( peak->amplitudeUncert() ),
+        peak->gausPeak() ? json( round_to_sig_figs( peak->fwhm(), 3 ) ) : json( nullptr ),
+        source.empty() ? json( nullptr ) : json( source )
+      } );
+      if( multiple_curves )
+        row.push_back( peak_curve( *peak ) );
+      peaks_array.push_back( std::move( row ) );
+    }//for( const PeakDef *peak : roi_peaks )
 
     roi_obj["peaks"] = peaks_array;
+    // The unlisted peaks' total area is only given when notable - e.g., from many weak lines in a
+    //  low-statistics ROI, or large peaks centered outside the ROI.
+    if( omitted_area >= std::max( 1.0, 0.1 * total_area ) )
+      roi_obj["omitted_peak_area"] = compact_rate( omitted_area );
 
     rois_with_energy.push_back( make_pair( continuum->lowerEnergy(), roi_obj ) );
-  }//for( const auto &roi_pair : roi_groups )
+  }//for( auto &roi_pair : roi_groups )
 
   // Sort by lower energy
   sort( rois_with_energy.begin(), rois_with_energy.end(),
@@ -596,112 +662,224 @@ nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks,
          return lhs.first < rhs.first;
        } );
 
-  // Extract just the JSON objects
   json rois_array = json::array();
-  for( const auto &pair : rois_with_energy )
-    rois_array.push_back( pair.second );
+  for( auto &pair : rois_with_energy )
+    rois_array.push_back( std::move( pair.second ) );
 
   json roi_info;
-  roi_info["description"] = "The bounds, chi-squared per degree of freedom, total area of fit peaks, and fit areas/means of individual peaks in ROIs used."
-                            " This may be useful to help identify significant, poorly fitting ROIs.  from_input_rois gives the configured"
-                            " ROI(s) each was made from; use those bounds to remove or update a ROI with modify_isotopics_rois.";
-  roi_info["rois"] = rois_array;
+  string note = "Fit ROIs; their chi2 values sum to quality.chi2, and chi2_per_channel is comparable to"
+                " quality.chi2_per_dof, so shows the poorly fitting ROIs.  from_input_rois, when present, is the"
+                " configured ROI(s) a ROI was made from - use those bounds with modify_isotopics_rois.";
+  if( full )
+  {
+    note += "  Peaks with under 1% of the ROI's peak_area, or centered outside it, are not listed"
+            " (omitted_peak_area gives their total if over 10%), nor are sources under 1% in source_areas.";
+    if( multiple_curves )
+      note += "  A peak's curve is its rel_eff_curves index.";
+  }
+  roi_info["note"] = note;
+  if( full )
+  {
+    roi_info["peak_columns"] = json::array( {"energy_keV", "area", "area_uncert", "fwhm_keV", "source"} );
+    if( multiple_curves )
+      roi_info["peak_columns"].push_back( "curve" );
+  }
+  roi_info["rois"] = std::move( rois_array );
 
   return roi_info;
 }//buildRoiInfo()
 
 
-/** Build JSON array of observed efficiencies from ObsEff vector.
+/** The columns of `buildObsEffRows(...)` rows: the points of the relative efficiency chart, with
+ `curve_fraction_of_cluster` when more than one relative efficiency curve was fit, then if `full`, the
+ more detailed columns. */
+nlohmann::json obsEffColumns( const bool multiple_curves, const bool full )
+{
+  nlohmann::json columns = nlohmann::json::array( { "energy_keV", "solution_rel_eff", "observed_rel_eff",
+    "observed_rel_eff_uncert", "deviation_sigma", "fraction_of_roi", "sources" } );
+  if( multiple_curves )
+    columns.push_back( "curve_fraction_of_cluster" );
+  if( full )
+  {
+    for( const char *column : { "neighbor_tail_leak_fraction", "fit_amplitude", "fit_amplitude_uncert" } )
+      columns.push_back( column );
+  }
+  return columns;
+}//obsEffColumns(...)
 
- Filters ObsEff objects to include only statistically significant measurements
- (using RelEffChart display criteria), and renames fields to be LLM-friendly.
+
+/** Build the rows of observed efficiencies (as positional arrays; see `obsEffColumns(...)`).
+
+ Includes only statistically significant measurements (using the RelEffChart display criteria).
 
  @param obs_effs Vector of ObsEff objects from solution
- @returns JSON array of efficiency objects with descriptive field names
+ @param multiple_curves If more than one rel. eff. curve was fit; adds the `curve_fraction_of_cluster`
+        column.
+ @param full If the more detailed columns should be included.
+ @returns JSON array of rows
  */
-nlohmann::json buildObsEffArray( const std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff> &obs_effs )
+nlohmann::json buildObsEffRows( const std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff> &obs_effs,
+                                const bool multiple_curves, const bool full )
 {
   using namespace std;
 
-  json effs_array = json::array();
+  json rows = json::array();
 
-  for( RelActCalcAuto::RelActAutoSolution::ObsEff obs_eff : obs_effs )
+  for( RelActCalcAuto::RelActAutoSolution::ObsEff obs_eff : obs_effs )  // a copy, as `show_obs_eff_point` sets its exclusion reason
   {
     // Same criteria as the rel. eff. chart uses to decide which points are trustworthy enough to show.
     if( !RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( obs_eff ) )
       continue;
 
-    json eff_obj;
-    eff_obj["energy_kev"] = obs_eff.energy;
-
-    eff_obj["solution_rel_eff"] = obs_eff.orig_solution_eff;
-    eff_obj["observed_rel_eff"] = obs_eff.observed_efficiency;
-    //eff_obj["observed_rel_eff_uncert"] = obs_eff.observed_efficiency_uncert;
-    eff_obj["fit_amp_over_solution_amp"] = obs_eff.observed_scale_factor;
-    eff_obj["significance_num_sigma"] = obs_eff.curve_num_sigma_significance;
-    eff_obj["fit_amplitude"] = obs_eff.fit_clustered_peak_amplitude;
-    eff_obj["fit_amplitude_uncert"] = obs_eff.fit_clustered_peak_amplitude_uncert;
-    eff_obj["fraction_of_roi"] = obs_eff.fraction_roi_counts;
-    // When more than one rel. eff. curve has gammas in this cluster, the split between them is not
-    //  resolved by this cluster itself - it is fitted through the attenuation physics / curve shapes,
-    //  constrained by the rest of the spectrum.  `curve_model_fraction` says how much of it this
-    //  curve is assigned.
-    eff_obj["curve_fraction_of_cluster"] = obs_eff.curve_model_fraction;
-    eff_obj["neighbor_tail_leak_fraction"] = obs_eff.neighbor_leak_fraction;
-
-    // Calculate how many sigma the observed amplitude differs from the solution amplitude
-    // This shows the deviation between the freely-fit peak area and the rel-eff solution peak area
+    // How many statistical sigma the freely-fit amplitude differs from the rel-eff solution amplitude
+    json deviation_sigma = nullptr;
     if( obs_eff.fit_clustered_peak_amplitude_uncert > 0.0 )
     {
       const double amplitude_diff = obs_eff.fit_clustered_peak_amplitude - obs_eff.initial_clustered_peak_amplitude;
-      const double deviation_sigma = amplitude_diff / obs_eff.fit_clustered_peak_amplitude_uncert;
-      eff_obj["deviation_from_solution_sigma"] = deviation_sigma;
+      deviation_sigma = round_to_sig_figs( amplitude_diff / obs_eff.fit_clustered_peak_amplitude_uncert, 3 );
     }
 
-    // Calculate fractional source contributions from the fit_peaks
-    // Group by source and sum amplitudes, then express as fractions
+    // Fraction of the point's (this curve's) peak area from each source; only sources of at least 5%.
     map<string, double> source_contributions;
     double total_amplitude = 0.0;
-
     for( const PeakDef &peak : obs_eff.fit_peaks )
     {
-      if( peak.hasSourceGammaAssigned() )
+      if( peak.hasSourceGammaAssigned() && !peak.sourceName().empty() )
       {
-        const string source_name = peak.sourceName();
-        if( !source_name.empty() )
-        {
-          const double amplitude = peak.amplitude();
-          source_contributions[source_name] += amplitude;
-          total_amplitude += amplitude;
-        }
+        source_contributions[peak.sourceName()] += peak.amplitude();
+        total_amplitude += peak.amplitude();
       }
     }
 
-    // Build array of fractional contributions (only include sources >= 5%)
-    if( total_amplitude > 0.0 )
+    json sources = json::object();
+    for( const auto &source_pair : source_contributions )
     {
-      json source_fractions = json::array();
-      for( const auto &source_pair : source_contributions )
-      {
-        const double fraction = source_pair.second / total_amplitude;
-        if( fraction >= 0.05 )  // Only include contributions >= 5%
-        {
-          json frac_obj;
-          frac_obj[source_pair.first] = fraction;
-          source_fractions.push_back( frac_obj );
-        }
-      }
-
-      if( !source_fractions.empty() )
-        eff_obj["source_contributions"] = source_fractions;
+      const double fraction = (total_amplitude > 0.0) ? (source_pair.second / total_amplitude) : 0.0;
+      if( fraction >= 0.05 )
+        sources[source_pair.first] = round_to_decimal_places( fraction, 3 );
     }
 
+    json row = json::array( {
+      round_to_decimal_places( obs_eff.energy, 2 ),
+      round_to_sig_figs( obs_eff.orig_solution_eff, 3 ),
+      round_to_sig_figs( obs_eff.observed_efficiency, 3 ),
+      round_to_sig_figs( obs_eff.observed_efficiency_uncert, 2 ),
+      deviation_sigma,
+      round_to_decimal_places( obs_eff.fraction_roi_counts, 3 ),
+      sources
+    } );
 
-    effs_array.push_back( eff_obj );
-  }
+    // When more than one rel. eff. curve has gammas in this cluster, the split between them is not
+    //  resolved by this cluster itself - it is fitted through the attenuation physics / curve shapes,
+    //  constrained by the rest of the spectrum.
+    if( multiple_curves )
+      row.push_back( round_to_decimal_places( obs_eff.curve_model_fraction, 3 ) );
 
-  return effs_array;
-}//buildObsEffArray()
+    if( full )
+    {
+      row.push_back( round_to_decimal_places( obs_eff.neighbor_leak_fraction, 3 ) );
+      row.push_back( compact_rate( obs_eff.fit_clustered_peak_amplitude ) );
+      row.push_back( compact_rate( obs_eff.fit_clustered_peak_amplitude_uncert ) );
+    }
+
+    rows.push_back( std::move( row ) );
+  }//for( loop over obs_effs )
+
+  return rows;
+}//buildObsEffRows(...)
+
+
+/** The fitted relative efficiency curve(s): for Physical Model curves the fit shieldings (areal densities
+ in g/cm2) and empirical-correction terms, and for other forms the equation with its coefficients.
+ */
+nlohmann::json buildRelEffCurves( const RelActCalcAuto::RelActAutoSolution &solution )
+{
+  using namespace std;
+  using ShieldInfo = RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo;
+
+  const auto shield_to_json = []( const ShieldInfo &shield ) -> json {
+    json answer;
+    if( shield.material )
+      answer["material"] = shield.material->name;
+    else if( shield.atomic_number.has_value() )
+      answer["atomic_number"] = round_to_sig_figs( *shield.atomic_number, 4 );
+    if( shield.atomic_number_was_fit && shield.atomic_number_uncert.has_value() )
+      answer["atomic_number_uncert"] = round_to_sig_figs( *shield.atomic_number_uncert, 2 );
+
+    answer["areal_density_g_cm2"] = round_to_sig_figs( shield.areal_density / PhysicalUnits::g_per_cm2, 4 );
+    if( shield.areal_density_uncert.has_value() )
+      answer["areal_density_uncert_g_cm2"] = round_to_sig_figs( *shield.areal_density_uncert / PhysicalUnits::g_per_cm2, 2 );
+    answer["areal_density_was_fit"] = shield.areal_density_was_fit;
+    if( shield.material && (shield.material->density > 0.0f) )
+      answer["thickness_mm"] = round_to_sig_figs( shield.areal_density / shield.material->density / PhysicalUnits::mm, 3 );
+    return answer;
+  };//shield_to_json
+
+  const vector<RelActCalcAuto::RelEffCurveInput> &curves = solution.m_options.rel_eff_curves;
+  const bool multiple_curves = (curves.size() > 1);
+
+  json answer = json::array();
+  for( size_t curve_index = 0; curve_index < curves.size(); ++curve_index )
+  {
+    const RelActCalcAuto::RelEffCurveInput &curve = curves[curve_index];
+
+    json curve_json;
+    if( multiple_curves )
+    {
+      curve_json["index"] = curve_index;
+      curve_json["name"] = curve.name;
+    }
+    curve_json["form"] = RelActCalc::to_str( curve.rel_eff_eqn_type );
+
+    const bool is_physical = (curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+    if( is_physical
+       && (curve_index < solution.m_phys_model_results.size())
+       && solution.m_phys_model_results[curve_index].has_value() )
+    {
+      const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &info = *solution.m_phys_model_results[curve_index];
+      if( info.self_atten.has_value() )
+        curve_json["self_attenuation"] = shield_to_json( *info.self_atten );
+
+      if( !info.ext_shields.empty() )
+      {
+        json ext_shields = json::array();
+        for( const ShieldInfo &shield : info.ext_shields )
+          ext_shields.push_back( shield_to_json( shield ) );
+        curve_json["external_shields"] = std::move( ext_shields );
+      }
+
+      // These curves' shieldings also attenuate this curve's gammas; they are given with those curves.
+      if( !curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+        curve_json["also_shielded_by_curves"] = curve.shielded_by_other_phys_model_curve_shieldings;
+
+      curve_json["correction_function"] = RelActCalc::to_str( info.corr_fcn );
+      const bool is_hoerl = (info.corr_fcn == RelActCalc::PhysModelCorrFcn::Hoerl);
+      const char * const b_name = is_hoerl ? "hoerl_b" : "correction_a1";
+      const char * const c_name = is_hoerl ? "hoerl_c" : "correction_a2";
+      if( info.hoerl_b.has_value() )
+        curve_json[b_name] = round_to_sig_figs( *info.hoerl_b, 4 );
+      if( info.hoerl_b_uncert.has_value() )
+        curve_json[string(b_name) + "_uncert"] = round_to_sig_figs( *info.hoerl_b_uncert, 2 );
+      if( info.hoerl_c.has_value() )
+        curve_json[c_name] = round_to_sig_figs( *info.hoerl_c, 4 );
+      if( info.hoerl_c_uncert.has_value() )
+        curve_json[string(c_name) + "_uncert"] = round_to_sig_figs( *info.hoerl_c_uncert, 2 );
+    }else if( !is_physical )
+    {
+      curve_json["order"] = curve.rel_eff_eqn_order;
+      try
+      {
+        curve_json["equation"] = solution.rel_eff_txt( false, curve_index );
+      }catch( std::exception & )
+      {
+      }
+    }//if( is_physical ) / else
+
+    answer.push_back( std::move( curve_json ) );
+  }//for( loop over curves )
+
+  return answer;
+}//buildRelEffCurves(...)
 
 
 }//namespace (anonymous)
@@ -1104,10 +1282,10 @@ nlohmann::json massFractionResultToJson(
   const bool gaussian_usable = mass_frac.covariance_one_sigma
     && (mass_frac.covariance_quality == Solution::MassFractionCovarianceQuality::Usable);
   // Keep an unreliable local Gaussian only as an explicitly diagnostic value; it must never be
-  // presented to an LLM as the primary symmetric uncertainty.
+  // presented to an LLM as the primary symmetric uncertainty.  (When usable, it is the uncertainty.)
   if( gaussian_usable )
     result["mass_fraction_uncert"] = *mass_frac.covariance_one_sigma;
-  if( mass_frac.covariance_one_sigma )
+  else if( mass_frac.covariance_one_sigma )
     result["mass_fraction_local_gaussian_one_sigma_diagnostic"]
         = *mass_frac.covariance_one_sigma;
 
@@ -1183,6 +1361,14 @@ nlohmann::json executePerformIsotopics(
 
   // Get current configuration - REQUIRED (throws if not present)
   RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
+
+  // "compact" gives what is usually needed to judge and report the result; "full" adds per-ROI peaks
+  //  and more observed-efficiency detail.
+  const string detail = (params.is_object() && params.contains( "detail" ))
+                        ? params.at( "detail" ).get<string>() : string( "compact" );
+  if( (detail != "compact") && (detail != "full") )
+    throw runtime_error( "Invalid detail '" + detail + "': must be \"compact\" or \"full\"." );
+  const bool full_detail = (detail == "full");
 
   json result;
 
@@ -1272,11 +1458,16 @@ nlohmann::json executePerformIsotopics(
     result["status"] = usable_with_warnings ? "UsableWithWarnings" : "Success";
     result["usable_with_warnings"] = usable_with_warnings;
 
-    // Quality metrics
+    // Quality metrics: the data-only chi2/dof, as the GUI and report show (and the reported
+    //  uncertainties are scaled by); `prior_chi2` is what the parameter-prior rows add to the objective.
     json quality;
-    quality["chi2"] = solution.m_chi2;
-    quality["dof"] = solution.m_dof;
-    quality["chi2_per_dof"] = (solution.m_dof > 0) ? (solution.m_chi2 / solution.m_dof) : -1.0;
+    quality["chi2"] = round_to_sig_figs( solution.m_chi2_data, 6 );
+    quality["dof"] = solution.m_dof_data;
+    quality["chi2_per_dof"] = (solution.m_dof_data > 0)
+                                ? round_to_sig_figs( solution.m_chi2_data / solution.m_dof_data, 4 )
+                                : -1.0;
+    if( (solution.m_chi2 - solution.m_chi2_data) > 1.0E-6*solution.m_chi2_data )
+      quality["prior_chi2"] = round_to_sig_figs( solution.m_chi2 - solution.m_chi2_data, 3 );
     quality["num_function_eval"] = solution.m_num_function_eval_solution;
     result["quality"] = quality;
 
@@ -1419,39 +1610,41 @@ nlohmann::json executePerformIsotopics(
         result["profile_results"] = profile_results;
     }
 
-    // Add ROI information with chi²/dof for each ROI
+    result["rel_eff_curves"] = buildRelEffCurves( solution );
+
+    // Add ROI information, with the chi2 of each ROI
     if( !solution.m_fit_peaks_in_spectrums_cal.empty() )
-      result["roi_info"] = buildRoiInfo( solution.m_fit_peaks_in_spectrums_cal, solution );
+      result["roi_info"] = buildRoiInfo( solution.m_fit_peaks_in_spectrums_cal, solution, full_detail );
 
-    // Add observed efficiency information
-    json obs_eff_obj;
-    obs_eff_obj["description"] = "Measured relative efficiency points; the ratio of "
-      "observed peak amplitude to expected amplitude from fit relative efficiency. "
-      "You can use deviation_from_solution_sigma to judge how well the fit relative efficiency solution "
-      "matches to a freely-fit peak at that energy; this field gives the number of statistical sigma this disagreement is. "
-      "This comparison is statistical only, and not systematic, so values may be a little larger than a strict interpretation (e.g., 4 or 5 sigma off is not that big of a deal). "
-      "Sometimes peaks that are only a fraction of the ROI total peak area (see the fraction_of_roi field) can be hugely off from expected "
-      "without indicating a catastrophic issue; this can be caused for reasons like peak tailing not being modeled correctly - so a very large peak next to the given peak can throw it off. "
-      "However, peaks that are a substantial portion of the ROI peak area (fraction_of_roi values closer to 1) are much more important for judging quality of solution. "
-      "The neighbor_tail_leak_fraction field says how much of the peak counts under a peak come from neighboring peaks' tails, rather than the peak itself - values closer to 1 mean the value is more sensitive to peak-shape modeling. "
-      "When more than one relative efficiency curve is fit, curve_fraction_of_cluster gives how much of the peak this curve is assigned; the division between curves is fitted through the attenuation physics / curve shapes (constrained by the rest of the spectrum) rather than resolved by the peak itself, so values well below 1 mean that point says little about this curve on its own.";
-
-    if( solution.m_obs_eff_for_each_curve.size() == 1 )
+    // Add observed efficiency information; one row per point, columns as given.
+    const size_t num_obs_eff_curves = solution.m_obs_eff_for_each_curve.size();
+    if( num_obs_eff_curves > 0 )
     {
-      // Single curve case: create flat array
-      obs_eff_obj["efficiencies"] = buildObsEffArray( solution.m_obs_eff_for_each_curve[0] );
-      result["observed_efficiencies"] = obs_eff_obj;
-    }else if( solution.m_obs_eff_for_each_curve.size() > 1 )
-    {
-      // Multiple curves case: create object with array for each curve
-      for( size_t i = 0; i < solution.m_obs_eff_for_each_curve.size(); ++i )
+      const bool multiple_curves = (num_obs_eff_curves > 1);
+      json obs_eff_obj;
+      string note = "The relative efficiency chart's points: freely-fit peak cluster areas compared to the fit"
+        " relative efficiency.  deviation_sigma is (free-fit - solution area)/uncertainty, statistical only, so"
+        " 4-5 sigma is not alarming; points with fraction_of_roi near 1 matter most.";
+      if( full_detail )
+        note += "  A neighbor_tail_leak_fraction near 1 means the point mostly reflects peak-shape modeling.";
+      if( multiple_curves )
+        note += "  rows_by_curve is indexed like rel_eff_curves; curve_fraction_of_cluster is the share of the"
+                " cluster given to the curve by the attenuation physics, not resolved by the peak itself, so a"
+                " point well below 1 says little about that curve on its own.";
+      obs_eff_obj["note"] = note;
+      obs_eff_obj["columns"] = obsEffColumns( multiple_curves, full_detail );
+      if( !multiple_curves )
       {
-        const string curve_name = "rel_eff_curve_" + to_string( i );
-        obs_eff_obj[curve_name] = buildObsEffArray( solution.m_obs_eff_for_each_curve[i] );
+        obs_eff_obj["rows"] = buildObsEffRows( solution.m_obs_eff_for_each_curve[0], false, full_detail );
+      }else
+      {
+        json rows_by_curve = json::array();
+        for( const vector<RelActCalcAuto::RelActAutoSolution::ObsEff> &obs_effs : solution.m_obs_eff_for_each_curve )
+          rows_by_curve.push_back( buildObsEffRows( obs_effs, true, full_detail ) );
+        obs_eff_obj["rows_by_curve"] = std::move( rows_by_curve );
       }
-
-      result["observed_efficiencies"] = obs_eff_obj;
-    }//if( solution.m_obs_eff_for_each_curve.size() == 1 ) / else
+      result["observed_efficiencies"] = std::move( obs_eff_obj );
+    }//if( num_obs_eff_curves > 0 )
 
     // Save updated state back to SpecMeas
     saveRelActState( interspec, state );
@@ -2263,14 +2456,14 @@ nlohmann::json executeModifyIsotopicsOptions(
   {
     string fwhm_str = params.at( "fwhm_form" ).get<string>();
 
-    // Map Polynomial_X to Berstein_X (the internal form uses Berstein)
+    // Map Polynomial_X to Berstein_X - the same functional form, in a numerically stable basis
     if( fwhm_str.find( "Polynomial_" ) == 0 )
     {
       fwhm_str = "Berstein_" + fwhm_str.substr( 11 ); // Replace "Polynomial_" with "Berstein_"
     }
 
     state.options.fwhm_form = RelActCalcAuto::fwhm_form_from_str( fwhm_str.c_str() );
-    changes.push_back( "fwhm_form=" + fwhm_str );
+    changes.push_back( string( "fwhm_form=" ) + RelActCalcAuto::to_str( state.options.fwhm_form ) );
   }
 
   // Handle fwhm_estimation_method
@@ -2712,11 +2905,13 @@ nlohmann::json executeGetIsotopicsConfigSchema(
   result["fwhm_forms"].push_back( {{"value", "Gadras"}, {"description", "GADRAS functional form: sqrt(a + b*E + c/E)"}} );
   result["fwhm_forms"].push_back( {{"value", "SqrtEnergyPlusInverse"}, {"description", "sqrt(a + b*E + c/E) - similar to Gadras"}} );
   result["fwhm_forms"].push_back( {{"value", "ConstantPlusSqrtEnergy"}, {"description", "a + b*sqrt(E)"}} );
-  result["fwhm_forms"].push_back( {{"value", "Polynomial_2"}, {"description", "2nd order polynomial in energy"}} );
-  result["fwhm_forms"].push_back( {{"value", "Polynomial_3"}, {"description", "3rd order polynomial in energy"}} );
-  result["fwhm_forms"].push_back( {{"value", "Polynomial_4"}, {"description", "4th order polynomial in energy"}} );
-  result["fwhm_forms"].push_back( {{"value", "Polynomial_5"}, {"description", "5th order polynomial in energy"}} );
-  result["fwhm_forms"].push_back( {{"value", "Polynomial_6"}, {"description", "6th order polynomial in energy"}} );
+  for( int num_coefs = 2; num_coefs <= 6; ++num_coefs )
+  {
+    const string terms = (num_coefs == 2) ? string("A0 + A1*E") : ("A0 + A1*E + ... + A" + std::to_string(num_coefs - 1) + "*E^" + std::to_string(num_coefs - 1));
+    result["fwhm_forms"].push_back( {{"value", "Berstein_" + std::to_string(num_coefs)},
+      {"description", "sqrt(" + terms + "), in a numerically stable basis; 'Polynomial_" + std::to_string(num_coefs) + "' is accepted as the same form"}} );
+  }
+  result["fwhm_forms"].push_back( {{"value", "NoisePlusCurvedPower"}, {"description", "sqrt(noise^2 + (A*E^s(E))^2), monotonic in energy"}} );
 
   // FWHM estimation methods
   result["fwhm_estimation_methods"] = json::array();

@@ -97,7 +97,8 @@ struct ParsedLlmResponse
   std::optional<size_t> promptTokens, completionTokens, totalTokens;
   std::optional<size_t> cachedTokens;          // Prompt tokens served from cache (cache reads)
   std::optional<size_t> cacheCreationTokens;   // Prompt tokens written to cache (Anthropic cache_creation_input_tokens)
-  std::string stopReason;               // Normalized stop reason ("" if unknown/unavailable)
+  std::optional<double> cost;                  // Provider-reported request cost in USD (e.g. OpenRouter `usage.cost`); nullopt if not reported
+  std::string stopReason;              // Normalized stop reason ("" if unknown/unavailable)
 };//struct ParsedLlmResponse
 
 

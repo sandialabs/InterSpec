@@ -64,6 +64,7 @@ class LlmInteractionTurn;
 namespace Wt
 {
   class WText;
+  class WMenuItem;
   class WTextArea;
   class WPushButton;
   class WVBoxLayout;
@@ -110,16 +111,16 @@ public:
 
    When in a full-screen window, `header` is that windows header bar (otherwise empty on the right),
    and the tool puts its "dock" button (see InterSpec::setLlmToolDocked) and its conversation menu
-   icon there, rather than floating the menu icon over the conversation, where it would cover the
-   first interactions title.  When docked in the tools tab strip, `header` is null, and the tool
-   instead shows an "expand to full-screen" button next to its text input.
+   icon there, rather than having the menu icon at the left of the input bar.  When docked - in the tools tab strip in portrait, or the side panel in
+   landscape - `header` is null, and the tool instead shows an "expand to full-screen" button.
    */
   void setPhoneWindowHeader( Wt::WContainerWidget *header );
 
-  /** Phones only: whether the "dock" button in the window header is shown - i.e., whether there is a
-   tool-tab strip to dock into (only in portrait).
+  /** Desktop: where to put the conversation menu icon other than its usual spot at the left of the
+   input bar - i.e., the header of the side panel (see LlmSidePanel::menuIconSlot()); null to bring
+   it back.  `host` must outlive our use of it, or be reset (to null) before it goes away.
    */
-  void setPhoneCanDock( const bool canDock );
+  void setMenuIconHost( Wt::WContainerWidget *host );
 
   /** Clear the conversation history display */
   void clearHistory();
@@ -271,6 +272,16 @@ protected:
    to `<writable data dir>/llm_logs/`.  Called at the end of each turn; never throws or shows a dialog.
    */
   void writeConversationLog();
+
+  /** Shows or hides the details only of use when developing the assistant: the "LlmDebugOnly"
+   elements of the conversation (via the "LlmHideDebug" class on us), and the developer items of the
+   conversation menu.  Called when the "LlmShowDebugOptions" preference changes; phones never show
+   them.
+   */
+  void setShowDebugOptions( const bool show );
+
+  /** The "LlmShowDebugOptions" preference; false if it can't be read, or on phones. */
+  bool showDebugOptionsPref() const;
   
 
 
@@ -297,27 +308,38 @@ private:
 
   Wt::WTextArea *m_inputEdit;             ///< Auto-growing input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Icon button to submit (arrow) / cancel (stop) messages
-  Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
+  /** Menu icon for conversation-level actions; owns the menu.  An observing_ptr, as it may live in
+   a header we don't own (see m_menuIconHost and m_phoneHeaderTools).
+   */
+  Wt::Core::observing_ptr<Wt::WPushButton> m_menuIcon;
 
-  /** Where m_menuIcon lives, other than in m_phoneHeaderTools (i.e., the conversation area). */
+  /** Where m_menuIcon normally lives: the input bar (at its left). */
   Wt::WContainerWidget *m_menuIconHome;
+
+  /** Desktop: the side panel header slot m_menuIcon is in instead; see setMenuIconHost(). */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_menuIconHost;
+
+  /** The "Show to Right of Spectrum" menu item; hidden while we are in the side panel. */
+  Wt::Core::observing_ptr<Wt::WMenuItem> m_sideDockItem;
+
+  /** Menu items only shown with debug options on; see setShowDebugOptions(). */
+  std::vector<Wt::Core::observing_ptr<Wt::WMenuItem>> m_debugMenuItems;
 
   /** Phones only: the dock button and conversation menu icon, placed in the header bar of the
    full-screen window holding us (so owned by that header); see setPhoneWindowHeader().
    */
   Wt::Core::observing_ptr<Wt::WContainerWidget> m_phoneHeaderTools;
 
-  /** The dock button in m_phoneHeaderTools; only valid while m_phoneHeaderTools is. */
-  Wt::WPushButton *m_phoneDockButton;
+  /** Creates m_menuIcon, at the left of `inputRow` (its home), and its menu. */
+  void createMenuIcon( Wt::WContainerWidget *inputRow );
 
-  /** See setPhoneCanDock(). */
-  bool m_phoneCanDock;
+  /** Moves m_menuIcon to where it should be: m_phoneHeaderTools, if we have it, else m_menuIconHost,
+   if we have it, else m_menuIconHome.
+   */
+  void placeMenuIcon();
 
-  /** Moves m_menuIcon into m_phoneHeaderTools, if both exist and it is not already there. */
-  void movePhoneMenuIcon();
-
-  /** Deletes m_menuIcon if it lives in m_phoneHeaderTools (i.e., not under m_root). */
-  void removePhoneMenuIcon();
+  /** Deletes m_menuIcon if it lives in m_phoneHeaderTools or m_menuIconHost (i.e., not under m_root). */
+  void removeForeignMenuIcon();
 
   /** Adds a phone "expand to full-screen" button to `parent`; only visible while docked (CSS). */
   void addPhoneExpandButton( Wt::WContainerWidget *parent );
@@ -500,6 +522,52 @@ private:
   /** Disconnect the MCP progress signal and clear the active progress callback. */
   void disconnectMcpProgress();
 };
+
+
+
+/** Holds the LLM assistant (an #LlmToolGui) when it is shown to the right of the charts, as the
+ second column of InterSpec's layout (see InterSpec::showLlmToolInSidePanel): a slim header bar
+ (title, a button to move the assistant out of the panel, and a close button), with the assistant
+ filling the rest.  Tells InterSpec whenever its width changes, and when the user has dragged the
+ splitter beside it, so the width can be kept, and remembered.
+ */
+class LlmSidePanel : public Wt::WContainerWidget
+{
+public:
+  LlmSidePanel( InterSpec *interspec, std::unique_ptr<Wt::WWidget> tool );
+
+  /** The spot in the header, between the move-out and close buttons, for the assistants conversation
+   menu icon; see LlmToolGui::setMenuIconHost().
+   */
+  Wt::WContainerWidget *menuIconSlot();
+
+  /** On phones the move-out button goes to full-screen; otherwise to the tool tabs, if they are
+   showing, or else to a window.  Call when the tool tabs are shown or hidden.
+   */
+  void updateMoveOutButton();
+
+  /** Wt has no signal for the user dragging a splitter, so this watches the layout we have just been
+   put in (once per layout) for drags of its column splitter - i.e., the one beside us - and once Wt
+   has re-laid things out, sends our width to InterSpec::llmSidePanelDragged().  Call each time we
+   are added to a layout.
+   */
+  void watchSplitter();
+
+protected:
+  virtual void layoutSizeChanged( int width, int height ) override;
+
+private:
+  void moveOut();
+
+  InterSpec *m_interspec;
+
+  /** The width last passed to InterSpec::llmSidePanelResized(). */
+  int m_width;
+
+  Wt::WPushButton *m_moveOutButton;
+  Wt::WContainerWidget *m_menuIconSlot;
+  Wt::JSignal<int> m_dragged;
+};//class LlmSidePanel
 
 #endif // USE_LLM_INTERFACE
 #endif // LlmToolGui_h

@@ -116,7 +116,6 @@ See the [interspec-energy-cal](../interspec-energy-cal/SKILL.md) sub-skill for d
 
 ### Relative Efficiency
 - `peak_based_relative_efficiency` - Validate source IDs by checking peak area consistency.
-- `get_rel_act_manual_state` - Current relative efficiency configuration state.
 
 ## Quick-Start Workflows
 

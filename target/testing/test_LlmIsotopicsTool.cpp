@@ -23,7 +23,11 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <string>
+#include <vector>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 
 #include <Wt/Utils.h>
@@ -1818,4 +1822,421 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
   BOOST_REQUIRE( found_br82 );
 
   cout << "Successfully validated Br82 isotopics calculation!" << endl;
+}
+
+
+// ============================================================================
+// Shipped presets on representative spectra: the `perform_isotopics_calculation` result must stay
+//  small enough for an MCP client (Claude Code saves tool output over ~25k tokens to a file the model
+//  may not be able to read) and leave room in an assistant's context.
+// ============================================================================
+namespace
+{
+/** Limit on the serialized result an MCP client receives (`_visuals` is dropped before sending). */
+const size_t sm_max_isotopics_result_chars = 20000;
+
+struct ShippedPresetCase
+{
+  const char *preset;      ///< File name in data/rel_act/, without ".xml"
+  const char *foreground;  ///< Relative to the test-file directory
+  const char *background;  ///< Relative to the test-file directory; may be nullptr
+  const char *drf;         ///< Detector response to load by name, or nullptr to use the file's own
+};
+
+#define PU_JRC_DIR "rel_act_auto/pu_610_775/"
+const ShippedPresetCase sm_shipped_preset_cases[] = {
+  { "HPGe U (120-1001 keV)", "uranium_40pct_selfatten_HPGe_15cm.n42", nullptr, nullptr },
+  { "CZT-std U (130-1010 keV)", "rel_act_auto/czt_u/CZT500_CBNM-446_@20mm_01.cnf", nullptr, "CZT 1cm-1cm-1cm" },
+  { "HPGe Pu (120-420 keV)", PU_JRC_DIR "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe", PU_JRC_DIR "mDT-BKG-2017-09-20_summed.n42", "ORTEC MicroDetective_LANL_025cm (7%)" },
+  { "HPGe Pu (120-780 keV)", PU_JRC_DIR "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe", PU_JRC_DIR "mDT-BKG-2017-09-20_summed.n42", "ORTEC MicroDetective_LANL_025cm (7%)" },
+  { "HPGe Pu (610-775 keV)", PU_JRC_DIR "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe", PU_JRC_DIR "mDT-BKG-2017-09-20_summed.n42", "ORTEC MicroDetective_LANL_025cm (7%)" },
+  { "HPGe multiple U objects", "multicurve/easy_two_disk_fore.n42", "multicurve/easy_background_long.n42", "ORTEC Detective-X_LANL_100cm (59%)" },
+  { "Multi-enrich U - back higher", "multicurve/easy_two_disk_fore.n42", "multicurve/easy_background_long.n42", "ORTEC Detective-X_LANL_100cm (59%)" },
+  { "Multi-enrich U - front higher", "multicurve/easy_two_disk_fore.n42", "multicurve/easy_background_long.n42", "ORTEC Detective-X_LANL_100cm (59%)" }
+};
+#undef PU_JRC_DIR
+
+
+const ShippedPresetCase &shippedPresetCase( const string &preset )
+{
+  for( const ShippedPresetCase &c : sm_shipped_preset_cases )
+  {
+    if( preset == c.preset )
+      return c;
+  }
+  throw runtime_error( "No test case for preset '" + preset + "'" );
+}
+
+
+/** Appends every number and string under `j` as "path<TAB>value" lines, numbers with full precision. */
+void flattenJsonValues( const json &j, const string &path, vector<string> &lines )
+{
+  if( j.is_object() )
+  {
+    for( const auto &item : j.items() )
+      flattenJsonValues( item.value(), path + "/" + item.key(), lines );
+  }else if( j.is_array() )
+  {
+    for( size_t i = 0; i < j.size(); ++i )
+      flattenJsonValues( j[i], path + "/" + std::to_string(i), lines );
+  }else if( j.is_number_float() )
+  {
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%.17g", j.get<double>() );
+    lines.push_back( path + "\t" + buffer );
+  }else
+  {
+    lines.push_back( path + "\t" + j.dump() );
+  }
+}//flattenJsonValues(...)
+
+
+/** Loads the case's spectra the way an MCP client does, loads the preset, and runs the calculation
+ with the given `detail` ("compact" or "full"; empty for the default).
+
+ If the environment variable `INTERSPEC_ISOTOPICS_DUMP_DIR` is set, the full result is written to
+ "<dir>/<preset>.json", and the isotopic values (at full precision) to "<dir>/<preset>.values.txt",
+ so a change to the result's shape can be checked to leave the calculated values bit-identical.
+ `INTERSPEC_ISOTOPICS_DETAIL` overrides an empty `detail` (e.g., to measure "full" results).
+ */
+json runShippedPreset( const ShippedPresetCase &c, string detail = "" )
+{
+  InterSpecTestFixture fixture;
+  BOOST_REQUIRE( !g_test_file_dir.empty() );
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Start from no background (the fixture loads one), then load the spectra as an MCP client would; a
+  //  foreground file with a background sample also loads that as the background.
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_spectrum_file",
+                            json{ {"path", ""}, {"specType", "Background"} }, fixture.m_interspec ) );
+
+  const string fore_path = SpecUtils::append_path( g_test_file_dir, c.foreground );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( fore_path ), "Missing '" << fore_path << "'" );
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_spectrum_file",
+                            json{ {"path", fore_path}, {"specType", "Foreground"} }, fixture.m_interspec ) );
+
+  if( c.background )
+  {
+    const string back_path = SpecUtils::append_path( g_test_file_dir, c.background );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( back_path ), "Missing '" << back_path << "'" );
+    BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_spectrum_file",
+                              json{ {"path", back_path}, {"specType", "Background"} }, fixture.m_interspec ) );
+  }
+
+  if( c.drf )
+  {
+    json drf_result;
+    try
+    {
+      drf_result = registry.executeTool( "load_detector_efficiency_function", json{ {"identifier", c.drf} }, fixture.m_interspec );
+    }catch( std::exception &e )
+    {
+      BOOST_FAIL( "Failed to load DRF '" << c.drf << "': " << e.what() );
+    }
+    BOOST_REQUIRE_MESSAGE( drf_result.value( "success", true ), "Failed to load DRF '" << c.drf << "': " << drf_result.dump() );
+  }
+
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_isotopics_preset", json{ {"preset", c.preset} }, fixture.m_interspec ) );
+
+  const char * const env_detail = std::getenv( "INTERSPEC_ISOTOPICS_DETAIL" );
+  if( detail.empty() && env_detail )
+    detail = env_detail;
+  const json params = detail.empty() ? json::object() : json{ {"detail", detail} };
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "perform_isotopics_calculation", params, fixture.m_interspec ) );
+  result.erase( "_visuals" );  // As LlmMcpDispatcher and LlmInterface do before sending
+
+  const char * const dump_dir = std::getenv( "INTERSPEC_ISOTOPICS_DUMP_DIR" );
+  if( dump_dir && SpecUtils::is_directory( dump_dir ) )
+  {
+    const string base = SpecUtils::append_path( dump_dir, c.preset );
+    {
+      ofstream out( base + ".json" );
+      out << result.dump();
+    }
+
+    vector<string> lines;
+    for( const char *key : { "isotopics", "pu242_corrected", "pu242_uncorrected_fit", "profile_results" } )
+    {
+      if( result.contains( key ) )
+        flattenJsonValues( result[key], key, lines );
+    }
+    ofstream out( base + ".values.txt" );
+    for( const string &line : lines )
+      out << line << "\n";
+  }//if( dump_dir )
+
+  return result;
+}//runShippedPreset(...)
+
+
+/** Mass fractions (first rel. eff. curve) each shipped preset gives on its test spectrum.  Changing the
+ shape of the tool result must not change these - update them only when the calculation (or nuclear
+ data) intentionally changes; run with INTERSPEC_ISOTOPICS_DUMP_DIR set to get the new values. */
+const map<string,vector<pair<string,double>>> sm_expected_mass_fractions = {
+  { "CZT-std U (130-1010 keV)", { {"U235", 0.027341562027302167}, {"U238", 0.97265843797269791} } },
+  { "HPGe Pu (120-420 keV)", { {"Pu238", 9.2749343252109112e-05}, {"Pu239", 0.92315931706969456}, {"Pu240", 0.063565448638557093}, {"Pu241", 0.00049125700967180854} } },
+  { "HPGe Pu (120-780 keV)", { {"Pu239", 0.70219371128927988}, {"Pu240", 0.26405451388018375}, {"Pu241", 0.00028259074930945578}, {"Pu238", 8.8543539608913389e-05} } },
+  { "HPGe Pu (610-775 keV)", { {"Pu239", 0.92248150921563232}, {"Pu240", 0.061533804235755281}, {"Pu241", 0.0031884633812390897}, {"Pu238", 9.5264588011255967e-05} } },
+  { "HPGe U (120-1001 keV)", { {"U235", 0.20570893386920336}, {"U238", 0.79413621097210496}, {"U234", 0.00015485515805940882}, {"U232", 6.3227347235272192e-13} } },
+  { "HPGe multiple U objects", { {"U234", 3.6283206204684303e-12}, {"U235", 0.99999999999418965}, {"U238", 0}, {"U232", 2.1818680103382042e-12} } },
+  { "Multi-enrich U - back higher", { {"U234", 1.1252499944891748e-06}, {"U235", 0.93041469855223924}, {"U238", 0.069584175796914491}, {"U232", 4.0085180887697826e-10} } },
+  { "Multi-enrich U - front higher", { {"U234", 0}, {"U235", 1}, {"U238", 0} } }
+};
+
+
+void checkShippedPresetResult( const string &preset, const string &detail = "" )
+{
+  const ShippedPresetCase &c = shippedPresetCase( preset );
+  const json result = runShippedPreset( c, detail );
+
+  BOOST_REQUIRE_MESSAGE( result.value( "success", false ), "'" << preset << "' failed: " << result.dump().substr(0,2000) );
+
+  const size_t num_chars = result.dump().size();
+  cout << "Preset '" << preset << "': perform_isotopics_calculation result is " << num_chars << " characters" << endl;
+  BOOST_CHECK_MESSAGE( num_chars < sm_max_isotopics_result_chars,
+                       "Result for '" << preset << "' is " << num_chars << " characters (limit "
+                       << sm_max_isotopics_result_chars << ")" );
+
+  // Every fitted U or Pu isotope must still have its mass fraction, with either a usable uncertainty or
+  //  the reason there is none (other nuclides, like a Cs137 interference, may have no mass fraction).
+  BOOST_REQUIRE( result.contains( "isotopics" ) && result["isotopics"].is_array() );
+  BOOST_REQUIRE( !result["isotopics"].empty() );
+  size_t num_mass_fractions = 0;
+  for( const json &nuc : result["isotopics"] )
+  {
+    BOOST_REQUIRE( nuc.contains( "nuclide" ) );
+    const string nuclide = nuc["nuclide"].get<string>();
+    const bool is_actinide = SpecUtils::istarts_with( nuclide, "U2" ) || SpecUtils::istarts_with( nuclide, "Pu2" );
+    BOOST_CHECK_MESSAGE( nuc.contains( "mass_fraction" ) || (!is_actinide && nuc.contains( "mass_fraction_error" )),
+                         "No mass fraction for " << nuclide );
+    if( nuc.contains( "mass_fraction" ) )
+    {
+      num_mass_fractions += 1;
+      BOOST_CHECK( nuc.contains( "mass_fraction_uncert" ) || nuc.contains( "mass_fraction_covariance_quality" ) );
+    }
+  }
+  BOOST_CHECK_MESSAGE( num_mass_fractions > 0, "No mass fractions for '" << preset << "'" );
+
+  // The values must be reported at full precision, unchanged by the result's formatting
+  const auto expected_pos = sm_expected_mass_fractions.find( preset );
+  BOOST_REQUIRE( expected_pos != end(sm_expected_mass_fractions) );
+  for( const pair<string,double> &expected : expected_pos->second )
+  {
+    const auto nuc_pos = std::find_if( begin(result["isotopics"]), end(result["isotopics"]), [&expected]( const json &nuc ){
+      return nuc.value( "nuclide", string() ) == expected.first;
+    } );
+    BOOST_REQUIRE_MESSAGE( nuc_pos != end(result["isotopics"]), "No " << expected.first << " in result for '" << preset << "'" );
+    BOOST_REQUIRE( nuc_pos->contains( "mass_fraction" ) );
+    const double value = (*nuc_pos)["mass_fraction"].get<double>();
+    BOOST_CHECK_MESSAGE( fabs( value - expected.second ) <= std::max( 1.0E-6*fabs( expected.second ), 1.0E-9 ),
+                         preset << " " << expected.first << " mass fraction " << value << " != expected " << expected.second );
+  }
+
+  // The fitted curve parameters are reported, one entry per curve
+  BOOST_REQUIRE( result.contains( "rel_eff_curves" ) && result["rel_eff_curves"].is_array() );
+  BOOST_CHECK( !result["rel_eff_curves"].empty() );
+  for( const json &curve : result["rel_eff_curves"] )
+  {
+    BOOST_CHECK( curve.contains( "form" ) );
+    if( curve.contains( "self_attenuation" ) )
+      BOOST_CHECK( curve["self_attenuation"].contains( "areal_density_g_cm2" ) );
+  }
+
+  // Each fit ROI gives its part of the data chi2; together they make up the overall chi2.
+  BOOST_REQUIRE( result.contains( "quality" ) && result.contains( "roi_info" ) );
+  const json &roi_info = result["roi_info"];
+  BOOST_REQUIRE( roi_info.contains( "rois" ) && !roi_info["rois"].empty() );
+  // Only "full" detail lists each ROI's peaks
+  const bool full_detail = roi_info.contains( "peak_columns" );
+  double sum_roi_chi2 = 0.0;
+  for( const json &roi : roi_info["rois"] )
+  {
+    BOOST_REQUIRE( roi.contains( "chi2" ) && roi.contains( "chi2_per_channel" ) );
+    sum_roi_chi2 += roi["chi2"].get<double>();
+    BOOST_REQUIRE_EQUAL( roi.contains( "peaks" ), full_detail );
+    if( full_detail )
+    {
+      for( const json &peak : roi["peaks"] )
+        BOOST_CHECK_EQUAL( peak.size(), roi_info["peak_columns"].size() );
+    }
+  }
+  const double chi2 = result["quality"]["chi2"].get<double>();
+  BOOST_CHECK_MESSAGE( fabs( sum_roi_chi2 - chi2 ) <= 1.0E-3*chi2,
+                       "Per-ROI chi2 sum to " << sum_roi_chi2 << ", but overall chi2 is " << chi2 );
+
+  // Observed efficiencies are rows of the given columns
+  BOOST_REQUIRE( result.contains( "observed_efficiencies" ) );
+  const json &obs_eff = result["observed_efficiencies"];
+  BOOST_REQUIRE( obs_eff.contains( "columns" ) );
+  vector<json> obs_eff_rows;
+  if( obs_eff.contains( "rows" ) )
+    obs_eff_rows.push_back( obs_eff["rows"] );
+  else if( obs_eff.contains( "rows_by_curve" ) )
+    obs_eff_rows = obs_eff["rows_by_curve"].get<vector<json>>();
+  BOOST_CHECK( !obs_eff_rows.empty() );
+  for( const json &rows : obs_eff_rows )
+  {
+    for( const json &row : rows )
+      BOOST_CHECK_EQUAL( row.size(), obs_eff["columns"].size() );
+  }
+  const json &columns = obs_eff["columns"];
+  BOOST_CHECK_EQUAL( std::find( begin(columns), end(columns), json("fit_amplitude") ) != end(columns), full_detail );
+}//checkShippedPresetResult(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_shippedIsotopicsPresetsAllTested )
+{
+  set_data_dir();
+  const string rel_act_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
+  const vector<string> files = SpecUtils::ls_files_in_directory( rel_act_dir, ".xml" );
+  BOOST_REQUIRE( !files.empty() );
+  for( const string &file : files )
+  {
+    const string preset = SpecUtils::filename( file ).substr( 0, SpecUtils::filename( file ).size() - 4 );
+    BOOST_CHECK_NO_THROW( shippedPresetCase( preset ) );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_U ) { checkShippedPresetResult( "HPGe U (120-1001 keV)" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_CZT_U ) { checkShippedPresetResult( "CZT-std U (130-1010 keV)" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_Pu_120_420 ) { checkShippedPresetResult( "HPGe Pu (120-420 keV)" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_Pu_120_780 ) { checkShippedPresetResult( "HPGe Pu (120-780 keV)" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_Pu_610_775 ) { checkShippedPresetResult( "HPGe Pu (610-775 keV)" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_multiple_U ) { checkShippedPresetResult( "HPGe multiple U objects" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_MultiEnrich_back ) { checkShippedPresetResult( "Multi-enrich U - back higher" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_MultiEnrich_front ) { checkShippedPresetResult( "Multi-enrich U - front higher" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_FullDetail ) { checkShippedPresetResult( "HPGe Pu (610-775 keV)", "full" ); }
+
+
+// `get_isotopics_config` must report areal densities in g/cm2 - the units the tools take them in - so
+//  a reported value can be passed back unchanged.
+BOOST_AUTO_TEST_CASE( test_isotopicsConfig_ArealDensityInGramsPerCm2 )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_isotopics_preset", json{ {"preset", "HPGe U (120-1001 keV)"} }, fixture.m_interspec ) );
+
+  json config;
+  BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+  BOOST_REQUIRE( config.contains( "rel_eff_curve" ) );
+  const json &curve = config["rel_eff_curve"];
+  BOOST_REQUIRE( curve.contains( "self_attenuation" ) && curve.contains( "external_attenuation" ) );
+
+  // The preset gives 1.25 g/cm2 for both the self-attenuator and the external Fe shield
+  const json self_atten = curve["self_attenuation"];
+  BOOST_CHECK_CLOSE( self_atten.at( "areal_density" ).get<double>(), 1.25, 1.0E-6 );
+  BOOST_CHECK_CLOSE( curve["external_attenuation"].at( 0 ).at( "areal_density" ).get<double>(), 1.25, 1.0E-6 );
+
+  json modify_result;
+  BOOST_REQUIRE_NO_THROW( modify_result = registry.executeTool( "modify_isotopics_curve_settings",
+                                             json{ {"self_attenuation", self_atten} }, fixture.m_interspec ) );
+  BOOST_CHECK_MESSAGE( modify_result.value( "success", true ), modify_result.dump() );
+
+  BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+  BOOST_CHECK_CLOSE( config["rel_eff_curve"]["self_attenuation"].at( "areal_density" ).get<double>(), 1.25, 1.0E-6 );
+
+  // An invalid `detail` is rejected before any solve is started
+  BOOST_CHECK_THROW( registry.executeTool( "perform_isotopics_calculation", json{ {"detail", "everything"} }, fixture.m_interspec ),
+                     std::exception );
+}
+
+
+// The FWHM form `get_isotopics_config` reports must be one the tools advertise and accept.
+BOOST_AUTO_TEST_CASE( test_isotopicsConfig_FwhmFormRoundTrips )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_isotopics_preset", json{ {"preset", "HPGe U (120-1001 keV)"} }, fixture.m_interspec ) );
+
+  json config;
+  BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+  const string fwhm_form = config.at( "fwhm_form" ).get<string>();
+
+  json schema;
+  BOOST_REQUIRE_NO_THROW( schema = registry.executeTool( "get_isotopics_config_schema", json::object(), fixture.m_interspec ) );
+  bool in_schema = false;
+  for( const json &form : schema.at( "fwhm_forms" ) )
+    in_schema = in_schema || (form.at( "value" ).get<string>() == fwhm_form);
+  BOOST_CHECK_MESSAGE( in_schema, "fwhm_form '" << fwhm_form << "' is not in get_isotopics_config_schema" );
+
+  const LlmTools::SharedTool * const tool = registry.getTool( "modify_isotopics_options" );
+  BOOST_REQUIRE( tool );
+  const json &fwhm_enum = tool->parameters_schema.at( "properties" ).at( "fwhm_form" ).at( "enum" );
+  BOOST_CHECK_MESSAGE( std::find( begin(fwhm_enum), end(fwhm_enum), json(fwhm_form) ) != end(fwhm_enum),
+                       "fwhm_form '" << fwhm_form << "' is not in modify_isotopics_options' enum" );
+
+  // Both the reported name and the "Polynomial_N" alias are accepted
+  for( const pair<string,string> &input_expected : vector<pair<string,string>>{ {"Polynomial_3", "Berstein_3"}, {fwhm_form, fwhm_form} } )
+  {
+    json modify_result;
+    BOOST_REQUIRE_NO_THROW( modify_result = registry.executeTool( "modify_isotopics_options",
+                                               json{ {"fwhm_form", input_expected.first} }, fixture.m_interspec ) );
+    BOOST_CHECK_MESSAGE( modify_result.value( "success", true ), modify_result.dump() );
+    BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+    BOOST_CHECK_EQUAL( config.at( "fwhm_form" ).get<string>(), input_expected.second );
+  }
+}
+
+
+// Every material a shipped preset uses must be listed by `get_materials` (elements are given by symbol).
+BOOST_AUTO_TEST_CASE( test_getMaterials_IncludesPresetMaterials )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json materials_result;
+  BOOST_REQUIRE_NO_THROW( materials_result = registry.executeTool( "get_materials", json::object(), fixture.m_interspec ) );
+  const json &materials = materials_result.at( "materials" );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const string rel_act_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
+  size_t num_checked = 0;
+  for( const string &file : SpecUtils::ls_files_in_directory( rel_act_dir, ".xml" ) )
+  {
+    const string filename = SpecUtils::filename( file );
+    const string preset = filename.substr( 0, filename.size() - 4 );
+    BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_isotopics_preset", json{ {"preset", preset} }, fixture.m_interspec ) );
+
+    json config;
+    BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+
+    vector<json> curves;
+    if( config.contains( "rel_eff_curve" ) )
+      curves.push_back( config["rel_eff_curve"] );
+    if( config.contains( "rel_eff_curves" ) )
+      curves = config["rel_eff_curves"].get<vector<json>>();
+
+    for( const json &curve : curves )
+    {
+      vector<json> shields;
+      if( curve.contains( "self_attenuation" ) )
+        shields.push_back( curve["self_attenuation"] );
+      if( curve.contains( "external_attenuation" ) )
+      {
+        for( const json &shield : curve["external_attenuation"] )
+          shields.push_back( shield );
+      }
+
+      for( const json &shield : shields )
+      {
+        if( !shield.contains( "material" ) )
+          continue;
+        const string material = shield["material"].get<string>();
+        const bool is_listed = (std::find( begin(materials), end(materials), json(material) ) != end(materials));
+        // Element entries, like "Fe (iron)", are specified by symbol
+        const bool is_element = (material.find( " (" ) != string::npos) && db->element( material.substr( 0, material.find( " (" ) ) );
+        BOOST_CHECK_MESSAGE( is_listed || is_element, "Preset '" << preset << "' uses material '" << material
+                             << "', which get_materials does not list" );
+        num_checked += 1;
+      }//for( const json &shield : shields )
+    }//for( const json &curve : curves )
+  }//for( loop over preset files )
+
+  BOOST_CHECK( num_checked > 0 );
 }

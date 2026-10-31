@@ -1089,7 +1089,10 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   }//for( peaks )
   
   result["peaks"] = peaks_arr;
-  
+  result["peaks_note"] = "residual_sigma is |observed - fit efficiency| / uncertainty: up to about 5 the peak is"
+                         " consistent with the curve, 5 to 10 is acceptable, and beyond 10 the peak is likely not"
+                         " from its assigned source, or has another problem.";
+
   // Fit quality
   json quality;
   quality["chi2"] = solution.m_chi2;

@@ -283,6 +283,36 @@ public:
    */
   bool hasActiveRequests() const;
 
+  /** Stops each tool round whose outstanding work is only sub-agents paused on an error (their
+   request failed, or the user pressed Stop), so the turn is no longer in flight and the user can
+   type again; the sub-agent's error then offers Retry or Cancel Agent, either of which puts the
+   round back in flight (see resumeStoppedRounds()), and asking a new question abandons it (see
+   abandonStoppedRounds()).  Does nothing when unattended (see setUnattended()).
+   Emits LlmInteraction::stoppedChanged(true) for each stopped round's conversation.
+   @param endTurnIfIdle If a round was stopped, and nothing else is in flight, end the turn (emit
+          conversationFinished) - for callers that would not otherwise do so.
+   @returns If any round was stopped.
+   */
+  bool stopIdleRounds( const bool endTurnIfIdle = false );
+
+  /** Puts back in flight the stopped tool round waiting on `subAgent`, and those waiting on the
+   agents that invoked it, for a Retry or Cancel Agent on its error; emits
+   LlmInteraction::stoppedChanged(false) for their conversations.
+   @returns If any round was resumed.
+   */
+  bool resumeStoppedRounds( const std::shared_ptr<LlmInteraction> &subAgent );
+
+  /** If `convo` has a tool round stopped by stopIdleRounds(). */
+  bool isConversationStopped( const std::shared_ptr<const LlmInteraction> &convo ) const;
+
+  /** Ends all stopped tool rounds - e.g., when a new question is asked, so they can no longer be
+   resumed: their outstanding sub-agent calls are reported as cancelled, and the conversations
+   involved marked finished.
+   @param notify Emit the conversations' conversationFinished signals; false when the history
+          is being replaced.
+   */
+  void abandonStoppedRounds( const bool notify = true );
+
   /** Returns true if `convo` has a request in flight, a tool round outstanding or running, or a message
    queued behind a summarization - i.e., something that will still add to it, or finish it.
    */
@@ -519,8 +549,25 @@ private:
      the round finalizes. */
     std::weak_ptr<LlmToolRequest> toolRequest;
     std::chrono::steady_clock::time_point roundStart;
+
+    /** When the round was stopped (see stopIdleRounds()); the time stopped is left out of its
+     duration when it is resumed. */
+    std::chrono::steady_clock::time_point stoppedAt;
   };
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is the requestId the tool round came from
+
+  /** Tool rounds stopped by stopIdleRounds(), keyed like m_deferredToolResults.  Not in flight: they
+   wait on the user to Retry, or Cancel Agent on, a paused sub-agent. */
+  std::map<int, DeferredToolResult> m_stoppedToolRounds;
+
+  /** The sub-agent conversations `round` is still waiting on. */
+  std::vector<std::shared_ptr<LlmInteraction>> outstandingSubAgents( const DeferredToolResult &round ) const;
+
+  /** Marks the calls of `round` that have not returned as cancelled (an error result, with `reason`),
+   so their placeholder content is never sent to the LLM: its async calls, and also its sub-agent
+   calls if `includeSubAgents`.  Emits the async calls' LlmToolResults::asyncToolCompleted(). */
+  void markOutstandingCallsCancelled( const DeferredToolResult &round, const std::string &reason,
+                                      const bool includeSubAgents );
 
   // The deadline for an async tool call is not owned here: it comes from
   // LlmTools::effective_async_timeout_ms(), i.e. the tool's own LlmTools::SharedTool::asyncTimeoutMs

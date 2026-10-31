@@ -10,7 +10,9 @@ The <b>LLM Assistant</b> needs to know which large-language-model (LLM) service 
 authenticate with it, and which model to use.  These settings are made in the
 &quot;<b>LLM Provider Settings</b>&quot; window.  Until a provider is set up, the assistant shows a
 <b>Configure LLM Provider</b> button that opens this window; afterwards it is available from the
-menu in the upper-right corner of the assistant (&quot;<b>Configure LLM Provider&#8230;</b>&quot;).
+assistant's menu (&quot;<b>Configure LLM Provider&#8230;</b>&quot;) - the <b>&#8943;</b> icon at the left
+of its input box, or in its title bar when it is to the right of the spectrum (on phones, at the top
+right of the full-screen assistant).
 </div>
 
 <div style="padding-top: 10px">
