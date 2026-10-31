@@ -287,6 +287,7 @@ protected:
   std::string m_errorMessage;
   ErrorType m_errorType;
   bool m_retryAttempted;  // True if JavaScript automatic retry was attempted
+  bool m_skippedByUser;   // True if the user chose Skip (or Cancel Agent) on it; runtime only
 
 public:
   LlmInteractionError( const std::string &errorMsg,
@@ -295,7 +296,8 @@ public:
     : LlmInteractionTurn(Type::Error, convo),
       m_errorMessage(errorMsg),
       m_errorType(type),
-      m_retryAttempted(false)
+      m_retryAttempted(false),
+      m_skippedByUser(false)
   {
   }
 
@@ -307,6 +309,11 @@ public:
 
   bool retryAttempted() const { return m_retryAttempted; }
   void setRetryAttempted( bool attempted ) { m_retryAttempted = attempted; }
+
+  /** If the user chose to move on from this error - Skip for the main agent, or Cancel Agent for a
+   sub-agent (whose invoking agent is then told the user cancelled it) - rather than Retry. */
+  bool skippedByUser() const { return m_skippedByUser; }
+  void setSkippedByUser( bool skipped ) { m_skippedByUser = skipped; }
 
   /** Returns true if this error supports automatic retry (timeout/network errors) */
   bool supportsAutomaticRetry() const
@@ -576,6 +583,13 @@ struct LlmInteraction
    to re-enable input.
    */
   Wt::Signal<> conversationFinished;
+
+  /** Signal emitted when this conversation's tool round is stopped (true) - it waits only on
+   sub-agents paused on an error (their request failed, or the user pressed Stop), until the user
+   picks Retry or Cancel Agent on one - or put back in flight (false).  See
+   LlmInterface::stopIdleRounds().
+   */
+  Wt::Signal<bool> stoppedChanged;
 
   /** Signal emitted when an API request is sent to the LLM for this conversation.
    Emits the turn the LLM is now responding to (the last InitialRequest, ToolResult, or AutoReply

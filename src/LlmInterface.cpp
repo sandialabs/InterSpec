@@ -31,6 +31,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 #include <stdexcept>
 #include <functional>
 
@@ -388,7 +389,11 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
   if( m_history )
   {
     for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+    {
+      // So a Retry of the conversation never sends their placeholder results to the LLM.
+      markOutstandingCallsCancelled( dr.second, reason, true );
       finalize( conversationForRound( dr.second ) );
+    }
   }
 
   // User messages queued behind an in-flight summarization were never sent - finalize them as well.
@@ -462,15 +467,267 @@ void LlmInterface::cancelAll()
   cancelNativeRequests();
 #endif
 
-  // Finalize the affected conversations (adds a display-only "cancelled" error turn, clears the
-  // pending/deferred/summarization-queue maps).  This covers conversations awaiting an async tool
-  // result as well as those with an in-flight HTTP request.  Any late abort response or async tool
-  // completion is ignored since the request id / deferred entry is no longer present.
-  failInFlightConversations( "Request cancelled by user." );
+  const std::string reason = "Request cancelled by user.";
+
+  // With a user there to answer it, a stopped sub-agent is paused rather than ended: it gets the one
+  //  "cancelled" error turn, and the rounds waiting on it are stopped, not failed - so the user can
+  //  Retry it, or Cancel Agent to have the agent that invoked it carry on without it.
+  if( !m_unattended && m_history )
+  {
+    std::vector<std::shared_ptr<LlmInteraction>> paused;
+
+    // Sub-agents waiting on the LLM.
+    for( std::map<int, PendingRequest>::iterator it = begin(m_pendingRequests); it != end(m_pendingRequests); )
+    {
+      const std::shared_ptr<LlmInteraction> convo = it->second.conversation.lock();
+      if( convo && (convo->agent_type != AgentType::MainAgent) && !it->second.isSummarizationRequest
+          && !convo->finishTime.has_value() )
+      {
+        paused.push_back( convo );
+        it = m_pendingRequests.erase( it );
+      }else
+      {
+        ++it;
+      }
+    }//for( loop over pending requests )
+
+    // Agents running async tools: those can't be paused, so are reported as cancelled; a round left
+    //  waiting on nothing is dropped, and its agent paused like those above (the main agent too).
+    for( std::map<int, DeferredToolResult>::iterator it = begin(m_deferredToolResults); it != end(m_deferredToolResults); )
+    {
+      const std::shared_ptr<LlmInteraction> convo = conversationForRound( it->second );
+      if( !convo || convo->finishTime.has_value() || it->second.pendingAsyncCalls.empty() )
+      {
+        ++it;
+        continue;
+      }
+
+      markOutstandingCallsCancelled( it->second, reason, false );
+      it->second.pendingAsyncCalls.clear();
+
+      if( it->second.subAgentToolCallIds.empty() )
+      {
+        paused.push_back( convo );
+        it = m_deferredToolResults.erase( it );
+      }else
+      {
+        ++it;
+      }
+    }//for( loop over deferred tool rounds )
+
+    for( const std::shared_ptr<LlmInteraction> &convo : paused )
+      m_history->addErrorMessage( reason, "", convo, LlmInteractionError::ErrorType::Unknown );
+
+    stopIdleRounds();
+  }//if( a user is there to answer the errors )
+
+  // Finalize the rest (adds a display-only "cancelled" error turn, clears the pending/deferred/
+  // summarization-queue maps); e.g., the main agent waiting on the LLM.  Any late abort response or
+  // async tool completion is ignored since the request id / deferred entry is no longer present.
+  failInFlightConversations( reason );
 
   // Re-enable GUI input.
   emitConversationFinished();
 }//cancelAll()
+
+
+std::vector<std::shared_ptr<LlmInteraction>>
+LlmInterface::outstandingSubAgents( const DeferredToolResult &round ) const
+{
+  std::vector<std::shared_ptr<LlmInteraction>> answer;
+  const std::shared_ptr<LlmInteraction> convo = conversationForRound( round );
+  if( !convo )
+    return answer;
+
+  for( const std::shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    const LlmToolResults * const results = dynamic_cast<const LlmToolResults *>( turn.get() );
+    for( size_t i = 0; results && (i < results->toolCalls().size()); ++i )
+    {
+      const LlmToolCall &call = results->toolCalls()[i];
+      if( call.sub_agent_conversation && (call.status == LlmToolCall::CallStatus::Pending)
+          && !call.sub_agent_conversation->finishTime.has_value() )
+        answer.push_back( call.sub_agent_conversation );
+    }
+  }//for( loop over turns )
+
+  return answer;
+}//outstandingSubAgents(...)
+
+
+void LlmInterface::markOutstandingCallsCancelled( const DeferredToolResult &round,
+                                                  const std::string &reason,
+                                                  const bool includeSubAgents )
+{
+  const std::shared_ptr<LlmInteraction> convo = conversationForRound( round );
+  if( !convo )
+    return;
+
+  nlohmann::json result;
+  result["status"] = "cancelled";
+  result["error"] = reason;
+  result["success"] = false;
+  const std::string content = result.dump();
+
+  for( const std::shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    LlmToolResults * const results = dynamic_cast<LlmToolResults *>( turn.get() );
+    if( !results )
+      continue;
+
+    for( LlmToolCall &call : results->toolCalls() )
+    {
+      if( call.status != LlmToolCall::CallStatus::Pending )
+        continue;
+
+      const bool async = (round.pendingAsyncCalls.count( call.invocationId ) > 0);
+      const bool subAgent = includeSubAgents && call.sub_agent_conversation
+                            && !call.sub_agent_conversation->finishTime.has_value();
+      if( !async && !subAgent )
+        continue;
+
+      call.status = LlmToolCall::CallStatus::Error;
+      call.content = content;
+      if( async )
+        results->asyncToolCompleted().emit( call.invocationId );
+    }//for( loop over tool calls )
+  }//for( loop over turns )
+}//markOutstandingCallsCancelled(...)
+
+
+bool LlmInterface::stopIdleRounds( const bool endTurnIfIdle )
+{
+  // Only when a user is there to Retry, or Cancel Agent on, the paused sub-agent.
+  if( m_unattended )
+    return false;
+
+  const auto is_paused = [this]( const std::shared_ptr<LlmInteraction> &agent ) -> bool {
+    return agent && (agent->agent_type != AgentType::MainAgent) && !agent->finishTime.has_value()
+           && !isConversationActive( agent );
+  };
+
+  // Stopping a round can pause the agent it belongs to, and so stop the round waiting on that agent,
+  //  so repeat until nothing changes.
+  std::vector<std::shared_ptr<LlmInteraction>> stopped;
+  for( bool changed = true; changed; )
+  {
+    changed = false;
+    for( std::map<int, DeferredToolResult>::iterator it = begin(m_deferredToolResults);
+         it != end(m_deferredToolResults); ++it )
+    {
+      if( !it->second.pendingAsyncCalls.empty() || it->second.subAgentToolCallIds.empty() )
+        continue;
+
+      const std::vector<std::shared_ptr<LlmInteraction>> agents = outstandingSubAgents( it->second );
+      if( agents.empty() || !std::all_of( begin(agents), end(agents), is_paused ) )
+        continue;
+
+      it->second.stoppedAt = std::chrono::steady_clock::now();
+      if( const std::shared_ptr<LlmInteraction> convo = conversationForRound( it->second ) )
+        stopped.push_back( convo );
+      m_stoppedToolRounds[it->first] = it->second;
+      m_deferredToolResults.erase( it );
+      changed = true;
+      break;  // `it` is invalid; start over
+    }//for( loop over deferred tool rounds )
+  }//for( until no more rounds are stopped )
+
+  if( stopped.empty() )
+    return false;
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Stopped " << stopped.size() << " tool round(s) waiting on paused sub-agent(s)" << endl;
+
+  updateDeferredSweepTimer();
+  assertDeferredInvariants();
+  updateActivityState();
+
+  for( const std::shared_ptr<LlmInteraction> &convo : stopped )
+    convo->stoppedChanged.emit( true );
+
+  if( endTurnIfIdle )
+    maybeEmitTerminalSignal();
+
+  return true;
+}//stopIdleRounds(...)
+
+
+bool LlmInterface::resumeStoppedRounds( const std::shared_ptr<LlmInteraction> &subAgent )
+{
+  // The round waiting on `subAgent`, then the round waiting on the agent that round belongs to, ...
+  std::vector<std::shared_ptr<LlmInteraction>> resumed;
+  for( std::shared_ptr<LlmInteraction> waitingOn = subAgent; waitingOn; )
+  {
+    std::map<int, DeferredToolResult>::iterator pos = begin(m_stoppedToolRounds);
+    for( ; pos != end(m_stoppedToolRounds); ++pos )
+    {
+      const std::vector<std::shared_ptr<LlmInteraction>> agents = outstandingSubAgents( pos->second );
+      if( std::find( begin(agents), end(agents), waitingOn ) != end(agents) )
+        break;
+    }
+
+    if( pos == end(m_stoppedToolRounds) )
+      break;
+
+    DeferredToolResult round = pos->second;
+    round.roundStart += (std::chrono::steady_clock::now() - round.stoppedAt);
+    const int key = pos->first;
+    m_stoppedToolRounds.erase( pos );
+    m_deferredToolResults[key] = round;
+
+    const std::shared_ptr<LlmInteraction> convo = conversationForRound( round );
+    if( convo )
+      resumed.push_back( convo );
+    waitingOn = (convo && (convo->agent_type != AgentType::MainAgent)) ? convo : nullptr;
+  }//for( walk up the agents waiting on `subAgent` )
+
+  if( resumed.empty() )
+    return false;
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Resumed " << resumed.size() << " stopped tool round(s)" << endl;
+
+  armWatchdog();
+  updateDeferredSweepTimer();
+  assertDeferredInvariants();
+  updateActivityState();
+
+  for( const std::shared_ptr<LlmInteraction> &convo : resumed )
+    convo->stoppedChanged.emit( false );
+
+  return true;
+}//resumeStoppedRounds(...)
+
+
+bool LlmInterface::isConversationStopped( const std::shared_ptr<const LlmInteraction> &convo ) const
+{
+  for( const std::pair<const int, DeferredToolResult> &round : m_stoppedToolRounds )
+  {
+    if( convo && (conversationForRound( round.second ) == convo) )
+      return true;
+  }
+  return false;
+}//isConversationStopped(...)
+
+
+void LlmInterface::abandonStoppedRounds( const bool notify )
+{
+  if( m_stoppedToolRounds.empty() )
+    return;
+
+  // Take them first, as finalizing the conversations emits signals.
+  std::map<int, DeferredToolResult> rounds;
+  rounds.swap( m_stoppedToolRounds );
+
+  const std::string reason = "Cancelled: the user moved on before this agent finished, so no summary "
+                             "of its work is available.";
+  for( const std::pair<const int, DeferredToolResult> &round : rounds )
+  {
+    markOutstandingCallsCancelled( round.second, reason, true );
+    finalize_convo_tree( conversationForRound( round.second ), reason, /*recordErrorTurn=*/false,
+                         notify, m_history.get() );
+  }
+}//abandonStoppedRounds(...)
 
 
 void LlmInterface::armWatchdog()
@@ -650,7 +907,11 @@ void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::i
   if( !pos->second.pendingAsyncCalls.empty() || !pos->second.subAgentToolCallIds.empty() )
   {
     assertDeferredInvariants();
-    return;  // still waiting on something from this round
+
+    // Still waiting on something from this round - if only on sub-agents paused on an error (e.g.,
+    //  another of its sub-agents was resumed, and has finished), it is stopped.
+    stopIdleRounds( true );
+    return;
   }
 
   // Take what we need before erasing, so a resolution arriving from any driver (async callback,
@@ -709,9 +970,16 @@ void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::i
 
 void LlmInterface::handleSubAgentError( const std::shared_ptr<LlmInteraction> &convo )
 {
-  if( !m_unattended || !convo || (convo->agent_type == AgentType::MainAgent)
-      || convo->finishTime.has_value() )
+  if( !convo || (convo->agent_type == AgentType::MainAgent) || convo->finishTime.has_value() )
     return;
+
+  // With a user to pick Retry or Cancel Agent on its error, the sub-agent is paused, and the rounds
+  //  waiting on it stopped, so the turn is no longer in flight.
+  if( !m_unattended )
+  {
+    stopIdleRounds();
+    return;
+  }
 
   if( m_debug_stream )
     (*m_debug_stream) << "Unattended: ending failed sub-agent " << convo->conversationId
@@ -979,6 +1247,9 @@ shared_ptr<LlmInteraction> LlmInterface::triggerManualCompaction()
   if( numNonSummary < 2 )
     return nullptr;
 
+  // A stopped turn can't be resumed once the history it is part of has been summarized.
+  abandonStoppedRounds();
+
   const string summarizationPrompt = m_history->buildSummarizationPrompt();
   if( summarizationPrompt.empty() )
     return nullptr;
@@ -1081,6 +1352,7 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   // left perpetually in-progress.  (This also clears m_pendingRequests / m_deferredToolResults.)
   // recordErrorTurn=false: the history is about to be replaced, so don't bother emitting turns.
   failInFlightConversations( "Conversation ended: the LLM configuration was reset.", false );
+  abandonStoppedRounds( false );
 
   m_config = config;
   m_tool_registry = tool_registry;
@@ -1231,6 +1503,9 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
       (*m_debug_stream) << "  (with " << images.size() << " attached image(s))" << endl;
   }
 
+  // Moving on to a new question ends any turn stopped on a paused sub-agent.
+  abandonStoppedRounds();
+
   // Add to history FIRST to ensure it's there before any async responses
   shared_ptr<LlmInteraction> convo = images.empty()
     ? m_history->addUserMessageToMainConversation( message )
@@ -1332,6 +1607,8 @@ void LlmInterface::sendSystemMessage( const std::string &message )
   
   if( m_debug_stream )
     (*m_debug_stream) << "System message: " << message << endl;
+
+  abandonStoppedRounds();  // As for sendUserMessage()
 
   std::shared_ptr<LlmInteraction> convo = m_history->addSystemMessageToMainConversation( message );
 
@@ -3123,10 +3400,18 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               updatedResult["status"] = "failed";
               updatedResult["summary"] = "Failed to get agent summary - because of internal logic error.";
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
+            }else if( subAgentError && subAgentError->skippedByUser() )
+            {
+              // The user chose Cancel Agent on its error (e.g., after stopping it).
+              updatedResult["status"] = "cancelled";
+              updatedResult["summary"] = "The user cancelled this agent before it finished.  It may "
+                "have made changes (for example, to the fitted peaks), but no summary of its work is "
+                "available; please continue without it.";
+              updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
             }else if( subAgentError )
             {
-              // Its request failed, and either the user chose Continue Anyway or no one was there to
-              //  retry it; tell the invoking agent, so it can try again or carry on without it.
+              // Its request failed, and no one was there to retry it; tell the invoking agent, so it
+              //  can try again or carry on without it.
               updatedResult["status"] = "failed";
               updatedResult["error"] = sanitizeUtf8( subAgentError->errorMessage() );
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );

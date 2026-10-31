@@ -15401,9 +15401,11 @@ std::unique_ptr<Wt::WWidget> InterSpec::detachLlmTool()
   if( !m_llmTool )
     return nullptr;
 
-  // Bring the tools phone header controls back from any window, before the window goes.
+  // Bring the tools phone header controls, or its menu icon in the side panels header, back, before
+  //  the window or panel goes.
   if( isPhone() )
     m_llmTool->setPhoneWindowHeader( nullptr );
+  m_llmTool->setMenuIconHost( nullptr );
 
   std::unique_ptr<WWidget> tool;
   if( m_llmSidePanel )
@@ -15440,6 +15442,11 @@ void InterSpec::showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
 
   std::unique_ptr<LlmSidePanel> panel = std::make_unique<LlmSidePanel>( this, std::move(tool) );
   m_llmSidePanel = panel.get();
+
+  // On desktop, the conversation menu icon goes in the panels header, rather than the input bar.
+  if( !isPhone() )
+    m_llmTool->setMenuIconHost( panel->menuIconSlot() );
+
   m_llmSidePanelWidth = llmSidePanelInitialWidth();
   addLlmSidePanelToLayout( std::move(panel) );
 }//void showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
@@ -15646,6 +15653,7 @@ void InterSpec::handleLlmToolClose()
     // The tool lives in the panel, so dropping the panel destroys it too.
     if( isPhone() )
       m_llmTool->setPhoneWindowHeader( nullptr );
+    m_llmTool->setMenuIconHost( nullptr );
     takeLlmSidePanelFromLayout();
   }else if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
   {
