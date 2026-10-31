@@ -905,6 +905,15 @@ if( USE_LLM_INTERFACE )
   )
 endif( USE_LLM_INTERFACE )
 
+# The Flux Tool's per-peak math (FluxToolCalc), and the background-peak helpers it shares with the
+#  Activity/Shielding fit.
+add_executable( test_FluxTool test_FluxTool.cpp )
+target_link_libraries( test_FluxTool PRIVATE InterSpecLib )
+add_test( NAME TFluxTool
+  COMMAND $<TARGET_FILE:test_FluxTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
 target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
 add_test( NAME TDetectorPeakResponse

@@ -440,6 +440,7 @@ set(sources
     src/DrfImportWidget.cpp
     src/DrfModifyCalc.cpp
     src/FluxTool.cpp
+    src/FluxToolCalc.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
     src/EnergyCalTool.cpp
@@ -599,6 +600,7 @@ set(headers
     InterSpec/DrfImportWidget.h
     InterSpec/DrfModifyCalc.h
     InterSpec/FluxTool.h
+    InterSpec/FluxToolCalc.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h
     InterSpec/EnergyCalTool.h

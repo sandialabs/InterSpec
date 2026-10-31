@@ -4947,58 +4947,55 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
   if( (quantity <= 0.0) || IsInf(quantity) || IsNan(quantity) )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: Invalid surface_area" );
 
+  if( (to_type == EffGeometryType::FarFieldIntrinsic) || (to_type == EffGeometryType::FarFieldAbsolute) )
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType:"
+                        " Can not convert to a far-field geometry" );
+
   shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>(*this);
   if( answer->m_geomType == to_type )
     return answer;
 
-  answer->m_geomType = to_type;
-  
-  double correction = quantity;
-  switch( to_type )
-  {
-    case EffGeometryType::FarFieldIntrinsic:
-    case EffGeometryType::FarFieldAbsolute:
-      assert( 0 );
-      break;
+  // The amount of source (in PhysicalUnits) a per-area or per-mass type quotes its activity per;
+  //  zero for total activity.  A per-unit efficiency is the total-activity efficiency times the
+  //  amount of source, in those units.
+  const auto per_unit = []( const EffGeometryType type ) -> double {
+    switch( type )
+    {
+      case EffGeometryType::FixedGeomActPerCm2:  return PhysicalUnits::cm2;
+      case EffGeometryType::FixedGeomActPerM2:   return PhysicalUnits::m2;
+      case EffGeometryType::FixedGeomActPerGram: return PhysicalUnits::gram;
+      case EffGeometryType::FarFieldIntrinsic:
+      case EffGeometryType::FarFieldAbsolute:
+      case EffGeometryType::FixedGeomTotalAct:
+        break;
+    }//switch( type )
+    return 0.0;
+  };//per_unit lambda
 
-    case EffGeometryType::FixedGeomTotalAct:
-      switch( answer->m_geomType )
-      {
-        case EffGeometryType::FarFieldIntrinsic:
-        case EffGeometryType::FarFieldAbsolute:
-        case EffGeometryType::FixedGeomTotalAct:
-          assert( 0 );
-          break;
-          
-        case EffGeometryType::FixedGeomActPerCm2:
-          correction /= PhysicalUnits::cm2;
-          break;
-          
-        case EffGeometryType::FixedGeomActPerM2:
-          correction /= PhysicalUnits::m2;
-          break;
-          
-        case EffGeometryType::FixedGeomActPerGram:
-          correction /= PhysicalUnits::gram;
-          break;
-      }//switch( answer->m_geomType )
-      
-      correction = 1.0 / correction;
-      break;
-      
-    case EffGeometryType::FixedGeomActPerCm2:
-      correction /= PhysicalUnits::cm2;
-      break;
-      
-    case EffGeometryType::FixedGeomActPerM2:
-      correction /= PhysicalUnits::m2;
-      break;
-      
-    case EffGeometryType::FixedGeomActPerGram:
-      correction /= PhysicalUnits::gram;
-      break;
-  }//switch( to_type )
-  
+  const auto is_area = []( const EffGeometryType type ) -> bool {
+    return (type == EffGeometryType::FixedGeomActPerCm2) || (type == EffGeometryType::FixedGeomActPerM2);
+  };
+
+  const EffGeometryType from_type = m_geomType;
+
+  double correction = quantity;
+  if( from_type == EffGeometryType::FixedGeomTotalAct )
+  {
+    correction /= per_unit( to_type );
+  }else if( to_type == EffGeometryType::FixedGeomTotalAct )
+  {
+    correction = per_unit( from_type ) / quantity;
+  }else if( is_area(from_type) && is_area(to_type) )
+  {
+    correction = per_unit( from_type ) / per_unit( to_type );  //`quantity` is not needed
+  }else
+  {
+    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: converting between per-area"
+                         " and per-mass needs both the area and mass; convert through total activity" );
+  }
+
+  answer->m_geomType = to_type;
+
   if( (correction <= 0.0) || IsNan(correction) || IsInf(correction) )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: "
                          "The correction became invalid (" + to_string(correction) + ")." );

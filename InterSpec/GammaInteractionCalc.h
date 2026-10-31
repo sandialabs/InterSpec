@@ -245,6 +245,46 @@ double transmission_coefficient_air( double energy, double length );
 double transmission_length_coefficient_air( double energy );
 
 
+/** The factor background peak areas are multiplied by to put them on the foreground's footing.
+
+ The user-chosen `user_scale_factor` (the background's display scale factor) is used when it is a
+ positive finite number; otherwise the live-time ratio `fore_live_time / back_live_time`.
+ */
+double background_peak_scale( const double user_scale_factor, const double fore_live_time,
+                              const double back_live_time );
+
+/** Returns the Gaussian peaks of `peaks`, with their areas and area uncertainties multiplied by `scale`.
+
+ Non-Gaussian peaks are left out - subtracting them isnt supported - and, if
+ `skipped_non_gaus_energies` is non-null, their means are appended to it.
+ */
+std::vector<PeakDef> scale_background_peaks( const std::vector<PeakDef> &peaks, const double scale,
+                                             std::vector<double> *skipped_non_gaus_energies );
+
+/** The summed area (`counts`) and area variance (`uncert2`) of the background peaks that overlap a
+ foreground peak.
+ */
+struct BackgroundOverlap
+{
+  double counts = 0.0;
+  double uncert2 = 0.0;
+};
+
+/** How close, in units of the foreground peaks sigma, a background peak must be to count as the same
+ peak, for background-peak subtraction.
+ */
+const double sm_background_peak_nsigma_near = 1.0;
+
+/** Sums the background peaks whose mean is within #sm_background_peak_nsigma_near sigma of `fore`'s
+ mean (for a non-Gaussian `fore`, a quarter of its ROI width is used as sigma).
+
+ @param scaled_back_peaks Background peaks already put on the foreground's footing; see
+        #scale_background_peaks.
+ */
+BackgroundOverlap overlapping_background( const PeakDef &fore,
+                                          const std::vector<PeakDef> &scaled_back_peaks );
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the

@@ -718,12 +718,20 @@ public:
                                         float &diameter, float &setback );
 
   /** Converts between the fixed geometry types of EffGeometryType.
-   
-   @param quantity Either the surface area or mass (in units of PhysicalUnits), depending on value to `to_type`.
+
+   A per-area (or per-mass) efficiency is the total-activity efficiency times the sources area (or mass),
+   expressed in that types units, so:
+   - From `FixedGeomTotalAct`, `quantity` is the area or mass of the source, as `to_type` needs.
+   - To `FixedGeomTotalAct`, `quantity` is the area or mass this DRF is per.
+   - Between `FixedGeomActPerCm2` and `FixedGeomActPerM2`, `quantity` is not used (but must still be valid).
+   - Between a per-area and the per-mass type an exception is thrown, as that needs both the area and
+     the mass; convert through `FixedGeomTotalAct` instead.
+
+   @param quantity The surface area or mass (in units of PhysicalUnits), as described above.
           Will throw exception if value is less than or equal to zero.
-   @param to_type The fixed geometry type to convert to.  Will throw exception if `EffGeometryType::FarField`.
-   
-   Throws exception `this->m_geomType` or `to_type` is `EffGeometryType::FarField`.
+   @param to_type The fixed geometry type to convert to.
+
+   Throws exception if `this->m_geomType` or `to_type` is a far-field type.
    */
   std::shared_ptr<DetectorPeakResponse> convertFixedGeometryType( const double quantity,
                                                              const EffGeometryType to_type ) const;

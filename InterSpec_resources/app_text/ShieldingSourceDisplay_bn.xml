@@ -42,7 +42,6 @@
   <message id="ssd-cb-atten-for-air">বায়ুর জন্য ক্ষয় করুন</message>
   <message id="ssd-tt-atten-for-air">যখন চেক করা হয়, উৎস বা বাইরের শিল্ডিং এবং ডিটেক্টরের মধ্যে বায়ুর কারণে ক্ষয় গণনায় হিসাব করা হবে।</message>
   <message id="ssd-cb-sub-back-peaks">ব্যাকগ্রাউন্ড পিক বিয়োগ করুন</message>
-  <message id="ssd-tt-sub-back-peaks">এটি ফিটে একটি মৌলের সমস্ত আইসোটোপকে একই বয়স হতে বাধ্য করে।</message>
   <message id="ssd-cb-same-el-same-age">একই Z একই বয়স</message>
   <message id="ssd-tt-same-el-same-age">একই মৌলের আইসোটোপগুলির সবার একই বয়স থাকা উচিত তা বলবত করুন।</message>
   <message id="ssd-cb-corr-for-decay">পরিমাপের সময় ক্ষয়ের জন্য সংশোধন করুন</message>
@@ -65,23 +64,6 @@
   <message id="ssd-warn-no-back-peaks-toggle">
     ব্যাকগ্রাউন্ড স্পেকট্রামে কোনো পিক শনাক্ত নেই। আপনার ব্যাকগ্রাউন্ড স্পেকট্রাম ফোরগ্রাউন্ড হিসাবে লোড করা উচিত, বিয়োগ করার সম্ভাব্য পিকগুলি শনাক্ত করুন, এবং তারপর আপনার বর্তমান ফোরগ্রাউন্ড/ব্যাকগ্রাউন্ড সংমিশ্রণে ফিরে যান।
   </message>
-  <message id="ssd-missing-back-peaks-title">অনুপস্থিত ব্যাকগ্রাউন্ড পিক</message>
-  <message id="ssd-missing-back-peaks-msg">
-    ব্যাকগ্রাউন্ড স্পেকট্রামে {1} শক্তিতে পিক যোগ করা নেই, কিন্তু
-    সেই শক্তিতে ব্যাকগ্রাউন্ড স্পেকট্রামে সম্ভবত প্রকৃত পিক রয়েছে -
-    আপনি কি সেই পিকগুলি ব্যাকগ্রাউন্ড স্পেকট্রামে যোগ করতে চান?
-  </message>
-  <message id="ssd-btn-no-dont-add">না</message>
-  <message id="ssd-btn-add-peaks">পিক যোগ করুন...</message>
-  <message id="ssd-btn-add-all-detectable">সব স্বয়ংক্রিয়-ফিট পিক যোগ করুন</message>
-  <message id="ssd-back-peak-preview-title">ব্যাকগ্রাউন্ড পিক পূর্বরূপ</message>
-  <message id="ssd-back-peak-preview-msg">নিম্নলিখিত পিকগুলি ব্যাকগ্রাউন্ড স্পেকট্রামে যোগ করা হবে:</message>
-  <message id="ssd-no-new-back-peaks">নির্দেশিত শক্তিতে ব্যাকগ্রাউন্ড স্পেকট্রামে কোনো অতিরিক্ত পিক পাওয়া যায়নি।</message>
-  <message id="ssd-back-peaks-all-fit">{1}টি প্রার্থী পিক ব্যাকগ্রাউন্ডে ফিট করা হয়েছে।</message>
-  <message id="ssd-back-peaks-some-fit">{2}টি প্রার্থী পিকের মধ্যে {1}টি তাৎপর্যপূর্ণ ছিল এবং ব্যাকগ্রাউন্ডে ফিট করা হয়েছে।</message>
-  <message id="ssd-back-peaks-manual-hint">(আপনি Alt কী (mac: Option কী) প্লাস ডাবল<br />
-  ক্লিক করে স্পেকট্রামে ম্যানুয়ালি ব্যাকগ্রাউন্ড পিক ফিট করতে পারেন, বা ব্যাকগ্রাউন্ড ফোরগ্রাউন্ড হিসাবে লোড করে)</message>
-  <message id="ssd-err-adding-back-peaks">ব্যাকগ্রাউন্ডে পিক যোগ করতে ত্রুটি: {1}</message>
   <message id="ssd-scaled-shield-to-be-less-dist">শিল্ডিং পুরুত্বগুলি ডিটেক্টর দূরত্বের চেয়ে কম হতে স্কেল করা হয়েছে।</message>
   <message id="ssd-err-fit-only-one-an">আপনি একবারে শুধুমাত্র একটি জেনেরিক শিল্ডিংয়ের পারমাণবিক সংখ্যার জন্য ফিট করতে পারেন।</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keV এর জন্য একটি অবৈধ chi2 গণনা করা হয়েছে, অন্যান্য ফলাফল অবৈধ হতে পারে</message>

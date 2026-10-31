@@ -519,6 +519,55 @@ double transmission_coefficient_air( const double energy, const double length )
 }
 
 
+double background_peak_scale( const double user_scale_factor, const double fore_live_time,
+                              const double back_live_time )
+{
+  return ((user_scale_factor <= 0.0) || IsInf(user_scale_factor) || IsNan(user_scale_factor))
+           ? (fore_live_time / back_live_time)
+           : user_scale_factor;
+}//background_peak_scale(...)
+
+
+vector<PeakDef> scale_background_peaks( const vector<PeakDef> &peaks, const double scale,
+                                        vector<double> *skipped_non_gaus_energies )
+{
+  vector<PeakDef> answer;
+  for( PeakDef p : peaks )
+  {
+    if( p.gausPeak() )
+    {
+      p.setPeakArea( scale * p.peakArea() );
+      p.setPeakAreaUncert( scale * p.peakAreaUncert() );
+      answer.push_back( p );
+    }else if( skipped_non_gaus_energies )
+    {
+      skipped_non_gaus_energies->push_back( p.mean() );
+    }
+  }//for( PeakDef p : peaks )
+
+  return answer;
+}//scale_background_peaks(...)
+
+
+BackgroundOverlap overlapping_background( const PeakDef &fore, const vector<PeakDef> &scaled_back_peaks )
+{
+  BackgroundOverlap answer;
+
+  //XXX - this linear search is bad, and should be fixed
+  for( const PeakDef &backPeak : scaled_back_peaks )
+  {
+    const double sigma = fore.gausPeak() ? fore.sigma() : 0.25*fore.roiWidth();
+    if( fabs(backPeak.mean() - fore.mean()) < (sm_background_peak_nsigma_near*sigma) )
+    {
+      answer.counts += backPeak.peakArea();
+      answer.uncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
+    }
+  }//for( const PeakDef &backPeak : scaled_back_peaks )
+
+  return answer;
+}//overlapping_background(...)
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
@@ -4823,21 +4872,9 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     
     double observed_counts = peak.peakArea();
     double observed_uncertainty = peak.peakAreaUncert();
-    double backCounts = 0.0, backUncert2 = 0.0;
-    const double nsigmaNear = 1.0;
-    
-    //XXX - this linear search is bad, and should be fixed
-    for( const PeakDef &backPeak : backPeaks )
-    {
-      const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
-      if( fabs(backPeak.mean()-peak.mean()) < (nsigmaNear*sigma) )
-      {
-        backCounts += backPeak.peakArea();
-        backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
-      }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
-    }//for( const PeakDef &peak : backPeaks )
-    
-    
+    const BackgroundOverlap back_overlap = overlapping_background( peak, backPeaks );
+    const double backCounts = back_overlap.counts, backUncert2 = back_overlap.uncert2;
+
     if( energy_count_map.count(energy) == 0 )
     {
       stringstream msg;
@@ -5015,28 +5052,20 @@ void ShieldingSourceChi2Fcn::setBackgroundPeaks( const std::vector<PeakDef> &pea
                                                 const double liveTime,
                                                 const double scale_factor )
 {
-  m_backgroundPeaks.clear();
-  const double scale = ((scale_factor <= 0.0) || IsInf(scale_factor) || IsNan(scale_factor))
-                          ? (m_liveTime / liveTime)
-                          : scale_factor;
+  const double scale = background_peak_scale( scale_factor, m_liveTime, liveTime );
   m_backgroundPeakScale = scale;
-  
-  for( PeakDef p : peaks )
+
+  vector<double> skipped_energies;
+  m_backgroundPeaks = scale_background_peaks( peaks, scale, &skipped_energies );
+
+  for( const double energy : skipped_energies )
   {
-    if( p.gausPeak() )
-    {
-      p.setPeakArea( scale * p.peakArea() );
-      p.setPeakAreaUncert( scale * p.peakAreaUncert() );
-      m_backgroundPeaks.push_back( p );
-    }else
-    {
-      stringstream msg;
-      msg << "The non-gaussian background peak at " << p.mean() << " keV "
-          << " will not be used for background peak area subtraction;"
-          << " non-gaussian peaks may be supported for this in the future";
-      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
-    }//if( p.gausPeak() ) / else
-  }//for( PeakDef &p : m_backgroundPeaks )
+    stringstream msg;
+    msg << "The non-gaussian background peak at " << energy << " keV "
+        << " will not be used for background peak area subtraction;"
+        << " non-gaussian peaks may be supported for this in the future";
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+  }//for( const double energy : skipped_energies )
 }//void setBackgroundPeaks(...)
   
   

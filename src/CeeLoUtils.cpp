@@ -2026,8 +2026,14 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   drf.setEfficiencyPoints( points, static_cast<float>( 2.0 * crystal_a_cm * PhysicalUnits::cm ),
                           -1.0, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
+  // A DRF without a setback of its own (e.g., one just made by Monte Carlo) gets the crystal's
+  //  recess behind the face from the geometry, so the flat-disk evaluation - used when the response
+  //  is not attached, or is turned off - puts the crystal where the response does.
+  const double endcap_offset = response->descriptor.endcap_front_offset_cm() * PhysicalUnits::cm;
   if( setback > 0.0 )
     drf.setDetectorSetback( setback );
+  else if( endcap_offset > 0.0 )
+    drf.setDetectorSetback( endcap_offset );
   drf.setDrfSource( source );
 }//setLegacyEfficiencyFromResponse(...)
 

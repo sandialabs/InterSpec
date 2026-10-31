@@ -76,5 +76,22 @@
   Наивное изменение типа скошенности на {1} привело к тому, что пик стал незначительным.<br />
   Используйте <b>Редактор пиков</b> для этого изменения.
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">Отсутствующие фоновые пики</message>
+  <message id="psgu-missing-back-peaks-msg">
+    В фоновом спектре нет пиков на энергиях {1}, но на этих энергиях
+    вероятно есть реальные пики в фоновом спектре - хотите ли вы
+    добавить эти пики в фоновый спектр?
+  </message>
+  <message id="psgu-btn-no-dont-add">Нет</message>
+  <message id="psgu-btn-add-peaks">Добавить пики...</message>
+  <message id="psgu-btn-add-all-detectable">Добавить все автоподогнанные пики</message>
+  <message id="psgu-back-peak-preview-title">Предпросмотр фоновых пиков</message>
+  <message id="psgu-back-peak-preview-msg">Следующие пики будут добавлены в фоновый спектр:</message>
+  <message id="psgu-no-new-back-peaks">Дополнительных пиков в фоновом спектре на указанных энергиях не найдено.</message>
+  <message id="psgu-back-peaks-all-fit">{1} пиков-кандидатов подогнаны к фону.</message>
+  <message id="psgu-back-peaks-some-fit">{1} из {2} пиков-кандидатов были значимыми и подогнаны к фону.</message>
+  <message id="psgu-back-peaks-manual-hint">(вы также можете подогнать фоновые пики вручную, нажав Alt (mac: Option) и дважды<br />
+  кликнув по спектру, или загрузив фон как передний план)</message>
+  <message id="psgu-err-adding-back-peaks">Ошибка добавления пиков в фон: {1}</message>
+  <message id="psgu-warn-no-back-spec">Фоновый спектр не загружен, поэтому невозможно вычесть площади фоновых пиков из переднего плана.</message>
 </messages>

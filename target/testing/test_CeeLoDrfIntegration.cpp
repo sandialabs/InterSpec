@@ -2122,6 +2122,28 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   BOOST_CHECK( with_setback->drfSource()
                == DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
 
+  // Without a setback of its own, the DRF takes the crystal's recess behind the face from the
+  //  geometry, so its flat-disk evaluation (used when the response is not attached, or is turned off)
+  //  puts the crystal where the response does.  Brand-new Monte Carlo DRFs come through here.
+  const double endcap_offset_cm = resp->descriptor.endcap_front_offset_cm();
+  BOOST_REQUIRE_MESSAGE( endcap_offset_cm > 0.0, "the golden 3x3 NaI should be in a can" );
+  BOOST_CHECK_CLOSE( bare->detectorSetback() / PhysicalUnits::cm, endcap_offset_cm, 1.0E-4 );
+
+  // Close in, that makes the flat-disk evaluation track the response better than with no setback,
+  //  which reads high by about twice the offset over the distance.
+  {
+    auto no_setback = make_shared<DetectorPeakResponse>( *bare );
+    no_setback->setDetectorSetback( 0.0 );
+    const double d = 10.0*PhysicalUnits::cm;
+    for( const float energy : { 661.7f, 1332.0f } )
+    {
+      const double from_resp = backed->efficiency( energy, d );
+      const double with_offset = bare->efficiency( energy, d );
+      const double without = no_setback->efficiency( energy, d );
+      BOOST_CHECK_LT( std::fabs(with_offset - from_resp), std::fabs(without - from_resp) );
+    }
+  }
+
   // And the filled-in DRF must survive a round trip, which the placeholder
   //  version could not.
   auto roundtrip = make_shared<DetectorPeakResponse>( *backed );

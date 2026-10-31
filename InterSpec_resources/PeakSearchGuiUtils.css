@@ -1,0 +1,17 @@
+/* Styles for the dialogs PeakSearchGuiUtils creates on behalf of other tools (e.g., the
+   "add missing background peaks" preview, used by the Activity/Shielding fit and the Flux Tool). */
+
+.simple-dialog.BackPeakPreviewDialog .body
+{
+  /* The bodys max-height comes from SimpleDialog::updateBodySizeForWindow() - Wt 4 discards a
+     max-height set here.  The preview chart is also sized from the window, in C++. */
+  overflow: hidden;
+}
+
+
+.BackPeakManualHint
+{
+  font-style: italic;
+  font-size: smaller;
+  text-align: center;
+}

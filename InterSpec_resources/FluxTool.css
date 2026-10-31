@@ -52,18 +52,61 @@
 
 
 .FluxInfoAmount {
-  min-width: 225px;
+  white-space: nowrap;
 }
 
 
-/* Holds the "Copy To Clipboard" button and the "Select rows" checkbox */
+/* Right under the table: "Select rows" on the left, the copy link in the middle, and the display
+   level on the right; wraps onto more lines when there isnt room. */
 .FluxOutputOpts {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 2px;
+  margin-top: 3px;
   white-space: nowrap;
+}
+
+.FluxOutputOpts .FluxCopyBtn {
+  padding: 0px 4px;
 }
 
 .FluxOutputOpts .FluxSelectRowsCb span {
   margin-left: 3px;
+}
+
+
+/* Under the table: the "correct for air attenuation" and "subtract background peaks" checkboxes (which
+   wrap onto more lines on narrow screens, rather than overflowing), then notes on the numbers. */
+.FluxCalcOptsAndNotes {
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.FluxCalcOpts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 15px;
+  row-gap: 3px;
+}
+
+.FluxNotes {
+  margin-top: 2px;
+}
+
+.FluxCalcOpts .CbNoLineBreak span {
+  margin-left: 3px;
+}
+
+/* Peaks outside the energy range the detector response states it is valid for. */
+.FluxRangeWarn {
+  color: var(--interspec-warning-color);
+  font-size: smaller;
+}
+
+.FluxOutOfRange {
+  color: var(--interspec-warning-color);
 }

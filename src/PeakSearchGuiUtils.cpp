@@ -29,11 +29,15 @@
 #include <future>
 #include <memory>
 #include <thread>
+#include <iomanip>
+#include <sstream>
+#include <algorithm>
 #include <functional>
 
 #include <Wt/WText.h>
 #include <Wt/WTable.h>
 #include <Wt/WPanel.h>
+#include <Wt/WTimer.h>
 #include <Wt/WServer.h>
 #include <Wt/WPainter.h>
 #include <Wt/WComboBox.h>
@@ -69,6 +73,8 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/RefLineDynamic.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -2676,6 +2682,437 @@ bool ensure_background_peaks_recovered(
 
   return false;
 }//ensure_background_peaks_recovered(...)
+
+
+std::vector<std::shared_ptr<const PeakDef>> missing_background_peak_candidates(
+    const std::vector<std::shared_ptr<const PeakDef>> &fore_peaks,
+    const std::deque<std::shared_ptr<const PeakDef>> &back_user_peaks,
+    const std::deque<std::shared_ptr<const PeakDef>> &back_auto_peaks )
+{
+  vector<shared_ptr<const PeakDef>> answer;
+
+  for( const shared_ptr<const PeakDef> &fg_peak : fore_peaks )
+  {
+    if( !fg_peak )
+      continue;
+
+    // The same sigma GammaInteractionCalc::overlapping_background uses to decide what to subtract
+    const double fg_mean = fg_peak->mean();
+    const double fg_sigma = fg_peak->gausPeak() ? fg_peak->sigma() : 0.25*fg_peak->roiWidth();
+    const double fg_fwhm = 2.35482*fg_sigma;
+
+    // Already covered if a background user peak would be subtracted from this peak; only Gaussian
+    //  background peaks are subtracted (see GammaInteractionCalc::scale_background_peaks).
+    bool covered = false;
+    for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+    {
+      if( bp && bp->gausPeak()
+         && (fabs(bp->mean() - fg_mean) < (GammaInteractionCalc::sm_background_peak_nsigma_near*fg_sigma)) )
+      {
+        covered = true;
+        break;
+      }
+    }//for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+
+    if( covered )
+      continue;
+
+    // The closest auto-search peak within a FWHM - auto-search means wander a little, and it is
+    //  re-fit before being added anyway.
+    shared_ptr<const PeakDef> closest_auto;
+    double closest_dist = fg_fwhm;
+    for( const shared_ptr<const PeakDef> &ap : back_auto_peaks )
+    {
+      if( !ap || !ap->gausPeak() )  //Only Gaussian peaks can be fit and subtracted (and have a FWHM)
+        continue;
+      const double dist = fabs( ap->mean() - fg_mean );
+      if( dist < closest_dist )
+      {
+        closest_dist = dist;
+        closest_auto = ap;
+      }
+    }//for( const shared_ptr<const PeakDef> &ap : back_auto_peaks )
+
+    if( !closest_auto || (std::find( begin(answer), end(answer), closest_auto ) != end(answer)) )
+      continue;
+
+    // Dont offer a peak the user has already fit (even if not quite under this foreground peak, or not
+    //  Gaussian) - the fit-and-add step skips those, so offering it would only lead to "nothing new
+    //  found", over and over.
+    bool already_fit = false;
+    for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+    {
+      if( bp && (fabs( bp->mean() - closest_auto->mean() ) <= closest_auto->fwhm()) )
+      {
+        already_fit = true;
+        break;
+      }
+    }//for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+
+    if( !already_fit )
+      answer.push_back( closest_auto );
+  }//for( const shared_ptr<const PeakDef> &fg_peak : fore_peaks )
+
+  std::sort( begin(answer), end(answer), &PeakDef::lessThanByMeanShrdPtr );
+
+  return answer;
+}//missing_background_peak_candidates(...)
+
+
+namespace
+{
+  /** Adds `new_peaks` to the displayed background's peaks, through InterSpec::setPeaks so it can be
+   undone, and reports the outcome.
+   */
+  void add_peaks_to_background( const vector<shared_ptr<const PeakDef>> &new_peaks,
+                                const std::function<void(MissingBackPeaksOutcome)> &on_done )
+  {
+    MissingBackPeaksOutcome outcome = MissingBackPeaksOutcome::Added;
+    try
+    {
+      InterSpec * const viewer = InterSpec::instance();
+      const shared_ptr<const SpecMeas> back_meas = viewer ? viewer->measurment( SpecUtils::SpectrumType::Background ) : nullptr;
+      if( !back_meas )
+        throw runtime_error( "No background spectrum loaded." );
+
+      const set<int> &back_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+      if( back_samples.empty() )
+        throw runtime_error( "No background samples displayed." );
+
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> existing = back_meas->peaks( back_samples );
+
+      auto combined = make_shared<deque<shared_ptr<const PeakDef>>>();
+      if( existing )
+        *combined = *existing;
+
+      for( const shared_ptr<const PeakDef> &p : new_peaks )
+      {
+        if( p )
+        {
+          auto pos = lower_bound( combined->begin(), combined->end(), p, &PeakDef::lessThanByMeanShrdPtr );
+          combined->insert( pos, p );
+        }
+      }//for( each new peak )
+
+      viewer->setPeaks( SpecUtils::SpectrumType::Background, combined );
+    }catch( std::exception &e )
+    {
+      outcome = MissingBackPeaksOutcome::Error;
+      passMessage( WString::tr( "psgu-err-adding-back-peaks" ).arg( e.what() ),
+                  WarningWidget::WarningMsgHigh );
+    }//try / catch
+
+    if( on_done )
+      on_done( outcome );
+  }//add_peaks_to_background(...)
+
+
+  /** Re-fits `candidates` to the displayed background, and shows the result for the user to accept
+   (adding them to the background) or reject.
+   */
+  void fit_and_preview_background_peaks( const vector<shared_ptr<const PeakDef>> &candidates,
+                                         const Wt::WObject *tracker,
+                                         const std::function<void(MissingBackPeaksOutcome)> &on_done )
+  {
+    InterSpec * const viewer = InterSpec::instance();
+    const shared_ptr<SpecMeas> back_meas = viewer ? viewer->measurment( SpecUtils::SpectrumType::Background ) : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> back_hist
+              = viewer ? viewer->displayedHistogram( SpecUtils::SpectrumType::Background ) : nullptr;
+
+    if( !back_meas || !back_hist || viewer->displayedSamples( SpecUtils::SpectrumType::Background ).empty() )
+    {
+      passMessage( WString::tr( "psgu-warn-no-back-spec" ), WarningWidget::WarningMsgHigh );
+      if( on_done )
+        on_done( MissingBackPeaksOutcome::NoBackground );
+      return;
+    }//if( no background )
+
+    const set<int> &back_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> existing_back_peaks = back_meas->peaks( back_samples );
+
+    shared_ptr<const PeakFitDetPrefs> fitPrefs;
+    const shared_ptr<SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    if( fore_meas )
+      fitPrefs = fore_meas->peakFitDetPrefs();
+    if( !fitPrefs )
+      fitPrefs = back_meas->peakFitDetPrefs();
+    if( !fitPrefs && back_meas->detector() )
+      fitPrefs = back_meas->detector()->peakFitDetPrefs();
+    const PeakFitUtils::CoarseResolutionType det_type
+      = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( back_hist, nullptr );
+
+    // Shows `msg_key` as a simple acknowledgement, then reports that nothing was added.
+    const auto nothing_added = [tracker, on_done]( const char *msg_key ){
+      SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( msg_key ) );
+      dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
+      dialog->finished().connect( tracker, [on_done](){
+        if( on_done )
+          on_done( MissingBackPeaksOutcome::NoneAdded );
+      } );
+    };//nothing_added lambda
+
+    // Collect candidate peaks that dont already have a matching user peak, and
+    //  determine the overall energy range to fit
+    vector<PeakDef> candidates_to_fit;
+    double min_energy = numeric_limits<double>::max();
+    double max_energy = -numeric_limits<double>::max();
+
+    for( const shared_ptr<const PeakDef> &candidate : candidates )
+    {
+      if( !candidate || !candidate->gausPeak() )  //fwhm() and sigma() need a Gaussian peak
+        continue;
+
+      // Check if a user peak already exists near this energy
+      bool already_exists = false;
+      if( existing_back_peaks )
+      {
+        for( const shared_ptr<const PeakDef> &ep : *existing_back_peaks )
+        {
+          if( ep && (fabs( ep->mean() - candidate->mean() ) <= candidate->fwhm()) )
+          {
+            already_exists = true;
+            break;
+          }
+        }
+      }//if( existing_back_peaks )
+
+      if( already_exists )
+        continue;
+
+      candidates_to_fit.push_back( *candidate );
+
+      const double cand_sigma = candidate->sigma();
+      const double lower_x = (candidate->continuum() && (candidate->continuum()->lowerEnergy() > 10))
+                              ? candidate->continuum()->lowerEnergy()
+                              : (candidate->mean() - 4.0 * cand_sigma);
+      const double upper_x = (candidate->continuum() && (candidate->continuum()->upperEnergy() > 10))
+                              ? candidate->continuum()->upperEnergy()
+                              : (candidate->mean() + 4.0 * cand_sigma);
+
+      min_energy = std::min( min_energy, lower_x );
+      max_energy = std::max( max_energy, upper_x );
+    }//for( each candidate )
+
+    if( candidates_to_fit.empty() )
+    {
+      nothing_added( "psgu-no-new-back-peaks" );
+      return;
+    }//if( candidates_to_fit.empty() )
+
+    // Fit all candidate peaks in a single call
+    vector<PeakDef> all_fit_peaks;
+    try
+    {
+      const double ncausalitysigma = 0.0;
+      const double stat_threshold = 2.0;
+      const double hypothesis_threshold = -1.0;
+      const WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
+      all_fit_peaks = fitPeaksInRange( min_energy, max_energy,
+        ncausalitysigma, stat_threshold, hypothesis_threshold,
+        candidates_to_fit, back_hist, fit_options, det_type );
+
+      if( all_fit_peaks.empty() )
+        all_fit_peaks = candidates_to_fit;
+    }catch( std::exception & )
+    {
+      // If fitting fails entirely, show a message
+    }
+
+    if( all_fit_peaks.empty() )
+    {
+      nothing_added( "psgu-no-new-back-peaks" );
+      return;
+    }//if( all_fit_peaks.empty() )
+
+    // Compute display range from the fit results
+    min_energy = numeric_limits<double>::max();
+    max_energy = -numeric_limits<double>::max();
+    for( const PeakDef &fp : all_fit_peaks )
+    {
+      min_energy = std::min( min_energy, fp.mean() - 4.0 * fp.sigma() );
+      max_energy = std::max( max_energy, fp.mean() + 4.0 * fp.sigma() );
+    }//for( each fit peak )
+
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "psgu-back-peak-preview-title" ),
+                                               WString::tr( "psgu-back-peak-preview-msg" ) );
+
+    // Override the default SimpleDialog size constraints so the chart can be large enough
+    wApp->useStyleSheet( "InterSpec_resources/PeakSearchGuiUtils.css" );
+    dialog->addStyleClass( "BackPeakPreviewDialog" );
+    dialog->setMaxWidth( WLength(85, WLength::Unit::ViewportWidth) );
+
+    // Size the chart based on the app window size
+    const int app_w = viewer->renderedWidth();
+    const int app_h = viewer->renderedHeight();
+    const int chart_w = std::max( 350, std::min( static_cast<int>( 0.7 * app_w ), 800 ) );
+    const int chart_h = std::max( 200, std::min( static_cast<int>( 0.45 * app_h ), 450 ) );
+
+    D3SpectrumDisplayDiv *spectrum = dialog->contents()->addNew<D3SpectrumDisplayDiv>();
+    spectrum->clicked().preventPropagation();
+    spectrum->setThumbnailMode();
+    spectrum->resize( chart_w, chart_h );
+    spectrum->setData( back_hist, false );
+
+    // The dialog's spectrum chart co-owns the model (setPeakModel() takes a shared_ptr), so this local
+    //  shared_ptr can go out of scope and the chart keeps the model alive for the life of the dialog.
+    const std::shared_ptr<PeakModel> pmodel = PeakModel::create();
+    pmodel->setNoSpecMeasBacking();
+    pmodel->setForeground( back_hist );
+    spectrum->setPeakModel( pmodel );
+    pmodel->addPeaks( all_fit_peaks );
+
+    const double dx = max_energy - min_energy;
+    spectrum->setXAxisRange( min_energy - 0.5 * dx, max_energy + 0.5 * dx );
+
+    // Workaround: also set the x-axis range again after a short delay.  The dialog may be gone by
+    //  then, so hold the chart by an observing_ptr - which must only be touched on the session thread,
+    //  so a WTimer (whose callback, and its destruction, happen there) rather than WServer::schedule
+    //  (whose function object is destroyed on an io thread).
+    const double set_range_low = min_energy - 0.5 * dx;
+    const double set_range_high = max_energy + 0.5 * dx;
+    const Wt::Core::observing_ptr<D3SpectrumDisplayDiv> spectrum_ptr( spectrum );
+    WTimer::singleShot( std::chrono::milliseconds(100), [spectrum_ptr, set_range_low, set_range_high](){
+      if( spectrum_ptr )
+        spectrum_ptr->setXAxisRange( set_range_low, set_range_high );
+    } );
+
+    // Add summary text below the spectrum
+    const size_t num_fit = all_fit_peaks.size();
+    const size_t num_candidates = candidates_to_fit.size();
+
+    WString summary_msg;
+    if( num_fit == num_candidates )
+      summary_msg = WString::tr( "psgu-back-peaks-all-fit" ).arg( static_cast<int>( num_fit ) );
+    else
+      summary_msg = WString::tr( "psgu-back-peaks-some-fit" )
+                      .arg( static_cast<int>( num_fit ) ).arg( static_cast<int>( num_candidates ) );
+
+    WText *summary_txt = dialog->contents()->addNew<WText>( summary_msg );
+    summary_txt->setInline( false );
+    summary_txt->setMargin( 10, Wt::Side::Top );
+    summary_txt->setMargin( 5, Wt::Side::Bottom );
+
+    WText *manual_hint = dialog->contents()->addNew<WText>( WString::tr( "psgu-back-peaks-manual-hint" ) );
+    manual_hint->setInline( false );
+    manual_hint->addStyleClass( "BackPeakManualHint" );
+    manual_hint->setMargin( 5, Wt::Side::Bottom );
+
+    // Build the vector of peaks to add as shared_ptrs
+    vector<shared_ptr<const PeakDef>> peaks_to_add;
+    for( const PeakDef &p : all_fit_peaks )
+      peaks_to_add.push_back( make_shared<PeakDef>( p ) );
+
+    WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ), WidgetUtils::ButtonRole::Affirm );
+    WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ), WidgetUtils::ButtonRole::Dismiss );
+
+    accept_btn->clicked().connect( tracker, [peaks_to_add, on_done](){
+      add_peaks_to_background( peaks_to_add, on_done );
+    } );
+
+    cancel_btn->clicked().connect( tracker, [on_done](){
+      if( on_done )
+        on_done( MissingBackPeaksOutcome::NoneAdded );
+    } );
+  }//fit_and_preview_background_peaks(...)
+}//namespace
+
+
+bool prompt_to_add_missing_background_peaks( InterSpec *viewer,
+    const std::vector<std::shared_ptr<const PeakDef>> &fore_peaks,
+    const Wt::WObject *tracker,
+    std::function<void(MissingBackPeaksOutcome)> on_done )
+{
+  assert( tracker );
+  if( !viewer || !tracker || fore_peaks.empty() )
+    return false;
+
+  const shared_ptr<SpecMeas> back_meas = viewer->measurment( SpecUtils::SpectrumType::Background );
+  if( !back_meas )
+    return false;
+
+  const shared_ptr<const SpecUtils::Measurement> back_hist
+    = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  if( !back_hist )
+    return false;
+
+  const set<int> &back_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+  if( back_samples.empty() )
+    return false;
+
+  const shared_ptr<const SpecMeas> const_back_meas = back_meas;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks = const_back_meas->peaks( back_samples );
+
+  // Get or generate auto-search peaks for the background via the shared, de-duplicated accessor -
+  // launches at most one search per (SpecMeas, sample numbers) and coalesces with any concurrent
+  // search instead of running its own.  We are on the GUI thread here, so the accessor may snapshot
+  // the background user-peaks itself for the search seed.
+  // The foreground peak-fit prefs are the ones the user configures, and the background is from the
+  // same detector, so prefer them; the accessor falls back to the backgrounds own/DRF prefs.
+  shared_ptr<const PeakFitDetPrefs> fitPrefs;
+  const shared_ptr<SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  if( fore_meas )
+    fitPrefs = fore_meas->peakFitDetPrefs();
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+    = get_or_launch_automated_search_peaks( back_meas, back_samples, back_hist,
+                                            back_meas->detector(), fitPrefs ).get();
+
+  if( !auto_peaks || auto_peaks->empty() )
+    return false;
+
+  const vector<shared_ptr<const PeakDef>> missing_auto_peaks
+      = missing_background_peak_candidates( fore_peaks,
+                                            back_peaks ? *back_peaks : deque<shared_ptr<const PeakDef>>{},
+                                            *auto_peaks );
+  if( missing_auto_peaks.empty() )
+    return false;
+
+  viewer->useMessageResourceBundle( "PeakSearchGuiUtils" );
+
+  // Build comma-separated energy list string
+  stringstream energy_ss;
+  for( size_t i = 0; i < missing_auto_peaks.size(); ++i )
+  {
+    if( i > 0 )
+    {
+      if( missing_auto_peaks.size() > 2 )
+        energy_ss << ",";
+      energy_ss << " ";
+      if( i == (missing_auto_peaks.size() - 1) )
+        energy_ss << "and ";
+    }
+    energy_ss << std::fixed << std::setprecision( 1 ) << missing_auto_peaks[i]->mean() << " keV";
+  }//for( each missing energy )
+
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr( "psgu-missing-back-peaks-title" ),
+                                           WString::tr( "psgu-missing-back-peaks-msg" ).arg( energy_ss.str() ) );
+
+  // An option on the action, so it goes in its own block behind a hairline rather than floating
+  //  alongside the prose.
+  WCheckBox *add_all_cb = dialog->contents()->addNew<WCheckBox>( WString::tr( "psgu-btn-add-all-detectable" ) );
+  add_all_cb->addStyleClass( "CbNoLineBreak DialogOptions" );
+  add_all_cb->setInline( false );
+
+  WPushButton *no_btn = dialog->addButton( WString::tr( "psgu-btn-no-dont-add" ), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "psgu-btn-add-peaks" ), WidgetUtils::ButtonRole::Affirm );
+  add_btn->setFocus();
+
+  const vector<shared_ptr<const PeakDef>> all_auto( auto_peaks->begin(), auto_peaks->end() );
+
+  no_btn->clicked().connect( tracker, [on_done](){
+    if( on_done )
+      on_done( MissingBackPeaksOutcome::Declined );
+  } );
+
+  // `add_all_cb` is in the dialog, which outlives the button click that reads it.
+  add_btn->clicked().connect( tracker, [add_all_cb, all_auto, missing_auto_peaks, tracker, on_done](){
+    fit_and_preview_background_peaks( add_all_cb->isChecked() ? all_auto : missing_auto_peaks,
+                                      tracker, on_done );
+  } );
+
+  return true;
+}//prompt_to_add_missing_background_peaks(...)
 
 
 void automated_search_for_peaks( InterSpec *viewer,

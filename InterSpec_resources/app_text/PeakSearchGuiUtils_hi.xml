@@ -76,5 +76,22 @@
   विषमता प्रकार को {1} में सरलता से बदलने से शिखर अनावश्यक हो गया।<br />
   कृपया यह परिवर्तन करने के लिए <b>शिखर संपादक</b> का उपयोग करें।
   </message>
-
+  <message id="psgu-missing-back-peaks-title">अनुपस्थित पृष्ठभूमि शिखर</message>
+  <message id="psgu-missing-back-peaks-msg">
+    पृष्ठभूमि स्पेक्ट्रम में ऊर्जाओं {1} पर शिखर नहीं जोड़े गए हैं, लेकिन
+    उन ऊर्जाओं पर पृष्ठभूमि स्पेक्ट्रम में संभवतः वास्तविक शिखर हैं -
+    क्या आप उन शिखरों को पृष्ठभूमि स्पेक्ट्रम में जोड़ना चाहेंगे?
+  </message>
+  <message id="psgu-btn-no-dont-add">नहीं</message>
+  <message id="psgu-btn-add-peaks">शिखर जोड़ें...</message>
+  <message id="psgu-btn-add-all-detectable">सभी स्वतः-फिट शिखर जोड़ें</message>
+  <message id="psgu-back-peak-preview-title">पृष्ठभूमि शिखर पूर्वावलोकन</message>
+  <message id="psgu-back-peak-preview-msg">निम्नलिखित शिखर पृष्ठभूमि स्पेक्ट्रम में जोड़े जाएंगे:</message>
+  <message id="psgu-no-new-back-peaks">निर्दिष्ट ऊर्जाओं पर पृष्ठभूमि स्पेक्ट्रम में कोई अतिरिक्त शिखर नहीं मिले।</message>
+  <message id="psgu-back-peaks-all-fit">{1} उम्मीदवार शिखर पृष्ठभूमि में फिट किए गए।</message>
+  <message id="psgu-back-peaks-some-fit">{2} उम्मीदवार शिखरों में से {1} महत्वपूर्ण थे और पृष्ठभूमि में फिट किए गए।</message>
+  <message id="psgu-back-peaks-manual-hint">(आप Alt कुंजी (mac: Option कुंजी) प्लस डबल<br />
+  क्लिक करके स्पेक्ट्रम पर मैन्युअल रूप से पृष्ठभूमि शिखर भी फिट कर सकते हैं, या पृष्ठभूमि को अग्रभूमि के रूप में लोड करके)</message>
+  <message id="psgu-err-adding-back-peaks">पृष्ठभूमि में शिखर जोड़ने में त्रुटि: {1}</message>
+  <message id="psgu-warn-no-back-spec">कोई पृष्ठभूमि स्पेक्ट्रम लोड नहीं है, इसलिए अग्रभूमि से पृष्ठभूमि शिखर क्षेत्र नहीं घटा सकता।</message>
 </messages>

@@ -3577,22 +3577,34 @@ void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_pt
   
   const set<int> &sample_nums = displayedSamples( spectrum );
   
-  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas->peaks(sample_nums);
-  
-  if( orig_peaks.get() == peaks.get() )
+  const std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> current_peaks = meas->peaks(sample_nums);
+
+  if( current_peaks.get() == peaks.get() )
     throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
-  
-  auto set_peaks = [this,&peaks,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+
+  // Snapshot the current peaks: `current_peaks` is the SpecMeas's own deque, which
+  //  PeakModel::setPeaks clears and refills in place, so holding it would leave undo nothing to go
+  //  back to.  (The PeakDefs themselves are const, so sharing them is fine.)
+  const auto orig_peaks = make_shared<const deque<shared_ptr<const PeakDef>>>(
+                            current_peaks ? *current_peaks : deque<shared_ptr<const PeakDef>>{} );
+
+  auto set_peaks = [spectrum]( const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &new_peaks ){
+    InterSpec *viewer = InterSpec::instance();
+    if( !viewer || !viewer->m_peakModel )
+      return;
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-    m_peakModel->setPeaks( (peaks ? *peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
+    viewer->m_peakModel->setPeaks( (new_peaks ? *new_peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
   };
-  
-  set_peaks(peaks);
-  
+
+  {
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    m_peakModel->setPeaks( *peaks, spectrum );
+  }
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [set_peaks,peaks,orig_peaks](){ set_peaks(orig_peaks); };
-    auto redo = [set_peaks,peaks,orig_peaks](){ set_peaks(peaks); };
+    auto undo = [set_peaks,orig_peaks](){ set_peaks(orig_peaks); };
+    auto redo = [set_peaks,peaks](){ set_peaks(peaks); };
     m_undo->addUndoRedoStep( undo, redo, "Set peaks." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
@@ -9159,6 +9171,11 @@ void InterSpec::handleDisplayScaleFactorChangeFromSpectrum( const double sf, con
 {
   // This function is called when the user slides the slider on the spectrum, through the
   //  D3SpectrumDisplayDiv::yAxisScaled() signal.
+
+  // Tell the tools that show background-scaled numbers (Flux Tool, Energy Range Sum, ...).  The
+  //  CompactFileManager also emits this when it is around (it calls setDisplayScaleFactor), but it
+  //  isnt always - e.g., with the tool tabs hidden - and an extra emit is harmless.
+  m_spectrumScaleFactorChanged.emit( spec_type, sf );
   
   if( !m_undo || m_undo->isInUndoOrRedo() )
     return;
