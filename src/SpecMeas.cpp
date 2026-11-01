@@ -464,7 +464,9 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( USE_REL_ACT_TOOL )
 
 #if( USE_LLM_INTERFACE )
-  if( lhs.m_llmConversationHistory != rhs.m_llmConversationHistory )
+  // Compare by content, not pointer, so a file read back in can match; the conversation IDs are
+  //  written to file, but timestamps are only kept to the second, so arent compared.
+  if( lhs.sampleNumsWithLlmHistory() != rhs.sampleNumsWithLlmHistory() )
   {
     stringstream msg;
     msg << "The LlmConversationHistory of the LHS does not exactly match RHS;"
@@ -472,6 +474,31 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
     " RHS has " << rhs.m_llmConversationHistory.size() << " sample sets with history";
     throw runtime_error( msg.str() );
   }
+
+  const auto conversation_ids = []( const shared_ptr<vector<shared_ptr<LlmInteraction>>> &convos ) -> vector<string> {
+    vector<string> ids;
+    if( convos )
+    {
+      for( const shared_ptr<LlmInteraction> &convo : *convos )
+        ids.push_back( convo ? convo->conversationId : string() );
+    }
+    return ids;
+  };//conversation_ids lambda
+
+  for( const auto &samples_history : lhs.m_llmConversationHistory )
+  {
+    const vector<string> lhs_ids = conversation_ids( samples_history.second );
+    const vector<string> rhs_ids = conversation_ids( rhs.m_llmConversationHistory.at( samples_history.first ) );
+    if( lhs_ids != rhs_ids )
+    {
+      stringstream msg;
+      msg << "The LlmConversationHistory of the LHS does not exactly match RHS;"
+      " for samples {" << SpecUtils::sequencesToBriefString( samples_history.first ) << "}"
+      " LHS has " << lhs_ids.size() << " conversations, RHS has " << rhs_ids.size()
+      << ", or their conversation IDs differ";
+      throw runtime_error( msg.str() );
+    }
+  }//for( loop over LLM histories )
 #endif //#if( USE_LLM_INTERFACE )
 }//void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
@@ -2070,22 +2097,29 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     try
     {
       // Get sample numbers from attribute
-      std::set<int> samplenums;
-      rapidxml::xml_attribute<char> *samplesAttr = node->first_attribute( "samples" );
-      if( samplesAttr && samplesAttr->value() )
+      const rapidxml::xml_attribute<char> * const samplesAttr = XML_FIRST_ATTRIB( node, "samples" );
+      if( !samplesAttr )
       {
-        std::vector<int> sampleVec;
-        if( SpecUtils::split_to_ints( samplesAttr->value(), samplesAttr->value_size(), sampleVec ) )
-        {
-          samplenums.insert( sampleVec.begin(), sampleVec.end() );
-        }
-      }
-      
-      if( samplenums.empty() )
-      {
-        parse_warnings_.push_back( "Found LLM conversation history with no valid sample numbers - skipping" );
+        parse_warnings_.push_back( "Found LLM conversation history with no sample numbers - skipping" );
         continue;
       }
+
+      // An empty list is the key for search-mode/passthrough data, whose conversation is kept as
+      //  the user changes the time range (see InterSpec::syncLlmHistoryToSpecMeas()).
+      std::set<int> samplenums;
+      const std::string samplesStr = SpecUtils::trim_copy( SpecUtils::xml_value_str( samplesAttr ) );
+      if( !samplesStr.empty() )
+      {
+        std::vector<int> sampleVec;
+        if( !SpecUtils::split_to_ints( samplesStr.c_str(), samplesStr.size(), sampleVec ) || sampleVec.empty() )
+        {
+          parse_warnings_.push_back( "Found LLM conversation history with invalid sample numbers ('"
+                                     + samplesStr + "') - skipping" );
+          continue;
+        }
+
+        samplenums.insert( sampleVec.begin(), sampleVec.end() );
+      }//if( !samplesStr.empty() )
       
       // Parse conversations for this sample set
       std::vector<std::shared_ptr<LlmInteraction>> conversations;
