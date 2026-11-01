@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Makes UTF-8 the process code page (Windows 10 1903 and later), so the narrow-character file APIs
+     that Wt and SandiaDecay open files with take the UTF-8 paths this program uses: without it, data
+     under a non-ASCII path (e.g. C:\Users\Jürgen\...) could not be read. -->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <application>
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

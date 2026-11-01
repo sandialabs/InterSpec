@@ -1,0 +1,437 @@
+# ------------------------------------------------------------------------------------------------
+# The stdio MCP server (target/mcp_stdio, `InterSpec-mcp-stdio`) for macOS (arm64), Windows (x64) and
+# Linux (x86_64): what an MCP client such as Claude Code or Claude Desktop launches to use InterSpec's
+# analysis tools.
+#
+# Each job builds against the same cached dependency prefix as that platform's app build (the shared
+# composite actions compute the same key), installs the server's own component - `bin/` plus
+# `share/interspec/` - and runs target/mcp_stdio/tests/stdio_test.py against that INSTALLED copy, without
+# --datadir, so the executable finding its data by itself (as it will for users) is what gets tested.
+#
+# Each produces one archive of an `InterSpec-mcp-stdio/` folder; the macOS executable is signed with
+# the Developer ID and notarized.  A bare executable can not have its notarization ticket stapled, so
+# Gatekeeper checks it online the first time a quarantined copy runs - which is always possible, as
+# the MCP clients that run it need the internet themselves.
+#
+# Deliberately no workflow-level `concurrency`: the caller's group covers it, and a callee sharing a
+# group with its caller deadlocks.
+# ------------------------------------------------------------------------------------------------
+name: Build stdio MCP server
+
+on:
+  workflow_call:
+    secrets:
+      MAC_SIGNING_CERT_P12:
+        required: true
+      MAC_SIGNING_CERT_PASSWORD:
+        required: true
+      MAC_SIGNING_IDENTITY:
+        required: true
+      MAC_NOTARY_TEAM_ID:
+        required: true
+      MAC_NOTARY_KEY_ID:
+        required: true
+      MAC_NOTARY_KEY_ISSUER:
+        required: true
+      MAC_NOTARY_KEY_CONTENTS:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # The smoke test's spectrum, and the energy of a peak in it to fit.
+  TEST_SPECTRUM: example_spectra/ba133_source_640s_20100317.n42
+  TEST_PEAK_ENERGY: '356'
+
+jobs:
+  macos:
+    name: macOS (arm64)
+    runs-on: macos-26
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Define paths
+        run: |
+          {
+            echo "BUILD_DIR=${RUNNER_TEMP}/build_mcp_stdio"
+            echo "STAGE_DIR=${RUNNER_TEMP}/mcp_stdio_stage"
+            echo "OUT_DIR=${RUNNER_TEMP}/mcp_stdio_out"
+          } >> "${GITHUB_ENV}"
+
+      # The same key as the app's (build_macos.yml), so this restores the prefix it uses.  The prefix
+      # is universal; this executable is arm64 only, which links fine against it.
+      - name: Build or restore the dependency prefix
+        id: deps
+        uses: ./.github/actions/macos_deps_prefix
+
+      # Pinned by commit; `install: binary` installs its own sha256-checked ccache (4.13.6).  The
+      # family is this job's alone - its objects are compiled with different options from the app's.
+      # An optimization only: if it fails (e.g. the download), build without it.  No `evict-old-files`
+      # - see the same step in build_macos.yml.
+      - name: ccache
+        continue-on-error: true
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: wt4-macos-stdio
+          max-size: 1G
+          install: binary
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          LAUNCHER_ARGS=()
+          if command -v ccache > /dev/null 2>&1; then
+            LAUNCHER_ARGS=( -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache )
+          else
+            echo "::warning::ccache is not available; compiling without it."
+          fi
+          cmake -S "${GITHUB_WORKSPACE}/target/mcp_stdio" -B "${BUILD_DIR}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DInterSpec_FETCH_DEPENDENCIES=OFF \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-dir }}" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            ${LAUNCHER_ARGS[@]+"${LAUNCHER_ARGS[@]}"}
+
+      - name: Build
+        run: cmake --build "${BUILD_DIR}" --target InterSpecMcpStdio test_quickjs_sandbox
+
+      - name: ccache statistics
+        if: always()
+        run: ccache --show-stats --verbose || true
+
+      # The sandbox the assistant's run_javascript runs in; a security boundary.
+      - name: Test the QuickJS sandbox
+        run: ctest --test-dir "${BUILD_DIR}" -R quickjs_sandbox --output-on-failure
+
+      - name: Install
+        run: |
+          set -euo pipefail
+          rm -rf "${STAGE_DIR}"
+          cmake --install "${BUILD_DIR}" --component McpStdio --prefix "${STAGE_DIR}/InterSpec-mcp-stdio"
+          echo "EXE=${STAGE_DIR}/InterSpec-mcp-stdio/bin/InterSpec-mcp-stdio" >> "${GITHUB_ENV}"
+
+      # What we tell users: arm64, macOS 13.3 or later, and nothing to install alongside it.
+      - name: Check the executable
+        run: |
+          set -euo pipefail
+          ARCHS=$(lipo -archs "${EXE}")
+          echo "architectures: ${ARCHS}"
+          if [ "${ARCHS}" != "arm64" ]; then
+            echo "::error::expected an arm64-only executable, got: ${ARCHS}"
+            exit 1
+          fi
+          MINOS=$(vtool -show-build "${EXE}" | awk '$1 == "minos" { print $2 }')
+          echo "minos: ${MINOS}"
+          if [ "${MINOS}" != "13.3" ]; then
+            echo "::error::the executable needs macOS ${MINOS}; it should run on 13.3 and later."
+            exit 1
+          fi
+          otool -L "${EXE}"
+          OTHERS=$(otool -L "${EXE}" | tail -n +2 | awk '{ print $1 }' | grep -v -E '^(/usr/lib/|/System/Library/)' || true)
+          if [ -n "${OTHERS}" ]; then
+            echo "::error::the executable links libraries that are not part of macOS: ${OTHERS}"
+            exit 1
+          fi
+
+      - name: Set up code signing and notarization credentials
+        uses: ./.github/actions/macos_signing_setup
+        with:
+          signing-cert-p12: ${{ secrets.MAC_SIGNING_CERT_P12 }}
+          signing-cert-password: ${{ secrets.MAC_SIGNING_CERT_PASSWORD }}
+          notary-key-contents: ${{ secrets.MAC_NOTARY_KEY_CONTENTS }}
+
+      # Hardened runtime (required for notarization), with no entitlements: it is not sandboxed (it
+      # has to read whatever spectrum files the user points it at), and QuickJS is an interpreter, so
+      # it needs no JIT.  Signed after install, as installing can rewrite the executable.
+      - name: Codesign the executable
+        env:
+          MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          codesign --force --options runtime --timestamp \
+            --identifier gov.sandia.InterSpec.mcp-stdio \
+            --sign "${MAC_SIGNING_IDENTITY}" "${EXE}"
+          codesign --verify --strict --verbose=2 "${EXE}"
+          codesign -dvv "${EXE}" 2>&1 | grep -E "Identifier|TeamIdentifier|flags|Timestamp"
+
+      # Against the signed copy, so a hardened-runtime problem shows up here rather than for users.
+      - name: Smoke test the installed server
+        run: |
+          python3 -I target/mcp_stdio/tests/stdio_test.py --exe "${EXE}" \
+            --spectrum "${TEST_SPECTRUM}" --energy "${TEST_PEAK_ENERGY}"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          {
+            echo "This is an automated build of the InterSpec stdio MCP server, from the upgrade/Wt4 branch,"
+            echo "built on the GitHub infrastructure at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+            echo ""
+            echo "This branch is EXTRA UNSTABLE and has many known issues."
+            echo ""
+            echo "InterSpec code git SHA: ${{ github.sha }}"
+            echo ""
+            echo "Requires macOS 13.3 or later, on Apple silicon.  See share/interspec/README.md to set it up"
+            echo "with Claude Code, Claude Desktop, or another MCP client."
+          } > "${STAGE_DIR}/InterSpec-mcp-stdio/build_info.txt"
+          mkdir -p "${OUT_DIR}"
+          ZIP="${OUT_DIR}/InterSpec_MCP_stdio_macOS_arm64_Dangerously_Experimental_$(date +%Y-%m-%d).zip"
+          # ditto, not zip: it keeps the signature's extended attributes and the executable bit.
+          ditto -c -k --keepParent "${STAGE_DIR}/InterSpec-mcp-stdio" "${ZIP}"
+          ls -lh "${OUT_DIR}"
+          echo "ZIP=${ZIP}" >> "${GITHUB_ENV}"
+
+      # Notarizes the executable inside (its ticket is keyed on the code's hash), so this very zip is
+      # what ships.
+      - name: Notarize
+        uses: ./.github/actions/macos_notarize
+        with:
+          archive: ${{ env.ZIP }}
+          key-id: ${{ secrets.MAC_NOTARY_KEY_ID }}
+          key-issuer: ${{ secrets.MAC_NOTARY_KEY_ISSUER }}
+          team-id: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-stdio-macos-build
+          path: ${{ env.ZIP }}
+          if-no-files-found: error
+
+      - name: Cleanup keychain and credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "${SIGNING_KEYCHAIN}" ]; then
+            security delete-keychain "${SIGNING_KEYCHAIN}" || true
+          fi
+          if [ -n "${NOTARY_KEY_PATH:-}" ] && [ -f "${NOTARY_KEY_PATH}" ]; then
+            rm -f "${NOTARY_KEY_PATH}" || true
+          fi
+
+  windows:
+    name: Windows (x64)
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # The same prefix as the app's (windows-build in build_wt4_edge.yml), but its own sccache family.
+      - name: Set up dev env and dependency prefix
+        id: devenv
+        uses: ./.github/actions/setup_dev_env
+        with:
+          cache_family: wt4-win-stdio
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $prefix = "${{ steps.devenv.outputs.prefix-dir }}"
+          # sccache is an optimization only (setup_dev_env carries on without it).
+          $launcher = @()
+          if (Get-Command sccache -ErrorAction SilentlyContinue) {
+            $launcher = @("-DCMAKE_C_COMPILER_LAUNCHER=sccache", "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache")
+          } else {
+            Write-Output "::warning::sccache is not available; compiling without it."
+          }
+          cmake -S "${{ github.workspace }}/target/mcp_stdio" -B "$env:RUNNER_TEMP/build_mcp_stdio" -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DInterSpec_FETCH_DEPENDENCIES=OFF `
+            -DCMAKE_PREFIX_PATH="$prefix" `
+            -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF `
+            @launcher
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build "$env:RUNNER_TEMP/build_mcp_stdio" --target InterSpecMcpStdio test_quickjs_sandbox
+
+      - name: sccache statistics
+        if: always()
+        shell: pwsh
+        run: if (Get-Command sccache -ErrorAction SilentlyContinue) { sccache --show-stats }
+
+      - name: Test the QuickJS sandbox
+        shell: pwsh
+        run: ctest --test-dir "$env:RUNNER_TEMP/build_mcp_stdio" -R quickjs_sandbox --output-on-failure
+
+      - name: Install
+        shell: pwsh
+        run: |
+          $stage = "$env:RUNNER_TEMP/mcp_stdio_stage"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          cmake --install "$env:RUNNER_TEMP/build_mcp_stdio" --component McpStdio --prefix "$stage/InterSpec-mcp-stdio"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The Windows counterpart of the macOS otool check: the static /MT runtime means the executable
+      # needs no Visual C++ redistributable.  An object compiled /MD would not fail the link - it would
+      # just add a dependency on VCRUNTIME140.dll, which this runner has but users may not.
+      - name: Check the executable needs only system DLLs
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP/mcp_stdio_stage/InterSpec-mcp-stdio/bin/InterSpec-mcp-stdio.exe"
+          $deps = dumpbin /nologo /dependents $exe | Where-Object { $_ -match '^\s+\S+\.dll\s*$' } | ForEach-Object { $_.Trim() }
+          if ($LASTEXITCODE -ne 0 -or -not $deps) { Write-Output "::error::dumpbin could not list the dependencies."; exit 1 }
+          $deps | ForEach-Object { Write-Output "  $_" }
+          $runtime = $deps | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbase|api-ms-win-crt|concrt|vcomp)' }
+          if ($runtime) {
+            Write-Output "::error::the executable needs the Visual C++ runtime: $($runtime -join ', ') - something was compiled /MD."
+            exit 1
+          }
+
+      - name: Smoke test the installed server
+        shell: pwsh
+        run: |
+          python -I target/mcp_stdio/tests/stdio_test.py `
+            --exe "$env:RUNNER_TEMP/mcp_stdio_stage/InterSpec-mcp-stdio/bin/InterSpec-mcp-stdio.exe" `
+            --spectrum "$env:TEST_SPECTRUM" --energy "$env:TEST_PEAK_ENERGY"
+          exit $LASTEXITCODE
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $stage = "$env:RUNNER_TEMP/mcp_stdio_stage"
+          $notes = "$stage/InterSpec-mcp-stdio/build_info.txt"
+          echo "This is an automated build of the InterSpec stdio MCP server, from the upgrade/Wt4 branch," > $notes
+          echo "built on the GitHub infrastructure at $(Get-Date -AsUTC -Format o)." >> $notes
+          echo "" >> $notes
+          echo "This branch is EXTRA UNSTABLE and has many known issues." >> $notes
+          echo "" >> $notes
+          echo "InterSpec code git SHA: ${{ github.sha }}" >> $notes
+          echo "" >> $notes
+          echo "Requires 64-bit Windows 10 or 11.  The executable is not code-signed.  See" >> $notes
+          echo "share/interspec/README.md to set it up with Claude Code, Claude Desktop, or another MCP client." >> $notes
+          $out = "$env:RUNNER_TEMP/mcp_stdio_out"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $zip = "$out/InterSpec_MCP_stdio_Win64_Dangerously_Experimental_$(Get-Date -f yyyy-MM-dd).zip"
+          Compress-Archive -CompressionLevel Optimal -Path "$stage/InterSpec-mcp-stdio" -DestinationPath $zip
+          Get-ChildItem $out
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-stdio-windows-build
+          path: ${{ runner.temp }}/mcp_stdio_out/*.zip
+          if-no-files-found: error
+
+  linux:
+    name: Linux (x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Define paths
+        shell: bash
+        run: |
+          {
+            echo "BUILD_DIR=${RUNNER_TEMP}/build_mcp_stdio"
+            echo "INSTALL_DIR=${RUNNER_TEMP}/mcp_stdio_stage"
+            echo "OUT_DIR=${RUNNER_TEMP}/mcp_stdio_out"
+            echo "CCACHE_HOST_DIR=${RUNNER_TEMP}/linux_ccache"
+          } >> "${GITHUB_ENV}"
+          mkdir -p "${RUNNER_TEMP}/build_mcp_stdio" "${RUNNER_TEMP}/mcp_stdio_stage" "${RUNNER_TEMP}/linux_ccache"
+
+      # The same prefix, and image, as the Linux app (build_linux.yml).
+      - name: Build or restore the dependency prefix
+        id: deps
+        uses: ./.github/actions/linux_deps_prefix
+
+      # This job's own family; the prune-caches job in build_wt4_edge.yml keeps only the newest entry.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-wt4-stdio-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            linux-ccache-wt4-stdio-
+
+      # Builds, runs the QuickJS sandbox test, installs, and checks the executable stays within the
+      # glibc 2.28 floor with a static C++ runtime - see the script.  The source tree is mounted
+      # read-write: the InterSpec build symlinks its data/ and InterSpec_resources/ build directories to
+      # the source ones, and writes into them (sandia.decay.xml, the D3 files).  The script is run with
+      # `bash` rather than relying on its executable bit.
+      - name: Build in Docker
+        id: compile
+        shell: bash
+        env:
+          IMAGE: ${{ steps.deps.outputs.image }}
+          PREFIX_DIR: ${{ steps.deps.outputs.prefix-dir }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/interspec" \
+            -v "${BUILD_DIR}:/build_stdio" \
+            -v "${INSTALL_DIR}:/stdio_install" \
+            -v "${PREFIX_DIR}:/deps_prefix:ro" \
+            -v "${CCACHE_HOST_DIR}:/ccache" \
+            -e CCACHE_DIR=/ccache \
+            -e CCACHE_MAXSIZE=1G \
+            -e CCACHE_COMPILERCHECK=content \
+            "${IMAGE}" \
+            bash -lc 'bash /interspec/target/mcp_stdio/build_linux_from_docker.sh /interspec /build_stdio /stdio_install /deps_prefix'
+
+      - name: Take ownership of what the container wrote
+        if: always() && steps.compile.outcome != 'skipped'
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${BUILD_DIR}" "${INSTALL_DIR}" "${CCACHE_HOST_DIR}"
+          # The build wrote into the (read-write mounted) source tree as root; see above.
+          sudo chown -R "$(id -u):$(id -g)" "${GITHUB_WORKSPACE}"
+
+      # Saved even when the build failed (content-addressed, so still valid), but only if it ran.
+      - name: Save ccache
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-wt4-stdio-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # On the runner, outside the build container: a different, newer distro than the one it was
+      # built on, and the guard against a static-initialization-order failure like issue #51.
+      - name: Smoke test the installed server
+        shell: bash
+        run: |
+          python3 -I target/mcp_stdio/tests/stdio_test.py \
+            --exe "${INSTALL_DIR}/InterSpec-mcp-stdio/bin/InterSpec-mcp-stdio" \
+            --spectrum "${TEST_SPECTRUM}" --energy "${TEST_PEAK_ENERGY}"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "This is an automated build of the InterSpec stdio MCP server, from the upgrade/Wt4 branch,"
+            echo "built on the GitHub infrastructure at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+            echo ""
+            echo "This branch is EXTRA UNSTABLE and has many known issues."
+            echo ""
+            echo "InterSpec code git SHA: ${{ github.sha }}"
+            echo ""
+            echo "Requires x86_64 Linux with glibc 2.28 or later (RHEL/Alma/Rocky 8, Debian 10, Ubuntu 20.04,"
+            echo "or newer).  The assistant tools, if enabled, also use the system's libcurl.so.4.  See"
+            echo "share/interspec/README.md to set it up with Claude Code, Claude Desktop, or another MCP client."
+          } > "${INSTALL_DIR}/InterSpec-mcp-stdio/build_info.txt"
+          mkdir -p "${OUT_DIR}"
+          # tar, not zip, to keep the executable bit.
+          tar -C "${INSTALL_DIR}" -czf \
+            "${OUT_DIR}/InterSpec_MCP_stdio_Linux_x64_Dangerously_Experimental_$(date +%Y-%m-%d).tar.gz" \
+            InterSpec-mcp-stdio
+          ls -lh "${OUT_DIR}"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-stdio-linux-build
+          path: ${{ runner.temp }}/mcp_stdio_out/*.tar.gz
+          if-no-files-found: error

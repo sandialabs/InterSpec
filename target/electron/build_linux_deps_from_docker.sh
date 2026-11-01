@@ -114,7 +114,8 @@ done
 #  CMake sub-build precisely so the prefix keeps one layout (see the check further down).  If one of
 #  these turns up only under lib64, that flag was dropped somewhere - fix that rather than relaxing
 #  this, because the libz.so cleanup and cmake/FindWt.cmake's HINTS both hardcode `lib`.
-for _l in libwt.a libwthttp.a libwtdbo.a libwtdbosqlite3.a \
+#  (libwttest.a is for the stdio MCP server, target/mcp_stdio, which hosts its session with it.)
+for _l in libwt.a libwthttp.a libwttest.a libwtdbo.a libwtdbosqlite3.a \
     libboost_thread.a libboost_date_time.a libboost_system.a \
     libboost_filesystem.a libboost_program_options.a libboost_regex.a \
     libboost_random.a libz.a libceres.a ; do

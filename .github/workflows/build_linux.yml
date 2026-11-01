@@ -1,0 +1,379 @@
+# ------------------------------------------------------------------------------------------------
+# The Linux Electron app of the upgrade/Wt4 branch: .deb, .rpm, AppImage and a tarball.
+#
+# This is the `build-linux` job of master's build_app.yml, ported to the Wt4 branch, with all of its
+# checks.  The differences: the dependency prefix comes from .github/actions/linux_deps_prefix
+# (Wt 4, and the key the stdio MCP server's build shares), the checkout is at the workspace root
+# (so local actions and hashFiles() resolve), the ccache is its own family, and the packages are
+# renamed for the wt4-bleeding-edge release.
+#
+# The C++ is compiled inside the manylinux container, because that is how we get binaries that run on
+# a glibc 2.28 distro (Electron 28+ needs glibc 2.28 anyway).  Everything after that - packaging into
+# .deb/.rpm/AppImage/tar.gz, and the install-and-launch smoke tests - happens on the runner itself,
+# where dpkg, rpm, fakeroot, xvfb and a current Node are already available.
+#
+# Deliberately no workflow-level `concurrency`: the caller's group already covers it, and a callee
+# sharing a group with its caller deadlocks.
+# ------------------------------------------------------------------------------------------------
+name: Build Linux App
+
+on:
+  workflow_call:
+    secrets:
+      LEAFLET_KEY:
+        required: true
+
+jobs:
+  linux-build:
+    # Pinned rather than ubuntu-latest: the on-runner sandbox checks below are written against
+    # Ubuntu 24.04's AppArmor userns restriction.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Define build paths
+        shell: bash
+        run: |
+          {
+            echo "CCACHE_HOST_DIR=${RUNNER_TEMP}/linux_ccache"
+            echo "APP_BUILD_DIR=${RUNNER_TEMP}/build_linux_electron"
+            echo "APP_WORKING_DIR=${RUNNER_TEMP}/build_linux_working_dir"
+            echo "DIST_DIR=${RUNNER_TEMP}/build_linux_dist"
+          } >> "${GITHUB_ENV}"
+
+      - name: Prepare directories
+        shell: bash
+        run: mkdir -p "${CCACHE_HOST_DIR}" "${APP_BUILD_DIR}" "${APP_WORKING_DIR}"
+
+      # Restores (or, on a key change, builds) the prefix; see the action for the rules it follows.
+      - name: Build or restore the dependency prefix
+        id: deps
+        uses: ./.github/actions/linux_deps_prefix
+
+      # ccache covers only InterSpec's own objects, and is based on file-content hashes, not mtimes.
+      # `linux-ccache-wt4-app-` is this job's family: master's `linux-ccache-v1-` caches are visible
+      # to a branch run, and would otherwise be restored here.  The prune-caches job in
+      # build_wt4_edge.yml keeps only the newest entry of each family.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-wt4-app-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            linux-ccache-wt4-app-
+
+      # Compiles the C++ and leaves the app payload in <build>/app.  Also runs
+      # target/electron/linux/check_elf_compat.py, which fails the build if the binaries would need a
+      # newer glibc/libstdc++ than we advertise, or if libstdc++ got statically linked again (the
+      # cause of https://github.com/sandialabs/InterSpec/issues/51).
+      #
+      # The prefix is mounted read-only, and at the container path it was built at.
+      - name: Compile in Docker
+        id: compile
+        shell: bash
+        env:
+          LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
+          IMAGE: ${{ steps.deps.outputs.image }}
+          PREFIX_DIR: ${{ steps.deps.outputs.prefix-dir }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/interspec" \
+            -v "${APP_BUILD_DIR}:/build_app" \
+            -v "${APP_WORKING_DIR}:/build_working_dir" \
+            -v "${PREFIX_DIR}:/deps_prefix:ro" \
+            -v "${CCACHE_HOST_DIR}:/ccache" \
+            -e LEAFLET_KEY \
+            -e CCACHE_DIR=/ccache \
+            -e CCACHE_MAXSIZE=1500M \
+            -e CCACHE_COMPILERCHECK=content \
+            "${IMAGE}" \
+            bash -lc '/interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir /deps_prefix'
+
+      # The container runs as root, so everything it wrote to the bind mounts is root-owned.  Its own
+      # `always()` step: a failed compile is exactly when we still want to save the ccache.
+      - name: Take ownership of what the container wrote
+        if: always() && steps.compile.outcome != 'skipped'
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${APP_BUILD_DIR}" "${APP_WORKING_DIR}" "${CCACHE_HOST_DIR}"
+          # actions/checkout's workspace was mounted read-write; the build may have left root-owned
+          # files in it (e.g. node_modules from cmake-js).
+          sudo chown -R "$(id -u):$(id -g)" "${GITHUB_WORKSPACE}"
+
+      # Saved even when the compile failed (whatever it cached is still valid and makes the retry
+      # cheap), but only if the compile ran - an empty ccache would shadow a good one.
+      - name: Save ccache
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-wt4-app-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Set up Node for packaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate SBOM
+        shell: bash
+        run: |
+          python3 target/wxWidgets/sbom/make_sbom.py \
+            --repo "${GITHUB_WORKSPACE}" \
+            --git-sha "${{ github.sha }}" \
+            --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output "${APP_BUILD_DIR}/app/InterSpec_sbom.cdx.json"
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm fakeroot desktop-file-utils appstream xvfb
+
+      - name: Package with electron-builder
+        shell: bash
+        working-directory: ${{ github.workspace }}/target/electron
+        run: |
+          # --ignore-scripts matters: package.json has an `install` script of `cmake-js compile`,
+          # which would try to build the C++ here on the runner (the compile already happened in the
+          # container).  It also skips electron's binary download, which electron-builder does not
+          # use - it fetches its own copy - while still leaving node_modules/electron/package.json
+          # for it to read the version from.
+          npm install --ignore-scripts
+
+          # target/electron/linux/fpm-after-install.sh is a fork of electron-builder's own
+          # post-install template (afterInstall replaces it rather than appending), differing only in
+          # how it decides whether chrome-sandbox must be setuid-root.  Fail loudly if upstream's
+          # template changes, so the fork is re-synced deliberately.
+          UPSTREAM_TPL=node_modules/app-builder-lib/templates/linux/after-install.tpl
+          EXPECTED=$(cat linux/upstream-after-install.tpl.sha256)
+          ACTUAL=$(sha256sum "$UPSTREAM_TPL" | cut -d' ' -f1)
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::electron-builder's after-install.tpl changed (expected $EXPECTED, got $ACTUAL)."
+            echo "Re-sync target/electron/linux/fpm-after-install.sh with it, keeping the chrome-sandbox"
+            echo "deviation, then update linux/upstream-after-install.tpl.sha256.  Their diff:"
+            diff -u linux/fpm-after-install.sh "$UPSTREAM_TPL" || true
+            exit 1
+          fi
+          echo "electron-builder postinst template unchanged - fork is in sync"
+
+          # --publish never belts-and-braces the `publish: null` in electron-builder.js:
+          # electron-builder enables publishing on its own when it detects CI.
+          npx electron-builder --linux --publish never \
+            -c.directories.app="${APP_BUILD_DIR}/app" \
+            -c.directories.output="${DIST_DIR}"
+          echo "Produced:"
+          ls -la "${DIST_DIR}"
+
+      # electron-builder's `dir` target gives us the unpacked tree; add the launcher that probes for a
+      # usable Chromium sandbox before falling back to --no-sandbox, then tar it up.  A tarball has no
+      # install step, so nothing else can make chrome-sandbox setuid-root.
+      - name: Build tarball with sandbox-probing launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNPACKED="${DIST_DIR}/linux-unpacked"
+          VERSION=$(node -p "require('${APP_BUILD_DIR}/app/package.json').version")
+          mv "${UNPACKED}/interspec" "${UNPACKED}/interspec-bin"
+          cp "${GITHUB_WORKSPACE}/target/electron/linux/interspec-launcher.sh" "${UNPACKED}/interspec"
+          chmod +x "${UNPACKED}/interspec"
+          STAGE="${RUNNER_TEMP}/tarball/InterSpec-linux-x64"
+          mkdir -p "$(dirname "${STAGE}")"
+          cp -a "${UNPACKED}" "${STAGE}"
+          tar -C "$(dirname "${STAGE}")" -czf \
+            "${DIST_DIR}/InterSpec_app_Linux_x64_${VERSION}.tar.gz" \
+            "$(basename "${STAGE}")"
+
+      # Pure logic, no Electron: the rules deciding whether a renderer death is a broken sandbox, and
+      # how many failures it takes before we stop attempting one.
+      - name: Test the sandbox-fallback logic
+        shell: bash
+        run: node target/electron/linux/test_sandbox_fallback.js
+
+      - name: Validate desktop entry and AppStream metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHECK="${RUNNER_TEMP}/deb_check"
+          mkdir -p "${CHECK}"
+          dpkg-deb -x "${DIST_DIR}"/InterSpec_app_*.deb "${CHECK}"
+          desktop-file-validate "${CHECK}"/usr/share/applications/*.desktop
+          appstreamcli validate "${CHECK}/usr/share/metainfo/gov.sandia.InterSpec.metainfo.xml"
+          test -f "${CHECK}/usr/share/mime/packages/gov.sandia.InterSpec.xml"
+          test -n "$(ls -A "${CHECK}"/usr/share/icons/hicolor/512x512/apps/)"
+          echo "Desktop integration files all present and valid"
+
+      # Does the tarball actually start?  `timeout` is the backstop: --test-load has its own 120 s
+      # timer, but a wedged child process can stop Electron from exiting.
+      - name: Smoke test the tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C "${RUNNER_TEMP}" -xzf "${DIST_DIR}"/InterSpec_app_Linux_x64_*.tar.gz
+          xvfb-run -a \
+            timeout --signal=KILL --kill-after=10 300 \
+            "${RUNNER_TEMP}/InterSpec-linux-x64/interspec" --test-load
+          echo "Tarball launched and loaded a session successfully"
+
+      # Installs the .deb into a clean Ubuntu 24.04 and launches it: dependency resolution, the /opt
+      # layout and the /usr/bin symlink.  (A container does not enforce the host's AppArmor userns
+      # restriction, so this only exercises the --no-sandbox path; the on-runner checks below cover
+      # the sandbox.)
+      - name: Install and launch the .deb on Ubuntu 24.04
+        shell: bash
+        run: |
+          docker run --rm -v "${DIST_DIR}:/dist" ubuntu:24.04 bash -lc '
+            set -euo pipefail
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb /dist/InterSpec_app_*.deb
+            test -x /opt/InterSpec/interspec
+            if xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load; then
+              echo "deb launched with the sandbox enabled"
+            else
+              echo "sandboxed launch failed (expected in an unprivileged container); retrying"
+              xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load --no-sandbox
+              echo "deb launched with --no-sandbox"
+            fi
+          '
+
+      - name: Install and launch the .rpm on Fedora
+        shell: bash
+        run: |
+          docker run --rm -v "${DIST_DIR}:/dist" fedora:latest bash -lc '
+            set -euo pipefail
+            dnf install -y -q xorg-x11-server-Xvfb /dist/InterSpec_app_*.rpm
+            test -x /opt/InterSpec/interspec
+            if xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load; then
+              echo "rpm launched with the sandbox enabled"
+            else
+              echo "sandboxed launch failed (expected in an unprivileged container); retrying"
+              xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load --no-sandbox
+              echo "rpm launched with --no-sandbox"
+            fi
+          '
+
+      # --appimage-extract-and-run avoids needing FUSE, which the runner does not necessarily have.
+      - name: Smoke test the AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPIMAGE=$(ls "${DIST_DIR}"/InterSpec_app_*.AppImage)
+          chmod +x "${APPIMAGE}"
+          xvfb-run -a timeout --signal=KILL --kill-after=10 300 \
+            "${APPIMAGE}" --appimage-extract-and-run --test-load
+          echo "AppImage launched and loaded a session successfully"
+
+      # ---------------------------------------------------------------------------------------
+      # The checks below run on the runner ITSELF, not in a container: a full Ubuntu 24.04 VM with
+      # sudo and a live AppArmor, so the .deb's post-install script actually takes effect (setuid
+      # chrome-sandbox, apparmor_parser loading the profile) and the Chromium sandbox can really
+      # work.  They run last, and in this order, because they modify the runner.
+      # ---------------------------------------------------------------------------------------
+      - name: Install the .deb on the runner and require a SANDBOXED launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "### AppArmor state on this runner (so a pass is interpretable) ###"
+          sudo aa-enabled || echo "  aa-enabled reports AppArmor not enabled"
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null \
+            | sed 's/^/  apparmor_restrict_unprivileged_userns=/' || echo "  sysctl not present"
+          unshare -Ur true && echo "  unprivileged userns: works" || echo "  unprivileged userns: denied"
+
+          sudo apt-get update
+          sudo apt-get install -y "$(ls "${DIST_DIR}"/InterSpec_app_*.deb)"
+          echo "### what the postinst set up ###"
+          stat -c '  %n mode=%a owner=%U' /opt/InterSpec/chrome-sandbox
+          test -f /etc/apparmor.d/interspec \
+            && echo "  AppArmor profile installed" \
+            || echo "  AppArmor profile NOT installed (postinst skipped it)"
+
+          # Deliberately no --no-sandbox, and no fallback: --test-load suppresses the relaunch, so if
+          # the sandbox does not work this fails rather than silently degrading.
+          rm -f "$HOME/.config/InterSpec/sandbox_failures.json"
+          xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load
+          echo "Launched WITH the Chromium sandbox enabled"
+
+          # Prove it was not silently degraded: any fallback would have recorded a failure.
+          if [ -f "$HOME/.config/InterSpec/sandbox_failures.json" ]; then
+            echo "::error::sandboxed launch reported success but a sandbox failure was recorded"
+            cat "$HOME/.config/InterSpec/sandbox_failures.json"
+            exit 1
+          fi
+
+      # Exercises the fallback machinery: reading the persisted failure count, app.relaunch(), the
+      # single-instance-lock release/reacquire, and the relaunched instance actually loading.  It
+      # plants the failure count rather than breaking the sandbox for real - see the matching step in
+      # master's build_app.yml for why a real startup-time sandbox failure cannot be observed in-app.
+      - name: Verify the sandbox fallback relaunches and recovers
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG="$HOME/.config/InterSpec"
+          RESULT="$CFG/test_load_result.json"
+          mkdir -p "$CFG"
+          rm -f "$RESULT"
+
+          # Two consecutive failures is the "stop trying the sandbox" threshold, so the next launch
+          # should go straight to a --no-sandbox relaunch instead of attempting one first.
+          printf '{"failures":2,"lastReason":"planted by CI"}' > "$CFG/sandbox_failures.json"
+
+          # Our own Xvfb rather than xvfb-run: the relaunched instance only starts once the first
+          # process exits, and xvfb-run tears the display down at that moment.
+          Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp &
+          XVFB_PID=$!
+          trap 'kill "${XVFB_PID}" 2>/dev/null || true' EXIT
+          export DISPLAY=:77
+          sleep 2
+
+          # Parent exits 0 as soon as it hands off to the relaunch, so poll for the child's result.
+          timeout --signal=KILL --kill-after=10 300 \
+            interspec --test-load --test-load-allow-sandbox-fallback || true
+
+          for _ in $(seq 1 60); do
+            [ -f "$RESULT" ] && break
+            sleep 2
+          done
+
+          if [ ! -f "$RESULT" ]; then
+            echo "::error::fallback never produced a result - the relaunched instance did not load"
+            echo "sandbox_failures.json:"; cat "$CFG/sandbox_failures.json" 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+
+          echo "### result written by the relaunched instance ###"; cat "$RESULT"
+          node -e '
+            const r = require(process.argv[1]);
+            if( r.code !== 0 )
+              throw new Error("relaunched instance exited " + r.code);
+            if( r.sandboxed )
+              throw new Error("expected the relaunch to have added --no-sandbox");
+            console.log("Fallback recovered a broken sandbox: relaunched --no-sandbox and loaded a session");
+          ' "$RESULT"
+
+      # The release prunes assets by the `Dangerously_Experimental` pattern, and every name has to say
+      # what the build is, so rename only now - every check above uses electron-builder's names.
+      - name: Rename packages for the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_DATE=$(date +%Y-%m-%d)
+          OUT="${RUNNER_TEMP}/linux_release"
+          mkdir -p "${OUT}"
+          for ext in deb rpm AppImage tar.gz; do
+            SRC=$(ls "${DIST_DIR}"/InterSpec_app_*."${ext}")
+            cp "${SRC}" "${OUT}/InterSpec_Linux_x64_Dangerously_Experimental_${BUILD_DATE}.${ext}"
+          done
+          ls -lh "${OUT}"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          if-no-files-found: error
+          overwrite: true
+          path: ${{ runner.temp }}/linux_release/*
