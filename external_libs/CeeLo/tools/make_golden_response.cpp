@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
             "Usage: make_golden_response <preset> <out_dir> [profile] "
             "[precision] [n_probes] [seed] [max_events] [max_cpu_s] "
             "[precision_profile] [certify]\n"
-            "  presets: nai3x3 | hpge_coax | czt_box | detective_x\n"
+            "  presets: nai3x3 | hpge_coax | czt_box | detective_x | micro_detective\n"
             "  max_events / max_cpu_s raise the per-node caps so a tight "
             "precision is actually reached (high-statistics fixtures);\n"
             "  max_cpu_s is CPU time summed across worker threads (~10x the "
