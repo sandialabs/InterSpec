@@ -313,6 +313,62 @@ public:
    */
   void abandonStoppedRounds( const bool notify = true );
 
+  /** Marks each conversation with work in flight as interrupted (see LlmInteraction::interruption),
+   rather than finished, so it can be continued later - e.g., by the interface of the LLM Assistant
+   re-opened with this history (see resumeInterrupted()).  Stops the requests in flight, and drops the
+   bookkeeping for them and for any stopped tool rounds.  A context compaction can not be continued, so
+   is ended (the question queued behind it is marked interrupted, to be sent if resumed).
+   @param cause What cut the work off.
+   @param notify Emit the interruptionChanged signal of each conversation marked, and activityChanged;
+          false when the GUI that owns this interface is being torn down.
+   */
+  void interruptInFlight( const LlmInteraction::Interruption::Cause cause, const bool notify );
+
+  /** If this interface is running the tools an LLM response asked for, right now - e.g., a tool that
+   loads a spectrum, and so changes the conversation history shown.
+   */
+  bool isRunningToolCalls() const;
+
+  /** If `convo` is an interrupted conversation that resumeInterrupted() can continue: it is waiting on
+   the LLM or on tools, nothing is in flight for it, and it is not a context compaction.
+   */
+  bool canResumeInterrupted( const std::shared_ptr<const LlmInteraction> &convo ) const;
+
+  /** Continues the interrupted conversation `convo` (see LlmInteraction::interruption) from where it was
+   cut off: re-sends the request that was in flight, or sends back the results of its last tool round -
+   an async tool still running in this session is waited on, and one lost with an earlier session is
+   reported as interrupted, so the LLM can call it again - once each sub-agent that round was waiting on has been continued the same way, and its summary
+   handed back as usual.  A sub-agent paused on an error is left paused, for the user to Retry or Cancel
+   Agent.  Clears the interruptions, emitting LlmInteraction::interruptionChanged.  If a request can not
+   be sent, `convo` gets an error turn the user can Retry.
+   @returns If `convo` was continued; if canResumeInterrupted() is false it is abandoned instead (see
+            abandonInterrupted()).
+   */
+  bool resumeInterrupted( const std::shared_ptr<LlmInteraction> &convo );
+
+  /** Makes sure a tool round is waiting on the sub-agent `subAgent` - resuming the interrupted
+   conversation it belongs to, if need be - so continuing or cancelling it (e.g., its Retry was clicked
+   after an interruption) reaches the agent that invoked it, instead of being sent a second time by a
+   later resume.
+   @returns If a round is waiting on `subAgent`.
+   */
+  bool resumeInterruptedFor( const std::shared_ptr<LlmInteraction> &subAgent );
+
+  /** Called by an async tool's callback, once its result is in the placeholder, for a call that no
+   longer counts towards the round that started it: resolves `callId` in the round resumeToolRound()
+   rebuilt for `convo`, if the tool was still running when that conversation was resumed.  Does nothing
+   if no round is waiting on it.
+   */
+  void resolveResumedAsyncCall( const std::shared_ptr<LlmInteraction> &convo, const std::string &callId );
+
+  /** Ends the interrupted conversation `convo` without continuing it: the outstanding tool calls of it
+   and its sub-agents are reported as cancelled, so their placeholders are never sent to the LLM, and
+   they are marked finished.  Clears the interruptions; does nothing if `convo` is not interrupted.
+   @param notify Emit LlmInteraction::interruptionChanged and conversationFinished; false when the
+          conversation's display has not been made yet.
+   */
+  void abandonInterrupted( const std::shared_ptr<LlmInteraction> &convo, const bool notify = true );
+
   /** Returns true if `convo` has a request in flight, a tool round outstanding or running, or a message
    queued behind a summarization - i.e., something that will still add to it, or finish it.
    */
@@ -602,6 +658,9 @@ private:
    */
   bool isAsyncCallOutstanding( const int parentRequestId, const std::string &callId ) const;
 
+  /** If a deferred or stopped tool round is waiting on the sub-agent `subAgent`. */
+  bool isAwaitingSubAgent( const std::shared_ptr<const LlmInteraction> &subAgent ) const;
+
   /** The single resolution point for an async tool call; idempotent.
 
    No-ops (with a debug log) when the round or the call id is not outstanding, so a duplicate or late
@@ -617,6 +676,45 @@ private:
    terminal signal is re-evaluated instead - the turn is never left stranded.
    */
   void finalizeDeferredIfReady( std::map<int, DeferredToolResult>::iterator pos );
+
+  /** Sets the completion handler of the sub-agent `subAgent`, invoked by the tool call `callId` of
+   `parent`'s tool round `roundKey` (a key of m_deferredToolResults), in which it is outstanding as
+   `token` (an entry of its subAgentToolCallIds): it calls handleSubAgentCompleted(), if this interface
+   is still alive.
+   */
+  void attachSubAgentCompletion( const std::shared_ptr<LlmInteraction> &parent, const int roundKey,
+                                 const int token, const std::shared_ptr<LlmInteraction> &subAgent,
+                                 const std::string &callId );
+
+  /** The sub-agent `subAgent` has finished: puts its summary (or failure) in the result of the tool call
+   `callId` of `parent`, adds its token usage to `parent`, and resolves `token` in the tool round
+   `roundKey` - whose results are sent once nothing else in it is outstanding.  See
+   attachSubAgentCompletion().
+   */
+  void handleSubAgentCompleted( const std::shared_ptr<LlmInteraction> &parent, const int roundKey,
+                                const int token, const std::shared_ptr<LlmInteraction> &subAgent,
+                                const std::string &callId );
+
+  /** Abandons (see abandonInterrupted()) every interrupted conversation in the history; for when the
+   user moves on (e.g., asks a new question), after which they can not be resumed.
+   */
+  void abandonInterruptedConversations();
+
+  /** Puts `convo` back to work by its last turn, for resumeInterrupted() - and, through
+   resumeToolRound(), for each sub-agent a resumed tool round waits on.  Clears its interruption, and
+   emits interruptionChanged if it had one.  Throws if a request can not be sent.
+   */
+  void resumeConversationWork( const std::shared_ptr<LlmInteraction> &convo );
+
+  /** Continues the tool round whose results, `results`, are the last turn of `convo`; see
+   resumeInterrupted().
+   */
+  void resumeToolRound( const std::shared_ptr<LlmInteraction> &convo, LlmToolResults &results );
+
+  /** Gives the sub-agent `convo` - whose state machine is runtime-only, so is missing when read back
+   from a file - its agent's state machine, in the state its successful set_workflow_state calls left it.
+   */
+  void restoreStateMachine( const std::shared_ptr<LlmInteraction> &convo ) const;
 
   /** The conversation a deferred round belongs to, or nullptr if it no longer exists.
 

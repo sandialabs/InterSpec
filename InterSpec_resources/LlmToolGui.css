@@ -729,6 +729,28 @@
   font-style: italic;
 }
 
+/* A conversation cut off when the assistant, or InterSpec, was closed; see
+   LlmInteractionDisplay::showInterruptedPanel(). */
+.LlmInterruptedPanel {
+  color: var(--interspec-text-color);
+  background-color: var(--interspec-input-background);
+  border-left: 4px solid var(--interspec-warning-color);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.LlmInterruptedMessage {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.LlmResumeButton {
+  margin-right: 8px;
+  cursor: pointer;
+}
+
 /* ============================================ */
 /* JSON Display Dialog */
 /* ============================================ */

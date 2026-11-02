@@ -225,6 +225,123 @@ BOOST_AUTO_TEST_CASE( WriteLogFileWithoutRawContent )
 }//WriteLogFileWithoutRawContent
 
 
+BOOST_AUTO_TEST_CASE( InterruptionRoundTrip )
+{
+  // A conversation cut off mid-work keeps when and why through a save, so it can be resumed after.
+  LlmConversationHistory history;
+
+  const shared_ptr<LlmInteraction> answered = history.addUserMessageToMainConversation( "Answered" );
+  history.addAssistantMessageWithThinking( "Cs-137.", "", "", answered );
+
+  // Explicitly interrupted, by the user closing the assistant.
+  const shared_ptr<LlmInteraction> closed = history.addUserMessageToMainConversation( "Closed on" );
+  LlmInteraction::Interruption byUser;
+  byUser.time = chrono::system_clock::now() - chrono::hours( 3 );
+  byUser.cause = LlmInteraction::Interruption::Cause::AssistantClosed;
+  closed->interruption = byUser;
+
+  // Explicitly interrupted, by the user showing another spectrum.
+  const shared_ptr<LlmInteraction> switched = history.addUserMessageToMainConversation( "Switched away" );
+  LlmInteraction::Interruption bySwitch;
+  bySwitch.time = chrono::system_clock::now() - chrono::hours( 2 );
+  bySwitch.cause = LlmInteraction::Interruption::Cause::SpectrumChanged;
+  switched->interruption = bySwitch;
+
+  // Still running as it is written - e.g., the end-of-session save, which is before teardown.
+  const shared_ptr<LlmInteraction> running = history.addUserMessageToMainConversation( "Running" );
+  running->timestamp = chrono::system_clock::now() - chrono::hours( 1 );
+
+  // Waiting on nothing, as it was ended.
+  const shared_ptr<LlmInteraction> ended = history.addUserMessageToMainConversation( "Ended" );
+  ended->finishTime = chrono::system_clock::now();
+
+  // A tool round waiting on a sub-agent, which is itself waiting on the LLM.
+  const shared_ptr<LlmInteraction> parent = history.addUserMessageToMainConversation( "Parent" );
+  const shared_ptr<LlmInteraction> subAgent
+            = LlmInteraction::createAgent( LlmInteraction::Type::User, "Sub-task", AgentType::NuclideId, nullptr );
+  subAgent->conversationId = "subagent_NuclideId_1";
+  {
+    vector<LlmToolCall> requests{ LlmToolCall( "invoke_NuclideId", "call_1", nlohmann::json::object() ) };
+    history.addToolCalls( std::move( requests ), "", parent );
+
+    LlmToolCall result( "invoke_NuclideId", "call_1", nlohmann::json::object() );
+    result.status = LlmToolCall::CallStatus::Pending;
+    result.content = "{\"status\":\"pending\",\"message\":\"(will update when complete)\"}";
+    result.sub_agent_conversation = subAgent;
+    vector<LlmToolCall> results{ result };
+    history.addToolResults( std::move( results ), "", parent );
+  }
+
+  const chrono::system_clock::time_point written = chrono::system_clock::now();
+  const string path = SpecUtils::temp_file_name( "llm_log_test", SpecUtils::temp_dir() ) + ".xml";
+  history.writeLogFile( path, {} );
+  string contents = read_file( path );
+  SpecUtils::remove_file( path );
+
+  const auto load = []( string xml ) -> vector<shared_ptr<LlmInteraction>> {
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( &xml[0] );
+    const rapidxml::xml_node<char> * const root = XML_FIRST_NODE( (&doc), "LlmConversationLog" );
+    BOOST_REQUIRE( root );
+    vector<shared_ptr<LlmInteraction>> loaded;
+    LlmConversationHistory::fromXml( root, loaded );
+    return loaded;
+  };
+
+  const auto seconds = []( const chrono::system_clock::time_point &tp ) -> time_t {
+    return chrono::system_clock::to_time_t( tp );
+  };
+
+  {// Begin check what was written
+    const vector<shared_ptr<LlmInteraction>> loaded = load( contents );
+    BOOST_REQUIRE_EQUAL( loaded.size(), 6 );
+
+    BOOST_CHECK( !loaded[0]->interruption.has_value() );
+
+    BOOST_REQUIRE( loaded[1]->interruption.has_value() );
+    BOOST_CHECK_EQUAL( seconds( loaded[1]->interruption->time ), seconds( byUser.time ) );
+    BOOST_CHECK( loaded[1]->interruption->cause == LlmInteraction::Interruption::Cause::AssistantClosed );
+    BOOST_CHECK( !loaded[1]->finishTime.has_value() );
+
+    BOOST_REQUIRE( loaded[2]->interruption.has_value() );
+    BOOST_CHECK_EQUAL( seconds( loaded[2]->interruption->time ), seconds( bySwitch.time ) );
+    BOOST_CHECK( loaded[2]->interruption->cause == LlmInteraction::Interruption::Cause::SpectrumChanged );
+
+    // Recorded as interrupted when it was written.
+    BOOST_REQUIRE( loaded[3]->interruption.has_value() );
+    BOOST_CHECK( loaded[3]->interruption->cause == LlmInteraction::Interruption::Cause::SessionEnded );
+    BOOST_CHECK( std::abs( seconds( loaded[3]->interruption->time ) - seconds( written ) ) <= 2 );
+
+    BOOST_CHECK( !loaded[4]->interruption.has_value() );
+
+    BOOST_REQUIRE( loaded[5]->interruption.has_value() );
+    BOOST_REQUIRE_EQUAL( loaded[5]->responses.size(), 3 );
+    const shared_ptr<const LlmToolResults> results = dynamic_pointer_cast<const LlmToolResults>( loaded[5]->responses[2] );
+    BOOST_REQUIRE( results && (results->toolCalls().size() == 1) );
+    BOOST_CHECK( results->toolCalls()[0].status == LlmToolCall::CallStatus::Pending );
+    const shared_ptr<LlmInteraction> loadedSub = results->toolCalls()[0].sub_agent_conversation;
+    BOOST_REQUIRE( loadedSub );
+    BOOST_CHECK( loadedSub->interruption.has_value() );
+  }// End check what was written
+
+  {// Begin a file from before interruptions were recorded
+    const string legacy = std::regex_replace( contents,
+                            std::regex( R"( interrupted(Time|By)="[^"]*")" ), "" );
+    BOOST_REQUIRE( legacy.find( "interruptedTime" ) == string::npos );
+
+    const vector<shared_ptr<LlmInteraction>> loaded = load( legacy );
+    BOOST_REQUIRE_EQUAL( loaded.size(), 6 );
+    BOOST_CHECK( !loaded[0]->interruption.has_value() );
+    BOOST_CHECK( !loaded[4]->interruption.has_value() );
+
+    // Unfinished ones count as interrupted when they started, so are not resumed without asking.
+    BOOST_REQUIRE( loaded[3]->interruption.has_value() );
+    BOOST_CHECK_EQUAL( seconds( loaded[3]->interruption->time ), seconds( running->timestamp ) );
+    BOOST_CHECK( loaded[3]->interruption->cause == LlmInteraction::Interruption::Cause::SessionEnded );
+  }// End a file from before interruptions were recorded
+}//InterruptionRoundTrip
+
+
 BOOST_AUTO_TEST_CASE( JudgeModelConfig )
 {
   const string config_xml =

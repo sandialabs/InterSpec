@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <set>
 #include <map>
 #include <deque>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <memory>
@@ -92,6 +93,24 @@ public:
   static bool llmToolIsConfigured();
   
   LlmInterface *llmInterface();
+
+  /** Notes that the user is closing this tool - as opposed to it going away with the session - so a
+   conversation it cuts off mid-work is offered for resuming when the tool is next shown, rather than
+   resumed on its own; see resumeInterruptedConversation().  Call just before the tool is deleted.
+   */
+  void noteClosedByUser();
+
+  /** If the newest conversation was cut off mid-work (see LlmInteraction::interruption) less than
+   #sm_autoResumeWindow ago, and not by the user (closing the tool, or showing another spectrum), continues
+   it; otherwise it is left for the user to Resume, or Dismiss, from its display.  For when the tool is
+   (re)created.
+   */
+  void resumeInterruptedConversation();
+
+  /** How recently a conversation must have been cut off, other than by the user, for
+   resumeInterruptedConversation() to continue it without asking.
+   */
+  static constexpr std::chrono::seconds sm_autoResumeWindow{ 120 };
 
   /** Open the LLM provider settings window seeded from an on-disk `llm_config.xml` the user opened
    or dragged onto the app (import mode).  On Accept the file is written to the writable data
@@ -347,6 +366,9 @@ private:
 
   bool m_isRequestPending;                 ///< Whether a request is currently pending
 
+  /** Set by noteClosedByUser(); see LlmInteraction::Interruption::Cause::AssistantClosed. */
+  bool m_closedByUser;
+
   /** Full path of the log file for the current conversation; empty until first written, and reset
    whenever the conversation is cleared or replaced, so the next write starts a new file. */
   std::string m_logFilePath;
@@ -458,15 +480,23 @@ private:
   /** Show the active provider's banner text above the input field, or hide it if there is none. */
   void updateInputBanner();
   
-  /** Handle spectrum changes - cancel pending requests if foreground spectrum changes.
-   For passthrough/search-mode data, foreground sample changes are expected (the LLM is changing them)
-   so we do not cancel the pending request.
+  /** Handle spectrum changes: the user showing another foreground interrupts the work in flight (see
+   interruptForSpectrumChange()); other changes cancel it.  For passthrough/search-mode data, foreground
+   sample changes are expected (the LLM is changing them) so we do not cancel the pending request.
    */
   void handleSpectrumChanged( SpecUtils::SpectrumType specType,
                               std::shared_ptr<SpecMeas> meas,
                               std::set<int> samples,
                               std::vector<std::string> detectors );
   
+  /** Interrupts the work in flight, or stopped on a paused sub-agent, as the user has shown another
+   spectrum, so it can be resumed when its conversation is next shown (see LlmInteraction::interruption).
+   Returns false, doing nothing, if the change is not the user's to interrupt for: the LLM's own tools are
+   running (e.g., load_spectrum, which decides what becomes of the conversation), or an MCP client or a
+   benchmark is driving the conversation.
+   */
+  bool interruptForSpectrumChange();
+
   /** Cancel the current pending request */
   void cancelCurrentRequest();
 

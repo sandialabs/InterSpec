@@ -189,6 +189,15 @@
   <message id="lcw-title-stopped">{1} - Stopped</message>
   <message id="lcw-title-running-tools">Working: {1} - Performing tool calls...</message>
   <message id="lcw-title-pending-llm">Working: {1} - Pending LLM response...</message>
+  <message id="lcw-title-interrupted">{1} - Interrupted</message>
+  <!-- A conversation cut off when the assistant (or InterSpec) was closed while it was working; {1} is
+       the time it was cut off, like "14:05:31". -->
+  <message id="lcw-interrupted-closed">The assistant was closed at {1}, before it finished this request.</message>
+  <message id="lcw-interrupted-session">InterSpec was closed at {1}, before the assistant finished this request.</message>
+  <message id="lcw-interrupted-spectrum">A different spectrum was shown at {1}, before the assistant finished this request.</message>
+  <message id="lcw-interrupted-resume">Resume</message>
+  <message id="lcw-interrupted-dismiss">Dismiss</message>
+  <message id="lcw-interrupted-help">Resume continues from where it stopped; Dismiss ends it here, as does asking a new question.</message>
   <message id="lcw-total-time">(total time: {1})</message>
   <!-- The summary line at the bottom of a conversation. -->
   <message id="lcw-summary-start">Start Time: {1}</message>

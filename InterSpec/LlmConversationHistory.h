@@ -138,6 +138,11 @@ struct LlmToolCall
   // For sub-agent tool calls (invoke_*), this holds the sub-agent's conversation
   std::shared_ptr<LlmInteraction> sub_agent_conversation;
 
+  /** An async tool was started for this call in this session, and has not called back yet - so a
+   conversation interrupted and then resumed within the session waits for its result.  Runtime-only.
+   */
+  bool asyncRunning = false;
+
   LlmToolCall( const std::string &name, const std::string &id, const nlohmann::json &params )
     : status(CallStatus::Pending), toolName(name), invocationId(id), toolParameters(params)
   {
@@ -518,6 +523,44 @@ struct LlmInteraction
   /** Time when this conversation finished (completed or errored). Empty if still in progress. */
   std::optional<std::chrono::system_clock::time_point> finishTime;
 
+  /** Why, and when, a conversation was cut off while the LLM or its tools still owed it something; see
+   #interruption.
+   */
+  struct Interruption
+  {
+    enum class Cause : int
+    {
+      /** InterSpec was closed, or the app ended (e.g., iOS stopping it while in the background). */
+      SessionEnded,
+
+      /** The user closed the LLM Assistant. */
+      AssistantClosed,
+
+      /** The user showed a different spectrum, so a different conversation history. */
+      SpectrumChanged
+    };//enum class Cause
+
+    /** When it was cut off; for one read back from a file, the latest it is known to have been running. */
+    std::chrono::system_clock::time_point time;
+
+    Cause cause = Cause::SessionEnded;
+
+    /** If the user cut it off, so it is only resumed when they ask. */
+    bool byUser() const { return (cause != Cause::SessionEnded); }
+  };//struct Interruption
+
+  /** Set when this conversation was cut off mid-work - the LLM Assistant was closed, another spectrum
+   shown, or the session ended - so it can be picked back up when it is next shown (see
+   LlmInterface::resumeInterrupted()).  Cleared when it is resumed or abandoned.  Its #finishTime stays
+   unset meanwhile.
+   */
+  std::optional<Interruption> interruption;
+
+  /** If the last turn still waits on the LLM or on tools (an InitialRequest, ToolCall, ToolResult, or
+   AutoReply), rather than having ended the conversation (a final response, error, or summary).
+   */
+  bool isAwaitingWork() const;
+
   // Token usage tracking from LLM API responses
   // Using optional<size_t> because some models/APIs don't provide token usage information,
   // making it clear when this data is unavailable rather than defaulting to 0
@@ -590,6 +633,12 @@ struct LlmInteraction
    LlmInterface::stopIdleRounds().
    */
   Wt::Signal<bool> stoppedChanged;
+
+  /** Signal emitted when #interruption is set while the conversation is shown (see
+   LlmInterface::interruptInFlight()), and when it is cleared by the conversation being resumed or
+   abandoned (LlmInterface::resumeInterrupted(), LlmInterface::abandonInterrupted()).
+   */
+  Wt::Signal<> interruptionChanged;
 
   /** Signal emitted when an API request is sent to the LLM for this conversation.
    Emits the turn the LLM is now responding to (the last InitialRequest, ToolResult, or AutoReply

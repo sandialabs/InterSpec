@@ -346,6 +346,9 @@ namespace
     if( convo.finishTime.has_value() )
     {
       endTime = convo.finishTime.value();
+    }else if( convo.interruption.has_value() )
+    {
+      endTime = std::max( endTime, convo.interruption->time );
     }else
     {
       for( const shared_ptr<LlmInteractionTurn> &turn : convo.responses )
@@ -2128,9 +2131,27 @@ bool LlmInteractionErrorDisplay::refuseIfEndedSubAgent()
 }//refuseIfEndedSubAgent()
 
 
+bool LlmInteractionErrorDisplay::refuseIfSubAgentNotAwaited()
+{
+  const shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( !convo || !llm || (convo->agent_type == AgentType::MainAgent) || llm->resumeInterruptedFor( convo ) )
+    return false;
+
+  if( m_retryBtn )
+    m_retryBtn->setEnabled( false );
+  if( m_continueBtn )
+    m_continueBtn->setEnabled( false );
+  if( m_helpText )
+    m_helpText->setText( WString::tr( "lcw-subagent-ended" ) );
+
+  return true;
+}//refuseIfSubAgentNotAwaited()
+
+
 void LlmInteractionErrorDisplay::handleRetry()
 {
-  if( refuseIfEndedSubAgent() )
+  if( refuseIfEndedSubAgent() || refuseIfSubAgentNotAwaited() )
     return;
 
   // Disable both buttons to prevent double-clicks
@@ -2244,7 +2265,7 @@ void LlmInteractionErrorDisplay::handleRetry()
 
 void LlmInteractionErrorDisplay::handleContinueAnyway()
 {
-  if( refuseIfEndedSubAgent() )
+  if( refuseIfEndedSubAgent() || refuseIfSubAgentNotAwaited() )
     return;
 
   // Disable both buttons to prevent double-clicks
@@ -2362,6 +2383,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_menu( nullptr ),
     m_nestingLevel( nestingLevel ),
     m_isFinished( false ),
+    m_interruptedPanel( nullptr ),
     m_isStopped( false ),
     m_isLive( false ),
     m_activeStatus( nullptr ),
@@ -2503,6 +2525,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   interaction->conversationFinished.connect( this, &LlmInteractionDisplay::handleConversationFinished );
   interaction->llmRequestSent.connect( this, &LlmInteractionDisplay::handleRequestSent );
   interaction->stoppedChanged.connect( this, &LlmInteractionDisplay::handleStoppedChanged );
+  interaction->interruptionChanged.connect( this, &LlmInteractionDisplay::handleInterruptionChanged );
 
   // Check if conversation is already finished; a set finishTime with no final or error turn means it
   //  was ended without one (e.g., a cancelled sub-agent, or the interface was closed mid-request).
@@ -2538,6 +2561,13 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     }else if( llm && llm->isConversationStopped( m_interaction ) )
     {
       handleStoppedChanged( true );
+    }else if( m_interaction->interruption.has_value() )
+    {
+      // Cut off by the assistant, or InterSpec, closing, or another spectrum being shown; show how long
+      //  it ran, and offer to resume it.
+      stopStatusTimer();
+      showInterruptedPanel();
+      updateStatus();
     }
   }
 
@@ -2904,6 +2934,90 @@ void LlmInteractionDisplay::handleStoppedChanged( const bool stopped )
 }//handleStoppedChanged(...)
 
 
+void LlmInteractionDisplay::showInterruptedPanel()
+{
+  // A sub-agent is resumed along with the conversation that invoked it, so has no buttons of its own.
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( (m_nestingLevel > 0) || !llm || !llm->canResumeInterrupted( m_interaction ) )
+    return;
+
+  // One hidden when the conversation was resumed is replaced, to give this interruption's time and cause.
+  if( m_interruptedPanel )
+  {
+    if( !m_interruptedPanel->isHidden() )
+      return;
+    m_interruptedPanel->removeFromParent();
+    m_interruptedPanel = nullptr;
+  }
+
+  const LlmInteraction::Interruption &interruption = m_interaction->interruption.value();
+
+  m_interruptedPanel = m_turnContainer->addNew<WContainerWidget>();
+  m_interruptedPanel->addStyleClass( "LlmInterruptedPanel" );
+
+  const char *message_key = "lcw-interrupted-session";
+  switch( interruption.cause )
+  {
+    case LlmInteraction::Interruption::Cause::SessionEnded:    message_key = "lcw-interrupted-session";  break;
+    case LlmInteraction::Interruption::Cause::AssistantClosed: message_key = "lcw-interrupted-closed";   break;
+    case LlmInteraction::Interruption::Cause::SpectrumChanged: message_key = "lcw-interrupted-spectrum"; break;
+  }//switch( interruption.cause )
+
+  WText *message = m_interruptedPanel->addNew<WText>( WString::tr( message_key ).arg( formatTime( interruption.time ) ) );
+  message->addStyleClass( "LlmInterruptedMessage" );
+
+  WContainerWidget *buttons = m_interruptedPanel->addNew<WContainerWidget>();
+  buttons->addStyleClass( "LlmInterruptedButtons" );
+
+  // The buttons are hidden with the panel, by handleInterruptionChanged(), from within their own click.
+  WPushButton *resumeBtn = buttons->addNew<WPushButton>( WString::tr( "lcw-interrupted-resume" ) );
+  resumeBtn->addStyleClass( "LlmResumeButton" );
+  resumeBtn->clicked().connect( this, [this](){
+    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+      llm->resumeInterrupted( m_interaction );
+  } );
+
+  WPushButton *dismissBtn = buttons->addNew<WPushButton>( WString::tr( "lcw-interrupted-dismiss" ) );
+  dismissBtn->addStyleClass( "LlmContinueButton" );
+  dismissBtn->clicked().connect( this, [this](){
+    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+      llm->abandonInterrupted( m_interaction );
+  } );
+
+  WText *help = m_interruptedPanel->addNew<WText>( WString::tr( "lcw-interrupted-help" ) );
+  help->addStyleClass( "LlmErrorHelpText" );
+}//showInterruptedPanel()
+
+
+void LlmInteractionDisplay::handleInterruptionChanged()
+{
+  if( m_interaction->interruption.has_value() )
+  {
+    // Cut off while shown (e.g., the detectors summed changed): nothing runs for it now.
+    m_isStopped = false;
+    finalizeActiveStatus();
+    stopStatusTimer();
+    showInterruptedPanel();
+    updateStatus();
+    return;
+  }//if( interrupted )
+
+  if( m_interruptedPanel )
+    m_interruptedPanel->hide();
+
+  // Resumed: its total time counts again, from where it was started.
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( !m_isFinished && llm && llm->isConversationActive( m_interaction ) )
+  {
+    const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
+    m_timerText->start( WString(), std::max( chrono::milliseconds(0),
+                                  chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
+  }
+
+  updateStatus();
+}//handleInterruptionChanged()
+
+
 void LlmInteractionDisplay::handleRequestSent( shared_ptr<LlmInteractionTurn> turn )
 {
   // A new request ends whatever was being waited on before it (e.g., a tool round).
@@ -3191,7 +3305,11 @@ WString LlmInteractionDisplay::getTitleWithStatus() const
   const LlmInteractionError * const lastError = m_interaction->responses.empty() ? nullptr
                      : dynamic_cast<const LlmInteractionError *>( m_interaction->responses.back().get() );
   const bool awaitingErrorChoice = m_isFinished && lastError && !lastError->skippedByUser();
-  if( m_isStopped || awaitingErrorChoice )
+  if( !m_isFinished && m_interaction->interruption.has_value() )
+    return WString::tr( "lcw-title-interrupted" ).arg( question );
+
+  // Also one ended before it got an answer (e.g., an interrupted conversation that was not resumed).
+  if( m_isStopped || awaitingErrorChoice || (m_isFinished && m_interaction->isAwaitingWork()) )
     return WString::tr( "lcw-title-stopped" ).arg( question );
 
   if( m_isFinished )

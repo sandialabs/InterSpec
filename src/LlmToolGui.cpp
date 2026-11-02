@@ -226,6 +226,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_menuIcon(nullptr),
     m_layout(nullptr),
     m_isRequestPending(false),
+    m_closedByUser(false),
     m_logFilePath(),
     m_logWriteFailed(false),
     m_imagePreviewContainer(nullptr),
@@ -297,6 +298,23 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
 
 LlmToolGui::~LlmToolGui()
 {
+  // A conversation cut off mid-work is left to be resumed when the tool is next shown, rather than
+  //  ended - except one an MCP client or a benchmark was driving, which is told below it failed.
+  if( m_llmInterface )
+  {
+    m_llmInterface->interruptInFlight( m_closedByUser ? LlmInteraction::Interruption::Cause::AssistantClosed
+                                                      : LlmInteraction::Interruption::Cause::SessionEnded, false );
+
+    if( m_activeMcpCallback || isBenchmarkRunning() )
+    {
+      if( const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory() )
+      {
+        for( const shared_ptr<LlmInteraction> &convo : history->getConversations() )
+          m_llmInterface->abandonInterrupted( convo, false );
+      }
+    }//if( unattended )
+  }//if( m_llmInterface )
+
   // Final flush of the log, to capture anything since the last completed turn.
   writeConversationLog();
 
@@ -766,6 +784,56 @@ LlmInterface *LlmToolGui::llmInterface()
 {
   return m_llmInterface.get();
 }
+
+
+void LlmToolGui::noteClosedByUser()
+{
+  m_closedByUser = true;
+}
+
+
+bool LlmToolGui::interruptForSpectrumChange()
+{
+  // The LLM's own tools (e.g., load_spectrum) decide what becomes of the conversation; one an MCP
+  //  client or a benchmark is driving is cancelled, so it is told.
+  if( !m_llmInterface || m_llmInterface->isRunningToolCalls() || m_activeMcpCallback || isBenchmarkRunning() )
+    return false;
+
+  m_llmInterface->interruptInFlight( LlmInteraction::Interruption::Cause::SpectrumChanged, true );
+
+  if( m_isRequestPending )
+  {
+    m_isRequestPending = false;
+    setInputEnabled( true );
+    writeConversationLog();
+  }
+
+  return true;
+}//bool interruptForSpectrumChange()
+
+
+void LlmToolGui::resumeInterruptedConversation()
+{
+  if( !m_llmInterface || m_isRequestPending )
+    return;
+
+  const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+  if( !history || history->getConversations().empty() )
+    return;
+
+  // Only the newest conversation can be resumed; see setConversationHistory().
+  const shared_ptr<LlmInteraction> convo = history->getConversations().back();
+  if( !convo || !convo->interruption.has_value() || convo->interruption->byUser()
+      || !m_llmInterface->canResumeInterrupted( convo ) )
+    return;
+
+  // E.g., the app was only briefly in the background; after longer, the user may have moved on.
+  const std::chrono::system_clock::duration age = std::chrono::system_clock::now() - convo->interruption->time;
+  if( age > sm_autoResumeWindow )
+    return;
+
+  m_llmInterface->resumeInterrupted( convo );
+}//void resumeInterruptedConversation()
 
 
 void LlmToolGui::createMenuIcon( WContainerWidget *inputRow )
@@ -1935,8 +2003,12 @@ void LlmToolGui::handleSpectrumChanged( SpecUtils::SpectrumType specType,
   if( meas && meas->passthrough() )
     return;
 
-  // If there's a pending request, cancel it and re-enable input
-  if( m_isRequestPending )
+  // The user showing another foreground cuts the conversation's work off; it is left to be resumed -
+  //  e.g., when this spectrum is shown again, if setConversationHistory() swaps the conversation out.
+  const bool interrupted = (specType == SpecUtils::SpectrumType::Foreground) && interruptForSpectrumChange();
+
+  // Otherwise, if there's a pending request, cancel it and re-enable input
+  if( !interrupted && m_isRequestPending )
   {
     cout << "Foreground spectrum changed during LLM request - cancelling request" << endl;
     cancelCurrentRequest();
@@ -2006,14 +2078,33 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
 
   m_logFilePath.clear(); // A restored history is logged to a new file at its next turn end
 
-  // A turn stopped on a paused sub-agent can't be resumed once its history is swapped out.
-  m_llmInterface->abandonStoppedRounds();
+  // Work on a conversation swapped out here (e.g., the user showed another spectrum) is interrupted, to
+  //  be resumed when it is shown again; or else, a turn stopped on a paused sub-agent is ended.
+  const vector<shared_ptr<LlmInteraction>> &shown = llmHistory->getConversations();
+  const bool swappedOut = std::any_of( begin(shown), end(shown), [&history]( const shared_ptr<LlmInteraction> &c ){
+    return c && (!history || (std::find( begin(*history), end(*history), c ) == end(*history)));
+  } );
+  if( swappedOut && !interruptForSpectrumChange() )
+    m_llmInterface->abandonStoppedRounds();
 
   // Clear current display
   clearConversationDisplays();
 
   if( history && !history->empty() )
   {
+    // Only the newest conversation can be picked back up, so any older one cut off mid-work is ended -
+    //  before its display is made, so it shows as such.
+    shared_ptr<LlmInteraction> newest;
+    for( const std::shared_ptr<LlmInteraction> &conv : *history )
+      newest = conv ? conv : newest;
+
+    for( const std::shared_ptr<LlmInteraction> &conv : *history )
+    {
+      if( conv && conv->interruption.has_value()
+          && ((conv != newest) || !m_llmInterface->canResumeInterrupted( conv )) )
+        m_llmInterface->abandonInterrupted( conv, false );
+    }
+
     // Clear current history and add conversations from saved history
     llmHistory->clear();
     for( const std::shared_ptr<LlmInteraction> &conv : *history )

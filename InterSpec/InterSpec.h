@@ -1020,7 +1020,10 @@ public:
    data directory (with an overwrite warning if one already exists). */
   void openLlmConfigForImport( const std::string &configFilePath );
   
-  /** Handle cleanup when LLM tool is closed. */
+  /** Closes the LLM tool because the user asked to (its tab, side-panel, or window close button), so a
+   conversation it cuts off mid-work is offered for resuming, rather than resumed on its own, when the
+   tool is next created; see LlmToolGui::resumeInterruptedConversation().
+   */
   void handleLlmToolClose();
 
   /** Calls #handleLlmToolClose on the next pass of the event loop - for close buttons that are
@@ -2001,6 +2004,10 @@ protected:
   /** Takes m_llmTool out of whichever tab, window, or side panel currently holds it (destroying
    the window or side panel); returns nullptr if there is no tool. */
   std::unique_ptr<Wt::WWidget> detachLlmTool();
+
+  /** Saves the LLM conversation into the foreground SpecMeas, then deletes the LLM tool; a no-op if
+   there is none.  #handleLlmToolClose for the user closing it, or directly as the session ends. */
+  void closeLlmTool();
 
   /** Makes `panel` (i.e., #m_llmSidePanel) the second column of #m_layout, spanning the chart and
    tool-tab rows, with a draggable splitter between it and the charts. */

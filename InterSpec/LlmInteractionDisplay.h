@@ -448,6 +448,11 @@ protected:
    */
   bool refuseIfEndedSubAgent();
 
+  /** As refuseIfEndedSubAgent(), for a sub-agent no tool round is waiting on - after the interrupted
+   conversation it belongs to is resumed, if it was interrupted (see LlmInterface::resumeInterruptedFor).
+   */
+  bool refuseIfSubAgentNotAwaited();
+
 private:
   std::shared_ptr<LlmInteractionError> m_error;
   std::weak_ptr<class LlmInterface> m_llmInterface;
@@ -496,6 +501,14 @@ protected:
    for it), or put back in flight; see LlmInteraction::stoppedChanged.
    */
   void handleStoppedChanged( const bool stopped );
+
+  /** For a conversation cut off mid-work (see LlmInteraction::interruption) that can be resumed, adds
+   #m_interruptedPanel, which says so, with buttons to Resume or Dismiss it.
+   */
+  void showInterruptedPanel();
+
+  /** The conversation was resumed, or abandoned; see LlmInteraction::interruptionChanged. */
+  void handleInterruptionChanged();
 
   /** Update the status indicator text and timer */
   void updateStatus();
@@ -594,6 +607,9 @@ private:
 
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;
+
+  /** See showInterruptedPanel(); hidden once the conversation is resumed or abandoned.  Null if none. */
+  Wt::WContainerWidget *m_interruptedPanel;
 
   /** If its tool round is stopped (see handleStoppedChanged()); shown in the title, even once the
    conversation is ended (a new question was asked instead of resuming it). */

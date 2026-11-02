@@ -1472,7 +1472,7 @@ InterSpec::~InterSpec() noexcept(true)
   //  conversation (handleLlmToolClose() would also rearrange the layout, which, mid-teardown, gives
   //  a client-side layout exception).
   if( m_llmToolWindow )
-    handleLlmToolClose();   //syncs conversation history into the SpecMeas before deleting
+    closeLlmTool();   //syncs conversation history into the SpecMeas before deleting
   else if( m_llmTool )
     syncLlmHistoryToSpecMeas();
 #endif
@@ -15257,6 +15257,13 @@ void InterSpec::createLlmTool()
       showLlmToolInWindow( std::move(llmTool) );
 
     m_llmToolMenuItem->disable();
+
+    // Pick back up a conversation cut off when the tool, or the session, last closed - on the next
+    //  pass of the event loop, so any state being restored (see loadStateFromDb()) is all in place first.
+    postToInterSpec( this, []( InterSpec *viewer ){
+      if( LlmToolGui * const tool = viewer->currentLlmTool() )
+        tool->resumeInterruptedConversation();
+    } );
   }catch( const std::exception &e )
   {
     std::cout << "Error creating LLM tool: " << e.what() << std::endl;
@@ -15673,6 +15680,16 @@ void InterSpec::syncLlmHistoryToSpecMeas()
 
 void InterSpec::handleLlmToolClose()
 {
+  // The user is closing it, so a conversation it cuts off is not resumed without asking.
+  if( m_llmTool )
+    m_llmTool->noteClosedByUser();
+
+  closeLlmTool();
+}//void handleLlmToolClose()
+
+
+void InterSpec::closeLlmTool()
+{
   if( !m_llmTool )
     return;
 
@@ -15706,6 +15723,6 @@ void InterSpec::handleLlmToolClose()
 
   assert( !m_llmTool );         // observing_ptr auto-clears when the widget is destroyed
   assert( !m_llmToolWindow );
-}
+}//void closeLlmTool()
 #endif // USE_LLM_INTERFACE
 
