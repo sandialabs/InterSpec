@@ -374,6 +374,28 @@ Providers must be deterministic and side-effect free (their values are memoized 
   pays for the transition splits and the IC x IC walk: Eu-152 goes 0.03 -> 0.06 ms, and the
   U-238 chain 0.3 -> 0.7 ms (Release, 2026-10). InterSpec's reference-line redraw is unchanged.
 
+### Aperture quadratures and stored-response identity (`CEELO_BUILD_RESPONSE`)
+
+- **Quadrature storage.** An `ApertureQuadrature` keeps every ray's material stretches in one
+  contiguous `segments` array (a ray holds an offset and count; iterate with `q.segs(ray)`), and
+  each stretch carries a slot into the quadrature's distinct `materials`, so a kernel evaluates mu
+  once per material per call rather than searching per segment. Build rays one at a time with
+  `add_segment` (`discard_segments` drops a ray that turns out unused); rays traced in parallel into
+  separate quadratures are joined with `append_rays`. Against per-ray vectors this made tracing
+  1.3-1.7x and the per-energy kernel ~1.2x faster, bit-identical (Release, 2026-11).
+- **`content_hash()`** identifies a response by exactly what `to_xml_string()` stores - the
+  certificate and the version stamp excluded - but is hashed from the members (FNV-1a over raw
+  values, length-prefixed, presence-flagged) rather than from the formatted XML, which cost ~1 ms a
+  call. It mirrors `serialize_xml` field by field and condition by condition, so a new stored field
+  must be added to both - and an optional one (written only when present or non-default) must
+  contribute nothing to the hash when absent and a uniquely named `tag()` plus its content when
+  present, so existing responses keep their hash, as they keep their bytes.
+  `test_detector_response_io/content_hash_tracks_every_serialized_field` edits the first, middle and
+  last token of every attribute and element value, and removes each element, one at a time, and
+  fails if the hash does not change exactly when the stored content does - for the fields its test
+  responses populate. The definition changed in 2026-11 (from hashing the XML text), so every
+  response's hash changed once.
+
 ### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
 
 `src/io/DetectorEtendue.h` builds a fixed set of LINES through the active

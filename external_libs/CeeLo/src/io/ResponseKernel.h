@@ -70,15 +70,30 @@ struct RaySegment {
     const Material* material;  ///< never nullptr (vacuum stretches are skipped)
     float length;              ///< cm
     bool is_scoring;           ///< active crystal
+    uint8_t material_slot = 0; ///< index of `material` in ApertureQuadrature::materials, so a
+                               ///< kernel evaluates each material's mu once per call, not per segment
 };
 
-/// One quadrature ray that intersects the geometry's outer boundary.
+/// One quadrature ray that intersects the geometry's outer boundary.  Its segments live in the
+/// owning quadrature's contiguous ApertureQuadrature::segments (iterate them with
+/// ApertureQuadrature::segs) - a heap block per ray was a third of the cost of tracing.
 struct KernelRay {
     float omega_w;             ///< this ray's solid-angle weight, fraction of 4pi
     float active_len;          ///< total active-crystal chord length (cm)
     float cos_incidence;       ///< |cos| of angle vs detector axis (+z)
     Eigen::Vector3f dir;       ///< ray direction (for per-ray source attenuation)
-    std::vector<RaySegment> segs;  ///< ordered material stretches (few entries)
+    uint32_t seg_begin = 0;    ///< first of its ordered material stretches (few entries)
+    uint32_t seg_count = 0;
+};
+
+/// The segments of one ray, for a range-for.
+struct RaySegmentRange {
+    const RaySegment* first;
+    const RaySegment* last;
+    const RaySegment* begin() const { return first; }
+    const RaySegment* end() const { return last; }
+    size_t size() const { return static_cast<size_t>(last - first); }
+    bool empty() const { return first == last; }
 };
 
 /// Which mu* the scoring (active-crystal) segments use in interaction_omega.
@@ -95,10 +110,31 @@ struct ApertureQuadrature {
                                     ///< cone_omega_frac == 1.0 (full sphere)
     int n_rays_total = 0;           ///< rays sampled (incl. misses)
     std::vector<KernelRay> rays;    ///< rays with any geometry intersection
+    std::vector<RaySegment> segments;        ///< every ray's segments, ray after ray
+    std::vector<const Material*> materials;  ///< distinct materials the segments cross, in the
+                                             ///< order RaySegment::material_slot indexes them
     double omega_frac_active = 0.0; ///< Omega/4pi of the ACTIVE crystal (chord > 0)
     double mean_chord_cm = 0.0;     ///< Omega-weighted mean active chord
     double mean_cos_incidence = 0.0;///< Omega-weighted (flux) mean |cos| vs axis;
                                     ///< the near-field model's theta_eff coordinate
+
+    /// The ordered material stretches of `ray`, one of #rays.
+    RaySegmentRange segs(const KernelRay& ray) const {
+        const RaySegment* const first = segments.data() + ray.seg_begin;
+        return {first, first + ray.seg_count};
+    }
+
+    /// Appends a stretch to `ray`, registering its material in #materials.  Rays are built one at
+    /// a time - `ray` must be the newest one (its segments are the last in #segments).
+    void add_segment(KernelRay& ray, const Material* material, float length, bool is_scoring);
+
+    /// Drops `ray`'s segments again - for a ray being built that turns out not to be kept.
+    void discard_segments(KernelRay& ray);
+
+    /// Appends `part`'s rays, in order, with their segments - so rays traced in parallel into
+    /// separate quadratures can be joined into one.  Only the rays and segments are taken; the
+    /// summary fields (#omega_frac_active etc.) are the caller's to set.
+    void append_rays(const ApertureQuadrature& part);
 
     /// Interaction-weighted effective solid angle (spec Eq. 1); also the
     /// chord-model estimate of "any interaction in the active crystal":
@@ -291,23 +327,20 @@ double ApertureQuadrature::interaction_omega_with_tsrc(
     const double recap = (mu == MuChoice::NoRayleigh)
         ? std::max(0.0, std::min(1.0, passive_compton_recapture)) : 0.0;
     double total = 0.0;
-    // Per-call cache of (mu_total, mu_nors, mu_cs) by material pointer.
+    // (mu_total, mu_nors, mu_cs) of each material, by RaySegment::material_slot.
     struct Mu { double tot, nors, cs; };
-    std::vector<std::pair<const Material*, Mu>> mu_cache;
-    auto mu_of = [&](const Material* m) -> Mu {
-        for (const auto& e : mu_cache)
-            if (e.first == m) return e.second;
+    std::vector<Mu> mus;
+    mus.reserve(materials.size());
+    for (const Material* m : materials) {
         const MacroscopicXS xs = m->macroscopic_xs(E_MeV);
-        const Mu val{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
-        mu_cache.push_back({m, val});
-        return val;
-    };
+        mus.push_back({xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs});
+    }
     for (const auto& r : rays) {
         if (r.active_len <= 0.0f) continue;
         double tau_before = 0.0;
         double p_int = 0.0;
-        for (const auto& s : r.segs) {
-            const Mu m = mu_of(s.material);
+        for (const auto& s : segs(r)) {
+            const Mu& m = mus[s.material_slot];
             if (s.is_scoring) {
                 const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
                 p_int += std::exp(-tau_before) * (1.0 - std::exp(-mu_star * s.length));

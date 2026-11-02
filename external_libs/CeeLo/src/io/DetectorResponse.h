@@ -1142,10 +1142,11 @@ public:
     std::string to_xml_string() const;
     static std::shared_ptr<DetectorResponse> from_xml_string(const std::string& xml);
 
-    /// FNV-1a hash of the canonical XML payload (stable content identity;
-    /// grounding and grid changes change it). INVARIANT to the accuracy
-    /// certificate (which is metadata about the response, not content), so a
-    /// response hashes the same with or without one.
+    /// FNV-1a hash of the stored content - exactly what to_xml_string() saves,
+    /// hashed from the members (stable content identity; grounding and grid
+    /// changes change it, and a save/load round trip does not). INVARIANT to the
+    /// accuracy certificate (which is metadata about the response, not
+    /// content), so a response hashes the same with or without one.
     uint64_t content_hash() const;
 
 private:
