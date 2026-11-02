@@ -28,6 +28,7 @@
   <message id='cfm-err-sample-num-doesnt-exist-2'>Sample number {1} does not exist in the measurement.</message>
   <message id='cfm-err-general-1'>Error changing to requested sample number(s)</message>
   <message id='cfm-err-advancing'>Error advancing spectrum</message>
+  <message id='cfm-err-loading-file'>Error loading the selected spectrum file: {1}</message>
   <message id='cfm-no-spectra'>No loaded/available spectra.</message>
 
   <message id='cfm-no-fore'>No foreground</message>

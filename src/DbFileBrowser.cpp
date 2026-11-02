@@ -123,25 +123,30 @@ public:
     if( !m_header || m_dbentry->userHasModified )
     {
       if( m_header )
-      {
         m_header->setNotACandiateForSavingToDb();
-        Wt::WModelIndex index = m_model->index( m_header );
-        m_model->removeRows( index.row(), 1 );
-      }//if( m_header )
       
-      std::shared_ptr< SpectraFileHeader > header;
-      std::shared_ptr< SpecMeas >  measurement;
+      // We display the resumed copy first, then put it in place of the just-opened copy
+      //  (`m_header`) anywhere else that is still displayed (e.g., as background), and then remove
+      //  the just-opened copy, so nothing displayed is left out of the file model.
+      const shared_ptr<SpecMeas> justOpened = m_header ? m_header->measurementIfInMemory() : nullptr;
+      const auto removeJustOpened = [this, justOpened]( const shared_ptr<SpecMeas> &resumed ){
+        if( !m_header )
+          return;
+        m_manager->displayInPlaceOf( justOpened, resumed );
+        m_manager->removeFile( m_header, true );
+      };
       
       //go through and make sure file isnt already open
       for( int row = 0; row < m_model->rowCount(); ++row )
       {
         std::shared_ptr<SpectraFileHeader> header = m_model->fileHeader( row );
-        Wt::Dbo::ptr<UserFileInDb> entry = header->dbEntry();
+        Wt::Dbo::ptr<UserFileInDb> entry = header ? header->dbEntry() : Wt::Dbo::ptr<UserFileInDb>();
         
-        if( entry && entry.id() == m_dbentry.id() )
+        if( (header != m_header) && entry && (entry.id() == m_dbentry.id()) )
         {
-          measurement = header->parseFile();
+          std::shared_ptr<SpecMeas> measurement = header->parseFile();
           m_manager->displayFile( row, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
+          removeJustOpened( measurement );
           m_loadedASelection.emit();
           
           return;
@@ -150,8 +155,11 @@ public:
       
       try
       {
+        std::shared_ptr< SpectraFileHeader > header;
+        std::shared_ptr< SpecMeas >  measurement;
         const int modelRow = m_manager->setDbEntry( m_dbentry, header, measurement, true );
         m_manager->displayFile( modelRow, measurement, m_type, false, false, SpecMeasManager::VariantChecksToDo::None );
+        removeJustOpened( measurement );
         m_loadedASelection.emit();
       }catch( exception &e )
       {
@@ -1316,22 +1324,39 @@ void SnapshotBrowser::loadSpectraSelected()
         if( dbfile->userHasModified )
         {
             m_header->setNotACandiateForSavingToDb();
-            Wt::WModelIndex index = m_model->index( m_header );
-            m_model->removeRows( index.row(), 1 );
             
-            std::shared_ptr< SpectraFileHeader > header;
-            std::shared_ptr< SpecMeas >  measurement;
+            // Load the resumed copy as the spectrum type the just-opened copy is displayed as
+            const shared_ptr<SpecMeas> justOpened = m_header->measurementIfInMemory();
+            SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
+            for( const SpecUtils::SpectrumType t : { SpecUtils::SpectrumType::Foreground,
+                                                     SpecUtils::SpectrumType::Background,
+                                                     SpecUtils::SpectrumType::SecondForeground } )
+            {
+                if( justOpened && (m_viewer->measurment(t) == justOpened) )
+                {
+                    type = t;
+                    break;
+                }
+            }//for( loop over spectrum types )
+            
+            // After displaying the resumed copy, put it in place of the just-opened one anywhere
+            //  else that is still displayed, then remove the just-opened one, so nothing displayed
+            //  is left out of the file model.
+            const auto removeJustOpened = [this, justOpened]( const shared_ptr<SpecMeas> &resumed ){
+                m_manager->displayInPlaceOf( justOpened, resumed );
+                m_manager->removeFile( m_header, true );
+            };
             
             //go through and make sure file isnt already open
             for( int row = 0; row < m_model->rowCount(); ++row )
             {
-                std::shared_ptr<SpectraFileHeader> header
-                = m_model->fileHeader( row );
-                Wt::Dbo::ptr<UserFileInDb> entry = header->dbEntry();
-                if( entry && entry.id() == dbfile.id() )
+                std::shared_ptr<SpectraFileHeader> header = m_model->fileHeader( row );
+                Wt::Dbo::ptr<UserFileInDb> entry = header ? header->dbEntry() : Wt::Dbo::ptr<UserFileInDb>();
+                if( (header != m_header) && entry && (entry.id() == dbfile.id()) )
                 {
-                    measurement = header->parseFile();
-                    m_manager->displayFile( row, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
+                    std::shared_ptr<SpecMeas> measurement = header->parseFile();
+                    m_manager->displayFile( row, measurement, type, false, false, SpecMeasManager::VariantChecksToDo::None );
+                    removeJustOpened( measurement );
                     m_finished.emit();
                     return;
                 }//if( entry.id() == dbfile.id() )
@@ -1339,10 +1364,12 @@ void SnapshotBrowser::loadSpectraSelected()
             
             try
             {
+                std::shared_ptr< SpectraFileHeader > header;
+                std::shared_ptr< SpecMeas >  measurement;
                 const int modelRow = m_manager->setDbEntry( dbfile, header,
                                                            measurement, true );
-                m_manager->displayFile( modelRow, measurement, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
-                
+                m_manager->displayFile( modelRow, measurement, type, false, false, SpecMeasManager::VariantChecksToDo::None );
+                removeJustOpened( measurement );
             }catch( exception &e )
             {
                 cerr << "\n\nSnapshotModel\n\tCaught: " << e.what() << "\n\n";

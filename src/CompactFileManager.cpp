@@ -29,6 +29,7 @@
 
 #include <boost/regex.hpp>
 
+#include <Wt/Utils.h>
 #include <Wt/WText.h>
 #include <Wt/WImage.h>
 #include <Wt/WLabel.h>
@@ -306,7 +307,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     //m_sampleDivs[typeindex]->setHiddenKeepsGeometry( true );
 
 
-    m_titles[typeindex] = wrapper->addNew<WText>( "" );
+    // Titles come from the spectrum file, so display them as plain text
+    m_titles[typeindex] = wrapper->addNew<WText>( "", TextFormat::Plain );
     m_titles[typeindex]->addStyleClass( "SpecTitle" );
     m_titles[typeindex]->setInline( false );
     m_titles[typeindex]->hide();
@@ -454,6 +456,9 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   // Lastly, hook up the update handler so it'll keep it posted.
   m_files->rowsInserted().connect( this, &CompactFileManager::refreshContents );
   m_files->rowsRemoved().connect( this, &CompactFileManager::refreshContents );
+  // Sorting in the "Spectrum Manager" re-orders rows (only emits layoutChanged); our combo-box
+  //  entries must follow, since their indexes are used as model rows.
+  m_files->layoutChanged().connect( this, &CompactFileManager::refreshContents );
   hostViewer->displayedSpectrumChanged().connect( this,
                           [this]( SpecUtils::SpectrumType t, std::shared_ptr<SpecMeas> m,
                                   std::set<int> s, std::vector<std::string> d ){
@@ -501,10 +506,23 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
     return;
   }//if( we should unload current file )
 
-  std::shared_ptr<const SpectraFileHeader> header = m_files->fileHeader(row);
-  std::shared_ptr<SpecMeas> meas = header->parseFile();
+  try
+  {
+    std::shared_ptr<const SpectraFileHeader> header = m_files->fileHeader(row);
+    std::shared_ptr<SpecMeas> meas = header->parseFile();
 
-  m_fullFileManager->displayFile( row, meas, type, false, true, SpecMeasManager::VariantChecksToDo::None );
+    m_fullFileManager->displayFile( row, meas, type, false, true, SpecMeasManager::VariantChecksToDo::None );
+  }catch( std::exception &e )
+  {
+    cerr << "CompactFileManager::handleFileChangeRequest: " << e.what() << endl;
+    passMessage( WString::tr("cfm-err-loading-file").arg( Wt::Utils::htmlEncode( std::string(e.what()) ) ),
+                 WarningWidget::WarningMsgHigh );
+  }//try / catch
+
+  // If loading failed, or didnt change the spectrum, the combo-box would be left showing the
+  //  users selection, so we'll always re-sync to what is actually displayed.
+  handleDisplayChange( type, m_interspec->measurment(type), m_interspec->displayedSamples(type),
+                       m_interspec->detectorsToDisplay(type) );
 }//void handleFileChangeRequest( SpecUtils::SpectrumType type );
 
 /**
@@ -740,14 +758,15 @@ void CompactFileManager::handleUserChangeSampleNum( SpecUtils::SpectrumType type
 void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment )
 {
-    handleUserIncrementSampleNum(type, increment, m_interspec, m_files, this);
+    handleUserIncrementSampleNum( type, increment, m_interspec, this );
 }
 
 /**
  Refactored code so can be called statically from outside of CompactFileManager
  */
 void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
-                                                       bool increment , InterSpec *hostViewer, SpectraFileModel *files, CompactFileManager* cfm)
+                                                       bool increment, InterSpec *hostViewer,
+                                                       CompactFileManager *cfm )
 {
   try
   {
@@ -769,11 +788,6 @@ void CompactFileManager::handleUserIncrementSampleNum( SpecUtils::SpectrumType t
 
     if( total_sample_nums.size() == 1 && currentSamples.size() )
       return;
-
-    const WModelIndex index = files->index( meas );
-
-    if( !index.isValid() )
-      throw std::runtime_error( "Unable to get index" );
 
     set<int>::iterator pos = total_sample_nums.find( currentSample );
     if( pos == total_sample_nums.end() )
@@ -916,21 +930,18 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   else if( spectrum_type == SpecUtils::SpectrumType::SecondForeground )
     m_swapSecondaryWithForegroundBtn->show();
 
-  WModelIndex index = m_files->index( meas );
-  if( !index.isValid() )
-  {
-    select->setCurrentIndex( select->count()-1 );
-    m_previousSampleTxt[typeindex] = "";
-    return;
-  }//if( !index.isValid() )
-
-  select->setCurrentIndex( index.row() );
+  // SpecMeasManager keeps every displayed file in the model, so the index should always be valid;
+  //  if it isnt (e.g., transiently while a state is being loaded) we'll still update everything
+  //  else, so nothing is left showing info from a previous file.
+  const WModelIndex index = m_files->index( meas );
+  select->setCurrentIndex( index.isValid() ? index.row() : (select->count() - 1) );
 
   const set<int> &total_sample_nums = meas->sample_numbers();
 
   if( sample_numbers.size() == 0 || total_sample_nums.size() == 0 )
   {
-//    m_sampleDivs[typeindex]->hide();
+    m_displayedPostTexts[typeindex]->setText( "" );
+    m_displaySampleNumEdits[typeindex]->setText( "" );
   }else if( sample_numbers.size() == 1 )
   {
     const int lastNumber = *(total_sample_nums.rbegin());
@@ -958,15 +969,9 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
       auto m = meas->measurement(displayedNumber, dets[i]);
       if( m && !m->title().empty() )
       {
-        if( m->title().size() > 128 )  //128 chosen arbitrarily and not tested.
-        {
-          string t = m->title();
-          SpecUtils::utf8_limit_str_size( t, 128 );
-          title = WString::fromUTF8( m->title() );
-        }else
-        {
-          title = WString::fromUTF8( m->title() );
-        }
+        string t = m->title();
+        SpecUtils::utf8_limit_str_size( t, 128 );  //128 chosen arbitrarily and not tested.
+        title = WString::fromUTF8( t );
       }
     }//for( loop over detectors to find title )
 
@@ -1292,18 +1297,18 @@ void CompactFileManager::refreshContents()
     m_selects[static_cast<int>(SpecUtils::SpectrumType::Foreground)]->addItem( WString::tr("cfm-no-fore") );
     m_selects[static_cast<int>(SpecUtils::SpectrumType::Background)]->addItem( WString::tr("cfm-no-back") );
     m_selects[static_cast<int>(SpecUtils::SpectrumType::SecondForeground)]->addItem( WString::tr("cfm-no-second") );
-
-    // Lastly, select the proper file. If there is no active file in that
-    // category, just select the default "No _______" option.
-    for( int i = 0; i < 3; ++i )
-    {
-      const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
-      std::shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
-      const auto &samples = m_interspec->displayedSamples(type);
-      const auto detectors = m_interspec->detectorsToDisplay(type);
-      handleDisplayChange( type, meas, samples, detectors );
-    }//for( int i = 0; i < 3; ++i )
   }//if( m_files->rowCount() < 1 ) / else
+  
+  // Lastly, select the proper file, and update the rest of the display to match. If there is no
+  //  active file in that category, the default "No _______" option is selected.
+  for( int i = 0; i < 3; ++i )
+  {
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
+    std::shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
+    const auto &samples = m_interspec->displayedSamples(type);
+    const auto detectors = m_interspec->detectorsToDisplay(type);
+    handleDisplayChange( type, meas, samples, detectors );
+  }//for( int i = 0; i < 3; ++i )
 }//void refreshContents()
 
 
@@ -1356,12 +1361,11 @@ void CompactFileManager::handleUserEnterdScaleFactor( const SpecUtils::SpectrumT
   
   if( val.empty() )
   {
+    // Empty field: go back to live-time normalization (same as handleRenormalizeByLIveTime)
     const float lt = m_interspec->liveTime(type);
     const float datalt = m_interspec->liveTime(SpecUtils::SpectrumType::Foreground);
-    sf = ((lt>0.0f) ? (datalt/lt) : 1.0f);
-//    char buffer[16];
-//    snprintf(buffer, sizeof(buffer), "%.2f", sf );
-  }else if( !(stringstream(val) >> sf) )
+    sf = (((lt > 0.0f) && (datalt > 0.0f)) ? (datalt/lt) : 1.0f);
+  }else if( !(stringstream(val) >> sf) || IsNan(sf) || IsInf(sf) )
   {
     update = false;
     sf = m_interspec->displayScaleFactor(type);

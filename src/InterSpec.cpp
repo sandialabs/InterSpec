@@ -1525,6 +1525,11 @@ InterSpec::~InterSpec() noexcept(true)
   AuxWindow::deleteAuxWindow( m_3dViewWindow.get() );
 #endif
 
+  // The Spectrum Manager window holds the file managers table while open; this hands it back to
+  //  the file manager (no undo step is added, as `m_undo` is already gone).
+  if( m_fileManager )
+    m_fileManager->deleteSpectrumManager();
+
   // Backstop for every dialog the named teardowns above do not cover.  Most tool dialogs are
   //  created *locally* with no member holding them (`SpecFileSummary`, the External RID warning,
   //  ...), yet their handlers capture an `InterSpec *` just the same - and since `AuxWindow::make`
@@ -1703,7 +1708,7 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
 void InterSpec::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment)
 {
-    CompactFileManager::handleUserIncrementSampleNum(type, increment, this, m_fileManager->model(), NULL);
+    CompactFileManager::handleUserIncrementSampleNum( type, increment, this, nullptr );
 }
 
 std::shared_ptr<DataBaseUtils::DbSession> InterSpec::sql()
@@ -4328,6 +4333,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( parent )
     {
+      // `background` and `second` may be the same objects as the parent foreground/background
+      //  (when they are the same file); we'll re-point them below to the snapshot copies.
+      const shared_ptr<SpecMeas> parentForeground = foreground;
+      const shared_ptr<SpecMeas> parentBackground = background;
+
       if( foregroundheader && snapforeground )
       {
         foregroundheader->setMeasurmentInfo( snapforeground );
@@ -4360,6 +4370,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
         }
       }
+
+      // A background/secondary that was the same file as the foreground (or secondary as the
+      //  background) still points at the parent copy, whose header now holds the snapshot copy;
+      //  left alone it would display the parent's data, and not be in the file manager.
+      if( parentForeground && (background == parentForeground) )
+        background = foreground;
+      if( parentForeground && (second == parentForeground) )
+        second = foreground;
+      else if( parentBackground && (second == parentBackground) )
+        second = background;
     }//if( parent )
     
     
@@ -12963,8 +12983,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   // Update the energy calibration tool, as there is new data.
+  //  We emit the sample numbers actually displayed (e.g., all valid foreground samples when the
+  //  caller passed an empty set), so listeners dont record or show the empty request.
   const auto shownDets = detectorsToDisplay(spec_type);
-  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
+  const set<int> shownSamples = displayedSamples(spec_type);
+  m_displayedSpectrumChangedSignal.emit( spec_type, meas, shownSamples, shownDets );
   
   if( meas )
   {

@@ -611,6 +611,14 @@ add_test( NAME TDetectionLimitState
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Needs a Wt test session: checks the Spectrum Manager keeps displayed files in its file model.
+add_executable( test_SpecMeasManager test_SpecMeasManager.cpp )
+target_link_libraries( test_SpecMeasManager PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+add_test( NAME TSpecMeasManager
+  COMMAND $<TARGET_FILE:test_SpecMeasManager> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # The deconvolution coverage study is a report, not a gate: it is opt-in, it is held to a
 #  wall-clock budget rather than a fixed trial count, and `DeconCoverageGate` inside
 #  test_DetectionLimit is what actually guards against regressions on every build.
