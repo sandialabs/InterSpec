@@ -55,6 +55,10 @@ if( MSVC )
   # Static MSVC runtime, so the executable needs no redistributable.
   set( Boost_USE_STATIC_RUNTIME ON )
   set( CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" )
+  # quickjs-ng asks for CMake 3.10, so would otherwise ignore CMAKE_MSVC_RUNTIME_LIBRARY (that needs
+  #  policy CMP0091, from 3.15), and compile with cl's default of /MT whatever the configuration - which
+  #  matches only a Release build; a Debug one would fail to link (LNK2038, /MT vs /MTd).
+  set( CMAKE_POLICY_DEFAULT_CMP0091 NEW )
 endif()
 
 if( UNIX AND NOT APPLE )
@@ -117,6 +121,12 @@ if( UNIX AND NOT APPLE )
   target_link_options( InterSpecMcpStdio PRIVATE -static-libstdc++ -static-libgcc )
 endif()
 
+if( MSVC )
+  # Paths are UTF-8 throughout (AppUtils::getUtf8Args), but Wt and SandiaDecay open files with the
+  #  narrow-character APIs, which read them in the process code page; the manifest makes that UTF-8.
+  target_sources( InterSpecMcpStdio PRIVATE InterSpec-mcp-stdio.manifest )
+endif()
+
 # Tests of the QuickJS sandbox: `ctest` in the build directory.
 enable_testing()
 add_executable( test_quickjs_sandbox tests/test_quickjs_sandbox.cpp QuickJsSandbox.cpp QuickJsSandbox.h )
@@ -135,6 +145,11 @@ set_target_properties( test_native_http PROPERTIES CXX_STANDARD 20 CXX_STANDARD_
 #  share/interspec).  Of InterSpec_resources only the text is needed, as there is no browser.
 set( INTERSPEC_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." )
 set( SHARE_DEST "share/interspec" )
+
+# The rules below are the "McpStdio" component; `cmake --install <build> --component McpStdio` gives
+#  just them.  (The libraries added above have install rules of their own - plutovg's headers and
+#  CMake package, VoigtDistribution's headers - which stay in the "Unspecified" component.)
+set( CMAKE_INSTALL_DEFAULT_COMPONENT_NAME McpStdio )
 
 install( TARGETS InterSpecMcpStdio DESTINATION bin )
 

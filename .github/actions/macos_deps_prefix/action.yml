@@ -137,7 +137,8 @@ runs:
           exit 1
         fi
 
-        for f in lib/libwt.a lib/libwthttp.a lib/libwtdbo.a lib/libwtdbosqlite3.a \
+        # libwttest is for the stdio MCP server (target/mcp_stdio), which hosts its session with it.
+        for f in lib/libwt.a lib/libwthttp.a lib/libwttest.a lib/libwtdbo.a lib/libwtdbosqlite3.a \
                  lib/libceres.a lib/libboost_system.a include/Wt/WObject.h ; do
           if [ ! -e "${PREFIX_DIR}/${f}" ]; then
             echo "::error::${f} is missing from the dependency prefix."

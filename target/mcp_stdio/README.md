@@ -67,8 +67,10 @@ or with `-DInterSpec_FETCH_DEPENDENCIES=ON` to have CMake fetch and build them (
 
 To make a self-contained directory to give to others:
 ```bash
-cmake --install target/mcp_stdio/build --prefix /path/to/InterSpec-mcp-stdio
+cmake --install target/mcp_stdio/build --component McpStdio --prefix /path/to/InterSpec-mcp-stdio
 ```
+(Without `--component McpStdio`, the headers and CMake package files of libraries it builds in, such as
+plutovg, are installed too.)
 which holds:
 - `bin/InterSpec-mcp-stdio`, which finds the rest by itself, relative to its own location;
 - `share/interspec/data/` - InterSpec's data (nuclear data, detector responses, the tool definitions,
@@ -182,6 +184,8 @@ interrupted).
 python3 -I target/mcp_stdio/tests/stdio_test.py --exe target/mcp_stdio/build/InterSpec-mcp-stdio \
     --datadir data --spectrum example_spectra/ba133_source_640s_20100317.n42 --energy 356
 ```
+Leave out `--datadir` to test an installed directory as given to others - the executable then finds its
+data by itself, as it will for them (CI does this with every build).
 Add `--background example_spectra/background_20100317.n42 --time-spectrum example_spectra/passthrough.n42`
 to also check the chart images (and `--save-images <dir>` to look at them), and
 `--repeat 50 --alt-spectrum example_spectra/passthrough.n42` to load and fit repeatedly, reporting the

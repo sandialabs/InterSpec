@@ -54,56 +54,97 @@ jobs:
           mkdir -p "${BUILD_DIR}" "${INSTALLER_DIR}"
 
       # The dependency prefix lives in a composite action rather than inline here so that this
-      # workflow and build_wt4_edge.yml compute the SAME cache key by construction - the latter
-      # exists to build this prefix ahead of time, which buys nothing if the keys can drift.
+      # workflow and the stdio MCP server's (build_mcp_stdio.yml) compute the SAME cache key by
+      # construction, and so share one prefix.
       - name: Build or restore the dependency prefix
         id: deps
         uses: ./.github/actions/macos_deps_prefix
 
-      - name: Import signing certificate
-        env:
-          MAC_SIGNING_CERT_P12: ${{ secrets.MAC_SIGNING_CERT_P12 }}
-          MAC_SIGNING_CERT_PASSWORD: ${{ secrets.MAC_SIGNING_CERT_PASSWORD }}
+      # A compiler cache.  The Xcode generator does not support CMake's <LANG>_COMPILER_LAUNCHER (only
+      # the Makefile, Ninja and VS generators do), so Xcode's CC/CXX are pointed at wrappers that run
+      # the real clang through ccache.  ccache-action restores the newest `ccache-wt4-macos-app-*`
+      # entry, and writes cache_dir, max_size and compiler_check=content into ccache's config file -
+      # which the wrappers read even if Xcode does not pass the job environment on to the compiler.
+      # Pinned by commit; `install: binary` installs its own sha256-checked ccache (4.13.6) rather
+      # than Homebrew's newest.
+      #  - Before the signing setup, so this third-party code never runs while the Developer ID
+      #    keychain is unlocked (its post step, which saves the cache, runs after the cleanup).
+      #  - An optimization only: if it fails (e.g. the download), build without it.
+      #  - No `evict-old-files`: its eviction also runs after a failed build, which would save a cache
+      #    holding only what was compiled before the failure.  max-size bounds it instead.
+      - name: ccache
+        id: ccache
+        continue-on-error: true
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: wt4-macos-app
+          # Xcode compiles each architecture separately, so a universal build is two objects per source.
+          max-size: 2G
+          install: binary
+
+      - name: Point Xcode at ccache
+        if: steps.ccache.outcome == 'success'
         run: |
           set -euo pipefail
-          CERT_PATH="${RUNNER_TEMP}/signing_cert.p12"
-          echo "${MAC_SIGNING_CERT_P12}" | base64 --decode > "${CERT_PATH}"
-          KEYCHAIN_PATH="${RUNNER_TEMP}/interspec-build.keychain-db"
-          KEYCHAIN_PASSWORD=$(uuidgen)
-          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security import "${CERT_PATH}" -k "${KEYCHAIN_PATH}" -P "${MAC_SIGNING_CERT_PASSWORD}" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security list-keychains -d user -s "${KEYCHAIN_PATH}" ~/Library/Keychains/login.keychain-db
-          rm -f "${CERT_PATH}"
-          echo "SIGNING_KEYCHAIN=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
-          echo "KEYCHAIN_PASSWORD=${KEYCHAIN_PASSWORD}" >> "${GITHUB_ENV}"
+          # ccache's documented settings for Xcode: it passes -index-store-path (also turned off at
+          #  configure, below) and, for some targets, -ivfsoverlay.
+          ccache --set-config=sloppiness=clang_index_store,ivfsoverlay
+          WRAP_DIR="${RUNNER_TEMP}/ccache_xcode"
+          mkdir -p "${WRAP_DIR}"
+          CCACHE_BIN=$(command -v ccache)
+          for tool in clang clang++; do
+            printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "${CCACHE_BIN}" "$(xcrun -f "${tool}")" > "${WRAP_DIR}/${tool}"
+            chmod +x "${WRAP_DIR}/${tool}"
+          done
+          cat "${WRAP_DIR}/clang"
+          echo "CCACHE_WRAP_DIR=${WRAP_DIR}" >> "${GITHUB_ENV}"
+          ccache --zero-stats
+          ccache --show-config | grep -E "cache_dir|max_size|compiler_check|sloppiness"
 
-      - name: Prepare notarization credentials
-        env:
-          MAC_NOTARY_KEY_CONTENTS: ${{ secrets.MAC_NOTARY_KEY_CONTENTS }}
-        run: |
-          set -euo pipefail
-          NOTARY_KEY_PATH="${RUNNER_TEMP}/AuthKey.p8"
-          echo "${MAC_NOTARY_KEY_CONTENTS}" | base64 --decode > "${NOTARY_KEY_PATH}"
-          echo "NOTARY_KEY_PATH=${NOTARY_KEY_PATH}" >> "${GITHUB_ENV}"
+      - name: Set up code signing and notarization credentials
+        uses: ./.github/actions/macos_signing_setup
+        with:
+          signing-cert-p12: ${{ secrets.MAC_SIGNING_CERT_P12 }}
+          signing-cert-password: ${{ secrets.MAC_SIGNING_CERT_PASSWORD }}
+          notary-key-contents: ${{ secrets.MAC_NOTARY_KEY_CONTENTS }}
 
+      # The CMAKE_XCODE_ATTRIBUTE_* lines are for ccache: CC/CXX are the wrappers, linking uses the
+      # real clang, and the index store (an IDE feature) and clang modules (no source uses @import)
+      # are off, as both put per-build paths into the compile command.
       - name: Configure InterSpec (Xcode)
         env:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
         run: |
+          set -euo pipefail
+          CCACHE_ARGS=()
+          if [ -n "${CCACHE_WRAP_DIR:-}" ]; then
+            CCACHE_ARGS=( -DCMAKE_XCODE_ATTRIBUTE_CC="${CCACHE_WRAP_DIR}/clang"
+                          -DCMAKE_XCODE_ATTRIBUTE_CXX="${CCACHE_WRAP_DIR}/clang++"
+                          -DCMAKE_XCODE_ATTRIBUTE_LD="$(xcrun -f clang)"
+                          -DCMAKE_XCODE_ATTRIBUTE_LDPLUSPLUS="$(xcrun -f clang++)"
+                          -DCMAKE_XCODE_ATTRIBUTE_COMPILER_INDEX_STORE_ENABLE=NO
+                          -DCMAKE_XCODE_ATTRIBUTE_CLANG_ENABLE_MODULES=NO
+                          -DCMAKE_XCODE_ATTRIBUTE_CLANG_ENABLE_EXPLICIT_MODULES=NO )
+          else
+            echo "::warning::ccache is not available; compiling without it."
+          fi
           cmake -S "${{ github.workspace }}/target/macos" \
             -B "${BUILD_DIR}" \
             -G Xcode \
             -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-dir }}" \
             -DLEAFLET_MAPS_KEY="${LEAFLET_KEY}" \
-            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+            ${CCACHE_ARGS[@]+"${CCACHE_ARGS[@]}"}
 
       - name: Build InterSpec.app
         run: |
           cmake --build "${BUILD_DIR}" --config Release
           echo "APP_BUNDLE=${BUILD_DIR}/Release/InterSpec.app" >> "${GITHUB_ENV}"
+
+      # Hit rate, and why anything was not cacheable ("unsupported compiler option", ...).
+      - name: ccache statistics
+        if: always()
+        run: ccache --show-stats --verbose || true
 
       - name: Copy D3 resources
         run: |
@@ -193,49 +234,24 @@ jobs:
           # Verify the signature
           codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 
-      - name: Notarize bundle
-        env:
-          MAC_NOTARY_KEY_ID: ${{ secrets.MAC_NOTARY_KEY_ID }}
-          MAC_NOTARY_KEY_ISSUER: ${{ secrets.MAC_NOTARY_KEY_ISSUER }}
-          MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+      - name: Zip bundle for notarization
         run: |
           set -euo pipefail
           NOTARIZE_ARCHIVE="${INSTALLER_DIR}/InterSpec_notarize.zip"
           ditto -c -k --keepParent "${APP_BUNDLE}" "${NOTARIZE_ARCHIVE}"
-          
-          # Submit and capture the submission ID
-          SUBMIT_OUTPUT=$(xcrun notarytool submit "${NOTARIZE_ARCHIVE}" \
-            --key "${NOTARY_KEY_PATH}" \
-            --key-id "${MAC_NOTARY_KEY_ID}" \
-            --issuer "${MAC_NOTARY_KEY_ISSUER}" \
-            --team-id "${MAC_NOTARY_TEAM_ID}" \
-            --wait --output-format json)
-          
-          echo "Notarization submission output:"
-          echo "${SUBMIT_OUTPUT}"
-          
-          SUBMISSION_ID=$(echo "${SUBMIT_OUTPUT}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-          echo "Submission ID: ${SUBMISSION_ID}"
-          
-          # Get detailed log regardless of status
-          if [ -n "${SUBMISSION_ID}" ]; then
-            echo "Fetching notarization log..."
-            xcrun notarytool log "${SUBMISSION_ID}" \
-              --key "${NOTARY_KEY_PATH}" \
-              --key-id "${MAC_NOTARY_KEY_ID}" \
-              --issuer "${MAC_NOTARY_KEY_ISSUER}" \
-              --team-id "${MAC_NOTARY_TEAM_ID}" || true
-          fi
-          
-          # Check if notarization succeeded
-          STATUS=$(echo "${SUBMIT_OUTPUT}" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-          if [ "${STATUS}" != "Accepted" ]; then
-            echo "Error: Notarization failed with status: ${STATUS}"
-            exit 1
-          fi
-          
-          xcrun stapler staple "${APP_BUNDLE}"
-          rm -f "${NOTARIZE_ARCHIVE}"
+          echo "NOTARIZE_ARCHIVE=${NOTARIZE_ARCHIVE}" >> "${GITHUB_ENV}"
+
+      - name: Notarize bundle
+        uses: ./.github/actions/macos_notarize
+        with:
+          archive: ${{ env.NOTARIZE_ARCHIVE }}
+          staple-path: ${{ env.APP_BUNDLE }}
+          key-id: ${{ secrets.MAC_NOTARY_KEY_ID }}
+          key-issuer: ${{ secrets.MAC_NOTARY_KEY_ISSUER }}
+          team-id: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+
+      - name: Remove the notarization zip
+        run: rm -f "${NOTARIZE_ARCHIVE}"
 
       - name: Prepare distribution payload
         run: |

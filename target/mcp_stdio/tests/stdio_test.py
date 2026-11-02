@@ -139,7 +139,8 @@ class Checker:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--exe', required=True)
-    parser.add_argument('--datadir', required=True)
+    parser.add_argument('--datadir',
+                        help='Omit to have the server find its data itself, as an installed copy does.')
     parser.add_argument('--userdatadir', help='Defaults to an empty temporary directory.')
     parser.add_argument('--spectrum', required=True)
     parser.add_argument('--energy', type=float, required=True, help='Energy (keV) of a peak to fit.')
@@ -157,7 +158,7 @@ def main():
         user_data_dir = tempfile.mkdtemp(prefix='interspec_stdio_test_')
 
     spectrum = os.path.abspath(args.spectrum)
-    cmd = [args.exe, '--datadir', args.datadir, '--userdatadir', user_data_dir]
+    cmd = [args.exe] + (['--datadir', args.datadir] if args.datadir else []) + ['--userdatadir', user_data_dir]
     client = StdioClient(cmd)
     c = Checker()
 
