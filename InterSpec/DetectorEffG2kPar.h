@@ -99,8 +99,19 @@
           within ~7% of the on-axis 25 cm value at 100 keV.  A source truly
           251 cm away would read ~94x smaller.
 
-   * The grid is the intrinsic-crystal FEP efficiency (dead layers already
-     folded in); it is interpolated bilinearly in the log-efficiency (raw-V)
+   * The grid is the ABSOLUTE point-source FEP efficiency of the whole detector
+     as characterized (counts per emitted photon, source in vacuum): the Ge dead
+     layers AND the housing - every layer of the DETECTOR.txt stack - are
+     already in it.  Callers must not apply the layer stack on top; for a point
+     source, air (`ParEfficiency::airTransmission`) is the only extra factor.
+     The reference outputs say so: every vacuum point-source ".ecc" (on axis at
+     1.5-100 cm, SPHERE runs out to 84 deg, both corpus detectors) equals the
+     raw grid at the grid's energy nodes - to <=0.003%, and 0.08% on one
+     off-axis run - where applying just one detector's 2.0 mm Al front would
+     lower it by 22% at 45 keV and 5% at 500 keV; and Monte Carlo through the
+     full descriptor, housing included, reproduces that detector's grid at 25 cm
+     to within ~2% over 22-662 keV.
+   * The grid is interpolated bilinearly in the log-efficiency (raw-V)
      domain over (ln d_radial, theta).  Across energy it is interpolated with a
      shape-preserving monotone cubic (PCHIP) over ln(E) - a plain cubic spline
      overshoots the efficiency knee between nodes, while plain linear
@@ -153,8 +164,8 @@
  agreement at the 0.02% level are not supportable.
 
  WE USE PCHIP instead - same log-log domain, but shape-preserving.  It disagrees
- with ".ecc" worst at 200 keV (~6 raw-V, ~1.4% higher efficiency) and typically
- to ~0.2% elsewhere.  An independent Monte-Carlo transport (CeeLo, 0.1%
+ with ".ecc" worst at 200 keV (~7 raw-V, 1.72% higher efficiency) and typically
+ by ~0.3% (median) between nodes.  An independent Monte-Carlo transport (CeeLo, 0.1%
  precision, node-normalized) is the only unbiased arbiter of which is right, and
  it puts PCHIP closest to physical truth (median ~0.13% versus ~0.5% for
  ".ecc").  Measured as percent above the straight log-log chord of the bracketing
@@ -215,7 +226,7 @@
  `EtaTable::finalize` folds a lone-node run into a neighbour when that node
  cannot stand in for its segment - see the comment there for why a lone FLANK
  legitimately keeps its stub.  The test measures the step across the edge:
- response 0.999508x against the grid's 1.000000x, where pre-fix it was ~3.8e8x.
+ response 0.999499x against the grid's 1.000000x, where pre-fix it was ~3.8e8x.
  DET06 never had this: its grid starts at 45 keV, so no edge is retained.
 
  DEFECT 2, under-resolution, on THREE axes rather than the one first suspected.
@@ -229,7 +240,7 @@
      axis in particular must contain the FILE's own nodes, not just a resampling.
    * DISTANCE.  The grid stores 440 radial rows at 3.03% each and truth is
      bilinear in raw V, so there is a kink on EVERY row; the original 18-rung
-     ladder spanned ~10 of them per rung.  Now 60 rungs (58 on DET06), uniform
+     ladder spanned ~10 of them per rung.  Now 58 rungs (60 on DET06), uniform
      with the [5, 30] cm window subdivided - `distance_ladder` in
      "src/DetectorEffG2kPar.cpp" documents why the rungs are ADDED rather than
      moved, and why the window ends at 30 cm.
@@ -237,41 +248,43 @@
      earlier note concluded from that the angular axis was "already node-exact".
      IT IS NOT, and that claim is struck.  The response's angular nodes are
      CRYSTAL-frame cosines while the grid is indexed in the ENDCAP-FACE frame,
-     and the two origins differ by `endcap_front_offset_cm`.  Measured AT 45 deg
-     on DET1381 (offset 0.5700 cm), the skew against 2.5 deg columns is +0.077
-     deg at 300 cm, +0.280 at 83 cm and +3.04 at 8 cm - it grows as the offset
-     becomes a bigger fraction of the standoff, and by 1 cm (+34 deg at 45 deg,
-     and larger at steeper angles) the frame correspondence is gone rather than
+     and the two origins differ by `endcap_front_offset_cm`.  The skew is pure
+     geometry, atan2(d sin(theta), d cos(theta) - offset) - theta: AT 45 deg on
+     DET1381 (offset 0.37 cm), against 2.5 deg columns it is +0.050 deg at
+     300 cm, +0.181 at 83 cm and +1.94 at 8 cm - it grows as the offset becomes a
+     bigger fraction of the standoff, and by 1 cm (+19.5 deg at 45 deg, and
+     larger at steeper angles) the frame correspondence is gone rather than
      merely perturbed.  State the angle when quoting these: the skew depends on
-     it, rising toward theta = 90 deg (at 83 cm it is +0.28 at 45 deg but +0.39
+     it, rising toward theta = 90 deg (at 83 cm it is +0.18 at 45 deg but +0.26
      approaching 90).  Refining the eta angular axis does not help - it is cheap
      (1.13x bytes) and made a fixed 22-32 keV on-axis locus WORSE (0.00893 ->
-     0.01033 at 289 nodes; that is one locus, NOT the band maximum in the table
-     below), because the axis is not what is misaligned.
+     0.01033 at 289 nodes, measured when the offset was still 0.57 cm; that is
+     one locus, NOT the band maximum in the table below), because the axis is
+     not what is misaligned.
 
  ACHIEVED ON-LATTICE WORST relative |error|.  MAIN is d >= 5 cm and
  theta <= 75 deg; CORNER is everything else and is gated loosely (see below).
  DET1381 (grid starts at 10 keV), then DET06 (starts at 45 keV):
 
      band        MAIN      | CORNER
-     10- 16 keV  0.49031   | 0.94210   <- gated on absolute error
-     16- 22 keV  0.04210   | 0.60479   <- gated on absolute error
-     22- 32 keV  0.02710   | 0.25616
-     32- 45 keV  0.01734   | 0.11716
-     45- 60 keV  0.00469   | 0.06269
-     60-200 keV  0.00254   | 0.04767
-     200-1k keV  0.00325   | 0.02642
-     1k -7k keV  0.00434   | 0.02723
+     10- 16 keV  0.29317   | 1.85004   <- gated on absolute error
+     16- 22 keV  0.05809   | 0.76221   <- gated on absolute error
+     22- 32 keV  0.03470   | 0.39145
+     32- 45 keV  0.01185   | 0.20845
+     45- 60 keV  0.00534   | 0.13105
+     60-200 keV  0.00282   | 0.10407
+     200-1k keV  0.00366   | 0.06016
+     1k -7k keV  0.00636   | 0.03934
 
      DET06:      MAIN      | CORNER
-     45- 60 keV  0.00344   | 0.08930
-     60-200 keV  0.00365   | 0.06240
-     200-1k keV  0.00594   | 0.03301
-     1k -7k keV  0.00955   | 0.07592
+     45- 60 keV  0.00329   | 0.13324
+     60-200 keV  0.00354   | 0.09152
+     200-1k keV  0.00544   | 0.04194
+     1k -7k keV  0.00767   | 0.03437
 
  Read the 10-16 keV row with its magnitude: the band's PEAK efficiency is just
  over eight decades below the crystal's peak, and the worst ABSOLUTE error is
- about half of that band peak.  A 49% relative error on a quantity that small
+ about a quarter of that band peak.  A 29% relative error on a quantity that small
  cannot affect a spectrum, which is why that band and 16-22 keV are gated
  absolutely.
 
@@ -310,14 +323,23 @@
      holds its innermost valid value, which is what Pchip's flat clamp below its
      first node does anyway - rather than filled with the sentinel, which would
      anchor the ladder on an impossible number.  See `makeDrf`'s step for the
-     measured cost (48 of 666 rungs on one detector, 39 on the other).
+     measured cost (78 of 2146 rungs on one detector, 89 of 2220 on the other).
+     CORNER is also KERNEL-limited at close range and grazing incidence
+     (d < 5 cm with theta > 75 deg, mostly below 45 keV): the modelled can is
+     narrower than the real one (D4 is not modelled), so a source a few cm out
+     near the face plane passes the side of the model's can but the front of the
+     real one, and ln(grid/K) carries that mismatch.  Moving the crystal to D7
+     (2 mm forward on DET1381) raised the CORNER figures by 1.3-2x on identical
+     probe points, almost all of it in that sub-region; sizing the can from D4
+     recovers most of it but costs MAIN 16-22 keV (0.054 -> 0.122 on the same
+     probes), so it is not done; D4 and D7's side role remain open questions.
 
  MONTE-CARLO SPOT-CHECKS AT THE KNEE, and what they can and cannot settle.
  The band table above measures FIDELITY TO THE FILE.  That cannot tell us whether
  the file is right, so CeeLo transport through the SAME descriptor was run at the
  knee, on-axis at 25 cm in vacuum, seeded, asking 1% relative FEP precision but
- capped at 4e6 events and 180 s CPU - so the achieved precision is whatever the
- cap allowed, which is the "MC sigma" note on the 16 keV row below.  Percentages
+ capped at 2e8 events - so the achieved precision is whatever the cap allowed,
+ which is the "MC sigma" note on the 16 keV row below.  Percentages
  are against `ParEfficiency` at the same point; the energies are FILE NODES and
  on-axis is column 0 exactly, but 25 cm is NOT a grid row (the rows are log-spaced
  at 3.034%, and ln(250 mm)/r_step = 184.72), so the truth side still goes through
@@ -329,18 +351,18 @@
   those files or transcribe their content.  Re-measure with a throwaway against a
   local corpus if the absolute numbers are ever needed.
 
-     E keV    | resp/grid   MC/grid
-      16.0    | +0.0064%    (unmeasurable, see below)
-      22.0    | -0.0356%    -3.68%
-      32.0    | -0.0175%    +1.03%
-      45.0    | -0.0091%    -1.30%
-     122.0    | +0.0171%    -1.36%
-     DET06  45.0  | +0.0088%   -18.17%
-     DET06 122.0  | +0.0323%    -6.56%
+     E keV    | resp/grid   MC/grid  (MC sigma)
+      16.0    | +0.0058%    (unmeasurable, see below)
+      22.0    | -0.0280%    -0.81%   (0.99%)
+      32.0    | -0.0025%    +2.30%   (0.76%)
+      45.0    | -0.0166%    +1.03%   (0.47%)
+     122.0    | +0.0299%    +0.16%   (0.30%)
+     DET06  45.0  | +0.0057%   -20.30%   (0.41%)
+     DET06 122.0  | +0.0454%    -9.09%   (0.40%)
 
  Two separate readings, and conflating them is the trap:
    * `resp/grid` is our error against the reader at a point that is node-exact in
-     ENERGY and in ANGLE but off-node in DISTANCE by 0.72 of a row: 0.006-0.036%,
+     ENERGY and in ANGLE but off-node in DISTANCE by 0.72 of a row: 0.003-0.046%,
      at or below the +-1 LSB storage floor.  It is a useful corroboration that
      "we add essentially nothing" survives a query a user would actually make -
      but it is NOT the on-lattice claim, which is the gated band table above, and
@@ -350,16 +372,25 @@
    * `MC/grid` is NOT our error.  `eps_fep_at` is grounded to the grid, so the
      response tracks the file by construction; MC is ungrounded absolute
      transport, and this column compares the vendor's characterization against
-     first-principles physics through the descriptor the files describe.  A few
-     percent at 22-122 keV is consistent with the 200 keV datum above and shows
-     no gross error at the knee.  DET06's -18% at 45 keV is a real
-     descriptor-versus-vendor discrepancy, on the detector whose files pin the
-     geometry least well; it is an absolute-grounding question, NOT something
-     node density affects, and it is out of scope here.
+     first-principles physics through the descriptor the files describe - housing
+     included, and with the crystal at D7 (see #geometryFromDetectorDef).  Within
+     ~2% at 22-122 keV on DET1381 shows no gross error at the knee, and is itself
+     evidence that the grid contains the housing: were it absent from the grid,
+     the descriptor's 2.0 mm Al front would put MC at about a quarter of the grid
+     at 22 keV, and 22% below it at 45 keV.  DET06's -20% at
+     45 keV and -9% at 122 keV are a real descriptor-versus-vendor discrepancy on
+     a thin-window record.  The likely cause, unconfirmed: the vendor does not put
+     the slot-2 Al on the path through the window - with it removed, Monte Carlo
+     of DET06 comes to 0.98 / 0.99 / 1.01 of the grid at 45 / 60 / 122 keV, but on
+     other thin-window grids removing it closes only about half the 60 keV
+     deficit.  It is an absolute-grounding question, NOT something node density
+     affects, and it does not move the grid-backed efficiency (only the kernel
+     and any Monte-Carlo total).
    * 16 keV is genuinely unmeasurable this way, and it is the run that hit the cap
      rather than the 1% request: at an efficiency ~8 decades below the crystal's
-     peak the whole 4e6-event budget yields a handful of FEP counts, 57.7%
-     statistical, so no comparison is reportable.
+     peak the whole 2e8-event budget yields only ~200 FEP counts, 7.0%
+     statistical (-6.7%), so no comparison is reportable at the level of the
+     others.
      The other rows did reach ~1%, which is why they are quoted and this one is
      not.  Adjudicating that band against truth needs position-biased MC, not more
      nodes.
@@ -370,8 +401,8 @@
  THE FLOOR, AND WHY IT IS NOT WHAT LIMITS US.  The file stores
  eff = 10^(-V/1000) as a uint16, so one raw-V step is 0.002305 in ln (0.2305%)
  and +-1 LSB is 0.001152 (0.1152%).  That is the tightest claim definable against
- the file's content, and every MAIN band above sits ABOVE it - 2.2x (DET1381
- 60-200 keV) to 8.3x (DET06 1k-7k) over the bands >= 45 keV, and 15x and 23x for
+ the file's content, and every MAIN band above sits ABOVE it - 2.4x (DET1381
+ 60-200 keV) to 6.7x (DET06 1k-7k) over the bands >= 45 keV, and 10x and 30x for
  32-45 and 22-32 keV where the sheared angular feature dominates.  So no MAIN
  band is storage-limited; each is limited by the method named for its regime
  above.
@@ -393,7 +424,7 @@
  on the kernel's basis would, which means changing the interpolator for that.
  Outside those windows the
  response is monotone across 10-45 keV to 0.1%, and the edge RATIO is pinned at
- 0.999508x against the grid's 1.000000x.  `KEdgeSegmentsHaveBothFlanks` measures
+ 0.999499x against the grid's 1.000000x.  `KEdgeSegmentsHaveBothFlanks` measures
  both figures, and excludes the window explicitly rather than by a loose gate.
 
  ANOTHER RESULT WORTH RECORDING, because it is counter-intuitive and will
@@ -406,11 +437,12 @@
  rung sitting on a grid row does not map to a grid row in the face frame.  Gates
  therefore carry phase headroom instead of being set tight against one run.
 
- COSTS.  The serialized response grows from 398,932 bytes to 3,554,015 for
- DET1381 (8.91x) and 1,739,328 for DET06 (4.36x) - far more than the ~2.5x first
+ COSTS.  The serialized response grows from 398,932 bytes to 3,497,678 for
+ DET1381 (8.77x) and 1,767,513 for DET06 (4.43x) - far more than the ~2.5x first
  predicted, because `ln_n` is the dominant block and scales with the ladder.
- `makeDrf` fill cost is ne*nc*nd, and the gated corpus test runs ~7 min against
- its 7200 s timeout.
+ `makeDrf` fill cost is ne*nc*nd.  The gated corpus suite takes ~4.6 min
+ (Release, 8 cores, developer checks on) against its 7200 s timeout, ~70% of it
+ in `NodeRoundTripIdentity`, which evaluates every node of both responses.
 
  KNOCK-ON, deliberate: `CeeLoUtils::setLegacyEfficiencyFromResponse` samples 48
  points from `valid_e_min_keV` (10 keV) through `eps_fep_at`, so its lowest
@@ -452,6 +484,8 @@ namespace DetEffG2kPar
 
   /** One entry of the 9-slot layer stack (a 3x3 front/side/back triplet).
    An empty slot (a bare ",,," line in the file) has `material.empty()`.
+   Every layer - dead layers and housing alike - is already contained in the
+   `.par` grid; the stack only describes the geometry (see the header).
    */
   struct LayerEntry
   {
@@ -463,10 +497,14 @@ namespace DetEffG2kPar
   /** A parsed DETECTOR.txt record: the friendly name, the linked `.par`
    filename, the crystal/endcap dimensions, and the 9-slot layer stack.
 
-   Field roles (all derived from the files, see header): D1 crystal diameter,
-   D2 crystal length, D3 thin-entrance-window diameter (0 for standard n-type
-   coax), D4 endcap outer diameter, D5 endcap length, D6 front crystal-to-endcap
-   gap, D7 side crystal-to-endcap gap - all in millimetres.
+   Field roles, all in millimetres and derived from the files, the reference
+   outputs and Monte Carlo (see the header): D1 crystal diameter, D2 crystal
+   length, D3 thin-entrance-window diameter (0 for a standard coax with a thick
+   Li-diffused front contact - p-type), D4 endcap outer diameter and D5 endcap
+   length (the grid's no-data zone, i.e. the can, reaches D4/2 laterally),
+   D7 the depth of the crystal's front face behind the endcap's OUTER face,
+   front window and endcap included, and D6 - equal to D7 on every D3 = 0 record
+   seen, smaller on thin-window records, where its role is unconfirmed.
    */
   struct DetectorDef
   {
@@ -480,21 +518,24 @@ namespace DetEffG2kPar
     double d3_window_diam_mm = 0.0;
     double d4_endcap_od_mm = 0.0;
     double d5_endcap_len_mm = 0.0;
-    double d6_front_gap_mm = 0.0;
-    double d7_side_gap_mm = 0.0;
+    double d6_mm = 0.0;      ///< D6: = D7 on standard coax; role on thin-window records unconfirmed
+    double d7_mm = 0.0;      ///< D7: endcap outer face to crystal front face (front window/endcap included)
 
     int typeCode = 0;        ///< the constant that precedes the .par field (role unknown; kept verbatim)
     int kCode = 0;           ///< the constant that follows the .par field (role unknown; NOT a layer count)
 
     std::array<LayerEntry,9> layers;   ///< slots 0/3/6 = front/side/back Ge dead layers; rest = housing
 
-    /** Coarse crystal family, from the definition line + layer stack. */
+    /** Coarse family, from the definition line, window slot and crystal shape; it decides whether
+     the importer guesses a bore.  The names describe the record, not the crystal's doping: a thin
+     window is found on p-type (BEGe, extended-range) and n-type (reverse-electrode) detectors alike.
+     */
     enum class Kind
     {
-      NCoax,     ///< n-type coaxial (D3==0, empty window slot, thick Ge dead layer)
-      PType,     ///< p-type / BEGe / extended-range (D3>0, thin window)
-      Falcon,    ///< Falcon-type (D3>0, thick back Al)
-      Generic    ///< does not fit the standard patterns
+      ThickWindowCoax,   ///< D3==0, empty window slot, thick Ge front contact: a standard (p-type) coax
+      ThinWindowCoax,    ///< D3>0, crystal length >= 0.7 x diameter: extended-range, reverse-electrode, ...
+      ThinWindowPlanar,  ///< D3>0, shorter crystal: BEGe, planar, Falcon - no bore
+      Generic            ///< does not fit the standard patterns
     };//enum class Kind
 
     Kind kind = Kind::Generic;
@@ -578,7 +619,7 @@ namespace DetEffG2kPar
    suite's SPATIAL interpolation: bilinear in the log-efficiency domain over
    (ln distance, theta).  Across energy we use a monotone cubic (PCHIP) over
    ln(energy), which deliberately differs from the reference between nodes (by
-   ~1.4% at 200 keV) - see the file header comment.
+   up to ~1.7% at 200 keV) - see the file header comment.
 
    This is the ground-truth evaluator the assembled CeeLo response is built to
    reproduce, and what the validation test compares against `.ecc` output.
@@ -588,7 +629,8 @@ namespace DetEffG2kPar
   public:
     explicit ParEfficiency( ParFile par );
 
-    /** Vacuum (in-medium-free) FEP efficiency at a point.
+    /** Absolute FEP efficiency at a point, source in vacuum - housing and dead layers included, so
+     nothing but air (#airTransmission) belongs on top.
      @param energy_keV        query energy; clamped to the characterized range
      @param dist_from_face_mm RADIAL range from the endcap-face centre to the
                               source, mm (the grid row; the straight-line range,
@@ -658,7 +700,8 @@ namespace DetEffG2kPar
    The response is FEP-only: its total-efficiency tier is
    `ceelo::TotEffTier::NotCharacterized`, so cascade summing declines to run until a Monte-Carlo
    total is attached (#attachTotalEfficiency).  The DRF's setback is the descriptor's endcap-front
-   offset (the GADRAS convention), so flat-disk displays put the crystal where it is.
+   offset (the GADRAS convention) - the record's D7, see #geometryFromDetectorDef - so flat-disk
+   paths and displays put the crystal face where the grid's near field says it is.
    A layer whose material token is not a recognizable element cannot be modeled;
    it is omitted from the geometry and noted in the DRF description rather than
    dropped silently (the grid still holds the true efficiency at its own nodes,
@@ -678,10 +721,28 @@ namespace DetEffG2kPar
    */
   bool isGridResponse( const std::shared_ptr<const ceelo::DetectorResponse> &resp );
 
-  /** The geometry `makeDrf` models a DETECTOR.txt record as.  The record has no bore or bullet, so
-   coaxial families get a conservative guessed bore - which is why users may edit the geometry
-   afterwards (see DetectorPeakResponse::monteCarloGeometry).  Unmodelable layers are noted in
-   `warnings`.  Throws std::runtime_error without a crystal diameter and length.
+  /** The geometry `makeDrf` models a DETECTOR.txt record as.  Field by field:
+     - D1, D2: crystal radius (D1/2) and length.  D3: only classifies the record (#DetectorDef::Kind).
+     - Slots 0/3/6: the front/side/back Ge dead layers (`ceelo::DeadLayerConfig`).
+     - Slots 1, 2: front shells; slots 4, 5: side shells.  Slots 7, 8 (the back) are dropped - the
+       descriptor models no back housing.
+     - D7: the crystal face sits D7 behind the endcap's outer face, so the front vacuum shell is
+       max(0, D7 - slots 1 and 2), and the endcap-front offset (the DRF's setback) is D7, or the
+       front stack when that is thicker.  Measured: CeeLo near-field Monte Carlo against the grid
+       (0.5-2 cm vs 25 cm, on axis) over 65 grids fits to a median 0.9% (D3 = 0) and 1.3-2.5%
+       (D3 > 0) this way.  Reading D6 as a vacuum gap in front of the stack - the former rule - put
+       a standard coax ~2 mm too deep, 5-11% low at 0.5-2 cm; reading D6 as the depth on a
+       thin-window record is 9-17% off (median).
+     - Side vacuum shell: max(0, D7 - D6), which is zero on every D3 = 0 record.  Unconfirmed: side-on
+       Monte Carlo cannot tell candidate side gaps apart.
+     - D4, D5: not used, so the modelled can is the crystal plus its side shells - narrower than
+       the real one (71.6 vs 87.5 mm on one corpus detector), which the grid's no-data zone puts at
+       D4.
+     The record has no bore or bullet, so coaxial families get a conservative guessed bore - which
+   is why users may edit the geometry afterwards (see DetectorPeakResponse::monteCarloGeometry).
+   Unmodelable layers are noted in `warnings`; an unmodelable front layer's thickness becomes vacuum,
+   so the crystal stays at D7.
+   Throws std::runtime_error without a crystal diameter and length.
    */
   ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
                                                      std::vector<std::string> &warnings );

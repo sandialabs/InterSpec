@@ -126,8 +126,8 @@ double DetectorDef::d( int i ) const
     case 2: return d3_window_diam_mm;
     case 3: return d4_endcap_od_mm;
     case 4: return d5_endcap_len_mm;
-    case 5: return d6_front_gap_mm;
-    case 6: return d7_side_gap_mm;
+    case 5: return d6_mm;
+    case 6: return d7_mm;
   }
   return std::numeric_limits<double>::quiet_NaN();
 }//DetectorDef::d(int)
@@ -196,41 +196,24 @@ std::string serial_from_comment( const std::string &comment )
 }//serial_from_comment(...)
 
 
-/** Classifies a record from its D3 window and layer stack (port of the Python
- `classify_detector`). */
+/** Classifies a record from its D3 window, window slot and crystal shape (the role the Python
+ `classify_detector` had).  Over the 68 records seen, every D3 = 0 one with an empty window slot is a
+ standard coax with a thick (0.2-1.3 mm) Ge front contact - the p-type signature.  Every D3 > 0 one
+ has a thin window, and its crystal shape splits it cleanly: length/diameter 0.83-1.37 for the
+ thin-window coaxes (extended-range, reverse-electrode, n-type) and 0.33-0.56 for the BEGe, planar
+ and Falcon units, so 0.7 separates them with margin either side.  (D3 = 0 coaxes reach down to
+ 0.53, so the shape test is only applied to thin-window records.) */
 DetectorDef::Kind classify_detector( const DetectorDef &rec )
 {
   const double d3 = rec.d3_window_diam_mm;
-
-  const std::string slot0_mat = SpecUtils::to_lower_ascii_copy( rec.layers[0].material );
-  const double slot0_th = rec.layers[0].thickness_mm;
   const std::string slot1_mat = SpecUtils::to_lower_ascii_copy( rec.layers[1].material );
 
   if( (d3 == 0.0) || std::isnan( d3 ) )
-  {
-    if( slot1_mat.empty() && slot0_mat == "ge" && slot0_th > 0.1 )
-      return DetectorDef::Kind::NCoax;
-    if( slot1_mat.empty() && slot0_mat == "ge" )
-      return DetectorDef::Kind::NCoax;
-    return slot1_mat.empty() ? DetectorDef::Kind::NCoax : DetectorDef::Kind::Generic;
-  }
+    return slot1_mat.empty() ? DetectorDef::Kind::ThickWindowCoax : DetectorDef::Kind::Generic;
 
-  // D3 > 0: thin-window detector.
-  if( slot0_mat == "ge" && slot0_th > 0.0 && !slot1_mat.empty() )
-  {
-    const double back_al = rec.layers[8].thickness_mm;
-    if( back_al >= 4.0 )
-      return DetectorDef::Kind::Falcon;
-    return DetectorDef::Kind::PType;
-  }
-
-  if( slot0_mat.empty() && !slot1_mat.empty() )
-    return DetectorDef::Kind::PType;
-
-  if( slot0_mat == "ge" && (slot1_mat == "c" || slot1_mat == "be" || slot1_mat == "al") )
-    return DetectorDef::Kind::PType;
-
-  return DetectorDef::Kind::Generic;
+  const double length_over_diam = rec.d2_crystal_len_mm / rec.d1_crystal_diam_mm;
+  return (length_over_diam >= 0.7) ? DetectorDef::Kind::ThinWindowCoax
+                                   : DetectorDef::Kind::ThinWindowPlanar;
 }//classify_detector(...)
 }//anonymous namespace
 
@@ -321,8 +304,8 @@ std::vector<DetectorDef> parseDetectorTxt( std::istream &input )
     rec.d3_window_diam_mm  = scalar( 2 );
     rec.d4_endcap_od_mm    = scalar( 3 );
     rec.d5_endcap_len_mm   = scalar( 4 );
-    rec.d6_front_gap_mm    = scalar( 5 );
-    rec.d7_side_gap_mm     = scalar( 6 );
+    rec.d6_mm              = scalar( 5 );
+    rec.d7_mm              = scalar( 6 );
     {
       const double tc = scalar( 7 );
       rec.typeCode = std::isnan( tc ) ? 0 : static_cast<int>( tc );
@@ -682,7 +665,7 @@ double ParEfficiency::efficiency( double energy_keV, double dist_from_face_mm,
   //  domain the reference tool uses; PCHIP (vs a plain cubic spline, which
   //  overshoots the low-E efficiency knee) is our deliberate, overshoot-safe
   //  choice.  We therefore differ from the reference ".ecc" between nodes, worst
-  //  ~1.4% at 200 keV - the reference behaves like a local forward-quadratic in
+  //  1.72% at 200 keV - the reference behaves like a local forward-quadratic in
   //  (V, ln E), and an independent Monte-Carlo arbiter says PCHIP is the more
   //  physical of the two.  Matching the reference more closely would mean being
   //  less physically accurate; see the DetectorEffG2kPar.h header for the
@@ -1050,7 +1033,7 @@ const size_t sm_near_field_energy_stride = 8;
  rms 0.00085 against the file's own stored (quantized) content - below the file's
  +-1 LSB of 0.1152%, so this axis' own RMS contribution is at the storage floor.
  Note that is an rms claim about this axis only: the WORST on-lattice error still
- sits at 2.2-8.3x the LSB over the bands >= 45 keV (15-23x at 22-45 keV) and is
+ sits at 2.4-6.7x the LSB over the bands >= 45 keV (10-30x at 22-45 keV) and is
  method-limited, by the distance ladder above ~45 keV and by the sheared angular
  feature below it.  See the header. */
 std::vector<double> near_field_energy_axis( const std::vector<double> &eta_energies,
@@ -1230,19 +1213,31 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
 
   gd.crystal_material_index = add_material( MaterialSpec::from( make_HPGe() ) );
 
-  // Dead layers are the Ge entries in slots 0 / 3 / 6 (front / side / back);
-  //  they are already folded into the grid, but shape the crystal solid.
+  // Dead layers are the Ge entries in slots 0 / 3 / 6 (front / side / back).  Like the housing
+  //  below, they are already in the grid; here they only shape the crystal solid.
   const double dead_front_cm = 0.1 * def.layers[0].thickness_mm;
   const double dead_side_cm  = 0.1 * def.layers[3].thickness_mm;
   const double dead_back_cm  = 0.1 * def.layers[6].thickness_mm;
   if( dead_front_cm > 0.0 || dead_side_cm > 0.0 || dead_back_cm > 0.0 )
     gd.dead_layer = DeadLayerConfig{ dead_front_cm, dead_side_cm, dead_back_cm };
 
-  // Front vacuum gap (D6), widening to the side gap (D7) - matches the
-  //  prototype's spacer and sets the endcap-front offset.
-  const double front_gap_cm = 0.1 * def.d6_front_gap_mm;
-  const double side_gap_cm = 0.1 * def.d7_side_gap_mm;
-  if( front_gap_cm > 0.0 )
+  // The crystal face sits D7 behind the endcap's outer face, window and endcap (slots 1, 2)
+  //  included, so only the remainder is vacuum; this is what the grids' near field says (see the
+  //  header).  A front layer add_housing cannot model is left out, so its thickness is vacuum too,
+  //  keeping the crystal at D7.  The side gap, D7 - D6, is the prototype's and is zero whenever
+  //  D6 == D7, as on every standard coax; its meaning is unknown.
+  double front_stack_mm = 0.0;
+  for( const int slot : { 1, 2 } )
+  {
+    const LayerEntry &le = def.layers[slot];
+    MaterialSpec spec;
+    if( !le.material.empty() && (le.thickness_mm > 0.0)
+        && material_for_token( le.material, le.density, spec ) )
+      front_stack_mm += le.thickness_mm;
+  }
+  const double front_gap_cm = 0.1 * std::max( 0.0, def.d7_mm - front_stack_mm );
+  const double side_gap_cm = 0.1 * std::max( 0.0, def.d7_mm - def.d6_mm );
+  if( (front_gap_cm > 0.0) || (side_gap_cm > 0.0) )
   {
     MaterialSpec vac;
     vac.name = "Vacuum";
@@ -1253,7 +1248,7 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
     LayerSpec gap;
     gap.material_index = vac_idx;
     gap.front_thickness_cm = front_gap_cm;
-    gap.side_thickness_cm = (side_gap_cm > front_gap_cm) ? (side_gap_cm - front_gap_cm) : 0.0;
+    gap.side_thickness_cm = side_gap_cm;
     gap.z_start_cm = 0.0;
     gap.z_end_cm = length_cm;
     gd.layers.push_back( gap );
@@ -1261,7 +1256,8 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
 
   // Housing layers: front path uses slots 1,2 (front thickness); side path
   //  uses slots 4,5 (side thickness).  Back path (slots 7,8) is not modeled by
-  //  CeeLo (theta>90 is handled from the grid directly).
+  //  CeeLo (theta>90 is handled from the grid directly).  The grid already
+  //  contains all of them; they enter only the kernel and the geometry.
   auto add_housing = [&]( int slot, bool is_front )
   {
     const LayerEntry &le = def.layers[slot];
@@ -1295,8 +1291,9 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
 
   // Bore hole + fillet: not in DETECTOR.txt.  Add a conservative coaxial bore
   //  for the coaxial families only; sanitize_geometry drops it if it doesn't
-  //  fit (safe - the node identity cancels the kernel).
-  if( (def.kind == DetectorDef::Kind::NCoax || def.kind == DetectorDef::Kind::PType)
+  //  fit (safe - the node identity cancels the kernel).  BEGe and planar
+  //  crystals have no bore.
+  if( (def.kind == DetectorDef::Kind::ThickWindowCoax || def.kind == DetectorDef::Kind::ThinWindowCoax)
       && length_cm > 1.5 )
   {
     const double bore_depth_cm = std::max( 0.5, length_cm - 0.8 );
@@ -1500,7 +1497,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //      |v|^2 = d^2 - 2*d*cos(theta)*off + off^2   ->   |v| = |d - off| at theta=0,
   //  so a ladder node with d < off sits BEHIND the face plane: the radial range
   //  collapses toward zero (clamping onto the grid's 1 mm bottom row) and
-  //  `theta_face` flips past 90 deg - on-axis at d=0.5 cm with off=0.57 cm it
+  //  `theta_face` flips past 90 deg - on-axis at d=0.3 cm with off=0.37 cm it
   //  reaches 180 deg.  Such nodes are not merely inaccurate, they are anchors of
   //  the PCHIP ladder, so they corrupt legitimate neighbouring queries too:
   //  measured before this floor existed, dispatch disagreed with the raw grid by
@@ -1596,10 +1593,10 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //
   // So this costs near-field reach only in the grazing columns, where the
   //  crystal-frame ladder position translates to a face-frame point inside that
-  //  can: on the corpus 18/37 columns lose nothing at all, the on-axis ladder
-  //  still reaches 2 mm from the endcap face, and only the last four columns
-  //  (82.5-90 deg) are held back to ~4.5 cm.  48 of 666 rungs on one detector,
-  //  39 of 666 on the other.
+  //  can: on the corpus 21/37 and 16/37 columns lose nothing at all, the on-axis
+  //  ladder still reaches 2 mm from the endcap face, and only the grazing
+  //  columns are held back past ~2.5 cm (to 3.1-4.9 cm at 87.5-90 deg).  78 of
+  //  2146 rungs on one detector, 89 of 2220 on the other.
   size_t n_truncated = 0;
   for( size_t c = 0; c < nc; ++c )
   {
@@ -1702,10 +1699,11 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   // ---- 8) Total efficiency: NOT characterized by these files ---------------
   // The grid is full-energy-peak only, so there is nothing to build a total
   //  efficiency from.  Say so explicitly: the default `KernelExact` tier would
-  //  serve a BARE-CRYSTAL kernel - no housing, no peak-to-total - and callers
-  //  cannot distinguish that from a verified total.  It is not a small error
-  //  either; at low energy the bare kernel falls below this response's own FEP
-  //  efficiency, which is impossible.  `NotCharacterized` makes eps_total
+  //  serve the KERNEL's total - the first-interaction probability through the
+  //  descriptor (housing included), with no scatter, escape or peak-to-total
+  //  physics - and callers cannot distinguish that from a verified total.  It is
+  //  not a small error either; at low energy the kernel falls below this
+  //  response's own FEP efficiency, which is impossible.  `NotCharacterized` makes eps_total
   //  refuse, which in turn makes `hasAnyTotalEfficiencyInfo()` false, so
   //  cascade summing correctly declines to run on this DRF.
   resp->tot_eff.tier = TotEffTier::NotCharacterized;
@@ -1730,7 +1728,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   drf->setDescription( descrip );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::CharacterizationParFile );
 
-  // The crystal sits the endcap-front offset behind the face - the GADRAS setback convention.  Only
+  // The crystal sits the endcap-front offset (D7) behind the face - the GADRAS setback convention.  Only
   //  flat-disk paths read it (the response places the crystal itself); without it they put the
   //  crystal AT the endcap face.  setLegacyEfficiencyFromResponse carries it across.
   drf->setDetectorSetback( gd.endcap_front_offset_cm() * PhysicalUnits::cm );

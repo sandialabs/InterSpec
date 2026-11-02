@@ -58,10 +58,13 @@
       efficiency and the DrfSource provenance;
    6. `GridReproductionByBand`: how well the ASSEMBLED response reproduces the
       grid, per energy band, gated on the file's own uint16 lattice (see that
-      case for why that is the only unambiguous truth the file carries).
+      case for why that is the only unambiguous truth the file carries);
+   7. `ImportedGeometryNearField`: the imported geometry puts the crystal where
+      the grid's near field says it is (a short Monte Carlo per detector).
 
- Two cases need no vendor files and so run in CI on `--datadir=` alone:
- `LayerMaterialsResolveAnyElement` and `KEdgeSegmentsHaveBothFlanks`.
+ Three cases need no vendor files and so run in CI on `--datadir=` alone:
+ `LayerMaterialsResolveAnyElement`, `CrystalFaceSitsD7BehindTheEndcap` and
+ `KEdgeSegmentsHaveBothFlanks`.
  =============================================================================
 */
 
@@ -94,6 +97,7 @@
 #include "io/ResponseKernel.h"
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
+#include "efficiency/EfficiencyCalculator.h"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -449,11 +453,12 @@ BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
     BOOST_CHECK( !!drf->ceeloResponse() );
 
     // These files characterize the FULL-ENERGY PEAK only, so nothing downstream
-    //  may believe a total efficiency is available.  The bare crystal kernel is
-    //  NOT an acceptable stand-in: it omits the housing and every peak-to-total
-    //  effect, and at low energy it comes out BELOW the response's own eps_fep,
-    //  which is impossible - a host gating cascade summing on "is there a
-    //  total?" would get a confident yes and a wrong correction.
+    //  may believe a total efficiency is available.  The kernel's own total is
+    //  NOT an acceptable stand-in: it is a first-interaction probability, with no
+    //  scatter, escape or peak-to-total physics, and at low energy it comes out
+    //  BELOW the response's own eps_fep, which is impossible - a host gating
+    //  cascade summing on "is there a total?" would get a confident yes and a
+    //  wrong correction.
     BOOST_CHECK( !drf->ceeloResponse()->tot_eff.characterized() );
     BOOST_CHECK( !drf->hasAnyTotalEfficiencyInfo() );
     BOOST_CHECK( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( drf ) );
@@ -465,8 +470,80 @@ BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
     BOOST_CHECK_EQUAL(
       GammaInteractionCalc::CascadeSummingCalc::estimateMaxSummingMagnitude(
                                           drf, 25.0*PhysicalUnits::cm ), 0.0 );
+
+    // The crystal face sits D7 behind the endcap's outer face (front stack included), and the DRF's
+    //  setback says the same - see geometryFromDetectorDef.
+    {
+      ifstream txt( c.detectorTxtPath.c_str(), ios::in | ios::binary );
+      const DetEffG2kPar::DetectorDef def = DetEffG2kPar::selectDetectorDef(
+                        DetEffG2kPar::parseDetectorTxt( txt ), SpecUtils::filename( c.parPath ) );
+      const double front_stack_mm = def.layers[1].thickness_mm + def.layers[2].thickness_mm;
+      const double offset_cm = drf->ceeloResponse()->descriptor.endcap_front_offset_cm();
+      BOOST_CHECK_CLOSE( offset_cm, 0.1 * std::max( def.d7_mm, front_stack_mm ), 1.0e-9 );
+      BOOST_CHECK_CLOSE( drf->detectorSetback(), offset_cm * PhysicalUnits::cm, 1.0e-9 );
+    }
   }//for( each case )
 }//BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
+
+
+/** The imported geometry must put the crystal where the grid says it is: a CeeLo point-source Monte
+ Carlo of it reproduces the grid's near/far FEP ratio on axis (1 cm against 25 cm, 662 keV).
+
+ The grid's own nodes do not depend on the geometry (they are reproduced exactly whatever the
+ kernel), but the setback, the near-field interpolation and every Monte-Carlo total attached to
+ the DRF do.  Measured over 65 grids, with the crystal D7 behind the endcap face this ratio agrees
+ to a few percent (median ~1%); reading D6 as a vacuum gap in front of the window stack, as the
+ importer once did, put a standard coax ~2 mm too deep and made it ~8% low on one corpus detector,
+ and ~18% high on a thin-window one.  Takes a few seconds per detector.
+ */
+BOOST_AUTO_TEST_CASE( ImportedGeometryNearField )
+{
+  if( g_par_dir.empty() )
+    return;
+
+  for( const DetectorCase &c : discoverCases() )
+  {
+    DetEffG2kPar::ParFile par;
+    BOOST_REQUIRE_NO_THROW( par = DetEffG2kPar::parseParFile( c.parPath ) );
+    const DetEffG2kPar::ParEfficiency parEff( par );
+
+    shared_ptr<DetectorPeakResponse> drf;
+    BOOST_REQUIRE_NO_THROW( drf = DetEffG2kPar::makeDrfFromFiles( c.parPath, c.detectorTxtPath ) );
+    const ceelo::GeometryDescriptor &gd = drf->ceeloResponse()->descriptor;
+
+    vector<unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+
+    const double energy = 661.657, near_cm = 1.0, far_cm = 25.0;
+    double mc[2] = { 0.0, 0.0 }, mc_sigma[2] = { 0.0, 0.0 };
+    for( size_t i = 0; i < 2; ++i )
+    {
+      calc.set_point_source( CeeLoUtils::sourcePositionFromFace( gd, 0.0, 0.0, (i ? far_cm : near_cm) ) );
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = energy;
+      cfg.termination.target_fep_rel_precision = 0.003;
+      cfg.termination.max_events = 100000000;
+      cfg.seed = 1;
+      const ceelo::EfficiencyResult r = calc.compute( cfg );
+      mc[i] = r.full_energy_peak_efficiency;
+      mc_sigma[i] = r.fep_uncertainty;
+      BOOST_REQUIRE( mc[i] > 0.0 );
+    }
+
+    const double grid_ratio = parEff.efficiency( energy, 10.0*near_cm, 0.0 )
+                              / parEff.efficiency( energy, 10.0*far_cm, 0.0 );
+    const double rel = (mc[0] / mc[1]) / grid_ratio - 1.0;
+    const double rel_sigma = std::hypot( mc_sigma[0]/mc[0], mc_sigma[1]/mc[1] );
+    BOOST_TEST_MESSAGE( "  " + SpecUtils::filename( c.dir ) + ": MC/grid of FEP(1 cm)/FEP(25 cm)"
+                        " on axis at 662 keV - 1 = " + std::to_string( rel )
+                        + " +- " + std::to_string( rel_sigma )
+                        + " (endcap-front offset " + std::to_string( gd.endcap_front_offset_cm() ) + " cm)" );
+    BOOST_CHECK_MESSAGE( std::fabs( rel ) < 0.04,
+        SpecUtils::filename( c.dir ) + ": the imported geometry's near/far FEP ratio differs from the"
+        " grid's by " + std::to_string( rel ) + " - the crystal is not where the grid puts it" );
+  }//for( each case )
+}//BOOST_AUTO_TEST_CASE( ImportedGeometryNearField )
 
 
 /** The layer-material tokens are elemental symbols, and ANY element must reach
@@ -587,6 +664,104 @@ BOOST_AUTO_TEST_CASE( LayerMaterialsResolveAnyElement )
     BOOST_CHECK( bad_drf->description().find( "unobtainium" ) != string::npos );
   }
 }//BOOST_AUTO_TEST_CASE( LayerMaterialsResolveAnyElement )
+
+
+/** Pins where the importer puts the crystal: its front face D7 behind the endcap's OUTER face, the
+ front window and endcap (slots 1, 2) included, so the front vacuum is D7 less that stack - and the
+ endcap-front offset, which is also the DRF's setback, is D7.  That is what the grids' near field
+ says (see the DetectorEffG2kPar.h header); the importer once read D6 as a vacuum gap in front of
+ the stack instead, putting a standard coax ~2 mm too deep.
+
+ Needs no vendor files; `--datadir=` is required for the element lookups.
+ */
+BOOST_AUTO_TEST_CASE( CrystalFaceSitsD7BehindTheEndcap )
+{
+  if( g_data_dir.empty() )
+  {
+    BOOST_TEST_MESSAGE( "CrystalFaceSitsD7BehindTheEndcap: skipped (needs --datadir=)." );
+    return;
+  }
+
+  const auto parse_one = []( const string &txt ) -> DetEffG2kPar::DetectorDef {
+    istringstream strm( txt );
+    const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( strm );
+    BOOST_REQUIRE_EQUAL( defs.size(), 1 );
+    return defs.front();
+  };
+
+  const auto offset_cm = []( const DetEffG2kPar::DetectorDef &def ) -> double {
+    vector<string> warnings;
+    return DetEffG2kPar::geometryFromDetectorDef( def, warnings ).endcap_front_offset_cm();
+  };
+
+  // A standard coax (D3 = 0, D6 == D7, empty window slot, 2.0 mm Al front): the crystal at 3.7 mm.
+  const DetEffG2kPar::DetectorDef coax = parse_one(
+    "StdCoax,66.4,48.3,0,87.5,83.8,3.7,3.7,26,coax.par,4, #\n"
+    "ge,0.23,5.35, #\n,,, #\nal,2.0,2.7, #\n"
+    "ge,0.43,5.35, #\nal,1.09,2.7, #\nal,1.5,2.7, #\n"
+    "ge,1.4,5.35, #\nal,6.0,2.7, #\nal,1.5,2.7\n" );
+  BOOST_CHECK( coax.kind == DetEffG2kPar::DetectorDef::Kind::ThickWindowCoax );
+  BOOST_CHECK_CLOSE( offset_cm( coax ), 0.37, 1.0e-9 );
+
+  // A thin-window record (D3 > 0, D7 > D6, 3.2 mm front stack): the crystal at D7 = 15 mm, and
+  //  the side vacuum D7 - D6 widens the can by 7.1 mm a side.
+  const DetEffG2kPar::DetectorDef thin = parse_one(
+    "ThinWin,61.5,30.6,65.0,94.0,40.0,7.9,15.0,26,thin.par,4, #\n"
+    "ge,0.06,5.35, #\nal,1.2,2.7, #\nal,2.0,2.7, #\n"
+    "ge,0.5,5.35, #\nal,1.0,2.7, #\nal,1.6,2.7, #\n"
+    "ge,0.3,5.35, #\nal,3.0,2.7, #\nal,5.0,2.7\n" );
+  BOOST_CHECK_CLOSE( offset_cm( thin ), 1.5, 1.0e-9 );
+  {
+    vector<string> warnings;
+    const ceelo::GeometryDescriptor gd = DetEffG2kPar::geometryFromDetectorDef( thin, warnings );
+    BOOST_CHECK_CLOSE( gd.transverse_half_extent(), 0.05*61.5 + 0.05 + 0.71 + 0.10 + 0.16, 1.0e-9 );
+
+    // A short crystal (length 0.5 x diameter) behind a thin window is a BEGe / planar - no bore -
+    //  while the same window on a long crystal is a coax, which gets the guessed bore.
+    BOOST_CHECK( thin.kind == DetEffG2kPar::DetectorDef::Kind::ThinWindowPlanar );
+    BOOST_CHECK( !gd.bore );
+    const DetEffG2kPar::DetectorDef thin_coax = parse_one(
+      "ThinCoax,57.3,67.5,63.5,76.2,133.4,1.35,8.0,26,tc.par,4, #\n"
+      "ge,0.01,5.35, #\nbe,0.5,2.7, #\nal,1.6,2.7, #\n"
+      "ge,0.01,5.35, #\nal,1.1,2.7, #\nal,1.6,2.7, #\n"
+      "ge,0.3,5.35, #\nal,4.0,2.7, #\nal,5.0,2.7\n" );
+    BOOST_CHECK( thin_coax.kind == DetEffG2kPar::DetectorDef::Kind::ThinWindowCoax );
+    BOOST_CHECK( !!DetEffG2kPar::geometryFromDetectorDef( thin_coax, warnings ).bore );
+  }
+
+  // D7 thinner than the stack it must contain: no vacuum, the crystal right behind the stack.
+  DetEffG2kPar::DetectorDef tight = coax;
+  tight.d6_mm = tight.d7_mm = 1.0;
+  BOOST_CHECK_CLOSE( offset_cm( tight ), 0.2, 1.0e-9 );
+
+  // A front layer that cannot be modeled is left out, but the crystal stays at D7.
+  DetEffG2kPar::DetectorDef unknown = coax;
+  unknown.layers[1].material = "unobtainium";
+  unknown.layers[1].thickness_mm = 0.5;
+  unknown.layers[1].density = 1.0;
+  BOOST_CHECK_CLOSE( offset_cm( unknown ), 0.37, 1.0e-9 );
+
+  // The DRF's setback is the same offset (a smooth synthetic grid drives makeDrf).
+  DetEffG2kPar::ParFile par;
+  par.emin_keV = 60.0;
+  par.emax_keV = 1332.0;
+  par.energies_keV = { 60.0, 1332.0 };
+  for( size_t e = 0; e < par.energies_keV.size(); ++e )
+  {
+    DetEffG2kPar::ParGrid g;
+    g.ncols = 19;
+    g.nrows = 40;
+    g.theta_step_rad = 10.0 * pi / 180.0;
+    g.r_step = 0.2;
+    for( int r = 0; r < g.nrows; ++r )
+      for( int col = 0; col < g.ncols; ++col )
+        g.V.push_back( static_cast<uint16_t>( 2000.0 + 900.0*e + 40.0*r + 15.0*col ) );
+    par.grids.push_back( g );
+  }
+  shared_ptr<DetectorPeakResponse> drf;
+  BOOST_REQUIRE_NO_THROW( drf = DetEffG2kPar::makeDrf( par, coax ) );
+  BOOST_CHECK_CLOSE( drf->detectorSetback(), 0.37 * PhysicalUnits::cm, 1.0e-9 );
+}//BOOST_AUTO_TEST_CASE( CrystalFaceSitsD7BehindTheEndcap )
 
 
 /** No K-edge segment of the assembled eta table may hold a single node, and the
@@ -1866,9 +2041,12 @@ BOOST_AUTO_TEST_CASE( SerializationRoundTrip )
  .par files (see the header), but the import, its geometry editing and the Monte-Carlo total
  efficiency (test_ImportedGridDrf) need a pair that exercises them.
    * mock_DETECTOR.txt describes the ANGLE test detector Angle-detector-only.detx - a 50 x 50 mm
-     closed-end coax with 0.5 mm inactive Ge, a 1.5 mm Al endcap and 4 / 5 mm front / side vacuum
-     gaps - in the record format the reader decodes.  It cannot state the .detx's 5 mm radius,
-     35 mm deep core or 5 mm bulletizing, so the importer guesses those.
+     closed-end coax with 0.5 mm inactive Ge, a 1.5 mm Al endcap and a 4 mm front vacuum gap - in
+     the record format the reader decodes: D7 = 5.5 puts the crystal face 4.0 + 1.5 mm behind the
+     endcap face.  D6 = 4.5 gives the importer's side gap, D7 - D6, of 1 mm (not the .detx's 5 mm):
+     the geometry mock.par was generated from, when D6 was read as the front vacuum gap and these
+     fields were 4.0 / 5.0.  It cannot state the .detx's 5 mm radius, 35 mm deep core or 5 mm
+     bulletizing, so the importer guesses those.
    * mock.par is CeeLo's: a full Monte-Carlo characterization (ResponseGenerator, fixed seed) of
      ParTestUtils::mock_truth_geometry - the record's geometry with the .detx core and
      bulletizing - sampled at every cell the format stores, as V = round(-1000 log10(eff)).  Cells
@@ -1892,7 +2070,7 @@ BOOST_AUTO_TEST_CASE( WriteMockParFiles )
   const char * const detector_txt =
     "# MOCK - NOT VENDOR DATA - written by InterSpec test_DetectorEffG2kPar WriteMockParFiles with"
     " CeeLo; dimensions from Angle-detector-only.detx\r\n"
-    "MockAngleCoax,50.0,50.0,0,63.0,100.0,4.0,5.0,26,mock.par,4, #\r\n"
+    "MockAngleCoax,50.0,50.0,0,63.0,100.0,4.5,5.5,26,mock.par,4, #\r\n"
     "ge,0.5,5.32, #\r\n"     // front: dead layer, (empty) window, endcap
     ",,, #\r\n"
     "al,1.5,2.70, #\r\n"
@@ -1907,7 +2085,7 @@ BOOST_AUTO_TEST_CASE( WriteMockParFiles )
   const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
   BOOST_REQUIRE_EQUAL( defs.size(), 1 );
   const DetEffG2kPar::DetectorDef &def = defs.front();
-  BOOST_REQUIRE( def.kind == DetEffG2kPar::DetectorDef::Kind::NCoax );  //so the importer guesses a bore
+  BOOST_REQUIRE( def.kind == DetEffG2kPar::DetectorDef::Kind::ThickWindowCoax );  //so the importer guesses a bore
 
   const string detx_path = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-detector-only.detx" );
   const ceelo::GeometryDescriptor truth = ParTestUtils::mock_truth_geometry( def, detx_path );
