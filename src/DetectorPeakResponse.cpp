@@ -1392,11 +1392,9 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     //     3x3 NaI, 1.09x for an HPGe coax, 2.00x for the CZT box (a box's transverse
     //     half-extent is its half-DIAGONAL) and 2.37x with a 2 cm lead collar.
     const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor );
-    const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
     const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos,
                                                               *ceeloCache().quadrature( pos ) );
-    const double omega = ceelo::disk_solid_angle_fraction( d_cm,
-                                CeeLoUtils::crystalHalfExtent( m_ceeloResponse->descriptor ) );
+    const double omega = CeeLoUtils::farFieldCrystalSolidAngle( m_ceeloResponse->descriptor );
 
     answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
     answer.sigma = (omega > 0.0) ? (res.sigma / omega) : 0.0;
@@ -2683,7 +2681,7 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
     const vector<string> det_radius = get_row(false, "Detector Radius - a (cm)");
     const vector<string> distance = get_row(false, "Source to Detector Face - d (cm)");
     get_row(false, "Source Radius - r (cm)"); //We dont use this info, yet
-    const vector<string> detector_setbacks = get_row(false, "Detector Setback (cm)");  //We dont use this info, yet
+    const vector<string> detector_setbacks = get_row(false, "Detector Setback (cm)");
     get_row(false, "Detector Area - (cm2)");
     get_row(false, "Source to Crystal Face - d (cm)");
     get_row(false, "Relative Efficiency (%)");
@@ -6407,6 +6405,40 @@ double DetectorPeakResponse::flatDiskEfficiency( const float energy, const doubl
 }//double flatDiskEfficiency( const float energy, const double dist ) const
 
 
+double DetectorPeakResponse::modeledCrystalDiameter() const
+{
+  if( isFixedGeometry() )
+    return 0.0;
+
+  // The crystal disk is what #intrinsicEfficiencyEval quotes a response's intrinsic against
+  if( m_ceeloResponse )
+    return 2.0 * CeeLoUtils::crystalHalfExtent( m_ceeloResponse->descriptor ) * PhysicalUnits::cm;
+
+  return m_detectorDiameter;
+}//modeledCrystalDiameter()
+
+
+double DetectorPeakResponse::modeledCrystalSetback() const
+{
+  if( isFixedGeometry() )
+    return 0.0;
+
+  if( m_ceeloResponse )
+    return m_ceeloResponse->descriptor.endcap_front_offset_cm() * PhysicalUnits::cm;
+
+  return m_detectorSetback;
+}//modeledCrystalSetback()
+
+
+double DetectorPeakResponse::geometricEfficiency( const double distance ) const
+{
+  if( isFixedGeometry() )
+    return 1.0;
+
+  return fractionalSolidAngle( modeledCrystalDiameter(), distance + modeledCrystalSetback() );
+}//geometricEfficiency(...)
+
+
 const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::getEnergyEfficiencyPair() const
 {
   return m_efficiency->energyEfficiencies();
@@ -7590,10 +7622,15 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
   }
   e_lo = std::max( e_lo, 10.0 );
 
+  // The chart's dashed far-field reference is the stored curve, which is quoted against the stated
+  //  diameter - so the intrinsic view divides by that disk's solid angle, but with the crystal where
+  //  the response actually puts it (its endcap offset, which the stated setback need not match), so
+  //  a near-field departure from the reference is the response's physics, not a bookkeeping offset.
+  //  For a DRF whose curve was sampled from its response the two placements are the same.
   const double diam = detectorDiameter();
   const double dist = (distance > 0.0) ? distance : (25.0 * PhysicalUnits::cm);
   const double on_axis_frac = (diam > 0.0)
-                        ? fractionalSolidAngle( diam, dist + detectorSetback() )
+                        ? fractionalSolidAngle( diam, dist + modeledCrystalSetback() )
                         : 0.0;
 
   // Largest angle the response's angular model actually resolves (the grazing

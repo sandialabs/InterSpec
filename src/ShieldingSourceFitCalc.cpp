@@ -4334,6 +4334,8 @@ void fit_model( const std::string wtsession,
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
   results->distance = chi2Fcn->distance();
   results->geometry = chi2Fcn->geometry();
+  results->source_offsets[0] = chi2Fcn->sourceOffsetX();
+  results->source_offsets[1] = chi2Fcn->sourceOffsetY();
   results->foreground_peaks = chi2Fcn->peaks();
   results->background_peaks = chi2Fcn->backgroundPeaks();
   results->background_normalization_factor = chi2Fcn->backgroundNormalizationFactor();

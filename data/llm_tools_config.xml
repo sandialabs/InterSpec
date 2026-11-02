@@ -494,7 +494,7 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
           },
           "distance": {
             "type": "string",
-            "description": "Optional: Source-to-detector distance (e.g., '10 cm', '1 m', '50 mm'). If greater than 15 cm, cascade-sum detection is disabled and only random-sum peaks are considered. If not specified, both types are checked."
+            "description": "Optional: Source-to-detector-face distance (e.g., '10 cm', '1 m', '50 mm'). If greater than 15 cm, cascade-sum detection is disabled and only random-sum peaks are considered. If not specified, both types are checked."
           }
       },
       "required": ["energy"]
@@ -1372,7 +1372,7 @@ Further investigation of top returned candidates is required to make sure they m
         },
         "distance": {
           "type": "string",
-          "description": "Source-to-detector distance with units (e.g., '100 cm', '3 ft', '1.5 m'). If numeric value provided, assumes cm. Required for non-fixed-geometry detectors."
+          "description": "Distance from the CENTER of the source (e.g. a sphere's center, not its surface) to the FACE of the detector (front of its endcap), with units (e.g., '100 cm', '3 ft', '1.5 m'); the detector response accounts for the crystal's setback behind the face. If numeric value provided, assumes cm. Required for non-fixed-geometry detectors."
         },
         "geometry": {
           "type": "string",
@@ -1622,7 +1622,7 @@ Further investigation of top returned candidates is required to make sure they m
       },
       "distance": {
         "type": "string",
-        "description": "For `set_distance` (required): new source-to-detector distance with units (e.g., '100 cm', '3 ft')."
+        "description": "For `set_distance` (required): new distance from the source CENTER to the detector FACE, with units (e.g., '100 cm', '3 ft')."
       },
       "nuclide": {
         "type": "string",

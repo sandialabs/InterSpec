@@ -89,6 +89,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/MakeDrfCalc.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -97,6 +98,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
@@ -2333,21 +2335,21 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   BOOST_CHECK_MESSAGE( !!bare->efficiencyUncert(),
                        "the response's MC sigma did not reach the DRF" );
 
-  // Setback and provenance survive setEfficiencyPoints, which resets them.
+  // The DRF takes the crystal's recess behind the face from the geometry - whatever setback it had
+  //  before, since the curve (and diameter) it now carries are the response's - so its flat-disk
+  //  evaluation (used when the response is not attached, or is turned off) puts the crystal where the
+  //  response does.  Provenance survives setEfficiencyPoints, which resets it.
+  const double endcap_offset_cm = resp->descriptor.endcap_front_offset_cm();
+  BOOST_REQUIRE_MESSAGE( endcap_offset_cm > 0.0, "the golden 3x3 NaI should be in a can" );
+  BOOST_CHECK_CLOSE( bare->detectorSetback() / PhysicalUnits::cm, endcap_offset_cm, 1.0E-4 );
+
   auto with_setback = make_shared<DetectorPeakResponse>( "geometry only", "" );
   with_setback->setDetectorSetback( 2.0*PhysicalUnits::cm );
   with_setback->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
   BOOST_REQUIRE_NO_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *with_setback, resp ) );
-  BOOST_CHECK_CLOSE( with_setback->detectorSetback() / PhysicalUnits::cm, 2.0, 0.01 );
+  BOOST_CHECK_CLOSE( with_setback->detectorSetback() / PhysicalUnits::cm, endcap_offset_cm, 1.0E-4 );
   BOOST_CHECK( with_setback->drfSource()
                == DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
-
-  // Without a setback of its own, the DRF takes the crystal's recess behind the face from the
-  //  geometry, so its flat-disk evaluation (used when the response is not attached, or is turned off)
-  //  puts the crystal where the response does.  Brand-new Monte Carlo DRFs come through here.
-  const double endcap_offset_cm = resp->descriptor.endcap_front_offset_cm();
-  BOOST_REQUIRE_MESSAGE( endcap_offset_cm > 0.0, "the golden 3x3 NaI should be in a can" );
-  BOOST_CHECK_CLOSE( bare->detectorSetback() / PhysicalUnits::cm, endcap_offset_cm, 1.0E-4 );
 
   // Close in, that makes the flat-disk evaluation track the response better than with no setback,
   //  which reads high by about twice the offset over the distance.
@@ -3914,6 +3916,241 @@ BOOST_AUTO_TEST_CASE( curve_anchor_covariance_flows_to_drf )
   for( size_t i = 0; i < ne*ne; ++i )
     BOOST_CHECK_CLOSE( cov3[i], resp_cov[i], 1.0e-6 );
 }//curve_anchor_covariance_flows_to_drf
+
+
+// ===========================================================================
+//  Where the crystal is: a DRF's stated diameter/setback (the flat-disk model) vs the crystal its
+//  geometry-modeled response places.  InterSpec distances are from the detector FACE throughout.
+// ===========================================================================
+
+/** The modeled-crystal accessors follow the response, not the stated values, and give the
+ decomposition the response itself implies.
+ */
+BOOST_AUTO_TEST_CASE( modeled_crystal_placement )
+{
+  const double cm = PhysicalUnits::cm;
+
+  // A response-backed DRF whose stated setback (0) is not its geometry's endcap offset
+  const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "nai3x3" );
+  const ceelo::GeometryDescriptor &gd = drf->ceeloResponse()->descriptor;
+  const double offset = gd.endcap_front_offset_cm() * cm;
+  BOOST_REQUIRE_GT( offset, 0.0 );
+  BOOST_REQUIRE_EQUAL( drf->detectorSetback(), 0.0 );
+
+  const double crystal_diam = 2.0 * CeeLoUtils::crystalHalfExtent( gd ) * cm;
+  BOOST_CHECK_CLOSE( drf->modeledCrystalDiameter(), crystal_diam, 1.0e-10 );
+  BOOST_CHECK_CLOSE( drf->modeledCrystalSetback(), offset, 1.0e-10 );
+
+  const double d = 10.0 * cm;
+  BOOST_CHECK_CLOSE( drf->geometricEfficiency( d ),
+                     DetectorPeakResponse::fractionalSolidAngle( crystal_diam, d + offset ), 1.0e-10 );
+
+  // ...whose product with the response's intrinsic is the efficiency, in the far field
+  const double d_far = CeeLoUtils::farFieldDistanceCm( gd ) * cm;
+  for( const float energy : { 122.0f, 662.0f, 1332.0f } )
+    BOOST_CHECK_CLOSE( drf->geometricEfficiency( d_far ) * drf->intrinsicEfficiencyEval( energy ).value,
+                       drf->efficiency( energy, d_far ), 0.1 );
+
+  // A legacy DRF: the stated values, and an exact decomposition at any distance
+  const shared_ptr<DetectorPeakResponse> legacy = synthetic_curve_drf( 5.0 );
+  legacy->setDetectorSetback( 1.0 * cm );
+  BOOST_CHECK_CLOSE( legacy->modeledCrystalDiameter(), 5.0 * cm, 1.0e-5 );
+  BOOST_CHECK_CLOSE( legacy->modeledCrystalSetback(), 1.0 * cm, 1.0e-10 );
+  for( const float energy : { 122.0f, 662.0f } )
+    BOOST_CHECK_CLOSE( legacy->geometricEfficiency( d ) * legacy->intrinsicEfficiencyEval( energy ).value,
+                       legacy->efficiency( energy, d ), 1.0e-9 );
+
+  // Fixed geometry: no solid angle to speak of
+  auto fixed = make_shared<DetectorPeakResponse>( "fixed", "" );
+  fixed->setIntrinsicEfficiencyFormula( "0.01", 0.0f, PhysicalUnits::keV, 0.0f, 0.0f,
+                                        DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  BOOST_CHECK_EQUAL( fixed->geometricEfficiency( d ), 1.0 );
+  BOOST_CHECK_EQUAL( fixed->modeledCrystalSetback(), 0.0 );
+}//modeled_crystal_placement
+
+
+/** A curve re-sampled from a response is quoted against the response's crystal, so the flat-disk
+ model has to put that crystal where the response does - whatever setback the DRF had before.
+ */
+BOOST_AUTO_TEST_CASE( legacy_curve_from_response_takes_endcap_setback )
+{
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<const ceelo::DetectorResponse> resp = drf_with_golden( "nai3x3" )->ceeloResponse();
+
+  DetectorPeakResponse drf( "resampled", "" );
+  drf.setIntrinsicEfficiencyFormula( "1.0", 5.0*cm, PhysicalUnits::keV, 0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf.setDetectorSetback( 3.0 * cm );   //a setback the response's geometry does not have
+  CeeLoUtils::setLegacyEfficiencyFromResponse( drf, resp );
+
+  BOOST_CHECK_CLOSE( drf.detectorSetback(), resp->descriptor.endcap_front_offset_cm() * cm, 1.0e-10 );
+  BOOST_CHECK_CLOSE( drf.detectorDiameter(), 2.0 * CeeLoUtils::crystalHalfExtent( resp->descriptor ) * cm, 1.0e-4 );
+}//legacy_curve_from_response_takes_endcap_setback
+
+
+/** The curve transfer must preserve the ABSOLUTE efficiency the DRF it is built from gives - so the
+ anchor has to read the curve on the disk the DRF quotes it against (its stated diameter), not the
+ geometry's object disk.  With a crystal-diameter DRF the two used to differ by the ratio of the
+ disks: 2.7% for the nai3x3, 2x for the czt_box.  An absolute curve anchors where it was measured.
+ */
+BOOST_AUTO_TEST_CASE( curve_anchor_quoted_on_drf_diameter )
+{
+  const double cm = PhysicalUnits::cm;
+
+  for( const char *preset : { "nai3x3", "czt_box" } )
+  {
+    const ceelo::GeometryDescriptor geom = golden_descriptor( preset );
+
+    // Quoted against the CRYSTAL disk, as a curve sampled from a response, a GADRAS import or a
+    //  typed-in crystal diameter leave it
+    const shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0 * CeeLoUtils::crystalHalfExtent( geom ) );
+
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::curveAnchorWithCovarianceForDrf( det, geom, -1.0 );
+    const shared_ptr<ceelo::DetectorResponse> resp
+                     = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, preset );
+    BOOST_REQUIRE( resp );
+    auto det2 = make_shared<DetectorPeakResponse>( *det );
+    det2->setCeeloResponse( resp );
+
+    const double d_far = CeeLoUtils::farFieldDistanceCm( geom ) * cm;
+    for( const float energy : { 80.0f, 200.0f, 662.0f, 1200.0f } )
+      BOOST_CHECK_MESSAGE( fabs( det2->efficiency( energy, d_far ) / det->flatDiskEfficiency( energy, d_far ) - 1.0 ) < 0.003,
+                           preset << " at " << energy << " keV: transfer " << det2->efficiency( energy, d_far )
+                           << " vs the curve's own " << det->flatDiskEfficiency( energy, d_far ) );
+  }//for( presets )
+
+  // An absolute curve, measured 25 cm from the face, is anchored there, on exactly what was stated
+  {
+    const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+    auto det = make_shared<DetectorPeakResponse>( "absolute", "" );
+    vector<DetectorPeakResponse::EnergyEffPoint> pts;
+    for( const float energy : { 60.0f, 122.0f, 344.0f, 662.0f, 1173.0f, 1332.0f, 2614.0f } )
+    {
+      DetectorPeakResponse::EnergyEffPoint p;
+      p.energy = energy;
+      p.efficiency = static_cast<float>( 2.0e-3 * std::pow( energy / 662.0, -0.8 ) );
+      pts.push_back( p );
+    }
+    det->setEfficiencyPoints( pts, static_cast<float>( 7.62*cm ), 25.0*cm,
+                              DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    BOOST_REQUIRE( det->isValid() );
+
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::curveAnchorWithCovarianceForDrf( det, geom, -1.0 );
+    BOOST_CHECK_CLOSE( anchor.ref_distance_cm, 25.0, 1.0e-9 );
+
+    const shared_ptr<ceelo::DetectorResponse> resp
+                     = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "absolute" );
+    auto det2 = make_shared<DetectorPeakResponse>( *det );
+    det2->setCeeloResponse( resp );
+    for( size_t i = 0; i < anchor.curve.energies_keV.size(); i += 3 )
+    {
+      const float energy = static_cast<float>( anchor.curve.energies_keV[i] );
+      BOOST_CHECK_CLOSE( anchor.curve.eff[i], det->efficiency( energy, 25.0*cm ), 1.0e-4 );
+      BOOST_CHECK_CLOSE( det2->efficiency( energy, 25.0*cm ), det->efficiency( energy, 25.0*cm ), 0.3 );
+    }
+  }
+}//curve_anchor_quoted_on_drf_diameter
+
+
+/** Measured points divided by the geometry kernel land on the curve the DRF's flat-disk model reads
+ back: in the far field the factor is the solid angle of the disk the curve is quoted against.
+ */
+BOOST_AUTO_TEST_CASE( fit_points_quoted_on_choice_diameter )
+{
+  const double cm = PhysicalUnits::cm;
+  for( const char *preset : { "nai3x3", "czt_box" } )
+  {
+    const ceelo::GeometryDescriptor geom = golden_descriptor( preset );
+    const double crystal_diam = 2.0 * CeeLoUtils::crystalHalfExtent( geom ) * cm;
+
+    MakeDrfCalc::GeometryChoice choice;
+    choice.geometry = make_shared<const ceelo::GeometryDescriptor>( geom );
+    choice.diameter = crystal_diam;
+
+    const double d_far = CeeLoUtils::farFieldDistanceCm( geom ) * cm;
+    MeasuredEffPoint p;
+    p.energy = 662.0f;
+    p.efficiency = 1.0e-7f;
+    p.fracStatUncert = 0.01f;
+    p.distance = static_cast<float>( d_far );
+    MeasuredDrfPoints points;
+    points.setPoints( { p } );
+
+    const vector<MakeDrfFit::EffFitPoint> fp = MakeDrfCalc::intrinsicFitPoints( points, choice, false );
+    BOOST_REQUIRE_EQUAL( fp.size(), 1u );
+    BOOST_CHECK_CLOSE( fp[0].efficiency, 1.0e-7 / DetectorPeakResponse::fractionalSolidAngle( crystal_diam, d_far ), 0.1 );
+  }
+}//fit_points_quoted_on_choice_diameter
+
+
+/** Grounding points carry InterSpec distances - from the detector FACE.  CeeLo's ground_to_points
+ would evaluate a point without a model efficiency through the descriptor's reference point, which
+ for a CrystalFace descriptor is one endcap offset too close; groundResponseToFacePoints does not.
+ */
+BOOST_AUTO_TEST_CASE( grounding_uses_face_distances )
+{
+  for( const char *preset : { "nai3x3", "detective_x" } )
+  {
+    const shared_ptr<const ceelo::DetectorResponse> golden = drf_with_golden( preset )->ceeloResponse();
+    const shared_ptr<ceelo::DetectorResponse> resp
+                         = ceelo::DetectorResponse::from_xml_string( golden->to_xml_string() );
+    BOOST_REQUIRE( resp );
+    BOOST_REQUIRE_GT( resp->descriptor.endcap_front_offset_cm(), 0.0 );
+
+    // "Measurements" exactly 10% above the model, at 2, 5 and 25 cm from the face
+    vector<ceelo::GroundingPoint> pts;
+    for( const double dist_cm : { 2.0, 5.0, 25.0 } )
+    {
+      for( const double energy : { 122.0, 344.0, 662.0, 1332.0 } )
+      {
+        ceelo::GroundingPoint gp;
+        gp.energy_keV = energy;
+        gp.distance_cm = dist_cm;
+        gp.cos_theta = 1.0;
+        gp.frac_stat_sigma = 0.01;
+        gp.source_key = "src" + std::to_string( static_cast<int>(energy) );
+        gp.measured_eff = 1.1 * resp->eps_fep_at( energy,
+                              CeeLoUtils::sourcePositionFromFace( resp->descriptor, 0.0, 0.0, dist_cm ) ).value;
+        pts.push_back( gp );
+      }
+    }
+
+    CeeLoUtils::groundResponseToFacePoints( *resp, pts, false );
+    BOOST_REQUIRE( !resp->grounding.empty() );
+    for( const double ln_k : resp->grounding.ln_k )
+      BOOST_CHECK_MESSAGE( fabs( ln_k - std::log(1.1) ) < 1.0e-3,
+                           preset << ": ln k = " << ln_k << ", expected ln(1.1) = " << std::log(1.1) );
+
+    // ...and re-grounding an already grounded response measures against the ungrounded model again
+    CeeLoUtils::groundResponseToFacePoints( *resp, pts, false );
+    for( const double ln_k : resp->grounding.ln_k )
+      BOOST_CHECK_MESSAGE( fabs( ln_k - std::log(1.1) ) < 1.0e-3, preset << ": re-grounding drifted to " << ln_k );
+  }//for( presets )
+}//grounding_uses_face_distances
+
+
+/** A curve-only DRF grounds an MC response on the same anchor as the curve transfer: the far
+ field, or the stated distance of an absolute curve - not 50 cm, where the flat-disk reconstruction
+ carries its near-field error.
+ */
+BOOST_AUTO_TEST_CASE( curve_grounding_points_at_transfer_anchor )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 7.62 );
+
+  bool curve_derived = false;
+  const vector<ceelo::GroundingPoint> gpts = MakeMcResponseForDrf::groundingPointsForDrf( det, geom, curve_derived );
+  BOOST_REQUIRE_GE( gpts.size(), 2u );
+  BOOST_CHECK( curve_derived );
+
+  const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  BOOST_REQUIRE_EQUAL( gpts.size(), anchor.curve.energies_keV.size() );
+  for( size_t i = 0; i < gpts.size(); ++i )
+  {
+    BOOST_CHECK_CLOSE( gpts[i].distance_cm, CeeLoUtils::farFieldDistanceCm( geom ), 1.0e-9 );
+    BOOST_CHECK_CLOSE( gpts[i].measured_eff, anchor.curve.eff[i], 1.0e-9 );
+  }
+}//curve_grounding_points_at_transfer_anchor
 
 
 // ===========================================================================

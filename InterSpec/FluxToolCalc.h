@@ -40,7 +40,7 @@ namespace SpecUtils
  All distances are in PhysicalUnits, and measured from the center of the source to the face of the
  detector (the endcap front - the surface a user can put a ruler against).  The detector crystal sits
  some distance behind that face: the DRFs setback, or for a DRF with a geometry-modeled (CeeLo)
- response, the responses endcap offset; see #crystal_setback.
+ response, the responses endcap offset; see DetectorPeakResponse::modeledCrystalSetback.
  */
 namespace FluxToolCalc
 {
@@ -128,21 +128,6 @@ namespace FluxToolCalc
    */
   PeakFlux peak_flux( const PeakDef &peak, const DetectorPeakResponse &det,
                       const SpecUtils::Measurement &displayed_foreground, const Options &options );
-
-  /** How far the crystal face is behind the detector face: for a DRF with a geometry-modeled (CeeLo)
-   response, the responses endcap offset; otherwise the DRFs setback.  Zero for fixed geometry.
-   */
-  double crystal_setback( const DetectorPeakResponse &det );
-
-  /** The crystal diameter the geometric efficiency is computed for: for a DRF with a geometry-modeled
-   response, the responses crystal; otherwise the DRFs stated diameter.  Zero for fixed geometry.
-   */
-  double crystal_diameter( const DetectorPeakResponse &det );
-
-  /** The fraction of the solid angle the crystal face takes up, for a point source `distance` from the
-   detector face (the crystal is #crystal_setback further away).  1 for fixed-geometry DRFs.
-   */
-  double geometric_efficiency( const DetectorPeakResponse &det, const double distance );
 
   /** Whether `energy` is outside the energy range the DRF states it is valid for.
 

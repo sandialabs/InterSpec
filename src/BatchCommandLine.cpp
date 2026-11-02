@@ -365,7 +365,8 @@ int run_batch_command( int argc, char **argv )
       ("det-eff-name", po::value<string>(&drf_name),
                     "Synonym for --drf-name.")
       ("distance", po::value<string>(&distance_override)->default_value(""),
-                  "Optional distance to override default distance in exemplar.\n\t"
+                  "Optional distance, from the source center to the detector face, to override the"
+                  " distance in the exemplar.\n\t"
                   "Can not be specified with fixed geometry detector responses.\n\t"
                   "Ex: 100cm, 3ft, 10meters, 3.1inches, '1.1 cm + 1in', etc.")
       ("use-bq", po::value<bool>(&use_bq)->default_value(use_bq)->implicit_value(true),

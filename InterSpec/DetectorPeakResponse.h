@@ -827,6 +827,31 @@ public:
   double flatDiskEfficiency( const float energy, const double distance ) const;
 
 
+  /** The crystal placement #efficiency actually models: with a #ceeloResponse attached, the
+   response's crystal disk (CeeLoUtils::crystalHalfExtent) recessed by the response's endcap offset
+   (`endcap_front_offset_cm()`); otherwise the stated #detectorDiameter and #detectorSetback.  Zero
+   for a fixed-geometry DRF.
+
+   The two can disagree - a response's geometry is its own statement of where the crystal is, while
+   the stated diameter and setback are what the legacy curve (#flatDiskEfficiency) was quoted
+   against - so anything that splits an efficiency into "intrinsic x solid angle", or places a
+   flat-disk approximation beside a response-modeled efficiency, must use these rather than the
+   stated values.
+   */
+  double modeledCrystalDiameter() const;
+  double modeledCrystalSetback() const;
+
+  /** The fraction of gammas from an on-axis point source `distance` (PhysicalUnits) from the
+   detector FACE that strike the modeled crystal face: `fractionalSolidAngle( modeledCrystalDiameter(),
+   distance + modeledCrystalSetback() )`.  1.0 for a fixed-geometry DRF.
+
+   Pairs with #intrinsicEfficiencyEval, which quotes a response's intrinsic efficiency against the
+   same crystal disk: the product is #efficiency exactly for a legacy DRF, and in the far field for
+   a response-backed one.
+   */
+  double geometricEfficiency( const double distance ) const;
+
+
   /** The source distance a #CeeLoUtils::flatDiskSnapshotAt snapshot was built for, or a
    negative value for an ordinary DRF.
 
@@ -1584,7 +1609,8 @@ protected:
 
    This function computes the factor to multiply absolute efficiency by to get intrinsic efficiency.
    The factor includes:
-   - Geometric correction: 1 / fractionalSolidAngle(m_detectorDiameter, m_absoluteEfficiencyDistance)
+   - Geometric correction: 1 / fractionalSolidAngle(m_detectorDiameter, m_absoluteEfficiencyDistance
+     + m_detectorSetback) - the distance is to the detector face, the crystal a setback behind it
    - Air attenuation correction (if m_absEffCorrectForAirAtten is true): 1 / exp(-μ·distance)
 
    @param energy Energy in keV (with PhysicalUnits)

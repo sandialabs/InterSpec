@@ -169,8 +169,10 @@ public:
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
 
   /** Grounding anchors from a DRF: raw measured points when present
-   (preferred), else the legacy efficiency curve sampled at a reference
-   distance (lower quality: curve lack-of-fit leaks into k(E)).
+   (preferred), else the legacy efficiency curve as absolute efficiencies at
+   the anchor CeeLoUtils::transferAnchorForDrf uses - the far field, or the
+   stated distance of an absolute curve (lower quality: curve lack-of-fit leaks
+   into k(E)).  Throws when the curve gives fewer than two usable points.
    Returns whether the points are curve-derived through `curve_derived`.
    Public/static so batch tools and the cascade-truth tests can ground a
    generated response to an existing DRF the same way this widget does.

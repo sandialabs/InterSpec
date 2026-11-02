@@ -2120,11 +2120,11 @@ void FluxToolWidget::handleDrfChange( std::shared_ptr<DetectorPeakResponse> drf 
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // For a DRF with a geometry-modeled response, the geometric efficiency uses the responses crystal
-  //  (see FluxToolCalc::crystal_diameter) - note when the DRFs own stated values say otherwise.
+  //  (see DetectorPeakResponse::modeledCrystalDiameter) - note when the DRFs own stated values say otherwise.
   if( drf && drf->ceeloResponse() && !drf->isFixedGeometry() )
   {
-    const double crystal_diam = FluxToolCalc::crystal_diameter( *drf );
-    const double crystal_setback = FluxToolCalc::crystal_setback( *drf );
+    const double crystal_diam = drf->modeledCrystalDiameter();
+    const double crystal_setback = drf->modeledCrystalSetback();
     if( (fabs( drf->detectorDiameter() - crystal_diam ) > 0.01*crystal_diam)
        || (fabs( drf->detectorSetback() - crystal_setback ) > 0.01*crystal_diam) )
     {

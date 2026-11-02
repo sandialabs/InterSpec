@@ -95,6 +95,13 @@ public:
     
     /** Must be >0 for background peak subtraction to be done. */
     float background_peak_live_time;
+
+    /** What divides this point's absolute efficiency to give the intrinsic efficiency the curve
+     describes; zero or negative for the flat-disk solid angle of the chart's detector diameter and
+     setback.  A full-geometry fit divides by CeeLoUtils::GeometryKernel::intrinsicFactor instead
+     (see MakeDrfCalc::intrinsicFitPoints), and its points belong under the curve on that footing.
+     */
+    double geometric_factor = -1.0;
   };//struct DataPoint
   
 public:

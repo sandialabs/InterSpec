@@ -319,11 +319,13 @@ void MakeDrfChart::updateDataToModel()
     m->setData( row, sm_energy_col, energy, Wt::ItemDataRole::Display );
 
     if( (data.peak_area > 0.0f) && (data.source_count_rate > 0.0f)
-        && (data.livetime > 0.0f) && ((m_det_diameter > 0.0f) || (data.distance < 0.0)) )
+        && (data.livetime > 0.0f)
+        && ((m_det_diameter > 0.0f) || (data.distance < 0.0) || (data.geometric_factor > 0.0)) )
     {
       const double fracSolidAngle
-           = (data.distance < 0.0) ? 1.0
-                                   : DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance + m_det_setback );
+           = (data.geometric_factor > 0.0) ? data.geometric_factor
+           : ((data.distance < 0.0) ? 1.0
+                                    : DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance + m_det_setback ));
       const double expected = data.source_count_rate * data.livetime * fracSolidAngle;
       const double eff = data.peak_area / expected;
 
