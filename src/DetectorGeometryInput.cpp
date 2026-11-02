@@ -1280,6 +1280,10 @@ std::shared_ptr<const ceelo::GeometryDescriptor> DetectorGeometryInput::seedFrom
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 
+  // Without this the form keeps its default endcap, and a response generated from it puts the
+  //  crystal at a different depth than the DRF it is meant to characterize.
+  setLayersFromSetback( drf->detectorSetback() );
+
   handleShapeChange();
 
   // The fabricated length is a guess we must not let be Monte-Carlo characterized until the user
@@ -1290,6 +1294,18 @@ std::shared_ptr<const ceelo::GeometryDescriptor> DetectorGeometryInput::seedFrom
 
   return nullptr;
 }//seedFromDrf(...)
+
+
+void DetectorGeometryInput::setLayersFromSetback( const double setback )
+{
+  // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
+  //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
+  while( !m_layers.empty() )
+    popLayerRow();
+  if( setback > 0.0 )
+    addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "" );
+  m_removeLayer->setEnabled( m_layers.size() > 1 );
+}//setLayersFromSetback(...)
 
 
 void DetectorGeometryInput::seedFromDiameter( const double diameter, const double setback,
@@ -1321,13 +1337,7 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 
-  // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
-  //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
-  while( !m_layers.empty() )
-    popLayerRow();
-  if( setback > 0.0 )
-    addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "" );
-  m_removeLayer->setEnabled( m_layers.size() > 1 );
+  setLayersFromSetback( setback );
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();

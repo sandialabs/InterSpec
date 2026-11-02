@@ -36,6 +36,9 @@
   <message id="nuclide-label">Nuclide:</message>
   <message id="age-label">Age:</message>
   <message id="distance-label">Distance:</message>
+  <message id="app-tt-distance-from-face">Distance from the center of the source to the face of the
+    detector (the front of its endcap).  The detector response accounts for how far behind that face
+    the crystal sits.</message>
   <message id="activity-label">Activity:</message>
   <message id="dose-label">Dose:</message>
   <message id="shielding-label">Shielding:</message>

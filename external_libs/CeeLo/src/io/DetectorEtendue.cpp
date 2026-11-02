@@ -204,10 +204,13 @@ bool append_etendue_line(EtendueLineSet& set, const Geometry& geom,
         if (len <= 1e-12) continue;
         if (s.is_scoring) active += len;
         if (s.material != nullptr)
-            kr.segs.push_back({s.material, static_cast<float>(len), s.is_scoring});
+            set.q.add_segment(kr, s.material, static_cast<float>(len), s.is_scoring);
     }
     kr.active_len = static_cast<float>(active);
-    if (!(active > 0.0) || kr.segs.empty()) return false;   // can never contribute
+    if (!(active > 0.0) || (kr.seg_count == 0)) {   // can never contribute
+        set.q.discard_segments(kr);
+        return false;
+    }
 
     // Accumulate with the (float) weight the ray carries, as make_aperture_quadrature does.
     const double wf = kr.omega_w;
@@ -304,16 +307,14 @@ void line_interaction_probabilities(const ApertureQuadrature& q,
     const double E_MeV = energy_keV * 1e-3;
     const double recap = (mu == MuChoice::NoRayleigh)
         ? std::max(0.0, std::min(1.0, passive_compton_recapture)) : 0.0;
+    // (mu_total, mu_nors, mu_cs) of each material, by RaySegment::material_slot.
     struct Mu { double tot, nors, cs; };
-    std::vector<std::pair<const Material*, Mu>> mu_cache;
-    auto mu_of = [&](const Material* m) -> Mu {
-        for (const auto& e : mu_cache)
-            if (e.first == m) return e.second;
+    std::vector<Mu> mus;
+    mus.reserve(q.materials.size());
+    for (const Material* m : q.materials) {
         const MacroscopicXS xs = m->macroscopic_xs(E_MeV);
-        const Mu val{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
-        mu_cache.push_back({m, val});
-        return val;
-    };
+        mus.push_back({xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs});
+    }
 
     p_out.assign(q.rays.size(), 0.0);
     for (size_t i = 0; i < q.rays.size(); ++i) {
@@ -321,8 +322,8 @@ void line_interaction_probabilities(const ApertureQuadrature& q,
         if (r.active_len <= 0.0f) continue;
         double tau_before = 0.0;
         double p_int = 0.0;
-        for (const RaySegment& s : r.segs) {
-            const Mu m = mu_of(s.material);
+        for (const RaySegment& s : q.segs(r)) {
+            const Mu& m = mus[s.material_slot];
             if (s.is_scoring) {
                 const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
                 p_int += std::exp(-tau_before) * (1.0 - std::exp(-mu_star * s.length));

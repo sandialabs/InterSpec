@@ -64,7 +64,8 @@ namespace ceelo {
 // rounded tip is actually present. Old builds therefore keep reading every file
 // they can read correctly, and hard-fail (via the range test in from_xml)
 // on exactly the ones they would get wrong. Existing responses keep their bytes
-// and their hash. Follow this pattern for the next additive field.
+// and their hash (content_hash hashes an optional field only when it is present).
+// Follow this pattern for the next additive field.
 //
 // v3 followed the pattern for TotEffTier::NotCharacterized: a pre-v3 reader maps
 // the unknown tier string onto KernelExact and would serve a bare kernel as a
@@ -132,14 +133,45 @@ double fold_phi_deg(double phi_deg, double span_deg) {
     return p;
 }
 
-uint64_t fnv1a_64(const std::string& s) {
-    uint64_t h = 1469598103934665603ULL;
-    for (const char c : s) {
-        h ^= static_cast<unsigned char>(c);
-        h *= 1099511628211ULL;
+/// 64-bit FNV-1a over the bytes of a response's stored content; see DetectorResponse::content_hash.
+/// Each variable-length field is preceded by its length, and an optional part contributes nothing
+/// at all when absent and a #tag naming it ahead of its content when present - so a field added
+/// later, absent from every existing response, leaves their hashes unchanged.  Numbers are hashed in
+/// native byte order - little-endian on every platform built for.
+class ContentHasher {
+public:
+    /// Names the optional part whose content follows; unique within the response.
+    void tag(const char* name) { text(name); }
+    void flag(bool b) {
+        const unsigned char c = b ? 1 : 0;
+        bytes(&c, 1);
     }
-    return h;
-}
+    void integer(int64_t v) { bytes(&v, sizeof(v)); }
+    void number(double v) {
+        // A NaN's payload is not stored (the text form is just "nan"), so it must not count.
+        if (std::isnan(v)) v = std::numeric_limits<double>::quiet_NaN();
+        bytes(&v, sizeof(v));
+    }
+    void numbers(const std::vector<double>& v) {
+        integer(static_cast<int64_t>(v.size()));
+        for (const double d : v) number(d);
+    }
+    void text(const std::string& s) {
+        integer(static_cast<int64_t>(s.size()));
+        bytes(s.data(), s.size());
+    }
+    uint64_t value() const { return h_; }
+
+private:
+    void bytes(const void* p, size_t n) {
+        const unsigned char* c = static_cast<const unsigned char*>(p);
+        for (size_t i = 0; i < n; ++i) {
+            h_ ^= c[i];
+            h_ *= 1099511628211ULL;
+        }
+    }
+    uint64_t h_ = 14695981039346656037ULL;
+};
 
 using XmlNode = rapidxml::xml_node<char>;
 using XmlDoc = rapidxml::xml_document<char>;
@@ -1041,26 +1073,37 @@ ApertureQuadrature DetectorResponse::make_quadrature(
                                     provenance.kernel_n_rays);
 }
 
+namespace {
+/// The STORED (generation-time) cross sections of every material `q` crosses, indexed by
+/// RaySegment::material_slot - looked up once per call rather than once per ray segment.
+std::vector<MacroscopicXS> slot_cross_sections(
+    double energy_keV, const ApertureQuadrature& q,
+    const std::vector<std::pair<const Material*, size_t>>& mat_to_mu,
+    const std::vector<MuTable>& mu_tables, const char* caller) {
+    std::vector<MacroscopicXS> xs;
+    xs.reserve(q.materials.size());
+    for (const Material* m : q.materials) {
+        size_t table = SIZE_MAX;
+        for (const auto& mm : mat_to_mu)
+            if (mm.first == m) { table = mm.second; break; }
+        if (table == SIZE_MAX)
+            throw std::runtime_error(std::string(caller) + ": unknown material");
+        xs.push_back(mu_tables[table].eval(energy_keV));
+    }
+    return xs;
+}
+}  // namespace
+
 void DetectorResponse::kernel_ray_weights_impl(
     double energy_keV, const ApertureQuadrature& q, MuChoice mu, double recap,
     std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
     // Same recurrence as ApertureQuadrature::interaction_omega, but with the
     // STORED generation-time mu tables (self-containment guarantee).
     struct MuT { double tot, nors, cs; };
-    std::vector<std::pair<const Material*, MuT>> cache;
-    auto mu_of = [&](const Material* m) -> MuT {
-        for (const auto& e : cache)
-            if (e.first == m) return e.second;
-        size_t table = SIZE_MAX;
-        for (const auto& mm : mat_to_mu_)
-            if (mm.first == m) { table = mm.second; break; }
-        if (table == SIZE_MAX)
-            throw std::runtime_error("DetectorResponse::kernel_K: unknown material");
-        const MacroscopicXS xs = mu_tables[table].eval(energy_keV);
-        const MuT v{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
-        cache.push_back({m, v});
-        return v;
-    };
+    std::vector<MuT> mus;  // by RaySegment::material_slot
+    for (const MacroscopicXS& xs : slot_cross_sections(energy_keV, q, mat_to_mu_, mu_tables,
+                                                       "DetectorResponse::kernel_K"))
+        mus.push_back({xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs});
 
     w_out.clear();
     dirs_out.clear();
@@ -1071,8 +1114,8 @@ void DetectorResponse::kernel_ray_weights_impl(
         if (r.active_len <= 0.0f) continue;
         double tau_before = 0.0;
         double p_int = 0.0;
-        for (const RaySegment& s : r.segs) {
-            const MuT m = mu_of(s.material);
+        for (const RaySegment& s : q.segs(r)) {
+            const MuT& m = mus[s.material_slot];
             if (s.is_scoring) {
                 const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
                 p_int += std::exp(-tau_before) *
@@ -1104,28 +1147,18 @@ double DetectorResponse::kernel_K(
     //  tests/test_efficiency_transfer.cpp::ray_weight_decomposition_matches_full_query, which pins
     //  prefactor * sum(weights) == the full query exactly.
     struct MuT { double tot, nors, cs; };
-    std::vector<std::pair<const Material*, MuT>> cache;
-    auto mu_of = [&](const Material* m) -> MuT {
-        for (const auto& e : cache)
-            if (e.first == m) return e.second;
-        size_t table = SIZE_MAX;
-        for (const auto& mm : mat_to_mu_)
-            if (mm.first == m) { table = mm.second; break; }
-        if (table == SIZE_MAX)
-            throw std::runtime_error("DetectorResponse::kernel_K: unknown material");
-        const MacroscopicXS xs = mu_tables[table].eval(energy_keV);
-        const MuT v{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
-        cache.push_back({m, v});
-        return v;
-    };
+    std::vector<MuT> mus;  // by RaySegment::material_slot
+    for (const MacroscopicXS& xs : slot_cross_sections(energy_keV, q, mat_to_mu_, mu_tables,
+                                                       "DetectorResponse::kernel_K"))
+        mus.push_back({xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs});
 
     double total = 0.0;
     for (const KernelRay& r : q.rays) {
         if (r.active_len <= 0.0f) continue;
         double tau_before = 0.0;
         double p_int = 0.0;
-        for (const RaySegment& s : r.segs) {
-            const MuT m = mu_of(s.material);
+        for (const RaySegment& s : q.segs(r)) {
+            const MuT& m = mus[s.material_slot];
             if (s.is_scoring) {
                 const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
                 p_int += std::exp(-tau_before) *
@@ -1155,20 +1188,10 @@ void DetectorResponse::fep_line_probabilities(
     double energy_keV, const ApertureQuadrature& q, std::vector<double>& p_out) const {
     // Same mu lookup and chord model as kernel_ray_weights_impl (FEP: total mu on the scoring
     // segments, no scatter-in credit), but one entry per ray, in order.
-    struct MuT { double tot; };
-    std::vector<std::pair<const Material*, MuT>> cache;
-    auto mu_of = [&](const Material* m) -> MuT {
-        for (const auto& e : cache)
-            if (e.first == m) return e.second;
-        size_t table = SIZE_MAX;
-        for (const auto& mm : mat_to_mu_)
-            if (mm.first == m) { table = mm.second; break; }
-        if (table == SIZE_MAX)
-            throw std::runtime_error("DetectorResponse::fep_line_probabilities: unknown material");
-        const MuT v{mu_tables[table].eval(energy_keV).mu_total()};
-        cache.push_back({m, v});
-        return v;
-    };
+    std::vector<double> mu_tots;  // by RaySegment::material_slot
+    for (const MacroscopicXS& xs : slot_cross_sections(energy_keV, q, mat_to_mu_, mu_tables,
+                                                       "DetectorResponse::fep_line_probabilities"))
+        mu_tots.push_back(xs.mu_total());
 
     p_out.assign(q.rays.size(), 0.0);
     for (size_t i = 0; i < q.rays.size(); ++i) {
@@ -1176,8 +1199,8 @@ void DetectorResponse::fep_line_probabilities(
         if (r.active_len <= 0.0f) continue;
         double tau_before = 0.0;
         double p_int = 0.0;
-        for (const RaySegment& s : r.segs) {
-            const double mu_tot = mu_of(s.material).tot;
+        for (const RaySegment& s : q.segs(r)) {
+            const double mu_tot = mu_tots[s.material_slot];
             if (s.is_scoring)
                 p_int += std::exp(-tau_before) * (1.0 - std::exp(-mu_tot * s.length));
             tau_before += mu_tot * s.length;
@@ -1310,26 +1333,17 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
 
 double DetectorResponse::kernel_transmitted(double energy_keV,
                                             const ApertureQuadrature& q) const {
-    std::vector<std::pair<const Material*, double>> cache;
-    auto mu_of = [&](const Material* m) -> double {
-        for (const auto& e : cache)
-            if (e.first == m) return e.second;
-        size_t table = SIZE_MAX;
-        for (const auto& mm : mat_to_mu_)
-            if (mm.first == m) { table = mm.second; break; }
-        if (table == SIZE_MAX)
-            throw std::runtime_error("DetectorResponse: unknown material");
-        const double v = mu_tables[table].eval(energy_keV).mu_total();
-        cache.push_back({m, v});
-        return v;
-    };
+    std::vector<double> mu_tots;  // by RaySegment::material_slot
+    for (const MacroscopicXS& xs : slot_cross_sections(energy_keV, q, mat_to_mu_, mu_tables,
+                                                       "DetectorResponse::kernel_transmitted"))
+        mu_tots.push_back(xs.mu_total());
     double total = 0.0;
     for (const KernelRay& r : q.rays) {
         if (r.active_len <= 0.0f) continue;
         double tau = 0.0;
-        for (const RaySegment& s : r.segs) {
+        for (const RaySegment& s : q.segs(r)) {
             if (s.is_scoring) break;
-            tau += mu_of(s.material) * s.length;
+            tau += mu_tots[s.material_slot] * s.length;
         }
         total += r.omega_w * std::exp(-tau);
     }
@@ -1870,6 +1884,88 @@ GeometryDescriptor read_detector_node(const XmlNode* d) {
     return gd;
 }
 
+// The content_hash counterparts of eta_to_xml, near_field_to_xml and write_detector_node: they hash
+// exactly what those write, under the same conditions (see DetectorResponse::content_hash).
+void hash_eta(ContentHasher& h, const EtaTable& t) {
+    h.numbers(t.energies_keV);
+    h.numbers(t.cos_thetas);
+    if (!t.phis_deg.empty()) {
+        h.tag("Phis");
+        h.numbers(t.phis_deg);
+    }
+    if (!t.edges_keV.empty()) {
+        h.tag("Edges");
+        h.numbers(t.edges_keV);
+    }
+    h.numbers(t.ln_eta);
+    h.numbers(t.frac_sigma);
+}
+
+void hash_near_field(ContentHasher& h, const NearFieldModel& m) {
+    h.numbers(m.energies_keV);
+    h.numbers(m.cos_thetas);
+    h.numbers(m.dists_cm);
+    h.numbers(m.ln_n);
+    h.numbers(m.frac_sigma);
+    h.numbers(m.break_cos_thetas);
+    h.numbers(m.break_d_cm);
+}
+
+void hash_detector(ContentHasher& h, const GeometryDescriptor& descriptor) {
+    h.flag(descriptor.shape == DetectorShape::Cylinder);
+    h.integer(descriptor.crystal_material_index);
+    h.flag(descriptor.reference_point == ReferencePoint::EndcapFront);
+    h.flag(descriptor.symmetry == ResponseSymmetry::Quadrant);
+    h.numbers(descriptor.dimensions_cm);
+
+    if (descriptor.bullet_radius_cm > 0.0) {
+        h.tag("bulletRadius");
+        h.number(descriptor.bullet_radius_cm);
+    }
+
+    if (descriptor.bore) {
+        h.tag("Bore");
+        h.number(descriptor.bore->radius);
+        h.number(descriptor.bore->depth);
+        if (descriptor.bore->rounded_tip) h.tag("roundedTip");
+    }
+
+    if (descriptor.dead_layer) {
+        h.tag("DeadLayer");
+        h.number(descriptor.dead_layer->front);
+        h.number(descriptor.dead_layer->side);
+        h.number(descriptor.dead_layer->back);
+    }
+
+    h.integer(static_cast<int64_t>(descriptor.layers.size()));
+    for (const LayerSpec& l : descriptor.layers) {
+        h.integer(l.material_index);
+        h.number(l.front_thickness_cm);
+        h.number(l.side_thickness_cm);
+        h.number(l.z_start_cm);
+        h.number(l.z_end_cm);
+    }
+
+    if (descriptor.collimator) {
+        h.tag("Collimator");
+        h.integer(descriptor.collimator->material_index);
+        h.number(descriptor.collimator->side_thickness_cm);
+        h.number(descriptor.collimator->z_start_cm);
+        h.number(descriptor.collimator->z_end_cm);
+    }
+
+    h.integer(static_cast<int64_t>(descriptor.materials.size()));
+    for (const MaterialSpec& m : descriptor.materials) {
+        h.text(m.name);
+        h.number(m.density_g_per_cm3);
+        h.integer(static_cast<int64_t>(m.composition.size()));
+        for (const MaterialComponent& c : m.composition) {
+            h.integer(int(c.Z));
+            h.number(c.mass_fraction);
+        }
+    }
+}
+
 }  // namespace
 
 std::string GeometryDescriptor::to_xml_string() const {
@@ -2296,9 +2392,106 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
 }
 
 uint64_t DetectorResponse::content_hash() const {
-    // The certificate is metadata ABOUT the response, not content -- hash the
-    // certificate-free payload so presence/absence never changes the hash.
-    return fnv1a_64(serialize_xml(/*include_certificate=*/false));
+    // Everything serialize_xml(false) stores, in its order and under its conditions - so a response
+    // hashes the same as its save/load round trip - but hashed from the members: formatting the
+    // ~10k doubles of a response as text cost about a millisecond, and hosts hash on every edit.
+    // Left out, as there: the certificate (metadata ABOUT the response, so presence/absence never
+    // changes the hash) and the version stamp (derived from the content).
+    //
+    // A field added to serialize_xml must be added here too.  If it is optional (written only when
+    // present or non-default), hash it the same way the optional parts below are: nothing when
+    // absent, `h.tag(...)` and its content when present - so every existing response keeps its hash.
+    // test_detector_response_io's content_hash_tracks_every_serialized_field fails if a field that
+    // serialize_xml writes is missing here (for any field one of its test responses populates).
+    ContentHasher h;
+
+    h.text(provenance.ceelo_version);
+    h.text(provenance.created_utc);
+    h.text(to_string(provenance.profile));
+    h.number(provenance.node_fep_precision);
+    h.number(provenance.fep_window_keV);
+    h.integer(static_cast<int64_t>(provenance.generation_seed));
+    h.integer(provenance.kernel_n_rays);
+    h.text(provenance.detector_name);
+    h.number(provenance.valid_e_min_keV);
+    h.number(provenance.valid_e_max_keV);
+    h.number(provenance.min_distance_cm);
+    h.text(to_string(provenance.method));
+
+    hash_detector(h, descriptor);
+
+    h.integer(static_cast<int64_t>(mu_tables.size()));
+    for (const MuTable& t : mu_tables) {
+        h.integer(t.material_index);
+        h.numbers(t.energy_keV);
+        h.numbers(t.mu_pe);
+        h.numbers(t.mu_cs);
+        h.numbers(t.mu_rs);
+        h.numbers(t.mu_pp);
+    }
+
+    if (!eta_fep.empty()) {
+        h.tag("EtaFep");
+        hash_eta(h, eta_fep);
+    }
+
+    if (!near_field.empty()) {
+        h.tag("NearField");
+        hash_near_field(h, near_field);
+    }
+
+    h.integer(static_cast<int64_t>(tot_eff.tier));
+    if (scatter_in_recapture != 0.0) {
+        h.tag("scatterInRecapture");
+        h.number(scatter_in_recapture);
+    }
+    if (tot_eff.tier == TotEffTier::BCurve) {
+        h.numbers(tot_eff.b_energies_keV);
+        h.numbers(tot_eff.ln_b);
+    }
+    if (tot_eff.tier == TotEffTier::EtaTotTable) hash_eta(h, tot_eff.eta_tot);
+    if (!tot_eff.near_field.empty()) {
+        h.tag("TotalNearField");
+        hash_near_field(h, tot_eff.near_field);
+    }
+
+    if (!grounding.empty()) {
+        h.tag("Grounding");
+        h.flag(grounding.curve_derived);
+        h.numbers(grounding.knot_ln_energies);
+        h.numbers(grounding.ln_k);
+        h.numbers(grounding.cov);
+        const SigmaTransferModel& t = grounding.transfer;
+        for (const double v : {t.far_onaxis, t.offaxis_mid, t.offaxis_low_e, t.low_e_ref_keV,
+                               t.mid_e_ref_keV, t.near_contact, t.near_gate_a, t.offaxis_s2_half})
+            h.number(v);
+        h.integer(static_cast<int64_t>(grounding.points.size()));
+        for (const GroundingPoint& p : grounding.points) {
+            h.number(p.energy_keV);
+            h.number(p.measured_eff);
+            h.number(p.model_eff);
+            h.number(p.frac_stat_sigma);
+            h.number(p.frac_cert_sigma);
+            h.text(p.source_key);
+            h.number(p.distance_cm);
+            h.number(p.cos_theta);
+            h.number(p.phi_deg);
+        }
+    }
+
+    for (const double v : {floors.fep_far, floors.fep_near, floors.tot_far, floors.tot_near,
+                           floors.near_regime_a})
+        h.number(v);
+
+    if (model_transfer) {
+        h.tag("ModelTransfer");
+        const SigmaTransferModel& t = *model_transfer;
+        for (const double v : {t.far_onaxis, t.offaxis_mid, t.offaxis_low_e, t.low_e_ref_keV,
+                               t.mid_e_ref_keV, t.near_contact, t.near_gate_a, t.offaxis_s2_half})
+            h.number(v);
+    }
+
+    return h.value();
 }
 
 } // namespace ceelo

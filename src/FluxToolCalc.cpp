@@ -30,12 +30,9 @@
 #include <memory>
 #include <stdexcept>
 
-#include "io/DetectorResponse.h"
-
 #include "SpecUtils/SpecFile.h"
 
 #include "InterSpec/PeakDef.h"
-#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/FluxToolCalc.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -46,43 +43,6 @@ using namespace std;
 
 namespace FluxToolCalc
 {
-
-double crystal_setback( const DetectorPeakResponse &det )
-{
-  if( det.isFixedGeometry() )
-    return 0.0;
-
-  const shared_ptr<const ceelo::DetectorResponse> response = det.ceeloResponse();
-  if( response )
-    return response->descriptor.endcap_front_offset_cm() * PhysicalUnits::cm;
-
-  return det.detectorSetback();
-}//crystal_setback(...)
-
-
-double crystal_diameter( const DetectorPeakResponse &det )
-{
-  if( det.isFixedGeometry() )
-    return 0.0;
-
-  // The crystal disk is what DetectorPeakResponse::intrinsicEfficiencyEval quotes a responses
-  //  intrinsic efficiency against, so the two decompositions agree.
-  const shared_ptr<const ceelo::DetectorResponse> response = det.ceeloResponse();
-  if( response )
-    return 2.0 * CeeLoUtils::crystalHalfExtent( response->descriptor ) * PhysicalUnits::cm;
-
-  return det.detectorDiameter();
-}//crystal_diameter(...)
-
-
-double geometric_efficiency( const DetectorPeakResponse &det, const double distance )
-{
-  if( det.isFixedGeometry() )
-    return 1.0;
-
-  return DetectorPeakResponse::fractionalSolidAngle( crystal_diameter(det), distance + crystal_setback(det) );
-}//geometric_efficiency(...)
-
 
 bool outside_energy_range( const DetectorPeakResponse &det, const double energy )
 {
@@ -133,7 +93,7 @@ PeakFlux peak_flux( const PeakDef &peak, const DetectorPeakResponse &det,
     }//if( back.counts > 0.0 )
   }//if( subtract background )
 
-  const double geomEff = geometric_efficiency( det, distance );
+  const double geomEff = det.geometricEfficiency( distance );
   const double totaleff = det.efficiency( energy, distance );  //distance ignored for fixed geometry
 
   // The intrinsic efficiency at this distance - per gamma crossing the crystal face - so the intrinsic

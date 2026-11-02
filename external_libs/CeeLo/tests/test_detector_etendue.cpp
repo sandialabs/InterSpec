@@ -157,7 +157,7 @@ BOOST_AUTO_TEST_CASE(etendue_measure_full_sphere) {
         BOOST_CHECK(set.dir[i].z() > 0.0);
         BOOST_CHECK(set.q.rays[i].omega_w > 0.0f);
         BOOST_CHECK(set.q.rays[i].active_len > 0.0f);
-        BOOST_CHECK(!set.q.rays[i].segs.empty());
+        BOOST_CHECK(!set.q.segs(set.q.rays[i]).empty());
     }
     // Sum of the kept weights * 4pi is the etendue that survived the active-chord drop; for a
     // bare crystal every hull line has an active chord, so it is the whole measure.

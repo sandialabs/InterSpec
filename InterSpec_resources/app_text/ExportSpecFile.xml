@@ -166,7 +166,7 @@
   <message id="esfcam-write-eff">Write efficiency</message>
   <message id="esfcam-write-eff-tt">Write the detector response function&apos;s full-energy-peak efficiency curve, converted to the absolute (per gamma emitted at the source) efficiency GENIE expects.</message>
   <message id="esfcam-eff-distance-label">At distance:</message>
-  <message id="esfcam-eff-distance-tt">GENIE efficiency curves are absolute (counts per gamma emitted by the source), so the source-to-detector distance the exported curve should describe is needed.  Not used for fixed-geometry detector response functions, which are already absolute.</message>
+  <message id="esfcam-eff-distance-tt">GENIE efficiency curves are absolute (counts per gamma emitted by the source), so the source-to-detector-face distance the exported curve should describe is needed.  Not used for fixed-geometry detector response functions, which are already absolute.</message>
   <message id="esfcam-write-energy-cal">Write energy calibration</message>
   <message id="esfcam-write-energy-cal-tt">Write the energy calibration into the file.  Only offered when no spectrum is being written - a spectrum always carries its calibration, since channel counts are meaningless without it.</message>
 

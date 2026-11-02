@@ -490,6 +490,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState
                                   = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
   config->distance = results.distance;
   config->geometry = results.geometry;
+  config->source_offsets[0] = results.source_offsets[0];
+  config->source_offsets[1] = results.source_offsets[1];
   config->options = results.options;
 
   // `FitShieldingInfo` derives from `ShieldingInfo`, and only the base-class information is
@@ -5698,6 +5700,31 @@ void ShieldingSourceDisplay::updateCascadeAvailability()
     {
     }
 
+    // The closest any source material comes to the detector face, not the assembly centre: a
+    //  large source close to the detector sums strongly at its near surface.
+    try
+    {
+      double outer[3] = { 0.0, 0.0, 0.0 };
+      for( WWidget *widget : m_shieldingSelects->children() )
+      {
+        const ShieldingSelect * const select = dynamic_cast<const ShieldingSelect *>( widget );
+        if( !select || select->isGenericMaterial() )
+          continue;
+        const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+        for( int i = 0; i < 3; ++i )
+          outer[i] += std::max( 0.0, info.m_dimensions[i] );
+      }//for( shieldings )
+
+      double offset_x = 0.0, offset_y = 0.0;
+      sourceOffsets( offset_x, offset_y );
+      const double clearance = GammaInteractionCalc::detector_face_clearance( geometry(), outer,
+                                                                    distance, offset_x, offset_y );
+      distance = std::max( 0.1*PhysicalUnits::cm, clearance );
+    }catch( std::exception & )
+    {
+      //Incomplete shielding input; the centre distance is a fine estimate meanwhile
+    }
+
     const double predicted = CascadeSummingCalc::estimateMaxSummingMagnitude( det, distance );
     enable = (predicted >= 0.003);
   }//if( enable && !det->isFixedGeometry() )
@@ -6170,7 +6197,7 @@ void ShieldingSourceDisplay::handleUserOffsetChange()
     }//if( undoRedo )
   }//if( either offset changed )
 
-  updateFixedGeomMcAvailability();  //an off-axis source can't get an MC fixed-geometry DRF
+  updateCascadeAvailability();  //how close the source comes; also: an off-axis source can't get an MC fixed-geometry DRF
   updateChi2Chart();
 }//void ShieldingSourceDisplay::handleUserOffsetChange()
 
@@ -6258,7 +6285,7 @@ void ShieldingSourceDisplay::handleOffsetCheckChange()
     undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle source off-axis offset." );
   }//if( undoRedo )
 
-  updateFixedGeomMcAvailability();  //an off-axis source can't get an MC fixed-geometry DRF
+  updateCascadeAvailability();  //how close the source comes; also: an off-axis source can't get an MC fixed-geometry DRF
   updateChi2Chart();
 }//void handleOffsetCheckChange()
 
@@ -6578,7 +6605,7 @@ void ShieldingSourceDisplay::handleShieldingChange()
   if( m_showDiagramBtn )
     m_showDiagramBtn->setHidden( m_embeddedSetupXml.empty() && (numberShieldings() == 0) );
 
-  updateFixedGeomMcAvailability();
+  updateCascadeAvailability();  //the summing gate depends on how close the source comes; updates the MC availability too
   updateChi2Chart();
 }//void handleShieldingChange()
 

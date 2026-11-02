@@ -21,13 +21,13 @@
   <message id="gxsg-tt-thickness">Thickness of the attenuator.</message>
   <message id="gxsg-trans-frac-label">Trans. Frac.</message>
   <message id="gxsg-tt-trans-frac">This is the fraction of gammas that will make it through the specified shielding.</message>
-  <message id="gxsg-tt-distance">This is the distance from the source center to the detector.</message>
+  <message id="gxsg-tt-distance">This is the distance from the source center to the detector face.</message>
   <message id="gxsg-intrinsic-eff-label">Intrinsic Efficiency</message>
-  <message id="gxsg-tt-intrinsic-eff">Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).</message>
+  <message id="gxsg-tt-intrinsic-eff">Intrinsic efficiency (in-peak detection efficiency of gammas striking the detector crystal's face).</message>
   <message id="gxsg-solid-angle-frac-label">Solid Angle Fraction</message>
-  <message id="gxsg-tt-solid-angle-frac">Fractional solid angle of the selected detector at specified distance.</message>
+  <message id="gxsg-tt-solid-angle-frac">Fractional solid angle of the selected detector's crystal, which sits its setback behind the detector face, at the specified distance.</message>
   <message id="gxsg-det-eff-label">Detection Efficiency</message>
-  <message id="gxsg-tt-det-eff">Intrinsic efficiency times solid angle fraction. E.g. the fraction of gammas making it out of the shielding that will be detected. Does not include attenuation.</message>
+  <message id="gxsg-tt-det-eff">The fraction of gammas making it out of the shielding that will be detected - intrinsic efficiency times solid angle fraction, except close to a detector with a geometry model, which accounts for where in the crystal gammas interact. Does not include attenuation.</message>
   <message id="gxsg-total-eff-label">Total Efficiency</message>
   <message id="gxsg-tt-total-eff">Transmission fraction times detection efficiency. E.g. the fraction of gammas emitted from the source that will be detected.</message>
   <message id="gxsg-warn-suspect">XS Calculation may be suspect: {1}</message>

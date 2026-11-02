@@ -657,7 +657,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
       const double mean = peak->mean();
       const double sigma = (peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth());
       const double dx = fabs(mean - energy);
-      if( (distance < min_dx) && (dx < 1.5*sigma) )
+      if( (dx < min_dx) && (dx < 1.5*sigma) )
       {
         min_dx = dx;
         nearest = iter;

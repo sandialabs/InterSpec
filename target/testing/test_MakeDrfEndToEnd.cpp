@@ -1281,4 +1281,14 @@ BOOST_AUTO_TEST_CASE( assemble_drf_preserves_mc_grounding )
     BOOST_CHECK_MESSAGE( drf->ceeloResponse()->grounding.empty(),
                          "assembleDrf grounded a response the user asked not to be grounded" );
   }
+
+  // A flat-disk description gets no response, even one the tool still holds (generated for a
+  //  geometry the user then switched away from to "Diameter only") - it describes another detector.
+  {
+    shared_ptr<ceelo::DetectorResponse> resp = make_response();
+    const shared_ptr<DetectorPeakResponse> drf
+          = MakeDrfCalc::assembleDrf( "d", "", points, flat_disk(), fit_results(fit), resp );
+    BOOST_CHECK_MESSAGE( !drf->ceeloResponse(),
+                         "assembleDrf attached a response to a diameter-only (flat-disk) detector" );
+  }
 }//assemble_drf_preserves_mc_grounding

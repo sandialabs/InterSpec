@@ -33,11 +33,14 @@
 #include <Eigen/Geometry>  // .cross()
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <random>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -270,6 +273,46 @@ bool active_bounding_cone(const Geometry& geom, const Eigen::Vector3d& src,
 }
 }
 
+void ApertureQuadrature::add_segment(KernelRay& ray, const Material* material, float length,
+                                     bool is_scoring) {
+    if (ray.seg_count == 0)
+        ray.seg_begin = static_cast<uint32_t>(segments.size());
+    assert(ray.seg_begin + ray.seg_count == segments.size());
+
+    size_t slot = 0;
+    while ((slot < materials.size()) && (materials[slot] != material))
+        ++slot;
+    if (slot == materials.size()) {
+        if (slot > std::numeric_limits<uint8_t>::max())
+            throw std::runtime_error("ApertureQuadrature: too many distinct materials");
+        materials.push_back(material);
+    }
+
+    segments.push_back({material, length, is_scoring, static_cast<uint8_t>(slot)});
+    ++ray.seg_count;
+}
+
+void ApertureQuadrature::discard_segments(KernelRay& ray) {
+    if (ray.seg_count == 0)
+        return;  // nothing added - and seg_begin may never have been set
+    assert(ray.seg_begin + ray.seg_count == segments.size());
+    segments.resize(segments.size() - ray.seg_count);
+    ray.seg_count = 0;
+}
+
+void ApertureQuadrature::append_rays(const ApertureQuadrature& part) {
+    rays.reserve(rays.size() + part.rays.size());
+    segments.reserve(segments.size() + part.segments.size());
+    for (KernelRay ray : part.rays) {
+        const RaySegmentRange from = part.segs(ray);
+        ray.seg_begin = static_cast<uint32_t>(segments.size());
+        ray.seg_count = 0;
+        for (const RaySegment& s : from)
+            add_segment(ray, s.material, s.length, s.is_scoring);
+        rays.push_back(ray);
+    }
+}
+
 ApertureQuadrature make_aperture_quadrature(const Geometry& geom,
                                             const Eigen::Vector3d& src,
                                             int n_rays) {
@@ -295,6 +338,8 @@ ApertureQuadrature make_aperture_quadrature(const Geometry& geom,
     const double golden = kPi * (3.0 - std::sqrt(5.0));  // Fibonacci spiral step
     const double w_per_ray = q.cone_omega_frac / n_rays; // equal-solid-angle rays
     q.n_rays_total = n_rays;
+    q.rays.reserve(n_rays);
+    q.segments.reserve(4 * static_cast<size_t>(n_rays));
 
     double sum_chord = 0.0, sum_cos = 0.0;
     std::vector<PathSegment> segs;
@@ -310,11 +355,11 @@ ApertureQuadrature make_aperture_quadrature(const Geometry& geom,
         geom.trace_ray(src, dir, segs);
         if (segs.empty()) continue;
 
-        // trace_ray does not guarantee global ordering across shells; sort.
-        std::sort(segs.begin(), segs.end(),
-                  [](const PathSegment& a, const PathSegment& b) {
-                      return a.t_start < b.t_start;
-                  });
+        // Geometry::trace_ray returns the segments in traversal order (both shape tracers sort).
+        assert(std::is_sorted(segs.begin(), segs.end(),
+                              [](const PathSegment& a, const PathSegment& b) {
+                                  return a.t_start < b.t_start;
+                              }));
 
         KernelRay kr;
         kr.omega_w = static_cast<float>(w_per_ray);
@@ -326,11 +371,10 @@ ApertureQuadrature make_aperture_quadrature(const Geometry& geom,
             if (len <= 1e-12) continue;
             if (s.is_scoring) active += len;
             if (s.material != nullptr)
-                kr.segs.push_back({s.material, static_cast<float>(len),
-                                   s.is_scoring});
+                q.add_segment(kr, s.material, static_cast<float>(len), s.is_scoring);
         }
         kr.active_len = static_cast<float>(active);
-        if (kr.segs.empty()) continue;
+        if (kr.seg_count == 0) continue;
 
         if (active > 0.0) {
             // Accumulate with the SAME (float) weight the ray carries, not the double w_per_ray.
@@ -360,23 +404,20 @@ double ApertureQuadrature::interaction_omega(
     const double recap = (mu == MuChoice::NoRayleigh)
         ? std::max(0.0, std::min(1.0, passive_compton_recapture)) : 0.0;
     double total = 0.0;
-    // Per-call cache of (mu_total, mu_nors, mu_cs) by material pointer.
+    // (mu_total, mu_nors, mu_cs) of each material, by RaySegment::material_slot.
     struct Mu { double tot, nors, cs; };
-    std::vector<std::pair<const Material*, Mu>> mu_cache;
-    auto mu_of = [&](const Material* m) -> Mu {
-        for (const auto& e : mu_cache)
-            if (e.first == m) return e.second;
+    std::vector<Mu> mus;
+    mus.reserve(materials.size());
+    for (const Material* m : materials) {
         const MacroscopicXS xs = m->macroscopic_xs(E_MeV);
-        const Mu val{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
-        mu_cache.push_back({m, val});
-        return val;
-    };
+        mus.push_back({xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs});
+    }
     for (const auto& r : rays) {
         if (r.active_len <= 0.0f) continue;
         double tau_before = 0.0;  // optical depth of everything traversed so far
         double p_int = 0.0;
-        for (const auto& s : r.segs) {
-            const Mu m = mu_of(s.material);
+        for (const auto& s : segs(r)) {
+            const Mu& m = mus[s.material_slot];
             if (s.is_scoring) {
                 const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
                 p_int += std::exp(-tau_before) * (1.0 - std::exp(-mu_star * s.length));
@@ -394,20 +435,16 @@ double ApertureQuadrature::interaction_omega(
 double ApertureQuadrature::transmitted_omega(double energy_keV) const {
     const double E_MeV = energy_keV * 1e-3;
     double total = 0.0;
-    std::vector<std::pair<const Material*, double>> mu_cache;
-    auto mu_of = [&](const Material* m) -> double {
-        for (const auto& e : mu_cache)
-            if (e.first == m) return e.second;
-        const double v = m->mu_total(E_MeV);
-        mu_cache.push_back({m, v});
-        return v;
-    };
+    std::vector<double> mus;  // mu_total by RaySegment::material_slot
+    mus.reserve(materials.size());
+    for (const Material* m : materials)
+        mus.push_back(m->mu_total(E_MeV));
     for (const auto& r : rays) {
         if (r.active_len <= 0.0f) continue;
         double tau = 0.0;
-        for (const auto& s : r.segs) {
+        for (const auto& s : segs(r)) {
             if (s.is_scoring) break;  // transmission up to first active entry
-            tau += mu_of(s.material) * s.length;
+            tau += mus[s.material_slot] * s.length;
         }
         total += r.omega_w * std::exp(-tau);
     }

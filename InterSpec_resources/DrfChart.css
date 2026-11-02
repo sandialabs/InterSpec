@@ -65,6 +65,18 @@
   pointer-events: none;
 }
 
+/* While new data is being computed (DrfChart.js setPending): the curves dim under a spinner. */
+svg.DrfChart.drf-pending > g:not(.drf-pending-spinner) {
+  opacity: 0.4;
+}
+
+.DrfChart .drf-pending-spinner path {
+  fill: none;
+  stroke: var(--d3spec-text-color, black);
+  stroke-width: 3px;
+  stroke-linecap: round;
+}
+
 /* Mouse capture area (invisible) */
 .DrfChart .mouse-capture {
   fill: none;

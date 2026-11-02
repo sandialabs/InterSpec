@@ -437,8 +437,8 @@ BOOST_AUTO_TEST_CASE( fixed_geometry )
   BOOST_CHECK_EQUAL( near_flux.air_transmission, 1.0 );
   BOOST_CHECK_EQUAL( near_flux.flux_on_det, 0.0 );
   BOOST_CHECK_EQUAL( near_flux.flux_per_cm2, 0.0 );
-  BOOST_CHECK_EQUAL( FluxToolCalc::geometric_efficiency( *drf, 1.0*PhysicalUnits::m ), 1.0 );
-  BOOST_CHECK_EQUAL( FluxToolCalc::crystal_setback( *drf ), 0.0 );
+  BOOST_CHECK_EQUAL( drf->geometricEfficiency( 1.0*PhysicalUnits::m ), 1.0 );
+  BOOST_CHECK_EQUAL( drf->modeledCrystalSetback(), 0.0 );
 }//fixed_geometry
 
 
@@ -681,8 +681,8 @@ BOOST_AUTO_TEST_CASE( geometry_modeled_response )
   const ceelo::GeometryDescriptor &gd = drf->ceeloResponse()->descriptor;
   const double crystal_diam = 2.0 * CeeLoUtils::crystalHalfExtent( gd ) * PhysicalUnits::cm;
   const double crystal_setback = gd.endcap_front_offset_cm() * PhysicalUnits::cm;
-  BOOST_CHECK_CLOSE( FluxToolCalc::crystal_diameter( *drf ), crystal_diam, 1.0E-10 );
-  BOOST_CHECK_CLOSE( FluxToolCalc::crystal_setback( *drf ), crystal_setback, 1.0E-10 );
+  BOOST_CHECK_CLOSE( drf->modeledCrystalDiameter(), crystal_diam, 1.0E-10 );
+  BOOST_CHECK_CLOSE( drf->modeledCrystalSetback(), crystal_setback, 1.0E-10 );
 
   const double distance = 25.0*PhysicalUnits::cm;
   const float live_time = 500.0f;

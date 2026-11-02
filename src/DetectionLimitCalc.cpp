@@ -835,7 +835,9 @@ std::pair<double,double> currie_k_alpha_beta( const CurrieMdaInput &input )
 double combine_systematic_uncertainty( const double distance,
                                        const double distance_uncertainty,
                                        const double efficiency_rel_uncertainty,
-                                       const bool inverse_square )
+                                       const bool inverse_square,
+                                       const DetectorPeakResponse *drf,
+                                       const double energy )
 {
   if( IsNan(distance) || IsInf(distance)
      || IsNan(distance_uncertainty) || IsInf(distance_uncertainty)
@@ -851,8 +853,22 @@ double combine_systematic_uncertainty( const double distance,
       throw runtime_error( "combine_systematic_uncertainty: distance uncertainty given without a"
                            " positive distance." );
 
-    // The factor of two is the 1/r^2: a 5% distance uncertainty is a 10% counts uncertainty.
+    // The factor of two is the 1/r^2: a 5% distance uncertainty is a 10% counts uncertainty -
+    //  far from the detector.  With a response, ask it how much the efficiency actually changes:
+    //  to first order the same far away, but less close in, where the crystal is a setback behind
+    //  the face the distance is to and the solid angle flattens.
     u_dist = 2.0*distance_uncertainty/distance;
+
+    if( drf && drf->isValid() && !drf->isFixedGeometry() && (energy > 0.0) )
+    {
+      // The near end is held at the face - a source can't be closer than contact - which keeps the
+      //  term continuous as sigma_d grows past d.
+      const float e = static_cast<float>( energy );
+      const double eff_hi = drf->efficiency( e, distance + distance_uncertainty );
+      const double eff_lo = drf->efficiency( e, std::max( distance - distance_uncertainty, 0.0 ) );
+      if( (eff_hi > 0.0) && (eff_lo > 0.0) && !IsInf(eff_hi) && !IsInf(eff_lo) )
+        u_dist = 0.5 * std::fabs( std::log( eff_hi / eff_lo ) );
+    }//if( a response to evaluate the distance dependence with )
   }//if( a distance term applies )
 
   return sqrt( u_dist*u_dist + u_eff*u_eff );

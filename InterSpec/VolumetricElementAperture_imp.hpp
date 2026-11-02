@@ -85,9 +85,9 @@ struct ElementAperture
 
 /** TEST HOOK - selects how #build_element_aperture defines CeeLo's element->detector direction.
 
- `false` (production): the direction from the element to the CeeLo-frame image of the assembly's
- detector reference point (`reference_point_position()`, i.e. the endcap front for an EndcapFront
- response) - the same physical point InterSpec's `to_det` aims at, so the two frames agree on the
+ `false` (production): the direction from the element to the CeeLo-frame image of the detector
+ FACE (CeeLoUtils::detectorFacePosition - the endcap front, whatever the descriptor's reference
+ point says) - the same physical point InterSpec's `to_det` aims at, so the two frames agree on the
  element's polar angle and the rotation reduces to the azimuthal one it should be.
 
  `true` (legacy, 2026-09-02 and earlier): the direction to CeeLo's ORIGIN (the crystal-face centre),

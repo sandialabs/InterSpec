@@ -7024,6 +7024,55 @@ BOOST_AUTO_TEST_CASE( CombineSystematicUncertainty )
 }// BOOST_AUTO_TEST_CASE( CombineSystematicUncertainty )
 
 
+/** With a detector response, the distance term is how much THAT response's efficiency changes over
+ the distance uncertainty: the 1/r^2 factor of two far away, less close in - where the crystal sits
+ a setback behind the face the distance is measured to, and the solid angle flattens.
+ */
+BOOST_AUTO_TEST_CASE( CombineSystematicUncertaintyFromDrf )
+{
+  using namespace DetectionLimitCalc;
+
+  const double cm = PhysicalUnits::cm;
+  DetectorPeakResponse drf( "flat", "5 cm disk, 1 cm setback" );
+  drf.setIntrinsicEfficiencyFormula( "0.5", 5.0*cm, PhysicalUnits::keV, 0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf.setDetectorSetback( 1.0*cm );
+  BOOST_REQUIRE( drf.isValid() );
+
+  const double energy = 661.7;
+
+  // Far away it is the inverse square, to second order in sigma/d.
+  const double far = combine_systematic_uncertainty( 1000.0*cm, 10.0*cm, 0.0, true, &drf, energy );
+  BOOST_CHECK_CLOSE_FRACTION( far, 2.0*10.0/1000.0, 2.0E-3 );
+
+  // Close in it is the response's own log-slope - well under 2*sigma/d (the 4x quoted in the docs).
+  const double d = 1.0*cm, sigma = 0.1*cm;
+  const double near = combine_systematic_uncertainty( d, sigma, 0.0, true, &drf, energy );
+  const double expected = 0.5 * std::fabs( std::log( drf.efficiency( energy, d + sigma )
+                                                      / drf.efficiency( energy, d - sigma ) ) );
+  BOOST_CHECK_CLOSE_FRACTION( near, expected, 1.0E-12 );
+  BOOST_CHECK_LT( near, 0.5 * (2.0*sigma/d) );
+
+  // The efficiency term still adds in quadrature.
+  BOOST_CHECK_CLOSE_FRACTION( combine_systematic_uncertainty( d, sigma, 0.05, true, &drf, energy ),
+                             std::sqrt( expected*expected + 0.05*0.05 ), 1.0E-12 );
+
+  // An uncertainty larger than the distance: the near end is held at the face, never NaN.
+  const double big = combine_systematic_uncertainty( d, 2.0*d, 0.0, true, &drf, energy );
+  BOOST_CHECK( std::isfinite( big ) && (big > 0.0) );
+  BOOST_CHECK_CLOSE_FRACTION( big, 0.5 * std::fabs( std::log( drf.efficiency( energy, 3.0*d )
+                                                              / drf.efficiency( energy, 0.0 ) ) ), 1.0E-12 );
+
+  // ...and is continuous as sigma_d passes d (it used to jump, switching to a one-sided difference).
+  BOOST_CHECK_CLOSE_FRACTION( combine_systematic_uncertainty( d, 0.999*d, 0.0, true, &drf, energy ),
+                              combine_systematic_uncertainty( d, 1.001*d, 0.0, true, &drf, energy ), 2.0E-3 );
+
+  // Without a response (or with a fixed-geometry one), the plain inverse square.
+  BOOST_CHECK_CLOSE_FRACTION( combine_systematic_uncertainty( d, sigma, 0.0, true, nullptr, energy ),
+                             2.0*sigma/d, 1.0E-12 );
+}// BOOST_AUTO_TEST_CASE( CombineSystematicUncertaintyFromDrf )
+
+
 /** The Currie peak-region continuum, on binning whose channel widths change across the region.
 
  `currie_mda_calc` used to estimate the continuum as the mean of the two side-band *densities*.

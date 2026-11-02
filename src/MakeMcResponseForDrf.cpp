@@ -265,65 +265,27 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
     if( drf->isFixedGeometry() )
       return answer;  //no geometry to map a fixed-geometry curve through
 
-    // Curve fallback: sample the legacy intrinsic curve and turn it into
-    //  absolute efficiencies.  When the curve was specified as absolute
-    //  efficiency at a stated distance, anchor there - that is where the curve
-    //  is actually pinned to data; otherwise use a comfortably far-field
-    //  reference distance.  (farFieldIntrinsicEfficiency() already backs out any air
-    //  attenuation the absolute curve included, so the reconstructed absolute
-    //  efficiencies below are in-vacuum - consistent with the ray-trace kernel
-    //  the grounding fit compares against.)
+    // Curve fallback: the legacy intrinsic curve as absolute efficiencies at one distance - the
+    //  same anchor the curve transfer uses (CeeLoUtils::transferAnchorForDrf): the far field, where
+    //  the flat-disk reconstruction is trustworthy, or the distance an absolute curve was stated
+    //  at.  This used to anchor at max(50 cm, 10a), close enough in that the flat-disk near-field
+    //  error (~11% for a 3x3 NaI at 50 cm) was baked into the grounding.
     curve_derived = true;
 
-    const double a_cm = geom.transverse_half_extent();
-    double d_ref_cm = std::max( 50.0, 10.0 * a_cm );
-    if( (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
-        && (drf->absoluteEfficiencyDistance() > 0.0) )
-      d_ref_cm = drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
-    const double diam = drf->detectorDiameter();
-    const double dist = d_ref_cm * PhysicalUnits::cm;
-    const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle(
-                                        diam, dist + drf->detectorSetback() );
-
-    double e_lo = drf->lowerEnergy(), e_hi = drf->upperEnergy();
-    if( (e_lo <= 0.0) || (e_hi <= e_lo) )
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( drf, geom, -1.0 );
+    for( size_t i = 0; i < anchor.curve.energies_keV.size(); ++i )
     {
-      e_lo = 59.0;
-      e_hi = 2614.0;
-    }
-    e_lo = std::max( e_lo, 20.0 );
-
-    const int n_samples = 8;
-    vector<double> energies;
-    for( int i = 0; i < n_samples; ++i )
-      energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_samples-1) ) );
-
-    // One covariance query: for a DRF carrying a response this traces a full aperture fan.
-    const vector<double> cov = drf->efficiencyFracCovariance( energies );
-    vector<double> sigmas;
-    if( cov.size() == (energies.size()*energies.size()) )
-    {
-      for( size_t i = 0; i < energies.size(); ++i )
-        sigmas.push_back( std::sqrt( std::max(0.0, cov[i*energies.size()+i]) ) );
-    }
-
-    for( size_t i = 0; i < energies.size(); ++i )
-    {
-      const double intrinsic = drf->farFieldIntrinsicEfficiency( static_cast<float>(energies[i]) );
-      if( intrinsic <= 0.0 )
-        continue;
-
       ceelo::GroundingPoint gp;
-      gp.energy_keV = energies[i];
-      gp.measured_eff = intrinsic * frac_solid_angle;
-      gp.frac_stat_sigma = sigmas.empty() ? CeeLoUtils::sm_default_anchor_frac_sigma
-                                          : std::max( CeeLoUtils::sm_min_anchor_frac_sigma, sigmas[i] );
+      gp.energy_keV = anchor.curve.energies_keV[i];
+      gp.measured_eff = anchor.curve.eff[i];
+      gp.frac_stat_sigma = (i < anchor.curve.frac_sigma.size()) ? anchor.curve.frac_sigma[i]
+                                                                : CeeLoUtils::sm_default_anchor_frac_sigma;
       gp.frac_cert_sigma = 0.0;
       gp.source_key = "legacy-curve";
-      gp.distance_cm = d_ref_cm;
+      gp.distance_cm = anchor.ref_distance_cm;
       gp.cos_theta = 1.0;
       answer.push_back( std::move(gp) );
-    }//for( size_t i = 0; i < energies.size(); ++i )
+    }//for( anchor points )
 
     return answer;
 }//groundingPointsForDrf(...)
@@ -1518,8 +1480,8 @@ void MakeMcResponseForDrf::updateResponseChart()
   m_chart->updateChart( preview );
 
   // Start on the DRFs valid range, but no further than 3 MeV - above that the curves are mostly
-  //  empty chart.  Only the first showing picks a range (`updateChart` resets it from the DRFs
-  //  JSON extent), so re-draws for a mode/distance change dont undo the users zooming.
+  //  empty chart.  Only the first showing picks a range; later re-draws (`updateChart`) reset it to
+  //  the DRFs own initial range (DetectorPeakResponse::toJSON's "initialRange").
   if( !m_chartRangeSet )
   {
     const double lower = std::max( 0.0, preview->lowerEnergy() );
@@ -1918,22 +1880,10 @@ bool MakeMcResponseForDrf::startGeneration()
       ceelo::GenerationOptions run_opts = opts;
       run_opts.stats_out = stats.get();
       response = ceelo::ResponseGenerator::generate( gd, run_opts );
+      // The point distances are from the detector face (InterSpec's convention, not the
+      //  descriptor's reference point) - see CeeLoUtils::groundResponseToFacePoints.
       if( response && !ground_pts.empty() )
-      {
-        // Model efficiencies at each point's own geometry, with the point distances in InterSpec's
-        //  face-referenced convention (rather than leaving ground_to_points to interpret them).
-        vector<ceelo::GroundingPoint> pts = ground_pts;
-        for( ceelo::GroundingPoint &p : pts )
-        {
-          if( p.model_eff > 0.0 )
-            continue;
-          const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
-          const double phi = p.phi_deg * 3.14159265358979323846 / 180.0;
-          const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, phi, p.distance_cm );
-          p.model_eff = response->eps_fep_at( p.energy_keV, pos ).value;
-        }
-        ceelo::ResponseGenerator::ground_to_points( *response, pts, curve_derived );
-      }
+        CeeLoUtils::groundResponseToFacePoints( *response, ground_pts, curve_derived );
 
       // Keep only its total, re-expressed onto the grid, whose FEP stays the file's.
       if( response && grid )
