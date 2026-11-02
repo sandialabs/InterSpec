@@ -213,9 +213,11 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: wt4-bleeding-edge
-      # Both platforms' assets carry this, which is the only reason one pattern can match both.
-      # Keep it in step with INSTALL_DIR_NAME above and the .dmg name in build_macos.yml.
-      ASSET_PATTERN: 'InterSpec_*Dangerously_Experimental*'
+      # Every asset this workflow publishes carries this - the apps' (INSTALL_DIR_NAME above, the .dmg
+      # name in build_macos.yml, the packages in build_linux.yml) and the stdio MCP server's (which
+      # deliberately do not start with "InterSpec_", so no one downloads one mistaking it for the
+      # app) - which is the only reason one pattern can match them all.
+      ASSET_PATTERN: '*_Dangerously_Experimental_*'
     steps:
       # EndBug/latest-tag below runs git commands against the workspace, so this job needs a
       # checkout even though it builds nothing.  (build_app.yml gets away without one in its
@@ -243,8 +245,10 @@ jobs:
       - name: Delete the previous run's assets
         run: |
           set -euo pipefail
-          # An asset's kind: its name without the _YYYY-MM-DD date.
-          kind() { printf '%s\n' "$1" | sed -E 's/_[0-9]{4}-[0-9]{2}-[0-9]{2}([._])/\1/'; }
+          # An asset's kind: its name without the _YYYY-MM-DD date.  The stdio MCP server's assets were
+          #  first published as InterSpec_MCP_stdio_*, so those count as the same kind as today's
+          #  MCP_stdio_*, and are replaced by them.
+          kind() { printf '%s\n' "$1" | sed -E -e 's/_[0-9]{4}-[0-9]{2}-[0-9]{2}([._])/\1/' -e 's/^InterSpec_MCP_stdio_/MCP_stdio_/'; }
           NEW_KINDS=$(find ./artifacts -type f -printf '%f\n' | while read -r f; do kind "${f}"; done | sort -u)
           echo "This run produced:"; printf '  %s\n' ${NEW_KINDS}
 
@@ -326,16 +330,19 @@ jobs:
 
             ### The stdio MCP server
 
-            `InterSpec-mcp-stdio` lets an MCP client - Claude Code, Claude Desktop, and others - use
-            InterSpec's analysis tools: loading spectra, fitting peaks, identifying sources, activity and
-            shielding fits, isotopics, and so on. It runs with no window, launched by the client.
+            The `MCP_stdio_*` assets are not the InterSpec app: if you just want to run InterSpec, you do
+            not need them.
+
+            `InterSpec-mcp-stdio` lets LLM coding or productivity tools use InterSpec's analysis tools:
+            loading spectra, fitting peaks, identifying sources, activity and shielding fits, isotopics,
+            and so on. It runs with no window, launched by the tool.
             Unpack the archive anywhere and follow `InterSpec-mcp-stdio/share/interspec/README.md`.
 
             | Asset | Notes |
             | --- | --- |
-            | `InterSpec_MCP_stdio_macOS_arm64_Dangerously_Experimental_<date>.zip` | Apple silicon, macOS 13.3 or later. Signed and notarized. |
-            | `InterSpec_MCP_stdio_Win64_Dangerously_Experimental_<date>.zip` | 64-bit Windows 10 or 11. Not code-signed. |
-            | `InterSpec_MCP_stdio_Linux_x64_Dangerously_Experimental_<date>.tar.gz` | x86_64, glibc 2.28 or later. |
+            | `MCP_stdio_macOS_arm64_Dangerously_Experimental_<date>.zip` | Apple silicon, macOS 13.3 or later. Signed and notarized. |
+            | `MCP_stdio_Win64_Dangerously_Experimental_<date>.zip` | 64-bit Windows 10 or 11. Not code-signed. |
+            | `MCP_stdio_Linux_x64_Dangerously_Experimental_<date>.tar.gz` | x86_64, glibc 2.28 or later. |
 
             If one platform's build failed, its asset is the previous one - check the date in its name.
             Each archive contains a `build_info.txt` recording the exact commit it was built from.

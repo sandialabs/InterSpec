@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------------------------
 # The stdio MCP server (target/mcp_stdio, `InterSpec-mcp-stdio`) for macOS (arm64), Windows (x64) and
-# Linux (x86_64): what an MCP client such as Claude Code or Claude Desktop launches to use InterSpec's
+# Linux (x86_64): what an MCP client - an LLM coding or productivity tool - launches to use InterSpec's
 # analysis tools.
 #
 # Each job builds against the same cached dependency prefix as that platform's app build (the shared
@@ -8,7 +8,8 @@
 # `share/interspec/` - and runs target/mcp_stdio/tests/stdio_test.py against that INSTALLED copy, without
 # --datadir, so the executable finding its data by itself (as it will for users) is what gets tested.
 #
-# Each produces one archive of an `InterSpec-mcp-stdio/` folder; the macOS executable is signed with
+# Each produces one archive of an `InterSpec-mcp-stdio/` folder, named MCP_stdio_* - deliberately not
+# InterSpec_*, so no one downloads one mistaking it for the app.  The macOS executable is signed with
 # the Developer ID and notarized.  A bare executable can not have its notarization ticket stapled, so
 # Gatekeeper checks it online the first time a quarantined copy runs - which is always possible, as
 # the MCP clients that run it need the internet themselves.
@@ -179,10 +180,10 @@ jobs:
             echo "InterSpec code git SHA: ${{ github.sha }}"
             echo ""
             echo "Requires macOS 13.3 or later, on Apple silicon.  See share/interspec/README.md to set it up"
-            echo "with Claude Code, Claude Desktop, or another MCP client."
+            echo "with an LLM coding or productivity tool."
           } > "${STAGE_DIR}/InterSpec-mcp-stdio/build_info.txt"
           mkdir -p "${OUT_DIR}"
-          ZIP="${OUT_DIR}/InterSpec_MCP_stdio_macOS_arm64_Dangerously_Experimental_$(date +%Y-%m-%d).zip"
+          ZIP="${OUT_DIR}/MCP_stdio_macOS_arm64_Dangerously_Experimental_$(date +%Y-%m-%d).zip"
           # ditto, not zip: it keeps the signature's extended attributes and the executable bit.
           ditto -c -k --keepParent "${STAGE_DIR}/InterSpec-mcp-stdio" "${ZIP}"
           ls -lh "${OUT_DIR}"
@@ -308,10 +309,10 @@ jobs:
           echo "InterSpec code git SHA: ${{ github.sha }}" >> $notes
           echo "" >> $notes
           echo "Requires 64-bit Windows 10 or 11.  The executable is not code-signed.  See" >> $notes
-          echo "share/interspec/README.md to set it up with Claude Code, Claude Desktop, or another MCP client." >> $notes
+          echo "share/interspec/README.md to set it up with an LLM coding or productivity tool." >> $notes
           $out = "$env:RUNNER_TEMP/mcp_stdio_out"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $zip = "$out/InterSpec_MCP_stdio_Win64_Dangerously_Experimental_$(Get-Date -f yyyy-MM-dd).zip"
+          $zip = "$out/MCP_stdio_Win64_Dangerously_Experimental_$(Get-Date -f yyyy-MM-dd).zip"
           Compress-Archive -CompressionLevel Optimal -Path "$stage/InterSpec-mcp-stdio" -DestinationPath $zip
           Get-ChildItem $out
 
@@ -420,12 +421,12 @@ jobs:
             echo ""
             echo "Requires x86_64 Linux with glibc 2.28 or later (RHEL/Alma/Rocky 8, Debian 10, Ubuntu 20.04,"
             echo "or newer).  The assistant tools, if enabled, also use the system's libcurl.so.4.  See"
-            echo "share/interspec/README.md to set it up with Claude Code, Claude Desktop, or another MCP client."
+            echo "share/interspec/README.md to set it up with an LLM coding or productivity tool."
           } > "${INSTALL_DIR}/InterSpec-mcp-stdio/build_info.txt"
           mkdir -p "${OUT_DIR}"
           # tar, not zip, to keep the executable bit.
           tar -C "${INSTALL_DIR}" -czf \
-            "${OUT_DIR}/InterSpec_MCP_stdio_Linux_x64_Dangerously_Experimental_$(date +%Y-%m-%d).tar.gz" \
+            "${OUT_DIR}/MCP_stdio_Linux_x64_Dangerously_Experimental_$(date +%Y-%m-%d).tar.gz" \
             InterSpec-mcp-stdio
           ls -lh "${OUT_DIR}"
 
