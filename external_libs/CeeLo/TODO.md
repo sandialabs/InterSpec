@@ -17,17 +17,14 @@ sub-statistical in the gated configs are kept for awareness.
 2. [Load-robust precision tests](#precision-targeted-mc-tests-are-wall-clock-capped) and the
    [IC-electron sum-peak test](#ic-electron-sum-peak-test-asserts-an-unresolvable-ordering) — flaky
    tests erode trust in the suite.
-3. [Source-material fluorescence](#source-material-fluorescence-is-not-emitted) — the largest
-   known accuracy gap (high-Z source totals, −22% at 238 keV), and U/Pu/Th sources are common in
-   InterSpec.
-4. [Regenerate the GEANT4 references at the 0.75 keV window](#geant4-references-are-still-scored-at-the-old-15-kev-fep-window)
+3. [Regenerate the GEANT4 references at the 0.75 keV window](#geant4-references-are-still-scored-at-the-old-15-kev-fep-window)
    — until then the gate does not measure the library's own default.
-5. [Rejected-branch pair links](#rejected-branch-pair-links-cannot-all-be-honored) and
+4. [Rejected-branch pair links](#rejected-branch-pair-links-cannot-all-be-honored) and
    [infeasible ICC/intensity pairs](#infeasible-iccintensity-pairs-can-cost-branches-their-level-scheme)
    — summing for U-235, Pu-241, Sb-125 silently switches model.
-6. [GDML export: source rotation](#gdml-export-emits-no-rotation-for-source-volumes) and
+5. [GDML export: source rotation](#gdml-export-emits-no-rotation-for-source-volumes) and
    [dead layer](#dead-layer-is-not-exported-to-gdml) — silent validation mismatches.
-7. [Air between source and detector](#air-between-source-and-detector) — validate the analytic
+6. [Air between source and detector](#air-between-source-and-detector) — validate the analytic
    attenuation and decide its default.
 
 ---
@@ -126,22 +123,6 @@ sub-statistical in the gated configs are kept for awareness.
 
 ## Photon transport physics
 
-### Source-material fluorescence is not emitted
-`[medium — coverage]`
-- **Effect:** photoelectric absorption in the source material or source shields emits the
-  photoelectron (for brems) but no characteristic K x-ray (`SourceGeometry.cpp`,
-  `transport_source_photon_impl`, PE branch returns `survived=false`), so K fluorescence
-  escaping toward the detector is missing from **total** efficiency. A self-attenuating
-  thorium sphere on 3"×3" NaI reads −22% / −4.1% / −2.6% total at 238.6 / 583 / 911 keV
-  (the GEANT4 histogram shows the missing Th Kα at 90/93 keV). FEP is unaffected, as are
-  low-Z sources.
-- **Implementation:** mirror the crystal-side K path — after PE in source material/shield,
-  sample a K vacancy and emit the line as a `SourceSecondaryPhoton` transported like the
-  brems secondaries (line data are in `relaxation_epics_data.cpp`); skip lines below
-  ~10 keV; verify configs 8/11/12 are unchanged.
-- **Shows up:** self-attenuating or heavily shielded high-Z sources (U/Th/Pu metal,
-  Pb-encased) where PE dominates.
-
 ### Air between source and detector
 `[medium — coverage]`
 - **Effect:** air between the outermost source layer and the detector is not transported.
@@ -178,16 +159,46 @@ sub-statistical in the gated configs are kept for awareness.
 
 ### Pb-attenuator total-efficiency excess
 `[low — residual]`
-- **Effect:** config 7 (2 mm Pb attenuator) total +0.25 to +0.27% (z ≈ 3) at 2000/3000 keV
-  in a 0.08%-precision study; FEP agrees. Pb-specific, grows with energy.
+- **Effect:** config 7 (2 mm Pb attenuator) total +0.21 ± 0.08% / +0.19 ± 0.07%
+  (z +2.8 / +2.5) at 2000/3000 keV; FEP agrees. It read +0.25 / +0.27% before a positron
+  that leaves the geometry stopped making a 511 keV pair. On feature/FullSpecApprox, whose
+  electron walk differs, the same fix took it to +0.09% / +0.06%.
 - **Implementation:** untriaged; plausibly the attenuator's pair-production / secondary
   treatment.
 - **Shows up:** high-Z attenuators ≥2 MeV, totals only.
 
+### EADL K line energies are off by up to 0.3 keV for heavy elements
+`[low — spectrum fidelity]`
+- **Effect:** the K line energies in `relaxation_epics_data.cpp` are EADL subshell
+  binding-energy differences. For Ge, Cd, Te and I they sit within 0.04 keV of the
+  measured lines, but Pb Kα1 is 75.25 keV against 74.97 keV measured (Kα2 73.04 against
+  72.80); GEANT4 option4 puts Pb Kα1 at 74.97. Now that source and shield K x-rays are
+  emitted, a Pb shield's x-ray peaks on HPGe sit 0.28 keV high (the FWHM there is ~1.1 keV).
+- **Implementation:** replace the line energies with measured transition energies
+  (Deslattes et al., *Rev. Mod. Phys.* **75** (2003) 35; NIST SRD 128) in
+  `generate_eadl_relaxation.py`, keeping EADL's intensities and yields; regenerate.
+- **Shows up:** Pb, W, U and Th x-ray peaks on HPGe.
+
+### Pair production near threshold is unarbitrated
+`[low — residual]`
+- **Effect:** EPICS2023's pair cross section is below GEANT4's parameterization near
+  threshold: at 1332 keV Ge −9%, Cd −5%, I −3%, Na −6%, Al −6%; at 1.2 MeV I −21%; at
+  2614 keV within ±1% except Pb +2.3%. In GEANT4 pulse-height comparisons the single and
+  double escape peaks at 1332 keV read 5–13% low accordingly (NaI SE −5.4%, HPGe SE −13%,
+  CZT DE −7%), and the 511 keV line behind Pb shells at 2614 keV a few percent high.
+- **Implementation:** compare both against NIST XCOM pair production (nuclear + electron
+  field) at 1.1–3 MeV for Na, Al, Ge, Cd, I and Pb, as was done for the iron
+  photoelectric difference; document it in DESIGN.md as an evaluation difference, or
+  correct the data if EPICS2023 is the outlier.
+- **Shows up:** single/double escape peaks below ~2 MeV; pair-fed 511 keV lines.
+
 ### L/M-shell fluorescence x-ray escape not modelled
 `[low]`
 - **Effect:** only K-shell fluorescence is transported; L x-rays (e.g. Pb Lα ≈ 10.5 keV) are
-  deposited locally, over-predicting local deposit and missing L-escape features.
+  deposited locally, over-predicting local deposit and missing L-escape features. On a bare
+  1 cm CZT, GEANT4 shows Cd/Te L-escape lines at E₀ − 3.1…4.3 keV (~0.02% of the FEP) that
+  CeeLo lacks, and a bare self-attenuating thorium sphere reads ~1% low in total, plausibly
+  its L x-rays.
 - **Implementation:** emit L lines from the EADL data already in
   `relaxation_epics_data.cpp`.
 - **Shows up:** thin high-Z detectors (CZT), PE in a high-Z attenuator skin, low-energy
@@ -472,16 +483,6 @@ sub-statistical in the gated configs are kept for awareness.
   daughter (same material, so not a subtraction); the harness already scores
   `active_crystal`.
 - **Shows up:** HPGe with realistic 0.5–1 mm dead layers, especially below ~100 keV.
-
-### Germanium ~0.1% energy-structured offset at 60–122 keV
-`[low — residual]`
-- **Effect:** a dedicated ~0.03%-precision study put CeeLo +0.135% above GEANT4 in FEP at
-  88 keV (z 3.5–3.9) and ~−0.1% at 122 keV, identically for the sharp and bulletized
-  crystals (so it cancels in the bulletization comparison).
-- **Implementation:** compare µ/ρ(Ge) from `element_data.cpp` with NIST XCOM over
-  40–150 keV and with GEANT4's `G4EmCalculator` export, as was done for Fe/Cr/Ni; if
-  EPICS2023 is closer to NIST, document it as an evaluation difference.
-- **Shows up:** HPGe below ~150 keV, well inside the ~1% goal.
 
 ---
 

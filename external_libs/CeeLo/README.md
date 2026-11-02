@@ -13,7 +13,9 @@ shielding around it, and a source configuration, and it computes:
   its energy in the crystal
 - **Total efficiency** — probability it deposits any energy at all
 - **Pulse-height spectrum** — energy-deposit histogram, in a format spectral
-  analysis software can read
+  analysis software can read. `enable_spectrum_fidelity(true)` adds the detector physics
+  that shapes the spectrum without moving FEP or total: x-rays from Compton K-shell
+  vacancies, which fill out the K x-ray escape peaks above ~300 keV
 - **True-coincidence (cascade) summing corrections** — summing-in and
   summing-out factors for multi-gamma decays
 
@@ -287,12 +289,10 @@ as is) — not extraction or fitted reproduction of G4EMLOW coefficients.
 Most important first. TODO.md has the full, prioritised list.
 
 **Known accuracy gaps**
-- **Source-material fluorescence is not emitted.** After photoelectric
-  absorption in the *source* material or its shielding, no characteristic X-ray
-  is produced. **Total** efficiency is therefore low for high-Z self-attenuating
-  sources — a thorium sphere runs −22 % / −4 % / −2.6 % in total efficiency at
-  238.6 / 583 / 911 keV against GEANT4. FEP is unaffected (the X-ray cannot land
-  in the primary peak), and low-Z sources are unaffected.
+- **Only K-shell x-rays are emitted.** L lines are deposited locally, so L-escape
+  peaks are missing and a bare self-attenuating thorium sphere still reads ~1 % low
+  in total efficiency against GEANT4 (it read −22 % at 238.6 keV before source K
+  fluorescence was added).
 - **Air between the source and the detector is not transported by default.**
   An opt-in analytic attenuation of the unscattered photons exists
   (`set_air_attenuation(AirAttenuation::AnalyticNoScatter)`), but it is not yet

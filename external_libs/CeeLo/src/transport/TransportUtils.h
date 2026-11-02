@@ -44,4 +44,19 @@ double sample_interaction_distance(double mu_total, std::mt19937_64& rng);
 /// Sample a direction uniformly over the full 4π sphere.
 Eigen::Vector3d sample_isotropic_direction(std::mt19937_64& rng);
 
+struct FluorescenceData;
+
+/// How a K-shell vacancy filled: a K x-ray of `line_keV` (with the rest of
+/// the binding energy, `local_keV`, going to the L-shell Auger electrons), or
+/// an Auger cascade (`line_keV` = 0, the whole binding energy local).
+struct KRelaxation {
+    double line_keV = 0.0;
+    double local_keV = 0.0;
+};
+
+/// Fill a K vacancy of the element `fl` describes: an x-ray with probability
+/// omega_K, the line drawn by its relative intensity.  Draws the yield then,
+/// for an x-ray, the line (two uniforms); the caller samples the direction.
+KRelaxation sample_k_relaxation(const FluorescenceData& fl, std::mt19937_64& rng);
+
 } // namespace ceelo

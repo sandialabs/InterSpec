@@ -1719,12 +1719,49 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
 
             switch (type) {
             case InteractionType::Photoelectric: {
-                // Photoelectron carries (nearly) the full photon energy;
-                // binding energy is negligible against the 200 keV brems floor.
-                if (energy > kMoliereBremsThreshold_keV) {
+                // A K-shell vacancy relaxes as in the crystal: the K x-ray
+                // is transported through the remaining source geometry, the
+                // rest of the binding energy stays local, and the
+                // photoelectron carries E - E_K.  Lines below 1 keV (low-Z
+                // K shells) are absorbed on the spot.
+                double pe_KE = energy;
+                if (source_fluorescence_enabled_) {
+                    const auto& xs_data = CrossSectionData::instance();
+                    const int Z_pe = seg.material->select_element(
+                        energy_MeV, 0 /*PE*/, uniform(rng));
+                    const FluorescenceData* fl = xs_data.fluorescence(Z_pe);
+                    if (fl && energy > fl->k_edge_keV) {
+                        const double sigma_K =
+                            xs_data.sigma_K_photoelectric(Z_pe, energy_MeV);
+                        const double sigma_tot =
+                            xs_data.sigma_photoelectric(Z_pe, energy_MeV);
+                        const double f_K = (sigma_tot > 0.0)
+                            ? std::min(sigma_K / sigma_tot, 1.0) : 1.0;
+                        if (uniform(rng) < f_K) {
+                            pe_KE = energy - fl->k_edge_keV;
+                            const KRelaxation relax = sample_k_relaxation(*fl, rng);
+                            if (relax.line_keV >= 1.0) {
+                                auto x = transport_source_photon_impl(
+                                    pos, sample_isotropic_direction(rng),
+                                    relax.line_keV, rng, /*bias_budget=*/0);
+                                if (x.survived) {
+                                    result_secondaries.push_back(
+                                        {x.position, x.direction, x.energy_keV});
+                                }
+                                for (auto& sec : x.secondaries)
+                                    result_secondaries.push_back(std::move(sec));
+                                for (auto& e : x.source_electrons)
+                                    result_electrons.push_back(std::move(e));
+                            }
+                        }
+                    }
+                }
+                // Below the 200 keV brems floor the photoelectron neither
+                // radiates nor (above the escape threshold) gets walked.
+                if (pe_KE > kMoliereBremsThreshold_keV) {
                     Eigen::Vector3d e_dir =
-                        sample_photoelectron_direction(dir, energy, rng);
-                    process_electron(pos, e_dir, energy, *seg.material);
+                        sample_photoelectron_direction(dir, pe_KE, rng);
+                    process_electron(pos, e_dir, pe_KE, *seg.material);
                 }
                 return {false, pos, dir, energy, std::move(result_secondaries),
                         std::move(result_electrons), true, w_bias};

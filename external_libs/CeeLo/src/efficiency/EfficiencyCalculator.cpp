@@ -1912,11 +1912,9 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             // ------ Process source electrons from Compton recoil in source material ------
             if (!src_result.source_electrons.empty()) {
                 for (const auto& src_e : src_result.source_electrons) {
-                    auto e_result = ElectronCsda::instance().deposited_in_scoring(
+                    auto e_result = walk_electron(
                         src_e.position, src_e.direction, src_e.energy_keV,
-                        geometry_, rng,
-                        transport_config_.disable_moliere,
-                        transport_config_.disable_brems);
+                        geometry_, transport_config_, rng, src_e.is_positron);
 
                     total_dep_scoring += e_result.deposited_scoring_keV;
                     if (e_result.deposited_scoring_keV > 0.0) had_any_scoring = true;
@@ -1928,6 +1926,21 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                             geometry_, transport_config_, rng);
                         total_dep_scoring += br.energy_deposited_scoring;
                         if (br.any_interaction_in_scoring) had_any_scoring = true;
+                    }
+
+                    // A positron annihilates where it stops, unless it walked
+                    // straight through (or past) the detector.
+                    if (src_e.is_positron && !e_result.escaped) {
+                        const AnnihilationPair pair = sample_annihilation_pair(
+                            e_result.annihilated_in_flight,
+                            e_result.residual_KE_at_annih_keV, rng);
+                        for (int k = 0; k < 2; ++k) {
+                            auto an = transport_photon(
+                                e_result.stop_position, pair.direction[k],
+                                pair.energy_keV[k], geometry_, transport_config_, rng);
+                            total_dep_scoring += an.energy_deposited_scoring;
+                            if (an.any_interaction_in_scoring) had_any_scoring = true;
+                        }
                     }
                 }
             }
@@ -3290,9 +3303,7 @@ double EfficiencyCalculator::emit_ic_electron(
     }
     // (c) deposit in the crystal (electron path; positron term unused).
     const ElectronDepositResult er =
-        ElectronCsda::instance().deposited_in_scoring(
-            pos, dir, ke, geometry_, rng,
-            transport_config_.disable_moliere, transport_config_.disable_brems);
+        walk_electron(pos, dir, ke, geometry_, transport_config_, rng);
     dep += er.deposited_scoring_keV;
     for (const auto& bp : er.brems_photons)
         dep += transport_into_detector(bp.position, bp.direction,

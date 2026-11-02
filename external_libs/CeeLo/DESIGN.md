@@ -101,6 +101,10 @@ studies for provenance; their conclusions are summarised here.
   thin-crystal (CZT) electron-escape deficit; a matched GEANT4 process-isolation
   decomposition exonerated the Seltzer–Berger brems sampling (≤0.2%). Env knobs
   `CEELO_NO_CRYSTAL_STRAGGLE` / `CEELO_DIAG_STRAGGLE_ALL_KE` A/B the straggling.
+  A walk that leaves all geometry reports `ElectronDepositResult::escaped`: an escaping
+  positron emits **no** annihilation photons (the world outside is vacuum; CeeLo does not
+  transport charged particles in air), where it used to annihilate at the last surface
+  it crossed.
 
 - **Cone importance sampling**: for point sources with no shielding, photons are emitted
   within a cone subtending the detector, each event weighted by the cone's solid-angle
@@ -126,7 +130,11 @@ studies for provenance; their conclusions are summarised here.
   from EPICS2023 EPDL MT=534/MT=522 fractions; K vacancies produce fluorescence X-rays or
   Auger electrons from EPICS2023 EADL MF=28/MT=533 relaxation data through Z = 99
   (radioactive-decay daughters one beyond the photon tables). L lines are deposited
-  locally in the crystal (TODO.md).
+  locally in the crystal (TODO.md). The same K relaxation (`sample_k_relaxation`)
+  follows photoelectric absorption in **source material and shields**
+  (`set_source_fluorescence`, default on; the x-ray joins the source secondaries) and,
+  with spectrum fidelity, the K vacancy a Doppler-sampled **Compton** collision leaves
+  (`TransportConfig::enable_compton_fluorescence`).
 
 - **Bremsstrahlung**: Seltzer–Berger scaled differential cross sections (Z = 1–92, the
   complete NIST EPQ set; Np–Cf reuse uranium's), **27 native electron energies from
@@ -141,6 +149,18 @@ studies for provenance; their conclusions are summarised here.
   with S(x,Z) bound-electron rejection. (An earlier Kahn's-method implementation had a
   subtle bug worth +5–7% FEP.) The scattered energy is Doppler-broadened by the bound
   electron's momentum (impulse approximation, analytic subshell profiles).
+
+### Spectrum fidelity (`enable_spectrum_fidelity`)
+
+`EfficiencyCalculator::enable_spectrum_fidelity(true)` switches on the detector physics
+that shapes the pulse-height spectrum but moves FEP and total by well under 0.1%, so
+FEP/total runs leave it off (the default). Here it sets
+`TransportConfig::enable_compton_fluorescence` (`enable_compton_fluorescence`): the K
+vacancy a Doppler-sampled Compton collision leaves (`ComptonScatterResult::shell_index`)
+relaxes through `sample_k_relaxation` and its x-ray is transported as after photoelectric
+absorption (`FluorescenceRecord::from_compton`); off, the whole binding energy is
+deposited on the spot. It restores the K-escape peaks above ~300 keV (NaI, CZT: 0.90–0.95
+of GEANT4 → 1.00–1.02).
 
 ### Distances, frames and reference points
 
@@ -248,8 +268,8 @@ not change; one used only at query time is an interpretation and can be correcte
   stochastic Rayleigh.
 
   Full-mode source transport also generates **secondaries** for every source shape
-  (`SourceFullTransportResult::secondaries`): 511 keV pairs from pair production in source
-  material/shields; bremsstrahlung from electrons stopping there (Seltzer–Berger along a
+  (`SourceFullTransportResult::secondaries`): K x-rays from photoelectric absorption in
+  source material/shields; 511 keV pairs from pair production there; bremsstrahlung from electrons stopping there (Seltzer–Berger along a
   Molière walk, `ElectronCsda::walk_in_source_geometry`); and escaped electrons that reach
   the crystal (`enable_source_electron_transport`). The Molière diffusion matters:
   straight-line CSDA overestimates escape from dense shields 2.4–10×. These channels
@@ -772,11 +792,13 @@ self-attenuating thorium sphere (R = 2 cm), **G-B** trace source in a soil spher
 - **FEP agrees everywhere**: |z| ≤ 1.4 at 238.6/583/911 keV, validating geometry,
   sampling and self-attenuation.
 - **Low-Z totals agree**: G-C, re-measured with source-electron transport on and a
-  0.75 keV window, agrees to ≤0.74% (source-core table below). (G-A/G-B were measured with
-  the channel off, which costs several percent of total above 1022 keV; G-A at 2614 keV,
-  −4%, has not been re-run.)
-- **High-Z self-attenuating total is low**: G-A total is −22% / −4.1% / −2.6% at
-  238.6/583/911 keV — the source-material K fluorescence that is not emitted (TODO.md).
+  0.75 keV window, agrees to ≤0.74% (source-core table below). (G-B was measured with the
+  channel off, which costs several percent of total above 1022 keV.)
+- **High-Z self-attenuating total**: G-A (near, against 16M-event option4 runs) reads total
+  −1.29% / −0.76% / −0.50% / +0.09% (z −4.1 / −3.9 / −3.1 / +0.7) at 238.6/583/911/2614.5
+  keV and FEP within 0.2% (|z| ≤ 0.6). Before source K fluorescence was emitted the totals
+  read −22% / −4.1% / −2.6%. The ~1% left at low energy is plausibly Th L x-rays escaping
+  the bare sphere's skin (CeeLo emits no L lines; TODO.md).
 
 At ~50 cm the MC converges well via the two-stream direct stream; a matching GEANT4 run
 needs much higher isotropic statistics and has not been done. The cascade path on a
@@ -878,8 +900,8 @@ Standing explanations that are easy to trip over. Open work on any of them is in
   so attenuation explains ≲0.3% of it; it is the scattered-FEP stream (footnote *).
 
 - **Doppler broadening** (impulse approximation, default ON) broadens the Compton *edge*
-  to match GEANT4; the subshell binding energy is deposited locally, so FEP and total are
-  statistically unchanged. **Never cite Doppler broadening as a cause of FEP/total
+  to match GEANT4; the subshell binding energy is deposited locally (or, with spectrum
+  fidelity, a K vacancy relaxes), so FEP and total are statistically unchanged. **Never cite Doppler broadening as a cause of FEP/total
   discrepancies.**
 
 - **Source-electron skin escape** uses an empirical surface-emergence albedo gate
@@ -946,10 +968,25 @@ Standing explanations that are easy to trip over. Open work on any of them is in
   between the leptons, and photonuclear absorption is not modelled (as in EPDL and XCOM;
   a few percent of Pb/U attenuation at the 12–15 MeV giant resonance).
 
-- **Source-material fluorescence is not emitted**: PE absorption in the source material
-  or shields drops the photon without a K x-ray, so **total** efficiency for high-Z
-  self-attenuating sources is low where PE dominates (G-A above). FEP and low-Z sources
-  are unaffected.
+- **HPGe at 59.5 keV behind a thick dead layer is a data difference.** Behind a
+  0.0739 cm front dead layer (τ ≈ 0.82) CeeLo reads ~1.0–1.1% below GEANT4 in FEP and
+  total at 59.5 keV with either GEANT4 list. GEANT4's photoelectric cross section for light
+  and mid-Z elements carries a smooth deficit near 60 keV: CeeLo / GEANT4 at 59.54 keV is
+  Ge +1.25%, Al +2.1%, C/O +2.2% (I, Cd, Te, Pb within 0.15%). Against NIST (SRD 126),
+  μ/ρ(Ge) is CeeLo +0.22…+0.43% at 30–100 keV (flat) and GEANT4 +0.9% at 30–40 keV,
+  −0.72% at 60 keV: CeeLo is the closer. Through the dead layer and endcap that predicts
+  −0.97% in transmission.
+
+- **Pair production near threshold.** EPICS2023's pair cross section is 3–9% below
+  GEANT4's parameterization at 1332 keV (Ge −9%, I −3%, Na −6%) and 21% below at 1.2 MeV
+  for iodine, converging above ~2 MeV (Pb +2.3%, Ge −1.0% at 2614 keV). Single and double
+  escape peaks at 1332 keV read 5–13% low against GEANT4 for that reason. Unarbitrated
+  (TODO.md).
+
+- **EADL K line energies** come from subshell binding-energy differences: within 0.04 keV
+  of the measured lines for Ge, Cd, Te and I, but Pb Kα1 sits at 75.25 keV against
+  74.97 keV measured (GEANT4 puts it at 74.97). Visible as a 0.3 keV shift of shield
+  fluorescence peaks on HPGe (TODO.md).
 
 ## Common Pitfalls
 
@@ -967,6 +1004,12 @@ Standing explanations that are easy to trip over. Open work on any of them is in
 - **Batch size**: the convenience `compute(double, …)` uses `max(10000, num_events/10)` so
   threads check termination often; `compute(SimulationConfig)` uses `config.batch_size`
   (default 10000, floor 100) for the first wave and doubles later waves.
+- **Code placement moves timings by ~10%**: the same library code linked at different
+  addresses ran `benchmark_mc_configs` 8–11% slower in CPU time on Apple silicon whenever
+  the electron walk landed differently (a driver that only parsed three new flags did
+  it). Before attributing a cost change to a code change, rebuild the comparison from the
+  same driver and check the hot functions' addresses (`nm`); measure CPU time, interleaved,
+  at fixed event counts.
 - **Importance-sampling denominator**: `(1/N) * sum(w_i * I_i)`. Using `sum(w_i)` gives
   intrinsic efficiency (it cancels the cone weight), not absolute efficiency.
 - **Coincident GEANT4 boolean surfaces** stall navigation ("track stuck") and — worse —
