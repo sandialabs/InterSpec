@@ -1188,11 +1188,14 @@ public:
   struct PositionedQuadrature;
 
   /** The traced ray set (CeeLo's "aperture quadrature") for a point source at (`theta`, `phi`,
-   `distance` from the face).  Tracing it is essentially the entire cost of a Monte-Carlo-backed
-   efficiency query - ~1.7 ms of a 1.7 ms call for a 2048-ray response - and it depends only on
-   the source position, never on energy.  A caller sweeping many energies at ONE position should
-   therefore build it once here and hand it to the #fepEfficiencyEval overload below, which is
-   ~30x faster and bit-identical.
+   `distance` from the face).  Tracing it is most of the cost of a Monte-Carlo-backed efficiency
+   query (~0.2-0.7 ms for a 2048-ray response, against ~10-30 us per energy once traced), and it
+   depends only on the source position, never on energy.
+
+   Every query already reuses the ray sets this DRF traced at its most recent few positions (see
+   #m_ceeloCache), so this is only needed to hold on to one for longer: a caller sweeping many
+   energies over several positions, more than that cache keeps, hands the one it got here to the
+   #fepEfficiencyEval overload below.  Bit-identical either way.
 
    Returns nullptr when there is nothing to reuse (no ceelo response, or fixed geometry); the
    overload then simply evaluates as usual, so callers need no special case.
@@ -1715,8 +1718,30 @@ protected:
    The legacy efficiency curve remains the fallback (and back-compat export);
    #farFieldIntrinsicEfficiency / #efficiency never dispatch here - only the #EffEval
    query functions and #efficiencyFracCovariance do.
+
+   Only ever assigned through #assignCeeloResponse, which keeps #m_ceeloCache in step.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** The ray sets traced for #m_ceeloResponse, kept so repeated queries at a position do not each
+   re-trace one (tracing is most of a query's cost).  Per response INSTANCE, not per content: a ray
+   set holds pointers to that instance's own materials.  So it is replaced, never cleared, whenever
+   the response is (#assignCeeloResponse), and a copy of this DRF shares it along with the response.
+   Thread safe; nullptr when there is no response.
+   */
+  struct CeeloQueryCache;
+  std::shared_ptr<CeeloQueryCache> m_ceeloCache;
+
+  /** #m_ceeloCache, checked to belong to the current #m_ceeloResponse (throws std::logic_error if
+   not, which would mean the response was assigned without #assignCeeloResponse).  Only call with a
+   response attached.
+   */
+  CeeloQueryCache &ceeloCache() const;
+
+  /** Sets #m_ceeloResponse and gives it a fresh #m_ceeloCache - the only way either is assigned.
+   Does not recompute the hash.
+   */
+  void assignCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
 
   /** See #flatDiskSnapshotDistance - negative for every DRF that is not a snapshot.
    Deliberately absent from #computeHash, #operator== and #equalEnough: it says how this

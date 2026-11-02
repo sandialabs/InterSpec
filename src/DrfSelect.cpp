@@ -4282,8 +4282,6 @@ void DrfSelect::setFormulaDefineDetector()
 //#if( PERFORM_DEVELOPER_CHECKS )
 //    check_url_serialization( detec );
 //#endif
-    
-    updateChart();
   }catch( std::exception &e )
   {
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
@@ -4298,6 +4296,7 @@ void DrfSelect::setFormulaDefineDetector()
   m_gui_select_matches_det = true;
   setAcceptButtonEnabled( true );
 
+  updateChart();
   emitChangedSignal();
 }//setFormulaDefineDetector(const std::string fcn)
 

@@ -933,7 +933,7 @@ const double sm_ladder_hi_cm = 30.0;
  geometrically into `max(m_lnE, m_tau)` pieces.
 
  The rule is FIXED, not residual-adaptive, and that is deliberate: the node set
- is serialized, `content_hash()` hashes the serialization, and DRF identity (and
+ is serialized, `content_hash()` hashes the serialized content, and DRF identity (and
  parent-hash lineage) is that hash - so a residual-vs-tolerance rule would let
  one ULP of libm difference flip a node in or out and give the same `.PAR` a
  different identity on macOS vs Windows.  This rule depends only on the file's

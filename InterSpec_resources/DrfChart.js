@@ -495,10 +495,11 @@ DrfChart.prototype.setDetectorData = function(detectorData) {
     this.detector = null;
   }
   
-  // Set x range if energy extent is provided (unless the owner asked to keep the zoom)
+  // Start on the detector's initial range (unless the owner asked to keep the zoom); zooming out
+  //  goes to its whole extent.
   if (this.detector && !this.keepZoom) {
-    const energyExtent = this.detector.getEnergyExtent();
-    this.setXAxisRange(energyExtent[0], energyExtent[1]);
+    const initialRange = this.detector.getInitialEnergyRange();
+    this.setXAxisRange(initialRange[0], initialRange[1]);
   }
   
   this.updateEfficiencyLine();
@@ -1164,6 +1165,45 @@ DrfChart.prototype.setShowFwhmPoints = function(show) {
 
 DrfChart.prototype.setKeepZoom = function(keep) {
   this.keepZoom = !!keep;
+};
+
+// While the server computes new data for the chart (on a worker thread, for a Monte-Carlo-backed
+//  detector), the current curves dim under a spinner - after a short delay, so a quick computation
+//  does not flicker.  Cleared by the server once the data has been sent.
+DrfChart.prototype.setPending = function(pending) {
+  const self = this;
+  if (this.pendingTimer) {
+    clearTimeout(this.pendingTimer);
+    this.pendingTimer = null;
+  }
+
+  if (!pending) {
+    this.svg.classed("drf-pending", false);
+    this.svg.selectAll("g.drf-pending-spinner").remove();
+    return;
+  }
+
+  this.pendingTimer = setTimeout(function() {
+    self.pendingTimer = null;
+    self.svg.selectAll("g.drf-pending-spinner").remove();
+    self.svg.classed("drf-pending", true);
+
+    const r = 12;
+    const cx = self.options.margins.computedLeft + 0.5*self.chartAreaWidth;
+    const cy = self.options.margins.top + 0.5*self.chartAreaHeight;
+    self.svg.append("g")
+      .attr("class", "drf-pending-spinner")
+      .attr("transform", "translate(" + cx + "," + cy + ")")
+      .append("path")
+      .attr("d", "M 0 " + (-r) + " A " + r + " " + r + " 0 1 1 " + (-r) + " 0")
+      .append("animateTransform")
+      .attr("attributeName", "transform")
+      .attr("type", "rotate")
+      .attr("from", "0 0 0")
+      .attr("to", "360 0 0")
+      .attr("dur", "0.9s")
+      .attr("repeatCount", "indefinite");
+  }, 150);
 };
 
 // [min,max] energy of the points, or null.

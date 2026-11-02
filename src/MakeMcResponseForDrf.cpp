@@ -1518,8 +1518,8 @@ void MakeMcResponseForDrf::updateResponseChart()
   m_chart->updateChart( preview );
 
   // Start on the DRFs valid range, but no further than 3 MeV - above that the curves are mostly
-  //  empty chart.  Only the first showing picks a range (`updateChart` resets it from the DRFs
-  //  JSON extent), so re-draws for a mode/distance change dont undo the users zooming.
+  //  empty chart.  Only the first showing picks a range; later re-draws (`updateChart`) reset it to
+  //  the DRFs own initial range (DetectorPeakResponse::toJSON's "initialRange").
   if( !m_chartRangeSet )
   {
     const double lower = std::max( 0.0, preview->lowerEnergy() );

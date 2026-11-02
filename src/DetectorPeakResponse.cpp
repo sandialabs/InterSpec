@@ -633,6 +633,123 @@ const std::string &DetectorPeakResponse::det_eff_geom_type_postfix( const Detect
 }//string det_eff_geom_type_postfix( DetectorPeakResponse::EffGeometryType )
 
 
+/** The ray set plus the response and position it was traced for, so a mismatched reuse can be
+ caught.  Holding the response also keeps alive the materials the rays point to. */
+struct DetectorPeakResponse::PositionedQuadrature
+{
+  std::shared_ptr<const ceelo::DetectorResponse> response;
+  Eigen::Vector3d position;
+  std::shared_ptr<const ceelo::ApertureQuadrature> quadrature;
+};//struct DetectorPeakResponse::PositionedQuadrature
+
+
+/** Ray sets traced for one response instance, keyed on the exact source position (CeeLo's
+ crystal-face frame, cm).  The far-field on-axis position - what #intrinsicEfficiencyEval,
+ #totalIntrinsicEfficiencyAny and the far-field #efficiencyFracCovariance all query - has its own
+ slot; any other position goes in a small list that is emptied when full, like the other efficiency
+ memos (a caller moving on to new positions is done with the old ones).
+ */
+struct DetectorPeakResponse::CeeloQueryCache
+{
+  explicit CeeloQueryCache( std::shared_ptr<const ceelo::DetectorResponse> resp )
+    : response( std::move(resp) ),
+      far_field_position( CeeLoUtils::farFieldSourcePosition( response->descriptor ) )
+  {
+  }
+
+  /** The ray set for a source at `position`: from the cache, or traced now and remembered. */
+  std::shared_ptr<const ceelo::ApertureQuadrature> quadrature( const Eigen::Vector3d &position )
+  {
+    const bool far_field = (position == far_field_position);
+
+    {//begin lock on mutex
+      std::lock_guard<std::mutex> lock( mutex );
+      if( far_field && far_field_quadrature )
+        return far_field_quadrature;
+      for( const auto &entry : positions )
+      {
+        if( entry.first == position )
+          return entry.second;
+      }
+    }//end lock on mutex
+
+    // Traced outside the lock, so queries at positions already cached are not held up by it.
+    auto traced = std::make_shared<const ceelo::ApertureQuadrature>(
+                                                      response->make_quadrature( position ) );
+
+    std::lock_guard<std::mutex> lock( mutex );
+    if( far_field )
+    {
+      // Another thread may have traced the same position meanwhile; keep the first, so every
+      //  caller shares one.  (The two are identical - tracing is deterministic.)
+      if( !far_field_quadrature )
+        far_field_quadrature = traced;
+      return far_field_quadrature;
+    }//if( far_field )
+
+    for( const auto &entry : positions )
+    {
+      if( entry.first == position )
+        return entry.second;
+    }
+
+    if( positions.size() >= sm_max_positions )
+      positions.clear();
+    positions.emplace_back( position, traced );
+
+    return traced;
+  }//quadrature(...)
+
+  /** Positions besides the far field that are kept; a ray set is ~100-300 kB. */
+  static const size_t sm_max_positions = 8;
+
+  const std::shared_ptr<const ceelo::DetectorResponse> response;
+  const Eigen::Vector3d far_field_position;
+
+  std::mutex mutex;
+  std::shared_ptr<const ceelo::ApertureQuadrature> far_field_quadrature;
+  std::vector<std::pair<Eigen::Vector3d,std::shared_ptr<const ceelo::ApertureQuadrature>>> positions;
+};//struct DetectorPeakResponse::CeeloQueryCache
+
+
+void DetectorPeakResponse::assignCeeloResponse( shared_ptr<const ceelo::DetectorResponse> response )
+{
+  // Re-attaching the instance already held keeps what was traced for it.
+  if( response && (response == m_ceeloResponse) && m_ceeloCache )
+    return;
+
+  m_ceeloCache = response ? make_shared<CeeloQueryCache>( response ) : nullptr;
+  m_ceeloResponse = std::move( response );
+}//assignCeeloResponse(...)
+
+
+DetectorPeakResponse::CeeloQueryCache &DetectorPeakResponse::ceeloCache() const
+{
+  // A ray set from another response instance would make CeeLo throw "unknown material" at best.
+  if( !m_ceeloCache || (m_ceeloCache->response != m_ceeloResponse) )
+    throw std::logic_error( "DetectorPeakResponse: query cache does not match the response" );
+
+  return *m_ceeloCache;
+}//ceeloCache()
+
+
+std::shared_ptr<const DetectorPeakResponse::PositionedQuadrature>
+   DetectorPeakResponse::apertureQuadrature( const double theta, const double phi,
+                                             const double distance ) const
+{
+  if( !m_ceeloResponse || isFixedGeometry() )
+    return nullptr;
+
+  auto answer = std::make_shared<PositionedQuadrature>();
+  answer->response = m_ceeloResponse;
+  answer->position = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                              theta, phi, distance / PhysicalUnits::cm );
+  answer->quadrature = ceeloCache().quadrature( answer->position );
+
+  return answer;
+}//DetectorPeakResponse::apertureQuadrature(...)
+
+
 DetectorPeakResponse::DetectorPeakResponse()
   : m_name( "DetectorPeakResponse" ),
     m_description( "" ),
@@ -859,7 +976,7 @@ void DetectorPeakResponse::reset()
   m_createdUtc = m_lastUsedUtc = 0;
   m_geomType = EffGeometryType::FarFieldIntrinsic;
   m_totalEfficiency.reset();
-  m_ceeloResponse.reset();
+  assignCeeloResponse( nullptr );
   m_geometry.reset();
   m_geometryDisabled = false;
   m_measuredPoints.reset();
@@ -893,7 +1010,7 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_measuredPoints && !rhs.m_measuredPoints)
               || (m_measuredPoints && rhs.m_measuredPoints
                   && (*m_measuredPoints == *rhs.m_measuredPoints)))
-          && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
+          && ((m_ceeloResponse == rhs.m_ceeloResponse)   //same instance (or both none): no need to hash
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
           // `storedGeometry()`, not `m_geometry`: a response carries its own descriptor, which is
@@ -950,8 +1067,9 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
   if( m_ceeloResponse )
   {
     // The far-field on-axis query intrinsicEfficiencyEval takes its sigma from.
-    return m_ceeloResponse->frac_covariance( energies,
-                    CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor ), model_part );
+    const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor );
+    return m_ceeloResponse->frac_covariance( energies, pos, *ceeloCache().quadrature( pos ),
+                                             model_part );
   }
 
   // The curve picks between the coefficient covariance and the node covariance per its
@@ -981,7 +1099,8 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
     //  formed exactly as fepEfficiencyEval forms it.
     const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
                                                     theta, phi, distance / PhysicalUnits::cm );
-    return m_ceeloResponse->frac_covariance( energies, pos, model_part );
+    return m_ceeloResponse->frac_covariance( energies, pos, *ceeloCache().quadrature( pos ),
+                                             model_part );
   }
 
   // The legacy curve path ignores the geometry (coefficient and node covariance alike).
@@ -1078,8 +1197,10 @@ float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) co
     //  length: it reads ~4.7% low at 662 keV and ~5.7% at 2.6 MeV, and that error would ride into
     //  both the peak-to-total the General tab prints and the cascade-summing correction.
     const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
-    const ceelo::EffResult tot = m_ceeloResponse->eps_total_at( energy,
-              CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                                                    0.0, 0.0, d_cm );
+    const ceelo::EffResult tot = m_ceeloResponse->eps_total_at( energy, pos,
+                                                                *ceeloCache().quadrature( pos ) );
     const double omega = fractionalSolidAngle( m_detectorDiameter,
                                 d_cm*PhysicalUnits::cm + m_detectorSetback );
     return (omega > 0.0) ? static_cast<float>( tot.value / omega ) : 0.0f;
@@ -1108,7 +1229,7 @@ void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorRes
   if( !response && m_ceeloResponse && !m_geometry && !isFixedGeometry() )
     m_geometry = make_shared<const ceelo::GeometryDescriptor>( m_ceeloResponse->descriptor );
 
-  m_ceeloResponse = response;
+  assignCeeloResponse( response );
   computeHash();
 }//setCeeloResponse(...)
 
@@ -1272,7 +1393,8 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     //     half-extent is its half-DIAGONAL) and 2.37x with a 2 cm lead collar.
     const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor );
     const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
-    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos,
+                                                              *ceeloCache().quadrature( pos ) );
     const double omega = ceelo::disk_solid_angle_fraction( d_cm,
                                 CeeLoUtils::crystalHalfExtent( m_ceeloResponse->descriptor ) );
 
@@ -1305,30 +1427,6 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::efficiencyEval( const float 
 {
   return fepEfficiencyEval( energy, 0.0, 0.0, distance );
 }//efficiencyEval(...)
-
-
-/** The ray set plus the position it was traced at, so a mismatched reuse can be caught. */
-struct DetectorPeakResponse::PositionedQuadrature
-{
-  Eigen::Vector3d position;
-  ceelo::ApertureQuadrature quadrature;
-};//struct DetectorPeakResponse::PositionedQuadrature
-
-
-std::shared_ptr<const DetectorPeakResponse::PositionedQuadrature>
-   DetectorPeakResponse::apertureQuadrature( const double theta, const double phi,
-                                             const double distance ) const
-{
-  if( !m_ceeloResponse || isFixedGeometry() )
-    return nullptr;
-
-  auto answer = std::make_shared<PositionedQuadrature>();
-  answer->position = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
-                                              theta, phi, distance / PhysicalUnits::cm );
-  answer->quadrature = m_ceeloResponse->make_quadrature( answer->position );
-
-  return answer;
-}//DetectorPeakResponse::apertureQuadrature(...)
 
 
 DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const float energy,
@@ -1368,11 +1466,21 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
     }
 #endif
 
-    // The quadrature is the whole cost of the query and depends only on the position, so a caller
-    //  sweeping energies at one position passes the one it built (see #apertureQuadrature).
-    const ceelo::EffResult res = quadrature
-                                   ? m_ceeloResponse->eps_fep_at( energy, pos, quadrature->quadrature )
-                                   : m_ceeloResponse->eps_fep_at( energy, pos );
+    // A ray set from a different response instance (another DRF's, or this one's before its
+    //  response changed) points at that instance's materials; never evaluate this response on it.
+    const bool use_given = (quadrature && (quadrature->response == m_ceeloResponse));
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( quadrature && !use_given )
+      log_developer_error( __func__, "Was handed an aperture quadrature traced for a different"
+                                     " response; ignoring it." );
+#endif
+
+    // The quadrature is most of the cost of the query and depends only on the position: reuse the
+    //  one the caller holds (see #apertureQuadrature), else the one traced here last time.
+    const ceelo::EffResult res = use_given
+                                   ? m_ceeloResponse->eps_fep_at( energy, pos, *quadrature->quadrature )
+                                   : m_ceeloResponse->eps_fep_at( energy, pos,
+                                                                  *ceeloCache().quadrature( pos ) );
     answer.value = res.value;
     answer.sigma = res.sigma;
     answer.sigmaModel = res.sigma_model;
@@ -1412,7 +1520,8 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
   {
     const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
                                                     theta, phi, distance / PhysicalUnits::cm );
-    const ceelo::EffResult res = m_ceeloResponse->eps_total_at( energy, pos );
+    const ceelo::EffResult res = m_ceeloResponse->eps_total_at( energy, pos,
+                                                                *ceeloCache().quadrature( pos ) );
     answer.value = res.value;
     answer.sigma = res.sigma;
     answer.sigmaModel = res.sigma_model;
@@ -1508,7 +1617,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   }
   m_totalEfficiency.reset();
   m_measuredPoints.reset();
-  m_ceeloResponse.reset();
+  assignCeeloResponse( nullptr );
   m_geometry.reset();
   m_geometryDisabled = false;
   m_fixedGeomSetupXml.clear();
@@ -1569,7 +1678,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
 
     const rapidxml::xml_node<char> *ceelo_node = base_node->first_node( "CeeLoResponse" );
     if( ceelo_node )
-      m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
+      assignCeeloResponse( parse_ceelo_response_node( ceelo_node ) );
 
     // Read even when a response is attached - `drfExtraToXmlString` writes it there, and
     //  `geometry()` still prefers the response's own descriptor.  Dropping it here is what used to
@@ -1604,7 +1713,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   {
     m_totalEfficiency.reset();
     m_measuredPoints.reset();
-    m_ceeloResponse.reset();
+    assignCeeloResponse( nullptr );
     m_geometry.reset();
     m_geometryDisabled = false;
     m_peakFitDetPrefs.reset();
@@ -5129,7 +5238,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGe
   //  describes the bare detector, not this fixed geometry - but a fixed-geometry DRF's total curve
   //  is read as the absolute per-decay total (cascade summing), so it can't be carried over.
   answer->m_totalEfficiency.reset();
-  answer->m_ceeloResponse.reset();
+  answer->assignCeeloResponse( nullptr );
   
   answer->computeHash();
   
@@ -5970,10 +6079,10 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       m_measuredPoints = points;
   }
 
-  m_ceeloResponse.reset();
+  assignCeeloResponse( nullptr );
   node = parent->first_node( "CeeLoResponse", 13 );
   if( node )
-    m_ceeloResponse = parse_ceelo_response_node( node );  //throws on invalid content
+    assignCeeloResponse( parse_ceelo_response_node( node ) );  //throws on invalid content
 
   // The stated physical geometry (version 7).  Read even when a response is attached (whose own
   //  descriptor `geometry()` prefers), so detaching the response leaves the geometry behind.
@@ -7129,8 +7238,16 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   std::stringstream json;
   json << "{";
   
-  // Add common energy extent
+  // Add common energy extent - the whole range the chart can zoom out to - and the part of it the
+  //  chart opens on: the same range (the detectors stated valid range, when it has one), but no
+  //  further than 8 MeV, above which a gamma-ray efficiency is rarely of interest.  A GADRAS
+  //  Efficiency.csv, for example, is tabulated out to 100 MeV, which squeezed the whole useful curve
+  //  into the left edge of the chart.
+  const float max_initial_energy = 8000.0f;
+  const float initial_max = (minEnergy < max_initial_energy) ? std::min( maxEnergy, max_initial_energy )
+                                                             : maxEnergy;
   json << "\"extent\":[" << minEnergy << "," << maxEnergy << "]";
+  json << ",\"initialRange\":[" << minEnergy << "," << initial_max << "]";
   
   // Add efficiency data.
   //
@@ -7255,13 +7372,18 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   //  on-axis position.
   if( efficiencyUncert() || m_ceeloResponse )
   {
+    // Log-spaced, like the formula curve above: the uncertainty changes fastest at low energy, and
+    //  the chart usually shows only the bottom of a wide extent (see "initialRange").
     const size_t num_points = 64;
+    const bool log_space = (minEnergy > 1.0f) && (maxEnergy > minEnergy);
     vector<double> energies( num_points ), frac( num_points, 0.0 ), model_frac( num_points, 0.0 );
 
     bool any_uncert = false;
     for( size_t i = 0; i < num_points; ++i )
     {
-      energies[i] = minEnergy + (double(i)/(num_points - 1.0)) * (maxEnergy - minEnergy);
+      const double f = double(i) / (num_points - 1.0);
+      energies[i] = log_space ? minEnergy * std::pow( double(maxEnergy)/minEnergy, f )
+                              : minEnergy + f * (maxEnergy - minEnergy);
 
       try
       {
@@ -7372,9 +7494,11 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
     json << "],\"factors\":[" << factors.str() << "]}";
   }//if( a verbatim absolute curve )
 
-#ifdef PERFORM_DEVELOPER_CHECKS
+#if( PERFORM_DEVELOPER_CHECKS )
 
-  // Add validation data for JavaScript testing
+  // Add validation data for JavaScript testing - DetectorPeakResponseJS re-evaluates these on the
+  //  client and asserts it gets the same answers.  `#if`, not `#ifdef`: InterSpec_config.h.in uses
+  //  `#cmakedefine01`, so the macro is always defined (as 0 or 1).
   json << ",\"validation\":{";
   json << "\"energies\":[";
   
@@ -7501,9 +7625,8 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
 
     const double theta = angles_deg[a] * (M_PI / 180.0);
 
-    // One traced ray set for this angle, reused by all `n_energy` queries below: tracing is ~98% of
-    //  a Monte-Carlo-backed query and depends only on the position, so this is the difference
-    //  between ~540 ms and ~18 ms for the whole chart.
+    // One traced ray set for this angle, reused by all `n_energy` queries below: tracing is most
+    //  of a Monte-Carlo-backed query, and depends only on the position.
     const std::shared_ptr<const PositionedQuadrature> quad = apertureQuadrature( theta, 0.0, dist );
 
     // Track the most severe non-Ok flag over the curve, for a per-series cue.

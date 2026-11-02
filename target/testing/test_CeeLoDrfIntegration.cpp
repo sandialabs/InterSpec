@@ -56,6 +56,7 @@
 #include <vector>
 #include <memory>
 #include <limits>
+#include <thread>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -533,6 +534,225 @@ BOOST_AUTO_TEST_CASE( aperture_quadrature_reuse_is_equivalent )
       BOOST_CHECK( pr["eff"].get<double>() >= 0.0 );
   }
 }//aperture_quadrature_reuse_is_equivalent
+
+
+/** Every DRF query that dispatches to a response must give exactly what the response itself gives
+ with a freshly traced quadrature - both the first time a position is asked about, and every time
+ after (when the DRF may answer from a ray set it traced earlier).
+ */
+BOOST_AUTO_TEST_CASE( cached_queries_match_fresh_quadrature )
+{
+  struct Pos { double theta, phi, dist_cm; };
+  const vector<Pos> positions{ {0.0, 0.0, 25.0}, {0.0, 0.0, 2.0}, {0.6, 0.3, 8.0}, {1.3, 0.0, 4.0} };
+  const vector<float> energies{ 45.0f, 122.0f, 661.7f, 1332.5f, 2614.0f };
+  const vector<double> cov_energies{ 59.5, 356.0, 1001.0, 2614.0 };
+
+  vector<pair<string,shared_ptr<DetectorPeakResponse>>> drfs;
+  for( const char *preset : { "nai3x3", "hpge_coax", "czt_box", "detective_x" } )
+    drfs.emplace_back( preset, drf_with_golden( preset ) );
+
+  // A shipped GADRAS detector carries a curve-transfer response rather than a Monte-Carlo one.
+  try
+  {
+    auto gadras = make_shared<DetectorPeakResponse>();
+    gadras->fromGadrasDirectory( SpecUtils::append_path( SpecUtils::append_path( g_data_dir,
+                                                         "GenericGadrasDetectors" ), "NaI 2x2" ) );
+    if( gadras->ceeloResponse() )
+      drfs.emplace_back( "GADRAS NaI 2x2", gadras );
+  }catch( std::exception & )
+  {
+  }
+
+  for( const auto &named : drfs )
+  {
+    const string &name = named.first;
+    const DetectorPeakResponse &drf = *named.second;
+    const shared_ptr<const ceelo::DetectorResponse> resp = drf.ceeloResponse();
+    BOOST_REQUIRE( resp );
+
+    const ceelo::GeometryDescriptor &gd = resp->descriptor;
+    const bool have_tot = resp->tot_eff.characterized();
+
+    const Eigen::Vector3d far_pos = CeeLoUtils::farFieldSourcePosition( gd );
+    const ceelo::ApertureQuadrature far_quad = resp->make_quadrature( far_pos );
+    const double far_cm = CeeLoUtils::farFieldDistanceCm( gd );
+    const double omega_crystal = ceelo::disk_solid_angle_fraction( far_cm, CeeLoUtils::crystalHalfExtent( gd ) );
+    const double omega_drf = DetectorPeakResponse::fractionalSolidAngle( drf.detectorDiameter(),
+                                                far_cm*PhysicalUnits::cm + drf.detectorSetback() );
+
+    for( int pass = 0; pass < 2; ++pass )
+    {
+      const string ctx = name + " (pass " + std::to_string(pass) + ")";
+
+      for( const float energy : energies )
+      {
+        // intrinsicEfficiencyEval: the response at its far field, over the crystal's solid angle.
+        const ceelo::EffResult far = resp->eps_fep_at( energy, far_pos, far_quad );
+        const DetectorPeakResponse::EffEval intr = drf.intrinsicEfficiencyEval( energy );
+        BOOST_CHECK_MESSAGE( intr.value == far.value/omega_crystal, ctx + " intrinsic value @" + std::to_string(energy) );
+        BOOST_CHECK_MESSAGE( intr.sigma == far.sigma/omega_crystal, ctx + " intrinsic sigma @" + std::to_string(energy) );
+        BOOST_CHECK_MESSAGE( intr.sigmaModel == far.sigma_model/omega_crystal, ctx + " intrinsic model sigma" );
+        BOOST_CHECK( intr.flag == DetectorPeakResponse::effFlagFromCeelo( far.flag ) );
+
+        // (A stated total-efficiency curve - a GADRAS Efficiency.csv has one - takes precedence.)
+        if( have_tot && !drf.totalEfficiencyCurve() )
+        {
+          const ceelo::EffResult far_tot = resp->eps_total_at( energy, far_pos, far_quad );
+          BOOST_CHECK_MESSAGE( drf.totalIntrinsicEfficiencyAny( energy )
+                                 == static_cast<float>( far_tot.value / omega_drf ),
+                               ctx + " totalIntrinsicEfficiencyAny @" + std::to_string(energy) );
+        }
+
+        for( const Pos &p : positions )
+        {
+          const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, p.theta, p.phi, p.dist_cm );
+          const ceelo::ApertureQuadrature quad = resp->make_quadrature( pos );
+          const double dist = p.dist_cm * PhysicalUnits::cm;
+          const string pctx = ctx + " @" + std::to_string(energy) + " keV, theta=" + std::to_string(p.theta)
+                              + ", d=" + std::to_string(p.dist_cm) + " cm";
+
+          const ceelo::EffResult fep = resp->eps_fep_at( energy, pos, quad );
+          const DetectorPeakResponse::EffEval drf_fep = drf.fepEfficiencyEval( energy, p.theta, p.phi, dist );
+          BOOST_CHECK_MESSAGE( drf_fep.value == fep.value, pctx + " fep value" );
+          BOOST_CHECK_MESSAGE( drf_fep.sigma == fep.sigma, pctx + " fep sigma" );
+          BOOST_CHECK_MESSAGE( drf_fep.sigmaModel == fep.sigma_model, pctx + " fep model sigma" );
+          BOOST_CHECK( drf_fep.flag == DetectorPeakResponse::effFlagFromCeelo( fep.flag ) );
+
+          if( (p.theta == 0.0) && (p.phi == 0.0) )
+            BOOST_CHECK_MESSAGE( drf.efficiency( energy, dist ) == fep.value, pctx + " efficiency()" );
+
+          if( have_tot )
+          {
+            const ceelo::EffResult tot = resp->eps_total_at( energy, pos, quad );
+            const DetectorPeakResponse::EffEval drf_tot = drf.totalEfficiencyEval( energy, p.theta, p.phi, dist );
+            BOOST_CHECK_MESSAGE( drf_tot.value == tot.value, pctx + " total value" );
+            BOOST_CHECK_MESSAGE( drf_tot.sigma == tot.sigma, pctx + " total sigma" );
+            BOOST_CHECK( drf_tot.flag == DetectorPeakResponse::effFlagFromCeelo( tot.flag ) );
+          }
+        }//for( positions )
+      }//for( energies )
+
+      // Covariances: far-field (the intrinsic view), and at a query geometry.
+      vector<double> model, drf_model;
+      const vector<double> far_cov = resp->frac_covariance( cov_energies, far_pos, far_quad, &model );
+      const vector<double> drf_far_cov = drf.efficiencyFracCovariance( cov_energies, &drf_model );
+      BOOST_CHECK_MESSAGE( far_cov == drf_far_cov, ctx + " far-field covariance" );
+      BOOST_CHECK_MESSAGE( model == drf_model, ctx + " far-field covariance model part" );
+
+      const Pos &p = positions[2];
+      const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, p.theta, p.phi, p.dist_cm );
+      const vector<double> cov = resp->frac_covariance( cov_energies, pos, resp->make_quadrature( pos ), &model );
+      const vector<double> drf_cov = drf.efficiencyFracCovariance( cov_energies, p.theta, p.phi,
+                                                                   p.dist_cm*PhysicalUnits::cm, &drf_model );
+      BOOST_CHECK_MESSAGE( cov == drf_cov, ctx + " off-axis covariance" );
+      BOOST_CHECK_MESSAGE( model == drf_model, ctx + " off-axis covariance model part" );
+    }//for( pass )
+  }//for( const auto &named : drfs )
+}//cached_queries_match_fresh_quadrature
+
+
+/** A DRF must always answer for the response it holds NOW: a copy answers exactly as its source,
+ and a copy whose response is replaced - by the setter, by deserialization, or by detaching it -
+ must neither keep answering for the old response nor disturb the DRF it was copied from.
+ */
+BOOST_AUTO_TEST_CASE( query_answers_follow_the_response )
+{
+  const shared_ptr<DetectorPeakResponse> nai = drf_with_golden( "nai3x3" );
+  const shared_ptr<DetectorPeakResponse> hpge = drf_with_golden( "hpge_coax" );
+  const double dist = 25.0*PhysicalUnits::cm;
+
+  const auto answers = [dist]( const DetectorPeakResponse &d ) -> vector<double> {
+    vector<double> v;
+    for( const float e : { 59.5f, 661.7f, 2614.0f } )
+    {
+      v.push_back( d.intrinsicEfficiencyEval( e ).value );
+      v.push_back( d.fepEfficiencyEval( e, 0.0, 0.0, dist ).value );
+      v.push_back( d.fepEfficiencyEval( e, 0.7, 0.0, 6.0*PhysicalUnits::cm ).value );
+      v.push_back( d.totalEfficiencyEval( e, 0.0, 0.0, dist ).value );
+      v.push_back( d.efficiency( e, dist ) );
+    }
+    const vector<double> cov = d.efficiencyFracCovariance( { 122.0, 1332.5 } );
+    v.insert( end(v), begin(cov), end(cov) );
+    return v;
+  };
+
+  const vector<double> nai_answers = answers( *nai ), hpge_answers = answers( *hpge );
+  BOOST_REQUIRE( nai_answers != hpge_answers );
+
+  DetectorPeakResponse copy = *nai;
+  BOOST_CHECK( answers( copy ) == nai_answers );
+  BOOST_CHECK( copy == *nai );
+
+  copy.setCeeloResponse( hpge->ceeloResponse() );
+  BOOST_CHECK( answers( copy ) == hpge_answers );
+  BOOST_CHECK( answers( *nai ) == nai_answers );
+
+  // A response that arrives by deserialization: a new instance with the same content.
+  DetectorPeakResponse reread = *nai;
+  reread.setDrfExtraFromXmlString( hpge->drfExtraToXmlString() );
+  BOOST_REQUIRE( reread.ceeloResponse() && (reread.ceeloResponse() != hpge->ceeloResponse()) );
+  BOOST_CHECK( answers( reread ) == hpge_answers );
+  BOOST_CHECK( answers( *nai ) == nai_answers );
+
+  // Detached: back on the flat-disk model of its legacy curve.
+  copy.setCeeloResponse( nullptr );
+  BOOST_REQUIRE( !copy.ceeloResponse() );
+  BOOST_CHECK_EQUAL( copy.efficiency( 661.7f, dist ), copy.flatDiskEfficiency( 661.7f, dist ) );
+  BOOST_CHECK( answers( *hpge ) == hpge_answers );
+}//query_answers_follow_the_response
+
+
+/** One `const` DRF is routinely shared between the GUI thread and worker threads (peak fits, the
+ efficiency chart, GADRAS parsing), so concurrent queries - at more distinct positions than any
+ bounded per-DRF cache would hold - must give exactly the single-threaded answers.
+ */
+BOOST_AUTO_TEST_CASE( concurrent_queries_match_serial )
+{
+  const shared_ptr<const DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
+
+  struct Query { float energy; double theta, dist; };
+  vector<Query> queries;
+  for( int ip = 0; ip < 20; ++ip )
+  {
+    for( const float energy : { 88.0f, 661.7f, 1764.0f } )
+      queries.push_back( { energy, 0.07*ip, (3.0 + ip)*PhysicalUnits::cm } );
+  }
+
+  const size_t num_per_query = 3;
+  const auto evaluate = [&drf]( const Query &q, double *out ) {
+    out[0] = drf->fepEfficiencyEval( q.energy, q.theta, 0.0, q.dist ).value;
+    out[1] = drf->intrinsicEfficiencyEval( q.energy ).value;
+    out[2] = drf->totalEfficiencyEval( q.energy, q.theta, 0.0, q.dist ).value;
+  };
+
+  vector<double> serial( queries.size() * num_per_query );
+  for( size_t i = 0; i < queries.size(); ++i )
+    evaluate( queries[i], &serial[i*num_per_query] );
+
+  // Each thread starts at a different query, so threads contend for different positions at once.
+  const size_t num_threads = 8;
+  vector<vector<double>> results( num_threads, vector<double>( serial.size(), -1.0 ) );
+  vector<std::thread> threads;
+  for( size_t t = 0; t < num_threads; ++t )
+  {
+    threads.emplace_back( [&, t](){
+      for( size_t pass = 0; pass < 2; ++pass )
+      {
+        for( size_t k = 0; k < queries.size(); ++k )
+        {
+          const size_t i = (k + 7*t) % queries.size();
+          evaluate( queries[i], &results[t][i*num_per_query] );
+        }
+      }
+    } );
+  }//for( size_t t = 0; t < num_threads; ++t )
+
+  for( std::thread &th : threads )
+    th.join();
+
+  for( size_t t = 0; t < num_threads; ++t )
+    BOOST_CHECK_MESSAGE( results[t] == serial, "thread " + std::to_string(t) + " differs from serial" );
+}//concurrent_queries_match_serial
 
 
 /** The DRF *file* round trip (toXml / fromXml - what a downloaded .drf.xml goes through when it
