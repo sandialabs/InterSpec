@@ -595,9 +595,11 @@ namespace
  Sentinels are excluded and the remaining weight renormalized, so approaching
  the body from outside degrades toward the nearest real data instead of jumping
  to 100%.  `all_sentinel` reports the case where there is no data to fall back
- on, letting callers refuse to serve a value rather than invent one. */
+ on, letting callers refuse to serve a value rather than invent one;
+ `sentinel_weight` is the share of the bilinear weight that fell on sentinels,
+ i.e. how much of the answer is the renormalization's rather than the file's. */
 double interp_grid_V( const ParGrid &g, const double ln_d, const double theta_rad,
-                      bool *all_sentinel = nullptr )
+                      bool *all_sentinel = nullptr, double *sentinel_weight = nullptr )
 {
   const int nrows = static_cast<int>( g.nrows );
   const int ncols = static_cast<int>( g.ncols );
@@ -624,17 +626,22 @@ double interp_grid_V( const ParGrid &g, const double ln_d, const double theta_ra
   const double ws[4] = { (1.0 - fr) * (1.0 - fc), (1.0 - fr) * fc,
                          fr * (1.0 - fc), fr * fc };
 
-  double sum = 0.0, wsum = 0.0;
+  double sum = 0.0, wsum = 0.0, wsent = 0.0;
   for( size_t i = 0; i < 4; ++i )
   {
     if( vs[i] == 0.0 )     // sentinel: inside the detector body, no data
+    {
+      wsent += ws[i];
       continue;
+    }
     sum += ws[i] * vs[i];
     wsum += ws[i];
   }
 
   if( all_sentinel )
     *all_sentinel = (wsum <= 0.0);
+  if( sentinel_weight )
+    *sentinel_weight = wsent;
 
   if( wsum <= 0.0 )
     return 0.0;            // caller decides; 0 keeps the old (eff = 1) shape
@@ -698,6 +705,22 @@ double ParEfficiency::efficiency( double energy_keV, double dist_from_face_mm,
 
   return std::pow( 10.0, -V / 1000.0 );
 }//ParEfficiency::efficiency(...)
+
+
+bool ParEfficiency::inNoDataZone( const double dist_from_face_mm, const double theta_rad ) const
+{
+  // The zone is energy-independent (see efficiency()), so the first grid speaks for all.  The
+  //  explicit face-plane test keeps a point ON the plane out: the stored column step is a float a
+  //  few 1e-8 rad short of 2.5 deg, so at exactly 90 deg the stencil carries ~1e-6 of weight on the
+  //  92.5 deg column, sentinel or not.
+  if( !(std::fabs( theta_rad ) > 0.5 * 3.14159265358979323846) )
+    return false;
+
+  double sentinel_weight = 0.0;
+  interp_grid_V( m_par.grids.front(), std::log( std::max( dist_from_face_mm, 1.0 ) ), theta_rad,
+                 nullptr, &sentinel_weight );
+  return (sentinel_weight > 0.0);
+}//ParEfficiency::inNoDataZone(...)
 
 
 double ParEfficiency::airTransmission( double energy_keV, double dist_mm,
@@ -870,7 +893,7 @@ const size_t sm_ladder_base_rungs = 36;
  into `sm_ladder_subdiv` geometric pieces; every base rung is kept, so the ladder
  is a strict SUPERSET of the uniform one.  See `distance_ladder`. */
 const size_t sm_ladder_subdiv = 3;
-const double sm_ladder_lo_cm = 5.0;
+const double sm_ladder_lo_cm = 2.0;
 const double sm_ladder_hi_cm = 30.0;
 
 
@@ -1104,13 +1127,25 @@ std::vector<double> near_field_energy_axis( const std::vector<double> &eta_energ
  (11 below 5 cm became 5) and made that region ~8x worse to buy ~2x in the middle.
  Inserting rungs instead keeps every base node, and because Pchip's derivative at
  node j depends only on the slopes m[j-1] and m[j], nodes added above an interval
- cannot perturb the interpolant below it: the near-contact region comes out
- bit-identical to the uniform ladder, which is what the band table shows.
+ cannot perturb the interpolant below it: when the window opened at 5 cm, the
+ region below it came out bit-identical to the uniform ladder.
 
  Why the window closes at 30 cm.  Past there the response is 1/r^2 to within the
  file's own quantization, so subdividing buys nothing measurable and `ln_n` is
  `ne*nc*nd` - the dominant serialized block.  Extending the window to `d_ref`
  was measured: identical accuracy in every band, 26 more rungs.
+
+ Why it opens at 2 cm.  A few cm out at grazing angles a source passes the corner
+ of the MODELLED can (the crystal plus its side shells, narrower than the real
+ one), where the kernel changes steeply while the grid does not, so ln(eps/K)
+ carries a step there one base rung wide: on DET1381 it rises 9.4 -> 15.3 in ln
+ between the 4.1 and 4.9 cm rungs at 10 keV.  Opening the window at 5 cm left
+ those rungs at the base spacing, and the worst near-contact on-lattice error at
+ 10 keV at 185%; from 2 cm it is 83%, and most bands from 16 keV up fell 2-4x
+ (22-32 keV, whose worst is at 5 cm, did not move; one DET06 band rose, 0.026 ->
+ 0.048, inside its gate), for 10 rungs (+15% serialized, both corpus detectors).
+ Opening it at the ladder floor measured the same worst errors for +37%.  The
+ worst errors at d >= 5 cm and theta <= 75 deg were unchanged in every band.
 
  `sm_ladder_subdiv` is 3 because the achieved worst error is not monotone in it -
  the rung phase against the file's fixed 3.03%-per-row grid matters as much as the
@@ -1514,9 +1549,9 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  the value at each node is read from the grid in face-frame coords.  The map
   //  between the frames is a translation by `off`, which is near-identity in the
   //  far field but strongly nonlinear once d ~ off: grazing ladder columns reach
-  //  theta_face of ~126 deg (still real grid data - `interp_grid_V` interpolates
-  //  the full column span, it does not clamp at 90 deg).  So ln_n, expressed on
-  //  the crystal-frame axes it is interpolated over, has curvature near contact
+  //  theta_face of ~123 deg (real grid data beside the can - `interp_grid_V` does
+  //  not clamp at 90 deg - and inside it, see the fill below).  So ln_n, expressed
+  //  on the crystal-frame axes it is interpolated over, has curvature near contact
   //  that this lattice resolves only as well as its rung spacing allows.
   //
   // Why the ladder is dense, and denser over the near field.  The grid stores 440
@@ -1526,7 +1561,8 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  measured 0.0107 worst against the file's own stored content; 36 uniform gives
   //  0.0100, and 36 + a subdivided [5,30] cm window gives 0.0060 for the bands
   //  where the file carries real signal.  `distance_ladder` documents why the
-  //  window is where the rungs go, and why adding rather than moving them.
+  //  window is where the rungs go, why adding rather than moving them, and why it
+  //  has since been opened at 2 cm.
   const double d_face_margin_cm = 0.2;   // >= 2 mm of face-frame standoff
   const double d_min_cm = -face.z() + d_face_margin_cm;   // face is (0,0,-offset)
   const std::vector<double> dists_cm = distance_ladder( d_min_cm, d_ref_cm );
@@ -1566,44 +1602,47 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
     }
   }
 
-  // Each angular column's ladder is TRUNCATED at its first valid rung: rungs
-  //  whose face-frame position falls in the grid's no-data zone are not filled
-  //  from the file, because there is nothing there to reproduce (the grid stores
-  //  V = 0, which decodes to eff = 1.0 - 100%, impossible).  Filling them with
-  //  that literal value anchors the PCHIP ladder on an impossible number and
-  //  corrupts legitimate neighbouring queries; that is how off-axis dispatch
-  //  came to disagree with the raw grid by thousands of percent.
+  // Rungs inside the endcap are read at the endcap face in front of them.
   //
-  // `NearFieldModel` has ONE shared distance axis (index(e,c,d) is rectangular,
-  //  and is serialized that way), so a literally ragged ladder is not
-  //  representable.  It does not need to be: `Pchip::operator()` clamps flat
-  //  below its first node (`xq <= x_.front() -> y_.front()`), so truncating a
-  //  column is EXACTLY equivalent to filling its inner rungs with the first
-  //  valid value.  We therefore write that hold, which yields a truncated
-  //  interpolant without touching CeeLo's structure or file format.
-  //
-  // The no-data zone is the ENDCAP VOLUME itself - source positions inside the
-  //  housing, which are physically unreachable, so the reference tool stores a
-  //  sentinel instead of a number.  Converting the zone's boundary from the
-  //  grid's (radial, theta) into cylindrical coords recovers the can: lateral
+  // The grid's V == 0 no-data zone is the ENDCAP VOLUME itself - source positions
+  //  inside the housing, which are physically unreachable, so the reference tool
+  //  stores a sentinel instead of a number.  Converting the zone's boundary from
+  //  the grid's (radial, theta) into cylindrical coords recovers the can: lateral
   //  extent 42.5 mm vs the 43.8 mm endcap radius, depth 81.0 mm vs the 83.8 mm
   //  endcap length (DET06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
   //  therefore only exists behind the face plane - zero such cells at
   //  theta <= 90 deg, onset at 92.5 deg.
   //
-  // So this costs near-field reach only in the grazing columns, where the
-  //  crystal-frame ladder position translates to a face-frame point inside that
-  //  can: on the corpus 21/37 and 16/37 columns lose nothing at all, the on-axis
-  //  ladder still reaches 2 mm from the endcap face, and only the grazing
-  //  columns are held back past ~2.5 cm (to 3.1-4.9 cm at 87.5-90 deg).  78 of
-  //  2146 rungs on one detector, 89 of 2220 on the other.
-  size_t n_truncated = 0;
+  // The crystal-frame ladder reaches into it: a grazing column's rungs map up to
+  //  `off` behind the face plane, and where their grid stencil touches the zone
+  //  (ParEfficiency::inNoDataZone) neither factor of ln(eps/K) describes them.
+  //  Their eps is no data at all or, where the stencil only partly touches it,
+  //  `interp_grid_V`'s blend renormalized onto the face-plane column; their K is
+  //  for a source embedded in the modelled front window.  Yet these rungs anchor
+  //  the interpolation of real queries on and near the face plane, so each is
+  //  filled from the nearest position the file does characterize - the face-plane
+  //  point at the same lateral offset, eps and K both taken there - which carries
+  //  ln(eps/K) across the plane.  Its sigma stays inflated, since the file says
+  //  nothing about the rung's own position.
+  //
+  // Measured on DET1381 at its worst near-contact locus - on the face plane,
+  //  3.5 cm out, where 32 keV read 21% low.  That was the former rule, which filled
+  //  partly-touching rungs as data.  Holding them radially instead, as the
+  //  all-sentinel rungs were, made the near-contact band worsts 2-8x WORSE: they
+  //  are anchors, not dead weight.  The projection gives -9% there, and -0.4% with
+  //  the ladder window opened at 2 cm.  Holding the all-sentinel rungs moved no
+  //  probe, but it was not the exact truncation it was described as: Pchip zeroes
+  //  its derivative at a node beside a flat run, which reshapes the interval above
+  //  the first valid rung too.  One rule now covers both.
+  //
+  // Only the grazing columns are affected - the on-axis ladder still reaches 2 mm
+  //  from the endcap face: 119 of 2516 rungs on one corpus detector, 151 of 2590
+  //  on the other.
+  size_t n_in_endcap = 0;
   for( size_t c = 0; c < nc; ++c )
   {
-    bool have_valid = false;
-    for( size_t k = 0; k < nd; ++k )
+    for( size_t di = 0; di < nd; ++di )
     {
-      const size_t di = nd - 1 - k;   // far -> near, so the hold source exists
       const Eigen::Vector3d src = source_position( dists_cm[di], cos_thetas[c], 0.0 );
 
       double d_face_mm = 0.0, theta_face = 0.0;
@@ -1612,49 +1651,42 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
       // Every rung must clear the endcap face by the margin; the d_min_cm floor
       //  above guarantees it.  theta_face is deliberately NOT bounded by 90 deg:
       //  translating a grazing near-contact point into the face frame
-      //  legitimately swings it behind the face plane, and the grid does carry
-      //  real columns out there (its span is the full 180 deg).
+      //  legitimately swings it behind the face plane, and beside the can the
+      //  grid carries real columns out there (its span is the full 180 deg).
       assert( d_face_mm >= 10.0 * 0.5 * d_face_margin_cm );
 
-      bool no_data = false;
-      parEff.efficiency( energies[0], d_face_mm, theta_face, &no_data );
-
-      if( no_data )
+      // Inside the endcap: sample the face-plane point in front of the rung, built exactly as a
+      //  90 deg query is, so the rung and the queries it anchors see the same kernel there.
+      const bool in_endcap = parEff.inNoDataZone( d_face_mm, theta_face );
+      const Eigen::Vector3d at = in_endcap
+          ? CeeLoUtils::sourcePositionFromFace( gd, half_pi, 0.0,
+                                                std::hypot( src.x() - face.x(), src.y() - face.y() ) )
+          : src;
+      if( in_endcap )
       {
-        // Below this column's first valid rung: hold it (== truncation, see
-        //  above).  Keep the held rung's sigma inflated - the position is
-        //  uncharacterized by the file, not modelled by us, so a query landing
-        //  here should be honestly uncertain rather than confidently wrong.
-        ++n_truncated;
-        for( size_t e = 0; e < nf_ne; ++e )
-        {
-          const size_t idx = nf.index( e, c, di );
-          nf.ln_n[idx] = have_valid ? nf.ln_n[nf.index( e, c, di + 1 )] : 0.0;
-          nf.frac_sigma[idx] = 1.0;   // 100%: no data underlies this rung
-        }
-        continue;
+        ++n_in_endcap;
+        face_sample( at, d_face_mm, theta_face );
       }
 
-      const ApertureQuadrature q = resp->make_quadrature( src );
+      const ApertureQuadrature q = resp->make_quadrature( at );
       for( size_t e = 0; e < nf_ne; ++e )
       {
         const double E = nf_energies[e];
         const double K = resp->kernel_K( E, q, MuChoice::Total );
         const double eps = parEff.efficiency( E, d_face_mm, theta_face );
         const double ln_ratio = std::log( std::max( eps, 1e-300 ) / std::max( K, 1e-300 ) );
-        nf.ln_n[nf.index( e, c, di )] = ln_ratio - nf_ln_eta_far[e * nc + c];
+        const size_t idx = nf.index( e, c, di );
+        nf.ln_n[idx] = ln_ratio - nf_ln_eta_far[e * nc + c];
+        nf.frac_sigma[idx] = in_endcap ? 1.0 : 0.0;   // 100%: the rung's own position is uncharacterized
       }
-      have_valid = true;
-    }//for( each distance, far -> near )
+    }//for( each distance )
   }//for( each cos-theta )
 
-  if( n_truncated )
-    geom_warnings.push_back( "near-field ladder truncated at "
-                             + std::to_string(n_truncated) + " of "
-                             + std::to_string(nc * nd) + " rungs, where the"
-                             " face-frame position lies behind the endcap in the"
-                             " region the file does not characterize (grazing"
-                             " angles at close range only)" );
+  if( n_in_endcap )
+    geom_warnings.push_back( std::to_string(n_in_endcap) + " of " + std::to_string(nc * nd)
+                             + " near-field rungs lie inside the endcap, where the file does"
+                             " not characterize the efficiency (grazing angles at close range"
+                             " only), and are read at the endcap face in front of them" );
 
   // Near gate covers the whole filled region (break at the far reference), so
   //  every query inside d_ref_cm picks up the near-field term.

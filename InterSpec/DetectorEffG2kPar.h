@@ -240,10 +240,10 @@
      axis in particular must contain the FILE's own nodes, not just a resampling.
    * DISTANCE.  The grid stores 440 radial rows at 3.03% each and truth is
      bilinear in raw V, so there is a kink on EVERY row; the original 18-rung
-     ladder spanned ~10 of them per rung.  Now 58 rungs (60 on DET06), uniform
-     with the [5, 30] cm window subdivided - `distance_ladder` in
+     ladder spanned ~10 of them per rung.  Now 68 rungs (70 on DET06), uniform
+     with the [2, 30] cm window subdivided - `distance_ladder` in
      "src/DetectorEffG2kPar.cpp" documents why the rungs are ADDED rather than
-     moved, and why the window ends at 30 cm.
+     moved, why the window ends at 30 cm, and why it starts at 2 cm.
    * ANGLE.  `makeDrf` fills all 37 of the grid's columns on [0, 90] deg, and an
      earlier note concluded from that the angular axis was "already node-exact".
      IT IS NOT, and that claim is struck.  The response's angular nodes are
@@ -267,20 +267,20 @@
  DET1381 (grid starts at 10 keV), then DET06 (starts at 45 keV):
 
      band        MAIN      | CORNER
-     10- 16 keV  0.29317   | 1.85004   <- gated on absolute error
-     16- 22 keV  0.05809   | 0.76221   <- gated on absolute error
-     22- 32 keV  0.03470   | 0.39145
-     32- 45 keV  0.01185   | 0.20845
-     45- 60 keV  0.00534   | 0.13105
-     60-200 keV  0.00282   | 0.10407
-     200-1k keV  0.00366   | 0.06016
-     1k -7k keV  0.00636   | 0.03934
+     10- 16 keV  0.29317   | 0.83400   <- gated on absolute error
+     16- 22 keV  0.05809   | 0.11464   <- gated on absolute error
+     22- 32 keV  0.03470   | 0.16366
+     32- 45 keV  0.01185   | 0.05617
+     45- 60 keV  0.00534   | 0.02489
+     60-200 keV  0.00282   | 0.01279
+     200-1k keV  0.00366   | 0.00599
+     1k -7k keV  0.00636   | 0.00512
 
      DET06:      MAIN      | CORNER
-     45- 60 keV  0.00329   | 0.13324
-     60-200 keV  0.00354   | 0.09152
-     200-1k keV  0.00544   | 0.04194
-     1k -7k keV  0.00767   | 0.03437
+     45- 60 keV  0.00329   | 0.03385
+     60-200 keV  0.00354   | 0.02593
+     200-1k keV  0.00544   | 0.01999
+     1k -7k keV  0.00767   | 0.04750
 
  Read the 10-16 keV row with its magnitude: the band's PEAK efficiency is just
  over eight decades below the crystal's peak, and the worst ABSOLUTE error is
@@ -313,26 +313,44 @@
      the largest single column-to-column step under 5 LSB - i.e. smooth on the
      scale of a column.  That contrast is why >= 60 keV was ladder-fixable and
      this is not.
-   * CORNER - ladder- and frame-limited, and partly the deferred past-90-deg
-     work.  Gated separately so a known-deferred regime cannot mask an on-axis
-     regression.  The V == 0 no-data sentinel matters here and ONLY here: it is
-     the endcap volume itself, which lies entirely behind the face plane (zero
-     such cells at theta <= 90 deg, onset at 92.5 deg), so it costs near-field
-     reach only in the grazing columns where a crystal-frame rung maps to a
-     face-frame point inside the can.  Those rungs are TRUNCATED - the column
-     holds its innermost valid value, which is what Pchip's flat clamp below its
-     first node does anyway - rather than filled with the sentinel, which would
-     anchor the ladder on an impossible number.  See `makeDrf`'s step for the
-     measured cost (78 of 2146 rungs on one detector, 89 of 2220 on the other).
-     CORNER is also KERNEL-limited at close range and grazing incidence
-     (d < 5 cm with theta > 75 deg, mostly below 45 keV): the modelled can is
-     narrower than the real one (D4 is not modelled), so a source a few cm out
-     near the face plane passes the side of the model's can but the front of the
-     real one, and ln(grid/K) carries that mismatch.  Moving the crystal to D7
-     (2 mm forward on DET1381) raised the CORNER figures by 1.3-2x on identical
-     probe points, almost all of it in that sub-region; sizing the can from D4
-     recovers most of it but costs MAIN 16-22 keV (0.054 -> 0.122 on the same
-     probes), so it is not done; D4 and D7's side role remain open questions.
+   * CORNER - KERNEL-limited near contact at grazing incidence, and partly the
+     deferred past-90-deg work.  Gated separately so a known-deferred regime
+     cannot mask an on-axis regression.  Two things meet there:
+       - The V == 0 no-data sentinel, which matters here and ONLY here: it is the
+         endcap volume, entirely behind the face plane (zero such cells at
+         theta <= 90 deg, onset at 92.5 deg), and grazing crystal-frame rungs map
+         up to the endcap-front offset behind that plane.  Where a rung's stencil
+         touches the zone, neither the grid (a sentinel, or a blend renormalized
+         around one) nor the kernel (a source inside the modelled front window)
+         describes it, yet it anchors real queries on the face plane, so `makeDrf`
+         reads it at the face-plane point in front of it (119 of 2516 rungs on
+         DET1381, 151 of 2590 on DET06).  Filling partly-touching rungs as data,
+         as was done before, put DET1381's worst near-contact error at -21%
+         (32 keV, on the face plane 3.5 cm out); holding them, as all-sentinel
+         rungs were held, made the band worsts 2-8x worse.
+       - The KERNEL's can corner.  The modelled can is the crystal plus its side
+         shells, narrower than the real one (D4 is not modelled), so a source a
+         few cm out near the face plane sees the crystal past the model's corner
+         rather than through the real can's front.  At low energy that is a deep
+         trough in K that the grid does not share - at 10 keV K falls three
+         decades between adjacent rungs while the grid's eps barely moves - so
+         ln(grid/K) carries a ridge ~6 in ln high and about one node wide
+         (DET1381, 10 keV: from 4.9 cm, 75 deg to 6.2 cm, 70 deg, crystal frame).
+         On the face plane just beside the modelled corner it is a dip at every
+         energy, which the ladder resolves once its subdivided window opens at
+         2 cm (see `distance_ladder`).  The ridge's crest is not resolvable by any
+         affordable lattice: EccMatch's grazing 10 keV probe (50 mm, 78.7 deg)
+         sits on it at -23.7%; half-step columns from 65 deg plus a window from the
+         ladder floor (+74% bytes) left -19.5%, and 3.1x the bytes -11.6%.  Where
+         the ridge falls moves with the geometry: sizing the can from D4 moves it
+         into MAIN 16-22 keV (0.058 -> 0.098 worst over every grid row to 7 cm,
+         against a 0.065 gate), so that is not done; D4 and D7's side role remain
+         open questions.
+     Moving the crystal to D7 (2 mm forward on DET1381) changed which rungs touch
+     the zone and where the ridge falls against the lattice, and grew the CORNER
+     worst figures 1.2-2.5x over every grid row from 0.8 to 7 cm, almost all of
+     it on the face plane 3.6 cm out.  The two fixes above more than recover that
+     (the table above); EccMatch's grazing low probe is bounded as CORNER is.
 
  MONTE-CARLO SPOT-CHECKS AT THE KNEE, and what they can and cannot settle.
  The band table above measures FIDELITY TO THE FILE.  That cannot tell us whether
@@ -437,11 +455,12 @@
  rung sitting on a grid row does not map to a grid row in the face frame.  Gates
  therefore carry phase headroom instead of being set tight against one run.
 
- COSTS.  The serialized response grows from 398,932 bytes to 3,497,678 for
- DET1381 (8.77x) and 1,767,513 for DET06 (4.43x) - far more than the ~2.5x first
- predicted, because `ln_n` is the dominant block and scales with the ladder.
- `makeDrf` fill cost is ne*nc*nd.  The gated corpus suite takes ~4.6 min
- (Release, 8 cores, developer checks on) against its 7200 s timeout, ~70% of it
+ COSTS.  The serialized response grows from 398,932 bytes to 4,037,378 for
+ DET1381 (10.1x) and 2,028,694 for DET06 (5.09x) - far more than the ~2.5x first
+ predicted, because `ln_n` is the dominant block and scales with the ladder (the
+ window's opening at 2 cm is +15% of that, on both).
+ `makeDrf` fill cost is ne*nc*nd.  The gated corpus suite takes ~5.6 min
+ (Release, 8 cores, developer checks on) against its 7200 s timeout, ~72% of it
  in `NodeRoundTripIdentity`, which evaluates every node of both responses.
 
  KNOCK-ON, deliberate: `CeeLoUtils::setLegacyEfficiencyFromResponse` samples 48
@@ -651,6 +670,13 @@ namespace DetEffG2kPar
      */
     double efficiency( double energy_keV, double dist_from_face_mm,
                        double theta_rad, bool *no_data = nullptr ) const;
+
+    /** Whether a position is behind the endcap face plane with any of its interpolation stencil in
+     the V == 0 no-data zone - inside the endcap, or against it.  The file does not characterize
+     such a position: #efficiency there is either flagged `no_data` or a blend renormalized around
+     the sentinel cells.  #makeDrf reads near-field nodes there at the endcap face in front of them.
+     */
+    bool inNoDataZone( double dist_from_face_mm, double theta_rad ) const;
 
     /** Air-path transmission `exp(-mu_air(E) * d)`, scaled to `pressure_atm`
      (1.0 = the reference dry-air density).  The reference suite applies this
