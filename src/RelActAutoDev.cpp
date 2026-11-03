@@ -2909,7 +2909,8 @@ void run_idb_comparison( const std::string &idb_dir,
   // ---- Collect HPGe entries (up to max_spectra) ----
   struct SpectrumEntry
   {
-    int id;
+    int index;                    // sequential; for unique HTML element ids and anchors
+    std::string label;            // from name= if present, else id=; for display only
     std::string filename;
     std::string det_eff_tag;      // from <DetectorEfficiency>
     std::string config_file_tag;  // from <RelActConfigFile>
@@ -2938,8 +2939,16 @@ void run_idb_comparison( const std::string &idb_dir,
     if( !fracs_node )
       continue;
 
+    // The id= attribute is only a label here: the IDB/JRC files use integers, but the
+    // locally organized datasets use descriptive ids (e.g. "microdet_ornl_25cm_0p31").
+    // Treat it as a string and keep a separate sequential index for HTML element ids,
+    // so a non-numeric id cannot throw and abort the whole comparison.
+    const rapidxml::xml_attribute<char> * const name_attr = sn->first_attribute( "name" );
+
     SpectrumEntry entry;
-    entry.id       = std::stoi( id_attr->value() );
+    entry.index    = static_cast<int>( entries.size() );
+    entry.label    = (name_attr && name_attr->value() && name_attr->value()[0])
+                       ? name_attr->value() : id_attr->value();
     entry.filename = file_attr->value();
 
     for( const rapidxml::xml_node<char> *iso = fracs_node->first_node( "isotope" );
@@ -2988,7 +2997,7 @@ void run_idb_comparison( const std::string &idb_dir,
     SpectrumResult result;
     result.entry = entry;
 
-    std::cout << "  ID " << entry.id << ": " << entry.filename << " ... " << std::flush;
+    std::cout << "  " << entry.label << ": " << entry.filename << " ... " << std::flush;
 
     try
     {
@@ -3091,7 +3100,7 @@ void run_idb_comparison( const std::string &idb_dir,
   for( const SpectrumResult &result : results )
   {
     SectionHtml sec;
-    sec.id = result.entry.id;
+    sec.id = result.entry.index;
 
     if( result.solution )
     {
@@ -3115,7 +3124,7 @@ void run_idb_comparison( const std::string &idb_dir,
         }
 
         std::string body = extract_body_content( full_html );
-        fix_html_for_embedding( body, result.entry.id );
+        fix_html_for_embedding( body, result.entry.index );
         sec.body = std::move( body );
       }
       catch( std::exception &e )
@@ -3172,13 +3181,13 @@ void run_idb_comparison( const std::string &idb_dir,
 
   for( const SpectrumResult &result : results )
   {
-    const std::string link = "#spec_" + std::to_string( result.entry.id );
+    const std::string link = "#spec_" + std::to_string( result.entry.index );
 
     if( !result.error_msg.empty() )
     {
       const int ncols = static_cast<int>( nuclide_cols.size() ) + 4;
       html_out << "<tr style=\"background:#e0e0e0\">\n"
-               << "  <td><a href=\"" << link << "\">" << result.entry.id << "</a></td>\n"
+               << "  <td><a href=\"" << link << "\">" << result.entry.label << "</a></td>\n"
                << "  <td>" << result.entry.filename << "</td>\n"
                << "  <td colspan=\"" << ncols << "\">" << result.error_msg << "</td>\n"
                << "</tr>\n";
@@ -3220,7 +3229,7 @@ void run_idb_comparison( const std::string &idb_dir,
     const std::string bg = have_diff ? pct_diff_bg_color( pct_diff ) : "#e0e0e0";
 
     html_out << "<tr style=\"background:" << bg << "\">\n"
-             << "  <td><a href=\"" << link << "\">" << result.entry.id << "</a></td>\n"
+             << "  <td><a href=\"" << link << "\">" << result.entry.label << "</a></td>\n"
              << "  <td>" << result.entry.filename << "</td>\n";
 
     for( const std::string &nuc : nuclide_cols )
@@ -3249,9 +3258,9 @@ void run_idb_comparison( const std::string &idb_dir,
     const SpectrumResult &result = results[i];
     const SectionHtml    &sec    = sections[i];
 
-    html_out << "<div id=\"spec_" << result.entry.id << "\" class=\"spec-section\">\n"
+    html_out << "<div id=\"spec_" << result.entry.index << "\" class=\"spec-section\">\n"
              << "<details>\n"
-             << "<summary>ID " << result.entry.id << ": " << result.entry.filename;
+             << "<summary>" << result.entry.label << ": " << result.entry.filename;
 
     // Show primary nuclide summary in the details label
     {
