@@ -1891,7 +1891,8 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   const size_t ne = eta.energies_keV.size(), nc = eta.cos_thetas.size();
   eta.ln_eta.assign( ne * nc, 0.0 );
   eta.frac_sigma.assign( ne * nc, 0.0 );
-  std::vector<bool> valid( ne * nc, false );
+  std::vector<bool> valid( ne * nc, false );    //taken from the donor's total
+  std::vector<bool> filled( ne * nc, false );   //valid, or from the donor's total/FEP ratio
 
   // Nodes are keyed in the grid's crystal frame (what a query is reduced to), on a sphere about the
   //  crystal-face origin; the donor is asked about the same physical point - the same place relative
@@ -1924,17 +1925,38 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
       const double energy = eta.energies_keV[e];
       const double K = resp->kernel_K( energy, q_grid, MuChoice::Total );
       const EffResult tot = donor->eps_total_at( energy, donor_pos, q_donor );
-      if( (tot.flag == ResponseFlag::NeedsMc) || !(tot.value > 0.0) || !std::isfinite( tot.value )
-          || !(K > 0.0) || !std::isfinite( K ) )
+      if( tot.flag == ResponseFlag::NeedsMc )
         continue;
 
       const size_t idx = eta.index( e, c, 0 );
-      eta.ln_eta[idx] = std::log( tot.value / K );
-      // Only the data-derived part (MC node statistics, grounding covariance): the model floors are
-      //  re-applied at eval time from `floors`, copied below.
-      const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
-      eta.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
-      valid[idx] = true;
+      if( (tot.value > 0.0) && std::isfinite( tot.value ) && (K > 0.0) && std::isfinite( K ) )
+      {
+        eta.ln_eta[idx] = std::log( tot.value / K );
+        // Only the data-derived part (MC node statistics, grounding covariance): the model floors are
+        //  re-applied at eval time from `floors`, copied below.
+        const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
+        eta.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
+        valid[idx] = filled[idx] = true;
+        continue;
+      }
+
+      // Nothing reaches a crystal: a kernel underflowing to 0 (e.g. ~1 cm of lead at 15 keV, in
+      //  either geometry) leaves no total to take the log of.  Carry the donor's total/FEP ratio onto
+      //  the grid's FEP instead, from the kernel-free prefactors - what grounding to the grid gives
+      //  wherever they are nonzero - so the total is still 0 wherever the grid's FEP is.
+      const double tot_pre = donor->total_prefactor( energy, donor_pos, q_donor ).value;
+      const double fep_pre = donor->fep_prefactor( energy, donor_pos, q_donor ).value;
+      const double grid_pre = resp->fep_prefactor( energy, grid_pos, q_grid ).value;
+      if( (tot_pre > 0.0) && (fep_pre > 0.0) && (grid_pre > 0.0) )
+      {
+        const double ln_eta = std::log( grid_pre ) + std::log( tot_pre ) - std::log( fep_pre );
+        if( std::isfinite( ln_eta ) )
+        {
+          eta.ln_eta[idx] = ln_eta;
+          eta.frac_sigma[idx] = 1.0;   //not characterized by the donor
+          filled[idx] = true;
+        }
+      }
     }//for( size_t e = 0; e < ne; ++e )
   }//for( size_t c = 0; c < nc; ++c )
 
@@ -1944,15 +1966,15 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   {
     for( size_t c = 0; c < nc; ++c )
     {
-      if( valid[eta.index( e, c, 0 )] )
+      if( filled[eta.index( e, c, 0 )] )
         continue;
 
       size_t src = nc;
       for( size_t dc = 1; (dc < nc) && (src == nc); ++dc )
       {
-        if( ((c + dc) < nc) && valid[eta.index( e, c + dc, 0 )] )
+        if( ((c + dc) < nc) && filled[eta.index( e, c + dc, 0 )] )
           src = c + dc;
-        else if( (c >= dc) && valid[eta.index( e, c - dc, 0 )] )
+        else if( (c >= dc) && filled[eta.index( e, c - dc, 0 )] )
           src = c - dc;
       }
 

@@ -56,6 +56,25 @@ GeometryDescriptor small_nai() {
     return gd;
 }
 
+// A small HPGe behind a 1.6 mm Al endcap and a 0.61 mm front dead layer (as on
+// a GENIE .par detector): ~1e-10 transmission at 10 keV and ~1e-13 just above
+// the 11.1 keV Ge K-edge, so the MC scores no FEP at all there.
+GeometryDescriptor thick_window_hpge() {
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{2.0, 3.0});
+    gd.materials = {MaterialSpec::from(make_HPGe()),
+                    MaterialSpec::from(make_Aluminum())};
+    gd.crystal_material_index = 0;
+    gd.dead_layer = DeadLayerConfig{0.061, 0.061, 0.05};
+    LayerSpec can;
+    can.material_index = 1;
+    can.front_thickness_cm = 0.16;
+    can.side_thickness_cm = 0.1;
+    can.z_end_cm = 3.0;
+    gd.layers.push_back(can);
+    return gd;
+}
+
 GenerationOptions coarse_options() {
     GenerationOptions o;
     o.node_fep_precision = 0.03;
@@ -202,6 +221,115 @@ BOOST_AUTO_TEST_CASE(scans_stop_on_total_keeps_the_total) {
     bad.transfer_mode = false;
     bad.closed_loop = true;
     BOOST_CHECK_THROW(ResponseGenerator::generate(gd, bad), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(zero_fep_low_energy_backbone) {
+    // Scanning from 10 keV (an imported .par grid's first node) behind a thick
+    // window: the lowest backbone energies score no FEP. Generation must carry on,
+    // holding the nearest measured eta there (eps = eta * K ~ 0), with no zero
+    // leaking into a log table, and the result must still ground.
+    const GeometryDescriptor gd = thick_window_hpge();
+    GenerationOptions opts = coarse_options();
+    opts.e_min_keV = 10.0;
+    opts.e_max_keV = 1500.0;
+    opts.scans_stop_on_total = true;       // as InterSpec attaches a total to a grid
+    opts.max_events_per_node = 2000000;    // zero-count nodes run to this cap
+    opts.detector_name = "thick-window HPGe";
+
+    std::shared_ptr<DetectorResponse> resp;
+    BOOST_REQUIRE_NO_THROW(resp = ResponseGenerator::generate(gd, opts));
+    BOOST_REQUIRE(resp);
+
+    // The unmeasured low end is one held row at e_min, ahead of the first
+    // measured node well above the K-edge.
+    const EtaTable& t = resp->eta_fep;
+    BOOST_REQUIRE_GT(t.energies_keV.size(), 2u);
+    BOOST_CHECK_EQUAL(t.energies_keV.front(), 10.0);
+    BOOST_CHECK_GT(t.energies_keV[1], 15.0);
+    for (size_t c = 0; c < t.cos_thetas.size(); ++c)
+        BOOST_CHECK_EQUAL(t.frac_sigma[t.index(0, c, 0)], 0.75);
+
+    // The held row is flat out to e_min, across the 11.1 keV K-edge too, in both
+    // tables: eta below the first measured node fabricates no structure.
+    for (const EtaTable* table : std::vector<const EtaTable*>{&t, &resp->tot_eff.eta_tot}) {
+        if (table->empty()) continue;
+        bool clamped = false;
+        const double ln_first = table->eval_ln(table->energies_keV[1], 1.0, 0.0, clamped);
+        for (const double E : {10.0, 11.0, 11.2, 15.0})
+            BOOST_CHECK_SMALL(table->eval_ln(E, 1.0, 0.0, clamped) - ln_first, 1e-12);
+        BOOST_CHECK(!clamped);
+    }
+
+    // A zero would show as ln(1e-300) ~ -690.
+    auto n_bad = [](const std::vector<double>& v) {
+        size_t n = 0;
+        for (const double x : v)
+            if (!std::isfinite(x) || std::fabs(x) > 50.0) ++n;
+        return n;
+    };
+    BOOST_CHECK_EQUAL(n_bad(t.ln_eta), 0u);
+    BOOST_CHECK_EQUAL(n_bad(t.frac_sigma), 0u);
+    BOOST_CHECK_EQUAL(n_bad(resp->near_field.ln_n), 0u);
+    BOOST_CHECK_EQUAL(n_bad(resp->tot_eff.eta_tot.ln_eta), 0u);
+    BOOST_CHECK_EQUAL(n_bad(resp->tot_eff.near_field.ln_n), 0u);
+
+    // Effectively zero, but positive and in range: grounding, and InterSpec's
+    // total attach, need a usable value at every grid energy.
+    const EffResult fep_lo = resp->eps_fep(10.0, 0.0, 0.0, 50.0);
+    BOOST_CHECK(fep_lo.flag == ResponseFlag::Ok);
+    BOOST_CHECK_GT(fep_lo.value, 0.0);
+    BOOST_CHECK_LT(fep_lo.value, 1e-6 * resp->eps_fep(100.0, 0.0, 0.0, 50.0).value);
+    const EffResult tot_lo = resp->eps_total(10.0, 0.0, 0.0, 50.0);
+    BOOST_CHECK(tot_lo.flag == ResponseFlag::Ok);
+    BOOST_CHECK_GT(tot_lo.value, 0.0);
+    BOOST_CHECK_LT(tot_lo.value, 1e-6 * resp->eps_total(100.0, 0.0, 0.0, 50.0).value);
+
+    // The first measured energy (~22 keV, a handful of counts) carries no angular
+    // or near-field scans: its noisy shape, interpolated up to the next shape
+    // energy, put the off-axis FEP at 40 keV out by ~6x.
+    BOOST_CHECK_GT(resp->near_field.energies_keV.front(), t.energies_keV[1]);
+    {
+        const Eigen::Vector3d src = source_position(50.0, 0.1);
+        std::vector<std::unique_ptr<Material>> owned;
+        EfficiencyCalculator calc;
+        ResponseGenerator::configure_calculator(calc, gd, owned);
+        calc.set_point_source(src);
+        SimulationConfig cfg;
+        cfg.energy_keV = 40.0;
+        cfg.termination.target_fep_rel_precision = 0.02;
+        cfg.termination.max_events = 20000000;
+        cfg.seed = 4242;
+        const EfficiencyResult mc = calc.compute(cfg);
+        BOOST_REQUIRE_GT(mc.full_energy_peak_efficiency, 0.0);
+        const double rel = resp->eps_fep_at(40.0, src).value / mc.full_energy_peak_efficiency - 1.0;
+        BOOST_CHECK_MESSAGE(std::fabs(rel) < 0.15, "40 keV, cos 0.1, 50 cm: rel=" << rel);
+    }
+
+    // The measured range is unaffected.
+    const EffResult fep_662 = resp->eps_fep(662.0, 0.0, 0.0, 50.0);
+    BOOST_CHECK(fep_662.flag == ResponseFlag::Ok);
+    BOOST_CHECK_GT(fep_662.value, 1e-6);
+    BOOST_CHECK_GT(resp->eps_total(662.0, 0.0, 0.0, 50.0).value, fep_662.value);
+
+    const std::string xml = resp->to_xml_string();
+    BOOST_CHECK_EQUAL(DetectorResponse::from_xml_string(xml)->to_xml_string(), xml);
+
+    // Grounds to curve-derived points over the full range, as InterSpec does
+    // against an imported grid (ground_to_points refuses a non-positive model).
+    std::vector<GroundingPoint> pts;
+    for (const double E : {10.0, 15.0, 30.0, 100.0, 400.0, 1500.0}) {
+        GroundingPoint p;
+        p.energy_keV = E;
+        p.model_eff = resp->eps_fep(E, 0.0, 0.0, 50.0).value;
+        p.measured_eff = 1.03 * p.model_eff;
+        p.frac_stat_sigma = 0.01;
+        p.distance_cm = 50.0;
+        p.cos_theta = 1.0;
+        pts.push_back(p);
+    }
+    BOOST_CHECK_NO_THROW(
+        ResponseGenerator::ground_to_points(*resp, pts, /*curve_derived=*/true));
+    BOOST_CHECK(!resp->grounding.empty());
 }
 
 BOOST_AUTO_TEST_CASE(grounding_recovers_injected_bias) {

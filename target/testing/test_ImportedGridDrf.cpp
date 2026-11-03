@@ -60,6 +60,7 @@
 #include <Eigen/Core>
 
 #include "io/ResponseKernel.h"
+#include "materials/Material.h"
 #include "io/DetectorResponse.h"
 
 #include "SpecUtils/StringAlgo.h"
@@ -301,6 +302,67 @@ BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
   BOOST_CHECK( drf->hasAnyTotalEfficiencyInfo() );
   BOOST_CHECK_THROW( DetEffG2kPar::attachTotalEfficiency( *grid, grid.get() ), std::exception );
 }//BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
+
+
+/** Where nothing reaches the donor's crystal - 8 cm of lead around it underflows its kernel to 0 at
+ the grid's lowest energy, at every angle - the graft carries the donor's total/FEP ratio onto the
+ grid's FEP rather than refusing the energy; where the lead passes something, the donor's total is
+ carried as before. */
+BOOST_AUTO_TEST_CASE( TotalWhereKernelUnderflows )
+{
+  const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
+
+  ceelo::GeometryDescriptor shielded = grid->descriptor;
+  BOOST_REQUIRE( !shielded.layers.empty() );
+  shielded.materials.push_back( ceelo::MaterialSpec::from( ceelo::make_Lead() ) );
+  ceelo::LayerSpec lead = shielded.layers.back();
+  lead.material_index = static_cast<int>( shielded.materials.size() ) - 1;
+  lead.front_thickness_cm = lead.side_thickness_cm = 8.0;
+  shielded.layers.push_back( lead );
+  const shared_ptr<ceelo::DetectorResponse> donor = total_donor( *grid, shielded );
+
+  // The same physical point for each response, as attachTotalEfficiency maps them.
+  const double shift = shielded.endcap_front_offset_cm() - grid->descriptor.endcap_front_offset_cm();
+  const auto donor_pos = [shift]( Eigen::Vector3d pos ) -> Eigen::Vector3d { pos.z() -= shift; return pos; };
+  const double d_pin = (std::max)( 1000.0 * grid->descriptor.transverse_half_extent(), 100.0 );
+
+  // The premise: at the lowest grid energy the donor has no total at any of the grid's angles.
+  const ceelo::EtaTable &nodes = grid->eta_fep;
+  const double e_lo = nodes.energies_keV.front();
+  for( const double cos_theta : nodes.cos_thetas )
+    BOOST_REQUIRE_EQUAL( donor->eps_total_at( e_lo, donor_pos( ceelo::source_position( d_pin, cos_theta ) ) ).value, 0.0 );
+
+  shared_ptr<ceelo::DetectorResponse> with_total;
+  BOOST_REQUIRE_NO_THROW( with_total = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() ) );
+
+  // There, at the pin: the grid's FEP times the donor's own (kernel-free) total/FEP.
+  for( const double cos_theta : { 1.0, 0.5 } )
+  {
+    const Eigen::Vector3d pos = ceelo::source_position( d_pin, cos_theta );
+    const Eigen::Vector3d dpos = donor_pos( pos );
+    const ceelo::ApertureQuadrature q_donor = donor->make_quadrature( dpos );
+    const double ratio = donor->total_prefactor( e_lo, dpos, q_donor ).value
+                         / donor->fep_prefactor( e_lo, dpos, q_donor ).value;
+    const double fep = grid->eps_fep_at( e_lo, pos ).value;
+    BOOST_REQUIRE_GT( fep, 0.0 );
+    BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( e_lo, pos ).value / fep, ratio ), 1.0e-9 );
+  }
+
+  // Close in, too, a finite positive total (the distance table holds where the donor has none).
+  const double tot_close = with_total->eps_total_at( e_lo, CeeLoUtils::sourcePositionFromFace( grid->descriptor, 0.0, 0.0, 5.0 ) ).value;
+  BOOST_CHECK( std::isfinite( tot_close ) && (tot_close > 0.0) );
+
+  // Where the lead passes photons, the donor's total exactly, at the nodes; the FEP is the grid's.
+  for( const size_t e : { nodes.energies_keV.size() / 2, nodes.energies_keV.size() - 1 } )
+  {
+    const double energy = nodes.energies_keV[e];
+    const Eigen::Vector3d pos = ceelo::source_position( d_pin, 1.0 );
+    const double theirs = donor->eps_total_at( energy, donor_pos( pos ) ).value;
+    BOOST_REQUIRE_GT( theirs, 0.0 );
+    BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( energy, pos ).value, theirs ), 1.0e-6 );
+    BOOST_CHECK_EQUAL( with_total->eps_fep_at( energy, pos ).value, grid->eps_fep_at( energy, pos ).value );
+  }
+}//BOOST_AUTO_TEST_CASE( TotalWhereKernelUnderflows )
 
 
 /** A donor on an EDITED geometry - the corrected core and bulletizing - with its own near-field

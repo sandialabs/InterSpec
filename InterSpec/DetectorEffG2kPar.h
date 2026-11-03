@@ -810,6 +810,9 @@ namespace DetEffG2kPar
    error (the mock's rounded values: +0.5% at 344 keV) and the backbone's MC noise to the total.
    The graft's own interpolation error is in test_ImportedGridDrf's `TotalOnEditedGeometry`.
 
+   Where nothing reaches a crystal - a kernel underflowing to 0 in either geometry - the donor's
+   total/FEP ratio (from its kernel-free prefactors) is carried onto the grid's FEP instead.
+
    Throws std::runtime_error if `donor` has no total efficiency, or `grid` carries a grounding
    (which would scale its FEP too).
    */

@@ -1922,16 +1922,29 @@ bool MakeMcResponseForDrf::startGeneration()
       {
         // Model efficiencies at each point's own geometry, with the point distances in InterSpec's
         //  face-referenced convention (rather than leaving ground_to_points to interpret them).
-        vector<ceelo::GroundingPoint> pts = ground_pts;
-        for( ceelo::GroundingPoint &p : pts )
+        // A point where nothing reaches this geometry's crystal - its kernel underflows to 0 (e.g.
+        //  ~1 cm of lead at 15 keV) - has a zero model, so says nothing about k = measured / model;
+        //  k there comes from its neighbours.  (attachTotalEfficiency carries the total there by the
+        //  total/FEP ratio, in which k cancels.)
+        vector<ceelo::GroundingPoint> pts;
+        for( ceelo::GroundingPoint p : ground_pts )
         {
-          if( p.model_eff > 0.0 )
-            continue;
-          const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
-          const double phi = p.phi_deg * 3.14159265358979323846 / 180.0;
-          const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, phi, p.distance_cm );
-          p.model_eff = response->eps_fep_at( p.energy_keV, pos ).value;
-        }
+          if( !(p.model_eff > 0.0) )
+          {
+            const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
+            const double phi = p.phi_deg * 3.14159265358979323846 / 180.0;
+            const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, phi, p.distance_cm );
+            p.model_eff = response->eps_fep_at( p.energy_keV, pos ).value;
+          }
+
+          if( (p.model_eff > 0.0) && std::isfinite( p.model_eff ) )
+            pts.push_back( p );
+        }//for( each grounding point )
+
+        if( pts.empty() )
+          throw std::runtime_error( "the Monte-Carlo geometry passes no photons to its crystal at any"
+                                    " energy it would be grounded at." );
+
         ceelo::ResponseGenerator::ground_to_points( *response, pts, curve_derived );
       }
 
