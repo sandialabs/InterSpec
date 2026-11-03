@@ -1861,7 +1861,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     throw std::runtime_error( "attachTotalEfficiency: the donor response has no total efficiency." );
 
   // The grounding k(E) multiplies the FEP as well, so a grid - whose FEP must stay the file's -
-  //  never carries one; the donor's own k(E) reaches the total through its eps_total_at below.
+  //  never carries one.
   if( !grid.grounding.empty() )
     throw std::runtime_error( "attachTotalEfficiency: the grid response carries a grounding." );
 
@@ -1876,10 +1876,65 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     return resp;
   }
 
+  // The total is the grid's FEP times the donor's own total/FEP at the same physical point: the
+  //  donor - a Monte Carlo of the user's, possibly edited, geometry - supplies only its total-to-peak
+  //  ratio, in which whatever its geometry gets wrong largely cancels, and the grid stays the
+  //  authority for the FEP.  (Carrying the donor's total itself, rescaled by an on-axis
+  //  k(E) = grid / MC from grounding, failed wherever the two geometries differ by more than k's
+  //  interpolation between energies can follow: a lead layer put totals above 1 between them.)  Any
+  //  grounding the donor carries is dropped: k cancels in an EtaTotTable ratio, but scales only the
+  //  FEP of the compact tiers.
+  const std::shared_ptr<DetectorResponse> mc = DetectorResponse::from_xml_string( donor->to_xml_string() );
+  mc->grounding = GroundingBlock{};
+
+  // The data-derived part of a fractional sigma; the model floors are re-applied at eval time from
+  //  `floors`, copied below.
+  const auto data_frac = []( const EffResult &r ) -> double {
+    return std::sqrt( std::max( 0.0, r.sigma*r.sigma - r.sigma_model*r.sigma_model ) ) / r.value;
+  };
+
+  // ln( total / FEP ) of the donor at `pos`, and its fractional sigma; false where it refuses the
+  //  point (behind its face plane).  From its efficiencies where they are nonzero - exact for every
+  //  total tier, each with its own kernel.  Else, where nothing reaches its crystal (a kernel
+  //  underflowing to 0, e.g. ~1 cm of lead at 15 keV), from its kernel-free prefactors: exact for an
+  //  EtaTotTable, coarser for the compact tiers, whose total prefactor (1, or b(E)) leaves out how
+  //  their No-Rayleigh kernel differs from the FEP's.
+  const auto donor_ln_ratio = [&mc,&data_frac]( const double energy, const Eigen::Vector3d &pos,
+                                                const ApertureQuadrature &q, double &ln_r, double &frac ) -> bool {
+    EffResult tot = mc->eps_total_at( energy, pos, q );
+    EffResult fep = mc->eps_fep_at( energy, pos, q );
+    if( (tot.flag == ResponseFlag::NeedsMc) || (fep.flag == ResponseFlag::NeedsMc) )
+      return false;
+
+    if( !(tot.value > 0.0) || !(fep.value > 0.0) )
+    {
+      tot = mc->total_prefactor( energy, pos, q );
+      fep = mc->fep_prefactor( energy, pos, q );
+      if( !(tot.value > 0.0) || !(fep.value > 0.0) )
+        return false;
+    }
+
+    ln_r = std::log( tot.value ) - std::log( fep.value );
+    frac = std::max( data_frac( tot ), data_frac( fep ) );  //one Monte Carlo: correlated, not added
+    return std::isfinite( ln_r ) && std::isfinite( frac );
+  };//donor_ln_ratio
+
+  // ln of the grid's FEP at `pos` without its kernel - so defined even where that underflows - and
+  //  its fractional sigma.
+  const auto grid_ln_fep = [&resp,&data_frac]( const double energy, const Eigen::Vector3d &pos,
+                                               const ApertureQuadrature &q, double &ln_f, double &frac ) -> bool {
+    const EffResult f = resp->fep_prefactor( energy, pos, q );
+    if( (f.flag == ResponseFlag::NeedsMc) || !(f.value > 0.0) )
+      return false;
+    ln_f = std::log( f.value );
+    frac = data_frac( f );
+    return std::isfinite( ln_f ) && std::isfinite( frac );
+  };//grid_ln_fep
+
   // eps_tot = exp(eta_tot) * K_grid (the EtaTotTable form, with no grounding), on the grid's own
-  //  eta_fep nodes - known-valid for this crystal, K-edge flanks included.  Pinned to the donor in
-  //  the true far field, where any two geometries' kernels agree in shape; everywhere closer, the
-  //  distance table below reproduces the donor.
+  //  eta_fep nodes - known-valid for this crystal, K-edge flanks included - at the far-field pin;
+  //  everywhere closer, the distance table below.  The grid's FEP there is its prefactor * K_grid,
+  //  so eta_tot is the log of prefactor * ratio.
   const EtaTable &fep = resp->eta_fep;
   EtaTable &eta = resp->tot_eff.eta_tot;
   resp->tot_eff.tier = TotEffTier::EtaTotTable;
@@ -1891,14 +1946,13 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   const size_t ne = eta.energies_keV.size(), nc = eta.cos_thetas.size();
   eta.ln_eta.assign( ne * nc, 0.0 );
   eta.frac_sigma.assign( ne * nc, 0.0 );
-  std::vector<bool> valid( ne * nc, false );    //taken from the donor's total
-  std::vector<bool> filled( ne * nc, false );   //valid, or from the donor's total/FEP ratio
+  std::vector<bool> valid( ne * nc, false );
 
   // Nodes are keyed in the grid's crystal frame (what a query is reduced to), on a sphere about the
   //  crystal-face origin; the donor is asked about the same physical point - the same place relative
   //  to the endcap face, whatever its own crystal offset.
   const double off_grid = resp->descriptor.endcap_front_offset_cm();
-  const double off_donor = donor->descriptor.endcap_front_offset_cm();
+  const double off_donor = mc->descriptor.endcap_front_offset_cm();
   const double a_cm = resp->descriptor.transverse_half_extent();
   const double d_ref_cm = std::max( 1000.0 * a_cm, 100.0 );
 
@@ -1918,45 +1972,20 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     Eigen::Vector3d grid_pos, donor_pos;
     node_positions( c, grid_pos, donor_pos );
     const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
-    const ApertureQuadrature q_donor = donor->make_quadrature( donor_pos );
+    const ApertureQuadrature q_donor = mc->make_quadrature( donor_pos );
 
     for( size_t e = 0; e < ne; ++e )
     {
       const double energy = eta.energies_keV[e];
-      const double K = resp->kernel_K( energy, q_grid, MuChoice::Total );
-      const EffResult tot = donor->eps_total_at( energy, donor_pos, q_donor );
-      if( tot.flag == ResponseFlag::NeedsMc )
+      double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
+      if( !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )
+          || !donor_ln_ratio( energy, donor_pos, q_donor, ln_r, r_frac ) )
         continue;
 
       const size_t idx = eta.index( e, c, 0 );
-      if( (tot.value > 0.0) && std::isfinite( tot.value ) && (K > 0.0) && std::isfinite( K ) )
-      {
-        eta.ln_eta[idx] = std::log( tot.value / K );
-        // Only the data-derived part (MC node statistics, grounding covariance): the model floors are
-        //  re-applied at eval time from `floors`, copied below.
-        const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
-        eta.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
-        valid[idx] = filled[idx] = true;
-        continue;
-      }
-
-      // Nothing reaches a crystal: a kernel underflowing to 0 (e.g. ~1 cm of lead at 15 keV, in
-      //  either geometry) leaves no total to take the log of.  Carry the donor's total/FEP ratio onto
-      //  the grid's FEP instead, from the kernel-free prefactors - what grounding to the grid gives
-      //  wherever they are nonzero - so the total is still 0 wherever the grid's FEP is.
-      const double tot_pre = donor->total_prefactor( energy, donor_pos, q_donor ).value;
-      const double fep_pre = donor->fep_prefactor( energy, donor_pos, q_donor ).value;
-      const double grid_pre = resp->fep_prefactor( energy, grid_pos, q_grid ).value;
-      if( (tot_pre > 0.0) && (fep_pre > 0.0) && (grid_pre > 0.0) )
-      {
-        const double ln_eta = std::log( grid_pre ) + std::log( tot_pre ) - std::log( fep_pre );
-        if( std::isfinite( ln_eta ) )
-        {
-          eta.ln_eta[idx] = ln_eta;
-          eta.frac_sigma[idx] = 1.0;   //not characterized by the donor
-          filled[idx] = true;
-        }
-      }
+      eta.ln_eta[idx] = ln_f + ln_r;
+      eta.frac_sigma[idx] = std::sqrt( f_frac*f_frac + r_frac*r_frac );
+      valid[idx] = true;
     }//for( size_t e = 0; e < ne; ++e )
   }//for( size_t c = 0; c < nc; ++c )
 
@@ -1966,15 +1995,15 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   {
     for( size_t c = 0; c < nc; ++c )
     {
-      if( filled[eta.index( e, c, 0 )] )
+      if( valid[eta.index( e, c, 0 )] )
         continue;
 
       size_t src = nc;
       for( size_t dc = 1; (dc < nc) && (src == nc); ++dc )
       {
-        if( ((c + dc) < nc) && filled[eta.index( e, c + dc, 0 )] )
+        if( ((c + dc) < nc) && valid[eta.index( e, c + dc, 0 )] )
           src = c + dc;
-        else if( (c >= dc) && filled[eta.index( e, c - dc, 0 )] )
+        else if( (c >= dc) && valid[eta.index( e, c - dc, 0 )] )
           src = c - dc;
       }
 
@@ -1987,15 +2016,14 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     }//for( size_t c = 0; c < nc; ++c )
   }//for( size_t e = 0; e < ne; ++e )
 
-  resp->floors.tot_far = donor->floors.tot_far;
-  resp->floors.tot_near = donor->floors.tot_near;
+  resp->floors.tot_far = mc->floors.tot_far;
+  resp->floors.tot_near = mc->floors.tot_near;
   resp->tot_eff.finalize();
 
-  // Inside the pin, CeeLo's near-field total table (ceelo::TotEffPayload::near_field) holds the
-  //  donor's total at the same physical points, ln N = ln(donor / the pinned far-field total above).
-  //  Without it the GRID's kernel - the imported geometry's - would carry the total inward, which
-  //  after a geometry edit is wrong by up to ~10% a few cm out at grazing angles (and still ~1.5% at
-  //  1-3 m when pinned at 30 cm), and a donor's own measured near-field total would be lost.  The
+  // Inside the pin, CeeLo's near-field total table (ceelo::TotEffPayload::near_field) carries the
+  //  same product close in, ln N = ln(grid FEP * donor total/FEP / the pinned far-field total above),
+  //  all kernel-free.  So the grid's own close-in FEP - the file's - and the donor's measured
+  //  close-in total/FEP both carry over, and neither geometry's kernel decides the total.  The
   //  close-in lattice is like CeeLo's own, but measured from the endcap face, so all but the grazing
   //  nodes are places a source can be; it continues geometrically out to the pin.  The far-field
   //  values are taken before the table is installed - an unfinalized table would otherwise apply.
@@ -2041,15 +2069,17 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[d], tn.cos_thetas[c], 0.0 );
         const Eigen::Vector3d donor_pos = donor_position( grid_pos );
         const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
-        const ApertureQuadrature q_donor = donor->make_quadrature( donor_pos );
+        const ApertureQuadrature q_donor = mc->make_quadrature( donor_pos );
 
         for( size_t e = 0; e < tne; ++e )
         {
           const size_t idx = tn.index( e, c, d );
-          const double far = resp->eps_total_at( tn.energies_keV[e], grid_pos, q_grid ).value;
-          const EffResult tot = donor->eps_total_at( tn.energies_keV[e], donor_pos, q_donor );
-          if( (tot.flag == ResponseFlag::NeedsMc) || !(tot.value > 0.0) || !std::isfinite( tot.value )
-              || !(far > 0.0) || !std::isfinite( far ) )
+          const double energy = tn.energies_keV[e];
+          const double far = resp->total_prefactor( energy, grid_pos, q_grid ).value;
+          double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
+          if( !(far > 0.0) || !std::isfinite( far )
+              || !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )
+              || !donor_ln_ratio( energy, donor_pos, q_donor, ln_r, r_frac ) )
           {
             // As CeeLo's own tables do: hold the closer node rather than kink the interpolation.
             tn.ln_n[idx] = (d > 0) ? tn.ln_n[tn.index( e, c, d - 1 )] : 0.0;
@@ -2057,9 +2087,8 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
             continue;
           }
 
-          tn.ln_n[idx] = std::log( tot.value / far );
-          const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
-          tn.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
+          tn.ln_n[idx] = ln_f + ln_r - std::log( far );
+          tn.frac_sigma[idx] = std::sqrt( f_frac*f_frac + r_frac*r_frac );
         }//for( each energy )
       }//for( each distance, but the anchor )
     }//for( each cos-theta )
@@ -2069,8 +2098,24 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   }
 
 #if( PERFORM_DEVELOPER_CHECKS )
-  // At the lattice nodes the copy must answer exactly the donor's total, and the FEP must be the
-  //  grid's to the bit.
+  // At the lattice nodes the copy must answer exactly the grid's FEP times the donor's total/FEP,
+  //  and the FEP must be the grid's to the bit.
+  const auto check_node = [&]( const double energy, const Eigen::Vector3d &grid_pos, const char *where ){
+    const Eigen::Vector3d donor_pos = donor_position( grid_pos );
+    double ln_r = 0.0, r_frac = 0.0;
+    if( !donor_ln_ratio( energy, donor_pos, mc->make_quadrature( donor_pos ), ln_r, r_frac ) )
+      return;
+    const double ours = resp->eps_total_at( energy, grid_pos ).value;
+    const double theirs = grid.eps_fep_at( energy, grid_pos ).value * std::exp( ln_r );
+    if( !(std::fabs( ours - theirs ) <= 1.0e-6 * theirs) )
+    {
+      log_developer_error( __func__, ("attachTotalEfficiency: " + std::string(where) + " total at "
+                           + std::to_string(energy) + " keV is " + std::to_string(ours)
+                           + " vs grid FEP x donor total/FEP " + std::to_string(theirs)).c_str() );
+      assert( 0 );
+    }
+  };//check_node
+
   for( const size_t c : { size_t(0), nc / 2, nc - 1 } )
   {
     Eigen::Vector3d grid_pos, donor_pos;
@@ -2081,15 +2126,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         continue;
 
       const double energy = eta.energies_keV[e];
-      const double ours = resp->eps_total_at( energy, grid_pos ).value;
-      const double theirs = donor->eps_total_at( energy, donor_pos ).value;
-      if( std::fabs( ours - theirs ) > 1.0e-6 * theirs )
-      {
-        log_developer_error( __func__, ("attachTotalEfficiency: total at " + std::to_string(energy)
-                             + " keV, cos " + std::to_string(eta.cos_thetas[c]) + " is "
-                             + std::to_string(ours) + " vs the donor's " + std::to_string(theirs)).c_str() );
-        assert( 0 );
-      }
+      check_node( energy, grid_pos, "far-field" );
 
       if( resp->eps_fep_at( energy, grid_pos ).value != grid.eps_fep_at( energy, grid_pos ).value )
       {
@@ -2099,25 +2136,16 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     }//for( three energies )
   }//for( three angles )
 
-  // And at near-field nodes, where the table must reproduce the donor too.
+  // And at near-field nodes, where the table must reproduce it too.
   {
     const NearFieldModel &tn = resp->tot_eff.near_field;
+    const size_t e = tn.energies_keV.size() / 2;
     for( const size_t c : { size_t(1), tn.cos_thetas.size() - 1 } )
     {
-      const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[2], tn.cos_thetas[c], 0.0 );
-      const double energy = tn.energies_keV[tn.energies_keV.size() / 2];
-      if( tn.frac_sigma[tn.index( tn.energies_keV.size() / 2, c, 2 )] >= 1.0 )
-        continue;   //a held node: the donor had nothing there
-      const double ours = resp->eps_total_at( energy, grid_pos ).value;
-      const double theirs = donor->eps_total_at( energy, donor_position( grid_pos ) ).value;
-      if( std::fabs( ours - theirs ) > 1.0e-6 * theirs )
-      {
-        log_developer_error( __func__, ("attachTotalEfficiency: near-field total at " + std::to_string(energy)
-                             + " keV, cos " + std::to_string(tn.cos_thetas[c]) + " is " + std::to_string(ours)
-                             + " vs the donor's " + std::to_string(theirs)).c_str() );
-        assert( 0 );
-      }
-    }//for( two angles )
+      if( tn.frac_sigma[tn.index( e, c, 2 )] >= 1.0 )
+        continue;   //a held node: nothing to compare with
+      check_node( tn.energies_keV[e], source_position( tn.dists_cm[2], tn.cos_thetas[c], 0.0 ), "near-field" );
+    }
   }
 #endif
 

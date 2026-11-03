@@ -1924,8 +1924,9 @@ bool MakeMcResponseForDrf::startGeneration()
         //  face-referenced convention (rather than leaving ground_to_points to interpret them).
         // A point where nothing reaches this geometry's crystal - its kernel underflows to 0 (e.g.
         //  ~1 cm of lead at 15 keV) - has a zero model, so says nothing about k = measured / model;
-        //  k there comes from its neighbours.  (attachTotalEfficiency carries the total there by the
-        //  total/FEP ratio, in which k cancels.)
+        //  k there comes from its neighbours.  (For an imported grid, k only feeds the consistency
+        //  figure logged below: attachTotalEfficiency takes the Monte Carlo's total/FEP ratio,
+        //  ignoring any grounding.)
         vector<ceelo::GroundingPoint> pts;
         for( ceelo::GroundingPoint p : ground_pts )
         {

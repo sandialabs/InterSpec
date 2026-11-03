@@ -789,29 +789,36 @@ namespace DetEffG2kPar
   std::vector<ceelo::GroundingPoint> groundingPoints( const ceelo::DetectorResponse &grid,
                                                       double dist_from_face_cm = -1.0 );
 
-  /** A copy of grid response `grid` carrying `donor`'s total efficiency - or none, for a null
+  /** A copy of grid response `grid` carrying a total efficiency from `donor` - or none, for a null
    `donor`.  The full-energy-peak efficiency is untouched (bit-identical).
 
-   The donor is typically a Monte Carlo of the user's (possibly edited) geometry, grounded to the
-   grid with #groundingPoints, so its total is scaled by the same k(E) = grid / MC its FEP needed.
-   It is re-expressed on the GRID's response, whose kernel is the imported geometry's:
-     - an `EtaTotTable` on the grid's own energy x angle nodes, pinned to the donor in the true far
-       field (max(1000 a, 100 cm) from the crystal face); and
-     - everywhere closer, a distance table (`ceelo::TotEffPayload::near_field`) holding the
-       donor's total at the same physical points - so the imported geometry's kernel never decides
-       the total, and a donor's own measured near-field total carries over.
-   End to end on the mock pair - the imported grid, with the total of a General-profile Monte Carlo
-   of the corrected geometry attached, against direct point-source Monte Carlo (1-27 cm, 0-75 deg,
-   60-2614 keV, 0.2% MC): worst 0.93%, RMS <=0.37% at every distance.  (Before the distance table,
-   up to 9.5% at 2 cm, 75 deg; and before CeeLo kept its near-field totals, its own close-in total
-   was 1.5-4.4% off.)  The app's own run - scans stopped on total precision
-   (ceelo::GenerationOptions::scans_stop_on_total), then grounded to the grid - gave worst 1.4-1.6%,
-   RMS <=0.82%; ungrounded, worst 1.07%, RMS <=0.57%.  Grounding passes the grid's representation
-   error (the mock's rounded values: +0.5% at 344 keV) and the backbone's MC noise to the total.
-   The graft's own interpolation error is in test_ImportedGridDrf's `TotalOnEditedGeometry`.
+   The total is the grid's FEP times the donor's own total/FEP at the same physical point.  The
+   donor - typically a Monte Carlo of the user's (possibly edited) geometry - supplies only that
+   total-to-peak ratio, in which whatever its geometry gets wrong largely cancels; the grid stays the
+   authority for the FEP, and any grounding the donor carries is ignored.  It is stored on the
+   GRID's response:
+     - an `EtaTotTable` on the grid's own energy x angle nodes, at the far-field pin
+       (max(1000 a, 100 cm) from the crystal face); and
+     - everywhere closer, a distance table (`ceelo::TotEffPayload::near_field`) holding the same
+       product at a lattice of physical points - so neither geometry's kernel decides the total, and
+       the grid's close-in FEP and the donor's close-in total/FEP both carry over.
+   Exact at the lattice nodes; between them, to the tables' interpolation of the grid's own close-in
+   FEP (0.1-1.1% on the mock pair: test_ImportedGridDrf's `TotalOnImportedGeometry` and
+   `TotalOnEditedGeometry`).  Where nothing reaches a crystal - a kernel underflowing to 0, in either
+   geometry - the ratio comes from the donor's kernel-free prefactors, so the total is 0 wherever
+   the grid's FEP is.
 
-   Where nothing reaches a crystal - a kernel underflowing to 0 in either geometry - the donor's
-   total/FEP ratio (from its kernel-free prefactors) is carried onto the grid's FEP instead.
+   End to end on the mock pair, the app's own run (General profile, scans stopped on total
+   precision - ceelo::GenerationOptions::scans_stop_on_total - at 0.3%) against direct point-source
+   Monte Carlo of the geometry the grid was made from (1-27 cm, 0-75 deg, 60-2614 keV, 0.2% MC):
+     - that geometry: worst 1.65%, RMS 0.65% (carrying the grounded donor's total instead, as this
+       did until 2026-11: worst 1.58%, RMS 0.55% - the total/FEP takes on the off-axis and close-in
+       FEP's MC noise, 0.3-1.2% at those scans);
+     - the importer's guessed core: worst 2.43%, RMS 0.93% (the grounded donor's total: worst 7.6%,
+       RMS 2.7%).
+   And the grounded total failed outright for a geometry far from the grid's - 1 cm of lead in front
+   put totals above 1 between grounding energies - where total/FEP stays 1.05-1.26 from 20 to
+   120 keV (2-25 cm, on axis and at 75 deg).
 
    Throws std::runtime_error if `donor` has no total efficiency, or `grid` carries a grounding
    (which would scale its FEP too).
