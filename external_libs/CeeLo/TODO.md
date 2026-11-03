@@ -1,761 +1,585 @@
 # CeeLo — Open Items / TODO
 
-Tracker for known shortcomings, deferred features, and fidelity/speed improvements.
+The single register of known shortcomings, deferred features and fidelity/speed work.
+**When an item is resolved, delete it in the same commit that fixes it** (and update
+DESIGN.md if it described the gap).
 
-**Process:** when an item is resolved, **delete it from this file in the same commit that fixes it**
+Each item gives its **Effect** (what is wrong or what it buys), **Implementation** (what it
+would take) and **Shows up** (the regime where it matters), plus a severity tag relative to
+the ~1%-vs-GEANT4 goal. Areas are listed in priority order and items within an area are
+sorted the same way; "Next up" is the short cross-area ranking. Items measured to be
+sub-statistical in the gated configs are kept for awareness.
 
-Each item lists **Effect** (what's wrong / what it buys), **Implementation** (what it would take), and
-**Shows up when** (the regime where it matters). `[severity]` is relative to the ~1%-vs-GEANT4 goal.
-Items measured to be sub-statistical in the gated configs are kept for awareness, not because they
-currently fail validation.
+## Next up
 
----
-
-## Cascade / true-coincidence summing
-
-### Rejected-branch pair links cannot all be honored `[high — decay data]`
-
-**Effect.** Rejected level schemes fall back to flat member marginals plus directional pairwise
-coincidence links. Those inputs are not jointly consistent: a whole-database census found 10,355
-linked pairs whose implied joint exceeds `min(P(a),P(b))`, and 3,172 of 131,851 material pairs whose
-two directional reconstructions disagree by more than 1%. FullRealization now projects those inputs
-onto a deterministic one-parent Bayesian forest: every selected pair joint is Fréchet-bounded and
-every member marginal is preserved, but incompatible links necessarily go unused. Conditional and
-analytic estimators deliberately do not invent gamma-gamma sum-fed joints for rejected branches.
-All three set per-peak `summing_model_complete=false` when an invalid primary or a materially possible
-invalid-branch photon pair can affect that requested peak.
-
-**Implementation.** Recover authoritative level topology or a consistent multivariate decay law for
-the rejected records. The bounded forest is a safe realization, not a claim that discarded links are
-false. Merely averaging directional conditionals or clamping every pair independently cannot close
-this item because neither defines a coherent 3+-member realization. Analytic and Conditional should
-enumerate the selected forest's pair joints only if the projected policy becomes part of their public
-physics contract; until then the incomplete flag prevents silent use as an exact correction.
-
-**Shows up.** Any peak marked `summing_model_complete=false`, especially rejected U-235, Pu-241,
-Sb-125, and invalid branches whose two lower-energy photons can sum into a requested line.
-
-### Infeasible ICC/intensity pairs can cost branches their level scheme `[medium — decay data]`
-
-**Effect.** Some records pair a gamma intensity with an ICC for which
-`I_gamma*(1+alpha) > 1`, i.e. the inferred transition would occur more than once per decay. The
-adapter bounds the selected transition and rejects a graph whose reconciled feeding remains
-infeasible. Counts in the original audit snapshot (1052 topology-bearing violations, 1848 expanded
-occurrences, and 1897 distinct parent->child candidates -> 1542 valid / 355 rejected) are retained in
-the study artifacts for provenance, but are **not current effective-tree counts**: they used the old
-XML and an earlier acceptance policy. The final regenerated-XML test reports per-branch-instance,
-disjoint audit categories: **4566 valid, 754 raw-only, 1782 partial-only, and 1328 both raw+partial**;
-accepted graphs contain **323 E0 repairs and 804 intensity caps** (2026-10-27, after the A=234 and Sr-89/Y-89m reviews). Those categories deliberately do
-not collapse into the historical distinct-pair denominator; a final distinct parent->child recount
-is still needed before quoting a replacement rejection percentage. Rejected branches fall back to
-the pairwise-coincidence model described above.
-
-Historically rejected examples with parent half-life > 1 y include **U-235 -> Th-231
-(current raw_total_feed 2.37344), Th-229 -> Ra-225 (2.13),
-Hf-172 -> Lu-172m (2.01), Pu-241 -> U-237 (1.96), Pa-231 -> Ac-227 (1.58), Sb-125 -> Te-125 (1.05)**,
-Am-242m, Cf-249, Bk-247, Cm-243, Np-235, Ho-166m, Po-208, Sn-126 (two pairs), Es-252. Shorter-lived
-but notable: Pa-234 -> U-234 (1.25, T½ 6.7 h; was 3.31 before the 2026-10 A=234 review). What is left
-comes partly from its 880.5/980.3 keV doublets, which have no GEANT4 level, and partly from the evaluation
-itself: placed on the ENSDF scheme, its lines still give 1.14. Pa-234m -> U-234 (was 1.10)
-is now valid: its 43.5/41.82 keV records held transition flux as photon intensity. Counting
-distinct parent->child pairs, a further 36 have T½ > 1 d and 41 T½ > 1 h. **Pu-241 matters for any
-reactor-grade plutonium and
-Sb-125 is a common fission product** — both silently switch estimator model. U-235's summing factors
-change by 12–850x across the switch (measured in the dev-only ICC feasibility study; `u235_before.csv` vs
-`u235_after.csv`), so no absolute magnitude derived from the level-path result for a rejected
-nuclide is trustworthy. Nothing in the G4-anchored cascade gate
-(`tests/data/geant4_reference/cascade_summing_multi.csv` — Am241/Ba133/Co57/Co60/Eu152/I125/Na22,
-every one with entry_probability >= 0.9985 except Eu-152 -> Gd-152 at 0.99847) can detect a
-regression here.
-
-**Not a matching failure.** The G4 <-> SandiaDecay match is *correct* for the dominant offenders:
-U-235's 19.59 keV gamma is correctly matched to Th-231 level 5 -> 4 (`z90.a231`, alpha = 114.7), and
-its `cascade-match` audit remark reports no ambiguity. The original input evaluations disagreed —
-the old SandiaDecay I_gamma = 0.61 with GEANT4's alpha = 114.7 implied 70.6 occurrences per decay.
-The final regenerated XML carries the curated ENSDF override instead.
-
-**What is already done.** Emission is bounded rather than guessed: a member's gamma intensity is
-capped at `1/(1+alpha)`, the hard ceiling that holds whichever tabulated number is wrong, so no
-branch — accepted or rejected — can emit a line above what its transition supports. That degrades
-gracefully where a semantic reinterpretation does not: I-125's saturating Te-125 transition
-(I = 0.0668, alpha = 14.08 -> 1.0073) loses 0.7% while U-235's 19.59 keV loses a factor of 70,
-removing a 21x line excess and the false sum peaks it fed onto 205.31 and 221.40 keV.
-
-**What remains.** The final U-235 override puts the 19.59-keV photon at the ENSDF central value,
-**0.00583 per decay**; the earlier 8.64e-3 / 1.5x statement no longer applies. For records without a
-curated override, the generic physical bound is still a ceiling rather than an estimate. Reading a
-tabulated intensity as the TRANSITION rate is right for some records (Ag-104m's 6.9 keV isomeric
-transition lists intensity exactly 1.0 against alpha = 1e8) and catastrophic for others. The
-historical snapshot had 435 of 1052 violations within 2% of the bound, where the two readings differ
-by 15x. Nothing but violation size separates them, so improving the uncurated cases needs a
-per-transition ENSDF cross-check of which quantity the intensity is, not another heuristic. Census tool:
-the dev-only `icc_feasibility_sweep` probe.
-
-**Shows up.** U/Pu chain nuclides with strongly-converted low-energy transitions; harmless for the
-calibration set (Co-60, Ba-133, Am-241, Eu-152, Co-57, Na-22 are all unaffected).
-
-### Internal-pair formation for verified high-energy E0 transitions `[low — physics]`
-
-**Effect.** Authoritative primary-evaluation provenance now marks verified pure-E0 transitions
-independently of GEANT4's advisory multipole code. Every verified E0 gets `p_gamma = 0`; below the
-exact 2m_e threshold its unpersisted shell remainder is approximated by one shell-unresolved
-conversion electron. Above threshold the remainder may be INTERNAL PAIR FORMATION. It is retained as
-an explicit `p_unmodeled` outcome so the level path advances without inventing a photon, conversion
-electron, vacancy, or deposit. N-16's verified 6048.2 keV 0+ -> 0+ transition is therefore no longer
-emitted as an impossible photon, but its real pair deposit is still absent.
-
-**Implementation.** Emit a back-to-back 511 pair plus the (E - 1022) keV kinetic energy for the
-internal-pair branch, with the pair/conversion split from data where available. Do not promote
-GEANT4 code 1 alone to an E0 assertion: Ac-232's observed 373.3 keV and Rb-78's observed 189.8 keV
-photons have blank/ambiguous ENSDF M/CC assignments despite code 1 and must remain photons.
-
-**Shows up.** Verified E0 transitions above 1022 keV.
-
-### Na-22 511 keV drifted from GEANT4 after the beta+ model change `[medium — accuracy]`
-
-**Effect.** The cascade-summing snapshot `our_cascade_multi.csv` (now regenerated, not
-committed) was last written at `8ca66d8` (2026-07-07). Re-running its producer (`examples/cascade_observables`) at the same 8M/4M statistics on
-the current main tree gives **Na-22 P511 +3.24% (z = +23.8)** and sum1785 +3.81% (z = +6.0);
-everything else is within |z| <= 3.2. Engine/G4 agreement for Na-22 P511 moved 1.0012 -> 1.0340.
-Bisects to **d3e0ee3** (2026-07-28), which replaced `emit_annihilation` with a full beta+ spectrum +
-positron-range + in-flight-annihilation model. The G4 reference is unchanged over that span, so this
-is entirely engine-side. Still inside the gate's band, so nothing failed.
-
-**Why it went unnoticed.** `profiling/compare_validation.py` is the only consumer of that CSV and is
-**not wired into ctest** — the cascade dashboard is manual, so a 24-sigma drift sat for three weeks.
-Worth adding the cascade block to ctest.
-
-**Implementation.** Triage the positron model against G4 for Na-22, then regenerate the reference
-(`cascade_observables`, ~85 s) and record the producing commit in its header. Do not regenerate first
-— that would bake the drift in as the new expectation.
-
-### Transition-group (flat) x-ray model: remaining approximations `[low]`
-- **Effect:** the flat model (`vacancy_xray_model=false`; InterSpec's reference lines and sum-peak
-  check) now carries K x-ray–K x-ray pairs (see DESIGN.md → Decay x-ray models), but:
-  - **X-rays and gammas are independent.** An x-ray→gamma link is the gamma's intensity. For
-    Pb-203 a K–K pair needs the 279 keV transition K-converted, so that gamma cannot accompany
-    it, yet the link treats it as coincident. InterSpec's reference lines therefore seed no
-    triple from an x-ray pair. Also, the pair survival (the summing-out of a sum peak by the
-    decay's other photons) uses marginal intensities. A K–K sum is then "knocked out" by the
-    279 keV gamma and by further K lines at their full rate, which reads ~10–20% low at contact.
-  - **The capture and the conversions are independent** in `D2 = P_EC*N_IC + N_ICIC`. Neither
-    is conditioned on the EC-fed level (exact in the vacancy model). This is +0.2% on Pb-203,
-    +2.8% on Ba-133, and +5.9% on Te-123m. The weak law's `fed_level` plus the same level walk
-    that N_ICIC uses would remove it.
-  - **The MC ignores `self_pair_prob`.** A flat member is one Bernoulli per realization, so
-    FullRealization/Conditional with the flat model miss the same-line pair (2E sum and
-    same-line summing-out). The K–K links do reach the fallback forest and `cascade_partner_prob`.
-  - **There are no L x-ray pairs, and no K→L relaxation** (a Kα leaves an L vacancy).
-  - **Gamma-gamma links are SandiaDecay's coincidence fractions, verbatim.** They often
-    disagree with the level scheme the same data carries. A quick census (2026-10-27, branches
-    with complete topology only) found ~20k of ~27.5k links off by more than 20%. Lu-177's are
-    all ~0.10x (208.4 -> 112.9 keV: 0.032 against 0.31). Eu-152's Sm branch 125.7 -> 562.9 keV
-    is 0.37 against 0.99, although the 684.8 keV 0+ level has nowhere else to go. Bi-214's links
-    from 221.0 keV are 0.068x, except ->609.3 at 0.92 against 0.11. Clean: Ba-133, Co-60,
-    Ra-226, Tl-208, I-131. This is a decay-data question first. The flat model's K x-ray
-    IC x IC already walks the scheme instead. The flat gamma-gamma links (InterSpec's
-    reference-line and sum-peak-check gamma sums, the MC fallback forest) still use the
-    fractions. The level path does not use them.
-- **Implementation:** the clean fix is the vacancy model, which is exact. It is too slow for
-  InterSpec's interactive redraw (36–78 ms per window for Eu-152; see `ReferenceLineInfo.cpp`).
-  A cheaper route is to condition the flat x-ray→gamma links on the vacancy source (EC vs.
-  conversion of a given transition).
-- **Shows up when:** x-ray–gamma or x-ray–x-ray sums at contact for EC emitters whose x-rays come
-  mostly from conversion of one strong line (Pb-203, Ba-133, Eu-152's EC branch).
-
-### Sum-peak-fed / x-ray-fed summing-IN in the Conditional estimator `[low]`
-- **Effect:** `CascadeMethod::Conditional` now captures gamma-gamma sum-peak-fed summing-IN (pairs a+b
-  in the window where neither is the peak gamma, e.g. Co-57 122.06+14.41→136.47) and coincident vacancy
-  K/L x-ray summing-OUT (via `cascade_sum_pair_channels` / `cascade_level_vacancies`, in
-  `cascade_peak_thread` — the default method is no longer γ-only for x-rays). Residual vs FullRealization
-  at contact: **≈1–2% on Co-57 136 (1.18 vs 1.20) / Ba-133 356 (0.517 vs 0.494)** from (a) x-ray-FED
-  feeding not enumerated — γ + coincident K x-rays adding into the window (Co-57 122 + two Fe Kα, where
-  14.41 converts), and (b) the partner-independence approximation for 3+-gamma cascades. ε²-small at far
-  geometry (Co-57 136 @10 cm is 1.020 vs 1.022, within stats).
-- **Implementation:** enumerate γ + x-ray-pair (and triple-γ) sum-fed channels in
-  `cascade_sum_pair_channels`; and/or sample the peak's partners jointly (level-path realization) rather
-  than independently. Or route contact-geometry x-ray-heavy summers (Ba-133, Am-241) to FullRealization.
-- **Shows up when:** high-Z low-energy X-ray summers or sum-peak-fed peaks at contact with the default method.
-
-### Analytic cascade-summing (`compute_cascade_analytic`) remaining approximations `[low]`
-- **Effect:** the fully-analytic path (`src/cascade/AnalyticCascade.{h,cpp,_imp.hpp}`, the InterSpec DRF entry point)
-  matches FullRealization to ≲1% at all geometries incl. contact for the mainstream γ-γ / EC-x-ray / β⁺
-  cases (analytic-vs-FR MC @2 cm: Co-57 122/136 z≤0.4, Ba-133 356/302 z≤0.97, Na-22 1274 z=0.68,
-  Am-241 59.5 z=0.43, Eu-152 344/1408 z≤0.74, Co-60 z<0.5; far z<0.15). It uses the exact level-scheme
-  survival DP (Eq. 10′) for summing-OUT and a unified γ/x-ray/511 occurrence enumerator (pairs + triples,
-  no MC triple-subtraction, same-vacancy exclusivity) for summing-IN — each sum-fed channel additionally
-  carries a **coincident-survival factor** (the summing-OUT of the sum-fed pair by everything else
-  co-emitted). Back-to-back 511 pairs are summed-out with **2·ε_tot** (not the independent 2ε−ε²): for a
-  single-sided detector at most one of the pair can deposit (Na-22 1274 z 1.7→0.68). **Overlapped windows**
-  (multiple emitted lines in one peak window, e.g. Ba-133 79.6+81) are handled with a fitted-peak-area SF
-  (emission-weighted mean over the window's lines). Known residuals:
-  - **Low-energy partial-deposit / escape-peak recovery (the ε-only summing-out limit).** `Π(1−p·ε_tot)`
-    treats the peak as a delta at the FEP and the coincident photon as binary remove/keep; it misses events
-    where the primary's *escape peak* + the coincident x-ray sum back INTO the window. Worst case measured:
-    **I-125 35.49 @2 cm, −4% (analytic over-removes)** — 35.49 sits just above the NaI iodine K-edge (33.17),
-    so it K-escapes to ~6.9 keV and the coincident Te Kα (27.5 ≈ the 28.6 keV iodine escape energy) sums it
-    back in. Also **Ba-133 81 @2 cm (−6%)** — low-energy, fed by the whole cascade above it + EC Cs K x-rays;
-    milder on Eu-152 121.78 (−1.5%). This is the accepted limitation of the standard total-efficiency summing
-    method (GESPECOR et al.); it is **NOT fixable from ε_FEP/ε_tot alone** — the provider would have to expose
-    the deposit spectrum (escape-peak energy + fraction). ~0 by 20 cm. I-125 35.49 and Ba-133 81 @2 cm are
-    report-only in the gate for this reason.
-  - **Kα→L secondary vacancy** not modeled (a K vacancy relaxing via Kα leaves an L vacancy that also
-    radiates; FR emits it). Deliberately dropped: for summing-OUT it is idempotent (the K x-ray already
-    removed the event) and for summing-IN ε²-small — it affects only the sum *continuum*, not peak SF
-    (Ba-133 Cs Kα→L agrees <1% without it).
-  - **W(θ) angular correction** uses the collinear limit **g = W(0) = 1 + a2 + a4** for correlated
-    summing-IN pairs (default ON, geometry-free): coincident FEP detection requires both photons to point
-    into the detector, so their mutual angle is small and W(θ_ab)≈W(0) (the FEP acceptance is on-axis-peaked;
-    a uniform-cap average under-weights the small angles — an earlier disk-subtense model measurably *hurt*
-    at contact). Recovers Co-57 122+14→136 to ~0.2% (vs ~1.9% at g=1). Summing-OUT partners get g=1 (they
-    need only ANY deposit; effect negligible — Co-60 <0.5%). Residual: W(0) is the collinear upper bound;
-    the true FEP-weighted average is slightly below it, so strongly-correlated sum-in at very close geometry
-    (large cone) may be marginally over-corrected — bounded by the a2/a4 magnitude (<W(0)−1, i.e. ≲ a few %).
-  - **Triple-fed summing-IN** is enumerated only for **gamma lines** on distinct transitions (order 3),
-    sorted + energy-pruned; x-ray-line and EC/annihilation triples and 4+-member sums are omitted. This is
-    ε³-and-branch-small AND a perf necessity: enumerating over the ~25 expanded vacancy x-ray lines per
-    converting transition is O(n³) and was ~27 s on Eu-152 / minutes on Am-241 before the restriction (now
-    ~0.1 s / ~1 s, dominated by the SandiaDecay `build_cascades` call, not the analytic).
-    Gamma products retained as topology-free categorical residuals participate in analytic and Conditional
-    **pairs**, but are not yet admitted to this optional analytic triple enumerator; a peak fed only by a
-    residual-containing three-gamma sum therefore misses that epsilon-cubed term.
-  - **IC-electron deposition** is inherited from whatever the ε provider models (the analytic path only
-    combines ε_FEP/ε_tot); it does not add the IC-electron summing that `compute_cascade` now models via
-    `enable_ic_electrons` (see DESIGN.md → Purpose, cascade summing corrections).
-  - **Non-gamma primary peaks.** A 511 primary uses a marginal-product C_out fallback (partner 511 +
-    whole-scheme survival) — less rigorous than the gamma survival DP, and FullRealization's locator can't
-    score a 511 peak, so it is validated only indirectly (via the coincident-511 effect on Na-22 1274). A
-    peak requested at a pure **vacancy x-ray** energy (e.g. an Am-241 Np L line) returns found=false: the
-    x-rays are generated from vacancies, not carried as `members`, so there is no line to locate — x-ray-line
-    peaks as a *primary* are unsupported (they still contribute to other peaks' summing as coincident lines).
-- **Implementation:** the escape-recovery term needs a deposit-spectrum-aware provider (escape energy +
-  fraction); a real angular joint-acceptance from the DRF; extend the enumerator to EC/annih triples if a
-  case demands it.
-- **Shows up when:** very-low-E lines (≲60 keV) just above the detector K-edge with a coincident x-ray near
-  the escape energy, at contact; or sub-0.5% agreement for high-Z x-ray-rich EC nuclides at contact.
-
-### Coincident L x-ray sum peaks slightly low — upper-level feeding `[low]`
-- **Effect:** with the per-subshell L + Coster-Kronig vacancy model, L x-ray *singles* match GEANT4 to
-  ~0.3% (Am-241/Np, Pb-203/Tl, source-region-matched geometry), but the *coincident* L sum peaks run a
-  little low: Am-241 59.5+L ≈ 0.80, L+L ≈ 0.96 vs G4. Since the singles (dominated by the anti-coincident
-  59.5-IC vacancy) match, the deficit points to the upper-level cascade feeding *into* the 59.5 level
-  being slightly under-weighted → too few 59.5-coincident upper-cascade L x-rays.
-- **Implementation:** check the flow-conservation feeding in the level-path builder
-  (`SandiaDecayCascade.cpp`, `feeding = out_flow − in_flow`) against the known Am-241 α-branching to the
-  Np 102.96 / 158 keV levels; the discrepancy is likely in how direct (α/β/EC) level feeding is inferred
-  vs gamma in-flow when intensities are imperfect.
-- **Shows up when:** sum-*peak magnitudes* for high-Z L-x-ray emitters at close geometry. Negligible for
-  peak-efficiency summing corrections (59.5+L ≈ 1.2% of the 59.5 peak → <0.25% on its efficiency).
-
-### IC-electron summing — residuals & auto-enable follow-ups `[low]`
-- **Effect:** `compute_cascade`'s `enable_ic_electrons` (default OFF; K/L conversion + K-Auger electron
-  deposition, air/distance-gated, GEANT4-validated to <1% at 2 cm — see DESIGN.md → Purpose, cascade summing
-  corrections, and the dev-only IC-electron GEANT4 cross-check). Two known gaps:
-  - **(a) M+/outer-shell and sub-15 keV conversion electrons are not deposited.** These carry ~the full
-    transition energy but are dropped, slightly under-counting summing-OUT on the IC-heavy low-E peaks at
-    **bare-source contact / 4π** (Ba-133 P356 ≈ +14% vs G4 there); ≈0 by 2 cm as air / real source
-    material absorbs them. A crude full-energy M+ deposit was **tried and reverted** — it mis-shifts the
-    converting transition's OWN low-E peak and over-corrects at 2 cm (1.00→0.96). Needs proper M-shell
-    binding/energy + partial-deposit (backscatter/escape) modeling, not a flat full-energy dump.
-  - **(b) Not auto-enabled by proximity.** The flag is default-OFF and costs ~5–8% when ON regardless of
-    distance (the per-conversion isotropic-sample + detector ray-trace + air-range CSDA lookup runs even
-    when the electron provably can't reach). An `Auto` mode would give correct-by-default close-source
-    physics and skip the cost far away.
-- **Implementation:** (a) add M-shell binding data + a partial-deposit factor (or a tabulated conversion-
-  electron energy/deposit model). (b) replace the `bool enable_ic_electrons` with a tri-state
-  `Off/On/Auto` (default `Auto`), enable within ~a few cm (where ΔSF > ~1%) — but re-tune the cascade
-  test bands, since turning IC on at 2 cm shifts the (currently OFF-tuned) gated peak areas toward G4.
-- **Shows up when:** (a) bare / thin-source contact / near-4π low-E x-ray-rich summers; (b) close-source
-  callers wanting IC summing without setting the flag.
-
-### L1/L2 conversion electrons use the L3 binding energy `[low]`
-- **Effect:** both `build_radioactive_emissions()` and `compute_cascade`'s IC-electron deposition take
-  the L-shell binding from `LFluorescenceData::l3_edge_keV` for L1, L2 and L3 conversion alike, so L1/L2
-  conversion electrons come out too energetic by B(L1)−B(L3) or B(L2)−B(L3): up to ~4.8 keV for Np
-  (L1 22.4 vs L3 17.6 keV), ~2.8 keV for U. Found Sep 2026 while fixing the daughter-Z gate.
-- **Implementation:** carry per-subshell L binding energies in `LFluorescenceData` (the EADL generator
-  already reads them) and use the matching one per `ConversionShell`.
-- **Shows up when:** IC-electron summing or source-escape studies of strongly L-converted heavy-element
-  transitions (Am-241, U/Pu chains); the energy shift is a few keV on 10–60 keV electrons.
-
-### β⁺ 511 annihilation modeling — residuals `[low]`
-- **Status:** the cascade β⁺ path now RANGES the positron (commit 81121e3): KE sampled from the allowed
-  β⁺ spectrum (endpoint carried on the Annih511 member), (1) in-flight annihilation → two non-511 γ,
-  (2) escape from the source → no clean source 511 pair; a contained positron annihilates at rest near
-  the vertex. This took Na-22 P511 from +12% to +7% vs GEANT4 (matched geometry).
-- **Remaining residuals:**
-  - **Dominant (≈+7% on Na-22 P511):** the source walk UNDER-predicts positron escape, so too many clean
-    source 511 pairs survive. This is the Molière-walk accuracy problem (see **B2/B3**) — NOT the
-    annihilation model — compounded by the Fe-calibrated albedo gate possibly mis-applied to low-Z Al.
-  - **(3) positron-specific stopping** not applied — the walk uses the *electron* term (Møller F⁻); the
-    positron term (Bhabha F⁺) is ~80 lines, default-off (`bool is_positron` threaded through
-    `walk_in_source_geometry`), **<1 %** effect, no perf cost (the walk already runs). Low leverage.
-  - **No ortho-positronium 3γ** (quenched to 2γ in dense media; minor); **Conditional estimator** still
-    point-annihilates (the ranging is in FullRealization only).
-- **Shows up when:** β⁺ emitters (Na-22, F-18, …) in close/contact geometry — the 511 / 1022 / γ+511 peaks.
-
-### Fully-independent Conditional-summing-factor-vs-GEANT4 gate `[low — validation]`
-- **Effect:** the cascade-summing gate is now surfaced through `profiling/compare_validation.py` and the
-  C++ ctest, both driven from one reference CSV (`tests/data/geant4_reference/cascade_summing_multi.csv`),
-  and includes `estimator=cond` rows. But the Conditional rows are gated as a per-decay area
-  `A_FR·k_cond/k_full` — i.e. anchored to the FullRealization per-decay normalization, with only the
-  Conditional/FR summing-factor RATIO independent. A truly independent Conditional-summing-*factor*-vs-G4
-  check would need a G4 "no-summing" baseline (the peak's per-decay area with coincidence summing removed)
-  to divide the correlated area by; the harness has no such mode today.
-- **Implementation:** a "no-summing" G4 baseline via **time-staggering** — one correlated run yields BOTH
-  `A_corr` (with-summing) and `A_nosum` (no-summing), so `k_G4 = A_corr / A_nosum` and the engine
-  Conditional `summing_factor` compares directly to `k_G4` (estimator-independent; the G4-vs-SandiaDecay
-  emission-intensity difference cancels in the ratio).
-  - **Idea:** the global time is used as a per-decay-gamma *lineage tag*. Offset each true decay gamma to
-    its own ms-wide time window; its EM shower (recoil e⁻, fluorescence/brems x-rays) inherits the offset
-    automatically (children take the parent's global time at creation), so each gamma's FULL deposit —
-    hence its full-energy peak — stays together while decay-*sibling* gammas are pushed a full ms apart.
-    Shifting the start time changes no physics (no time-dependent cross sections); it only relabels.
-  - **Harness (`tools/geant4_validation/src/`):** in a **`G4UserTrackingAction::PreUserTrackingAction`**
-    (cleaner than a stacking-action `const_cast`), stagger ONLY the genuine decay gammas —
-    gate on the creator process, NOT "ParentID>0 && isGamma":
-    ```cpp
-    auto* cp = track->GetCreatorProcess();
-    if (track->GetDefinition() == G4Gamma::Definition() &&
-        cp && cp->GetProcessName() == "RadioactiveDecay")
-        const_cast<G4Track*>(track)->SetGlobalTime(
-            track->GetGlobalTime() + track->GetTrackID() * 1.0 * CLHEP::ms);
-    ```
-    Gating on `RadioactiveDecay` is CRITICAL: offsetting *every* secondary gamma would fling a primary's
-    own fluorescence/brems photons into a different window and corrupt that primary's FEP.
-  - **Scoring:** the time offset does nothing alone — change `EventAction`/`SteppingAction` to bin
-    `(t_prestep, edep)` into ms-wide windows and emit ONE histogram entry per occupied window (= the
-    no-summing spectrum). Summing all windows in the event reproduces the with-summing spectrum, so both
-    fall out of the single run. Gate behind a `--no-summing` flag; enable per-config in the CSV
-    (`estimator=cond` rows carry a directly-comparable `k_G4`).
-  - **Caveats:** β⁺ / annihilation pairs (Na-22 511+511 share a positron ancestor, not a decay-gamma
-    creator process → still co-window) and coincident x-ray lines need an extra lineage rule; the pure
-    γ-γ / γ-xray summers (Co-57/Co-60/Ba-133) are clean. Confirm no global-time tracking cutoff is active.
-    Nuclides beyond the current set (Cs-137 662-conv, Tc-99m) bake new alcyl rows into the CSV the same way.
-- **Shows up when:** wanting an estimator-independent Conditional check rather than the FR-anchored ratio.
+1. [Wire the GEANT4 gate into ctest](#compare_validationpy-is-not-wired-into-ctest) — cheap; stale
+   CeeLo CSVs have hidden real drifts and invented phantom ones.
+2. [Load-robust precision tests](#precision-targeted-mc-tests-are-wall-clock-capped) and the
+   [IC-electron sum-peak test](#ic-electron-sum-peak-test-asserts-an-unresolvable-ordering) — flaky
+   tests erode trust in the suite.
+3. [Regenerate the GEANT4 references at the 0.75 keV window](#geant4-references-are-still-scored-at-the-old-15-kev-fep-window)
+   — until then the gate does not measure the library's own default.
+4. [Rejected-branch pair links](#rejected-branch-pair-links-cannot-all-be-honored) and
+   [infeasible ICC/intensity pairs](#infeasible-iccintensity-pairs-can-cost-branches-their-level-scheme)
+   — summing for U-235, Pu-241, Sb-125 silently switches model.
+5. [GDML export: source rotation](#gdml-export-emits-no-rotation-for-source-volumes) and
+   [dead layer](#dead-layer-is-not-exported-to-gdml) — silent validation mismatches.
+6. [Air between source and detector](#air-between-source-and-detector) — validate the analytic
+   attenuation and decide its default.
 
 ---
 
-## Electron / CSDA physics
+## Validation and test infrastructure
 
-### B1 — in-crystal positron annihilation — residual approximations `[low]`
-- **Done:** the PP positron is now CSDA-tracked and annihilates at its endpoint, not the vertex
-  (`deposited_in_scoring` returns `stop_position`); it can annihilate **in flight** (per-substep Heitler
-  rate → a photon pair of 2·mₑc² + residual KE, `annihilated_in_flight`); it walks with the
-  positron-specific **Berger-Seltzer F⁺** stopping (`range_table_pos_`, `is_positron` flag); and the
-  e⁺/e⁻ get the **Koch-Motz / G4ModifiedTsai** pair opening angle. Measured (2614 keV NaI, 8M A/B):
-  in-flight annihilation drops the single/double-escape peaks ~3% — taking them from +2–3% (z≈+7) ABOVE
-  GEANT4 onto it (double-escape −0.5%/z=−1.2, single-escape −1.3%/z=−4.5); the endpoint/stopping/angle
-  pieces are sub-mm and statistically invisible in FEP/total (|z| ≤ 1.3, incl. thin CZT). FEP/total
-  unchanged throughout.
-- **Remaining (minor):** the in-flight pair uses the isotropic energy-split approximation (same as the
-  cascade β⁺ path), not the exact 2-body boost kinematics (correlated angle/energy) — a candidate for the
-  small single-escape overshoot; no ortho-positronium 3γ (quenched to 2γ in dense media anyway);
-  `positron_annih_xsec_per_electron` is duplicated in `ElectronCsda.cpp` and `EfficiencyCalculator.cpp`
-  and should be unified into one physics home.
-- **Shows up when:** escape-peak / annihilation-continuum shape studies at E > 1.5 MeV, thin/edge crystals.
+### `compare_validation.py` is not wired into ctest
+`[medium — validation]`
+- **Effect:** the gate compares the GEANT4 references against whatever `our_*_multi.csv`
+  sits in `build/examples/` (written by `benchmark_mc_configs --config N --precision p`;
+  `--mc-dir` overrides), and nothing checks that those files come from the current engine.
+  When the engine moves and they are not regenerated, the gate reports staleness as physics
+  (a "low-energy Marinelli deficit" and a "coherent ≥2 MeV FEP family" were both stale
+  files), or misses real drift. The cascade block has the same problem
+  (`cascade_observables` → `our_cascade_multi.csv`). Separately, not every reference in
+  `tests/data/geant4_reference/` records its GEANT4 physics list in its header.
+- **Implementation:** a ctest case that regenerates the CeeLo side at modest precision and
+  compares, or at least a staleness check (the CSVs record their producing commit and the
+  test fails when `src/` is newer); include the cascade block. New references stamp their
+  physics list.
+- **Shows up:** after any engine change that lands without regenerating the CeeLo side.
 
-### B2/B3 — retire the empirical skin-escape gate via a Mott/G-S MSC `[low — robustness; research]`
-- **Status:** the gate is **regime-aware** (`source_escape_survival_exit`, exit-state + light-Z floor +
-  exit-energy window) — replaced the old birth-energy gate + positron-only flag + Fe-only `kAlbScale`,
-  validated Z = 5→82 to ~1–2% vs GEANT4. Three escape models now live behind a **compile-time switch**
-  (`-DCEELO_SOURCE_ESCAPE_MODEL=gate|tails|gs`, default `gate`; env A/B knobs
-  `MCDET_NO_{STRAGGLE,B2,TAILS}`). Full per-config comparison: DESIGN.md → Known Limitations →
-  "Source-electron skin escape".
-  **Verdict (mean |err| @662): gate 0.56% < tails 0.62% < gs 0.92%** — none of the first-principles
-  variants beats the gate; `gate` stays the default.
-- **Why tails/gs fall short — BOX-specific:** the per-step Gaussian-core + screened-Rutherford tail
-  **over-diffuses box geometries** (a large-angle scatter is as likely to redirect toward a wall as away).
-  This is geometry-specific: on sphere/shell geometries (G-B/G-C, cfg 11) all three models agree to ~±1%
-  — the over-escape only appears for multi-wall boxes. A double-counting
-  variance subtraction halved the `tails` excess (cfg 12 @662 +2.10→+1.07% vs gate +0.46%). `gs` sets the
-  soft core from the screened-Rutherford soft transport moment (instead of Highland) but **under-scatters
-  ~30%** (the screened cross-section lacks the **Mott** spin + nuclear-form-factor corrections), making
-  the mid-Z boxes worse (+1.65%). A uniform G₁ scale-up just reproduces `tails`.
-- **Path to actually retire the gate:** replace the screened-Rutherford cross-section with **Mott** (or a
-  tabulated **Goudsmit–Saunderson** angular distribution sampled by inversion — no Gaussian+tail
-  double-count). Runtime is ~free (the walk is <10% of total; a table lookup ≈ current cost); the cost is
-  developer time (hundreds of lines + Mott data) + re-validating ~1% across Z without the gate.
-- **Shows up when:** shielded/extended box sources (cfg 8/11/12/20-24); the gate remains the default.
+### Precision-targeted MC tests are wall-clock-capped
+`[medium — test design]`
+- **Effect:** ~15 test files set `target_fep_rel_precision` together with
+  `termination.max_wall_seconds` (30–120 s), and whichever comes first wins. On a loaded
+  machine a run can stop on wall time with the target unmet while its assertions use fixed
+  tolerances, so a truncated run fails on statistics with no sign that is what happened.
+  The tests seen flaking under load (`test_asymmetric_shield`, `test_position_bias`,
+  `test_marinelli_beaker`'s `source_electron_transport_increases_total`) are all in this
+  set; the last compares two independent 2%-precision runs against a 5% bound (~1.8σ even
+  at target). The mechanism is the leading suspect, not a demonstrated cause.
+- **Implementation:** first, on failure report `StopReason` and the achieved
+  `fep_uncertainty` (both returned by `compute()`), so the next failure arrives as evidence.
+  If truncation is confirmed, assert on a z-score from the returned uncertainty instead of a
+  fixed tolerance across the `precision_config` family.
+- **Shows up:** ctest on a busy machine, especially beside a build.
 
-### W/Pb high-Z box common offset `[low — investigate]`
-- **Effect:** the new W (cfg 21) and Pb (cfg 20) wall-box configs show a ~+2–3.7% total over GEANT4 at
-  2614 keV in **both** the gate AND principled modes (a *common* offset, so NOT the electron-escape method).
-  Suspected: source-shield secondary channels (PP 511s / shield brems) or photon transport in very high-Z
-  walls, exposed only now that cfg 20/21 exist. These are out-of-sample configs (no historical reference).
-- **Implementation:** decompose with `--no-source-brems` / `--no-source-electrons` and `--entry-diag`;
-  generate higher-stats G4; check the W/Pb fluorescence + PP-annihilation channels.
-- **Shows up when:** Z ≳ 74 wall boxes at high energy (cfg 20/21).
+### IC-electron sum-peak test asserts an unresolvable ordering
+`[low — test design]`
+- **Effect:** `test_cascade_summing::ic_electron_g4_magnitude_ba133_2cm` requires the
+  Ba-133 `sum356+81` coincidence peak to land closer to GEANT4 with IC electrons ON than
+  OFF. ON/G4 = 1.009 and OFF/G4 = 0.998 against a reference with its own ~1% statistics,
+  so which is closer is a coin flip — the test can fail at random. The resolvable quantity
+  is the sign of the ON-vs-OFF shift (a sum peak gains counts when singles lose them).
+  `feature/FullSpecApprox` c6b1436 already makes that change.
+- **Implementation:** port c6b1436 (assert the shift's direction, bound the magnitude by
+  the ON/G4 band). Making the ordering itself testable needs a ~25× larger Ba-133 GEANT4
+  ion run.
+- **Shows up:** intermittent `test_cascade_summing` failures.
 
-### Electron tables for Np–Cf are uranium's `[low — coverage]`
-- **Effect:** ESTAR stopping, ICRU-49 I and the NIST EPQ Seltzer–Berger tables stop at Z = 92, so Z 93–98
-  reuse uranium's (`electron_table_z()`). Measured against ESTAR 93–98 (DESIGN.md → Known Limitations):
-  collision stopping within −2.1 .. +2.3%, radiative −1.9% (Np) .. −8.9% (Cf), Pu −2.6 .. −4.5%;
-  CSDA range −1.7 .. +2.9% above 50 keV. The effect on efficiencies has not been measured.
-- **Implementation:** add ESTAR 93–98 as a production source (the NIST text interface serves them; they
-  were fetched only to measure this approximation) and a bremsstrahlung source above Z = 92 (EPQ ends at
-  pdebr92; EEDL2023 MF=26 MT=527 covers all Z but would be a new lineage). A cheaper step for the
-  radiative part alone: rescale uranium's by Z(Z+1)/A, which brings the measured radiative error to
-  −2.5 .. +3.9% (Pu −0.8 .. +1.3%).
-- **Shows up when:** thick Pu/Am/Cf sources or shields at MeV energies, where bremsstrahlung and
-  electron escape from the actinide contribute to the total efficiency.
+### GEANT4 references are still scored at the old 1.5 keV FEP window
+`[medium — validation]`
+- **Effect:** `kDefaultFepWindowKeV` is 0.75 keV, but the GEANT4 references for configs 1–12
+  and 25/26 were generated at 1.5 keV, as were the C++ suite's numeric expectations, so the
+  gate and tests pin 1.5 keV (`kTestFepWindowKeV` in `tests/test_fep_window.h`, used by the
+  suite and `cascade_ref_common.h`; `kReferenceFepWindowKeV` in
+  `examples/benchmark_mc_configs.cpp`). Until the pins go, they do not measure the
+  library's default. Configs 27/28 are already at 0.75 keV on both sides; the harness and
+  `generate_all_spectra` score at 0.75 keV, so new harness runs are not comparable with the
+  old references. The gap is real where near-peak forward scatter is: config 8 at 59.5 keV
+  differs by −3.09% (z −13.5); bare NaI does not move.
+- **Implementation:** settle the default (the MC has no resolution smearing, so the window
+  is a choice of how much near-peak scatter to credit); add a `--fep-window` flag to the
+  harness `main.cc` (FS has one), regenerate the references, re-baseline the suite, and
+  delete both pins and the note in `tests/data/geant4_reference/README.md`.
+- **Shows up:** comparing CeeLo-at-default against the references; configs 7 and 8 most.
 
-### CZT electron escape `[resolved Aug 2026 — small residual]`
-- **Effect:** was FEP −3 to −7% for thin crystals >1 MeV. The Aug 2026 crystal-walk fixes
-  (path-consistent Highland + per-step Bohr straggling + step-budget guard) brought cfg 5 to
-  +0.66% ± 1.11 @800, −0.31% ± 1.31 @1000, −1.31% ± 1.81 @1500 (all |z| < 0.7) — straggling was
-  the missing physics for thin-crystal escape, not a marginal help.
-  See `studies/high_e_fep/FINDINGS.md`.
-- **Shows up when:** any residual is now below the ~1.3-1.8% MC+ref precision of the gate rows.
+### Configs 20/21 (Pb/W-wall boxes) have no GEANT4 reference on main
+`[low — validation coverage]`
+- **Effect:** the high-Z wall boxes are exportable but ungated here; a suspected +2–3.7%
+  total offset at 2614 keV was never anchored. `feature/FullSpecApprox` has 16M-event
+  option4 references at 662/2614 keV and gate rows for both: they show no common offset
+  (Pb −0.1%, W +1.45% at 2614 keV before the crystal-walk fixes; ≤ 1.7% now), with W's
+  662 keV FEP the worst row.
+- **Implementation:** port the two reference CSVs and their `compare_validation.py` rows
+  (with that branch's tightened cfg 5 tolerance) to main.
+- **Shows up:** Z ≳ 74 wall boxes.
+
+### Fully independent Conditional summing-factor gate
+`[low — validation]`
+- **Effect:** the cascade gate (`tests/data/geant4_reference/cascade_summing_multi.csv`,
+  shared by `compare_validation.py` and ctest) checks Conditional rows only as
+  `A_FR·k_cond/k_full`, i.e. anchored to FullRealization's per-decay normalization; a truly
+  independent check needs a GEANT4 "no-summing" baseline.
+- **Implementation:** time-stagger in the harness — in a
+  `G4UserTrackingAction::PreUserTrackingAction`, offset each genuine decay gamma (creator
+  process `RadioactiveDecay` only; offsetting every gamma would split a primary's own
+  fluorescence/brems from its FEP) by `TrackID × 1 ms`, then bin `(t_prestep, edep)` into
+  ms windows: one entry per window is the no-summing spectrum, their sum the with-summing
+  one, so `k_G4 = A_corr / A_nosum` from a single run (`--no-summing`). β⁺ pairs and
+  coincident x-rays need an extra lineage rule; Co-57/Co-60/Ba-133 are clean.
+- **Shows up:** wanting an estimator-independent Conditional check.
 
 ---
 
 ## Photon transport physics
 
-### 10–20 MeV transport is not validated `[low — coverage]`
-- **Effect:** the photon tables reach 20 MeV (Sep 2026) so that attenuation is available for high-energy
-  reaction lines, but no GEANT4 comparison covers transport above ~3 MeV. Pair production splits the
-  kinetic energy evenly between the leptons (spectral shape, not attenuation), and photonuclear
-  absorption is absent — as in EPDL and XCOM — although at the giant resonance (12–15 MeV for heavy
-  nuclei) it adds a few percent to the attenuation of Pb/U (≈0.64 b for Pb-208 at 13.4 MeV, against
-  18.8 b atomic).
-- **Implementation:** a GEANT4 gate row at 10–15 MeV for a bare and a Pb-shielded detector; sampled
-  pair-energy sharing; per-element photonuclear cross sections if they ever matter (parked).
-- **Shows up when:** reaction gammas above ~10 MeV, e.g. N-14(n,γ) 10.8 MeV.
+### Air between source and detector
+`[medium — coverage]`
+- **Effect:** air between the outermost source layer and the detector is not transported.
+  `set_air_attenuation(AirAttenuation::AnalyticNoScatter)` (opt-in, default `None`)
+  multiplies each event's weight by exp(−μ·d) over the source-to-detector air path (μ
+  without Rayleigh), which covers the unscattered peak, but it has no test and no GEANT4
+  comparison; scatter-in and scatter-out are not modelled.
+- **Implementation:** test and GEANT4-validate `AnalyticNoScatter` (an air world, long
+  standoff, low energy) and decide whether it should be the default; handle the scattered
+  component with a deterministic kernel rather than tracking air in the MC.
+- **Shows up:** long standoff at low energy; half-space / in-situ geometries.
 
-### cfg 8 Marinelli FEP −2.1% at 59 keV (near-peak scatter) `[low — residual]`
-- **Effect:** the *only* genuine cfg-8 residual after the June 26 2026 reference regeneration. The old
-  "low-E Marinelli deficit" (FEP −4 to −7%) and the "−2.5% albedo-recovery deficit @662" were **stale-
-  reference artifacts** (the March reference predated the June toolchain; resolved — reference regenerated
-  at 32M on the current geometry, all six cfg-8 energies now gate with no SKIP). Against the fresh
-  reference, MC agrees to ≤0.7% total / ≤1.1% FEP for 100–2614 keV; the residual is **FEP −2.1% at 59 keV**
-  (z≈5). The G4-harness u/s decomposition localizes it: unscattered FEP `eps_u` matches G4 to 0.01–0.3% at
-  every energy (geometry/self-attenuation correct), but the small *scattered* FEP stream `eps_s` is ~15%
-  low — MC under-places forward Rayleigh / small-angle-Compton photons in the ±1.5 keV window. Shrinks to
-  ≈0 by 200 keV.
-- **Implementation:** improve near-peak forward-scatter recovery (Rayleigh/small-angle-Compton landing in
-  the FEP window) at low E; possibly the same crystal-escape albedo-recovery model that would also catch
-  the small residual real albedo effect (G4 recovers crystal-escaped e⁻/γ backscattering off the
-  surrounding water). Low leverage — the effect is <2.1% and only at the lowest energy.
-- **Cross-check (2026-09-04, bench cfg 27/28: GEM35-70 + point source + 0.5 cm Fe shell at 2/10 cm,
-  60/88/122 keV, 0.75 keV window on both sides):** behind DEEP iron the absolute CeeLo-vs-G4 FEP gap is
-  dominated by the documented EPICS2023-vs-EPICS2014 iron photoelectric difference (~2% in mu, 8% through
-  4.6 mfp; CeeLo = NIST), so compare the u/s FEP SPLIT there, not the absolute: the scattered share of
-  the 60 keV peak is 30.0% (CeeLo) vs 30.6% (G4), i.e. the forward-scatter placement agrees to ~2% of
-  that stream in a Rayleigh-dominated case.  The analytic side of the same physics is
-  `rayleigh_deflection_loss_fraction` (see DESIGN.md, FEP window section).
-- **Shows up when:** Marinelli / wrap-around extended sources at ~59 keV (FEP only; totals agree to ≤0.7%).
+### cfg 8 Marinelli FEP −1.6% at 59 keV
+`[low — residual]`
+- **Effect:** the water Marinelli runs FEP −1.6% (z −5.5) at 59 keV and −0.8% at
+  100–662 keV; totals ≤0.6%. The GEANT4-harness u/s decomposition localises it: the
+  unscattered FEP `eps_u` matches to 0.01–0.3% at every energy, while the small scattered
+  FEP stream `eps_s` (forward Rayleigh / small-angle Compton landing in the window) is ~15%
+  low. Behind deep iron (configs 27/28) the scattered share of the 60 keV peak agrees to ~2%
+  (30.0% vs 30.6%), so the deficit does not generalise to Rayleigh-dominated cases.
+- **Implementation:** improve near-peak forward-scatter recovery at low energy, possibly
+  with a crystal-escape albedo-recovery model (GEANT4 also recovers crystal-escaped e⁻/γ
+  backscattering off the surrounding water; CeeLo's re-entry is ≤3-bounce photon-only).
+- **Shows up:** Marinelli / wrap-around extended sources near 60 keV (FEP only).
 
-### LaBr3 high-energy FEP residual `[low — residual]`
-- **Effect:** after the Aug 2026 crystal-walk fixes (which closed the old "high-energy FEP family";
-  see `studies/high_e_fep/FINDINGS.md`), cfg 3 (LaBr3 2"x2") FEP sits +0.63% (z +4.0) @2000 and
-  +0.49% (z +2.6) @3000 at 0.16% MC precision — the only config-specific structure left ≥2 MeV
-  (all NaI configs |z| ≤ 1.7; pooled ≥2 MeV +0.24%).
-- **Implementation:** candidate causes: Bohr straggling variance slightly large for LaBr3
-  (no shell/density corrections), or a small cfg-3 reference offset. Well inside the 1.5% tolerance.
-- **Shows up when:** LaBr3 ≥1 MeV photopeaks, at the +0.5% level.
+### LaBr3 high-energy FEP residual
+`[low — residual]`
+- **Effect:** config 3 (LaBr3 2"×2") FEP sits +0.72% (z 2.3) at 2000 and +0.63% (z 1.9) at
+  3000 keV in the gate (+0.63% z 4.0 / +0.49% z 2.6 in a dedicated 0.16%-precision study);
+  NaI configs read up to +0.5% at 2–3 MeV.
+- **Implementation:** candidates are Bohr straggling variance slightly large for LaBr3 (no
+  shell/density corrections) or a cfg-3 reference offset.
+- **Shows up:** LaBr3 photopeaks ≥2 MeV, at the +0.5% level.
 
-### Pb-attenuator total-efficiency excess `[low — residual]`
-- **Effect:** cfg 7 (2 mm Pb attenuator) TOTAL efficiency +0.25 to +0.27% (z ≈ 3) at 2000/3000 keV
-  at 0.08% MC precision (pre-fix +0.41/+0.63%, z up to 7.6); FEP agrees. Pb-specific, grows with E.
-- **Implementation:** untriaged; plausibly attenuator pair-production/secondary treatment.
-- **Shows up when:** high-Z attenuators ≥2 MeV, totals only.
+### Pb-attenuator total-efficiency excess
+`[low — residual]`
+- **Effect:** config 7 (2 mm Pb attenuator) total +0.21 ± 0.08% / +0.19 ± 0.07%
+  (z +2.8 / +2.5) at 2000/3000 keV; FEP agrees. It read +0.25 / +0.27% before a positron
+  that leaves the geometry stopped making a 511 keV pair. On feature/FullSpecApprox, whose
+  electron walk differs, the same fix took it to +0.09% / +0.06%.
+- **Implementation:** untriaged; plausibly the attenuator's pair-production / secondary
+  treatment.
+- **Shows up:** high-Z attenuators ≥2 MeV, totals only.
 
-### L/M-shell fluorescence X-ray escape not modeled `[low]`
-- **Effect:** only K-shell fluorescence is transported; L X-rays (e.g. Pb Lα ≈10.5 keV) are deposited
-  locally → over-predicts local deposit and misses L-escape spectral features near surfaces.
-- **Implementation:** add L-line emission using the direct EPICS2023 EADL
-  fixtures in `src/cross_sections/relaxation_epics_data.cpp`; the remaining gap
-  is transport/use of those lines, not source data.
-- **Shows up when:** thin high-Z detectors (CZT) or PE in a high-Z attenuator skin; low-energy spectra.
+### EADL K line energies are off by up to 0.3 keV for heavy elements
+`[low — spectrum fidelity]`
+- **Effect:** the K line energies in `relaxation_epics_data.cpp` are EADL subshell
+  binding-energy differences. For Ge, Cd, Te and I they sit within 0.04 keV of the
+  measured lines, but Pb Kα1 is 75.25 keV against 74.97 keV measured (Kα2 73.04 against
+  72.80); GEANT4 option4 puts Pb Kα1 at 74.97. Now that source and shield K x-rays are
+  emitted, a Pb shield's x-ray peaks on HPGe sit 0.28 keV high (the FWHM there is ~1.1 keV).
+- **Implementation:** replace the line energies with measured transition energies
+  (Deslattes et al., *Rev. Mod. Phys.* **75** (2003) 35; NIST SRD 128) in
+  `generate_eadl_relaxation.py`, keeping EADL's intensities and yields; regenerate.
+- **Shows up:** Pb, W, U and Th x-ray peaks on HPGe.
 
-### Source-material fluorescence not emitted (high-Z self-attenuating sources) `[medium — coverage]`
-- **Effect:** photoelectric absorption **in the source material / source shields** emits the
-  photoelectron (for brems) but **no characteristic K X-ray** (`SourceGeometry.cpp`,
-  `transport_source_photon_impl`, `InteractionType::Photoelectric` returns `survived=false`). So K
-  fluorescence that escapes the source and reaches the detector is missing from **total** efficiency.
-  Quantified June 2026 against GEANT4 for a self-attenuating **Thorium** sphere (3"×3" NaI): MC total is
-  **−22% (238.6 keV), −4.1% (583 keV), −2.6% (911 keV)** below G4 — the deficit tracks the PE fraction
-  (the G4 histogram shows the missing counts as a Th Kα line at 90/93 keV). **FEP is unaffected** (the
-  escaped X-ray cannot land in the primary photopeak) — FEP agrees to |z|≤1 across the same runs — and
-  **low-Z trace sources are unaffected** (soil sphere G-B/G-C totals agree to ≲1.5%). Orthogonal to
-  geometry: it applies to any high-Z source shape, not just the sphere.
-- **Implementation:** mirror the crystal-side K-fluorescence path — after PE in source material/shield,
-  sample a K-shell vacancy (energy-dependent K fraction) and emit one fluorescence line as a
-  `SourceSecondaryPhoton`, transported through the remaining source geometry like the brems secondaries
-  (the K-line data is already in `relaxation_epics_data.cpp`). Gate it so low-Z (<10 keV) lines, which deposit
-  locally anyway, add no cost; verify cfg 8/11/12 totals are unchanged.
-- **Shows up when:** self-attenuating or thickly-shielded **high-Z** sources (U/Th/Pu metal, Pb-encased)
-  at sub-MeV energies where PE dominates.
+### Pair production near threshold is unarbitrated
+`[low — residual]`
+- **Effect:** EPICS2023's pair cross section is below GEANT4's parameterization near
+  threshold: at 1332 keV Ge −9%, Cd −5%, I −3%, Na −6%, Al −6%; at 1.2 MeV I −21%; at
+  2614 keV within ±1% except Pb +2.3%. In GEANT4 pulse-height comparisons the single and
+  double escape peaks at 1332 keV read 5–13% low accordingly (NaI SE −5.4%, HPGe SE −13%,
+  CZT DE −7%), and the 511 keV line behind Pb shells at 2614 keV a few percent high.
+- **Implementation:** compare both against NIST XCOM pair production (nuclear + electron
+  field) at 1.1–3 MeV for Na, Al, Ge, Cd, I and Pb, as was done for the iron
+  photoelectric difference; document it in DESIGN.md as an evaluation difference, or
+  correct the data if EPICS2023 is the outlier.
+- **Shows up:** single/double escape peaks below ~2 MeV; pair-fed 511 keV lines.
 
-### cfg 7 100 keV Pb K-edge `[G4-side, excluded from gate]`
-- **Effect:** ~−25–31% total at 100 keV — localized to G4's in-tracking μ_total(Pb) being smeared across
-  the K-edge (G4-side, not an MC bug). Excluded from `compare_validation.py`.
-- **Implementation:** none on our side; revisit if G4 fixes the edge interpolation. Separately verify our
-  Pb K-line branching ratios (MC Kα/Kβ 0.67 vs G4 0.82) against EADL.
-- **Shows up when:** just above high-Z K-edges behind thick high-Z attenuators.
+### L/M-shell fluorescence x-ray escape not modelled
+`[low]`
+- **Effect:** only K-shell fluorescence is transported; L x-rays (e.g. Pb Lα ≈ 10.5 keV) are
+  deposited locally, over-predicting local deposit and missing L-escape features. On a bare
+  1 cm CZT, GEANT4 shows Cd/Te L-escape lines at E₀ − 3.1…4.3 keV (~0.02% of the FEP) that
+  CeeLo lacks, and a bare self-attenuating thorium sphere reads ~1% low in total, plausibly
+  its L x-rays.
+- **Implementation:** emit L lines from the EADL data already in
+  `relaxation_epics_data.cpp`.
+- **Shows up:** thin high-Z detectors (CZT), PE in a high-Z attenuator skin, low-energy
+  spectra.
 
----
+### Pair-production energy sharing and transport above 3 MeV
+`[low — fidelity, coverage]`
+- **Effect:** the crystal splits the pair kinetic energy exactly 50/50
+  (`PhotonTransport.cpp`, `ke_each = 0.5 * deposited_local`) instead of sampling the
+  Bethe–Heitler sharing, so both leptons ride the same deterministic CSDA step grid; it
+  leaves a 46.2 keV comb in pair-history deposit spectra at 4–9 MeV (seen in full-spectrum
+  truth) and is a candidate for small escape-peak shape errors. The source side already
+  samples the split. More broadly, nothing above 3 MeV is GEANT4-gated although the photon
+  tables reach 20 MeV, and photonuclear absorption is absent (as in EPDL/XCOM; a few
+  percent of Pb/U attenuation at 12–15 MeV).
+- **Implementation:** sample the split from the screened Bethe–Heitler cross section and
+  A/B it; a GEANT4 gate row at 10–15 MeV for a bare and a Pb-shielded detector;
+  photonuclear only if it ever matters.
+- **Shows up:** escape-peak/continuum shape above ~3 MeV; reaction gammas (e.g.
+  N-14(n,γ) 10.8 MeV).
 
-## Cross-section data / fidelity
-
-### Actinide atomic weights are one conventional mass per element `[low — coverage]`
-- **Effect:** above uranium there is no standard atomic weight, so CeeLo uses xraylib's per-element
-  masses: Np 237, Pu 239.1, Am 243, Cm 247, Bk 249, Cf 251. Pu and Bk are the isotope actually in
-  hand (Pu-239, Bk-249; confirmed Sep 2026); Am, Cm and Cf are the longest-lived isotope. A `Material`
-  turns element mass fractions into atom densities with these masses, so a material that is really
-  Am-241 gets 0.8% too few atoms per gram and a μ 0.8% low (Cm-244: 1.2%; Cf-252: 0.4%).
-- **Implementation:** let `Material` take a per-component atomic mass (or a nuclide composition) so a
-  caller that knows the isotopic mix — InterSpec does — sets it directly; keep xraylib's values as the
-  default.
-- **Shows up when:** per-gram quantities for Am/Cm/Cf sources or shields, e.g. the self-attenuation of
-  an AmO₂ source or activity from mass.
-
-### Atomic weights through uranium are xraylib's two-decimal table `[low — fidelity]`
-- **Effect:** `g_atomic_weights` holds xraylib 4.2.1's values, rounded to two decimals and partly out
-  of date: H 1.01 (IUPAC 1.008, +0.20%), Au 197.2 (+0.12%), Ti 47.9 (+0.07%), Mg 24.32 (+0.06%),
-  Ge 72.59 (−0.06%), Na 23 (+0.04%), Al 26.97 (−0.04%), and Tm 167.27, which is erbium's value
-  (Tm 168.93, −0.98%). `Material` turns mass fractions into atom densities with them, so each
-  element's atom density is off by the same fraction in the other direction: hydrogen in water 0.2%
-  low (electron density −0.04%), germanium in HPGe 0.06% high. The GDML export has its own IUPAC
-  masses, so CeeLo and GEANT4 already differ by these amounts — far below the gates' precision,
-  except for thulium.
-- **Implementation:** take the IUPAC 2021 standard (abridged) atomic weights for Z ≤ 92 as a locked
-  source in `generate_element_support.py`, keeping the actinide conventions above; then re-run the
-  migration validators and spot-check the GEANT4 gates. InterSpec's formula-to-mass-fraction
-  conversion (`CeeLoUtils`) uses SandiaDecay's natural masses through uranium for this reason.
-- **Shows up when:** hydrogenous and HPGe materials at the 0.05–0.2% level; anything containing
-  thulium at 1%.
-
-### Rayleigh anomalous dispersion (f′, f″) not included `[low]`
-- **Effect:** the coherent cross-section uses non-dispersive F(x,Z) → overestimates by several-% to
-  tens-% in narrow windows just above high-Z absorption edges.
-- **Implementation:** add f′(E)+if″(E) (xraylib Fi/Fii or RTAB tables) to the Rayleigh XS / angular model.
-  Check first (Sep 2026): against XCOM, which omits anomalous scattering, EPICS2023's integrated coherent
-  cross section for Z 92–98 is 1–34% lower, most just *below* K edges — the anomalous-scattering pattern —
-  so the integrated cross section may already carry it and only the angular sampling (F² alone) lack it.
-- **Shows up when:** sub-30 keV high-Z work; accurate Rayleigh-peak shape.
+### cfg 7 at 100 keV (Pb K edge)
+`[GEANT4-side; excluded from the gate]`
+- **Effect:** ~−25 to −31% total at 100 keV, traced to GEANT4's in-tracking μ_total(Pb)
+  being smeared across the K edge (DESIGN.md). Separately, CeeLo's escaped Pb Kα/Kβ ratio is
+  0.67 against GEANT4's 0.82 (a simple emission × attenuation estimate agrees with GEANT4).
+- **Implementation:** none on CeeLo's side for the edge; verify CeeLo's Pb K-line branching
+  ratios and energies against EADL.
+- **Shows up:** just above high-Z K edges behind thick high-Z attenuators.
 
 ---
 
-## Validation bookkeeping
+## Cascade / true-coincidence summing
 
-### GEANT4 references are still scored at the old 1.5 keV FEP window `[medium — validation]`
+### Rejected-branch pair links cannot all be honored
+`[high — decay data]`
+- **Effect:** branches whose level scheme is rejected fall back to flat member marginals
+  plus directional pairwise links, which are not jointly consistent (a whole-database census:
+  10,355 linked pairs whose implied joint exceeds `min(P(a),P(b))`; 3,172 of 131,851 pairs
+  whose two directional reconstructions disagree by >1%). FullRealization projects them onto
+  a deterministic one-parent Bayesian forest (every pair joint Fréchet-bounded, every
+  marginal preserved), so incompatible links go unused; Conditional and analytic do not
+  invent gamma-gamma sum-fed joints for rejected branches. All three set per-peak
+  `summing_model_complete=false` when an invalid primary or a possible invalid-branch photon
+  pair affects the peak.
+- **Implementation:** recover authoritative level topology or a consistent multivariate
+  decay law for the rejected records. Averaging directional conditionals or clamping pairs
+  independently cannot define a coherent 3+-member realization. Analytic/Conditional should
+  enumerate the forest's pair joints only if that projection becomes part of their contract.
+- **Shows up:** any peak marked `summing_model_complete=false`, especially U-235, Pu-241,
+  Sb-125.
 
-**Effect.** `physics/FepWindow.h` consolidated "what counts as full-energy" onto one constant,
-`kDefaultFepWindowKeV = 0.75` keV. Every committed GEANT4 reference in
-`tests/data/geant4_reference/` predates that and was generated at a 1.5 keV half-window, as were the
-several hundred numeric expectations in the C++ suite. Anything compared against them therefore pins
-1.5 keV instead of the default: `kTestFepWindowKeV` (`tests/test_fep_window.h`, used by the suite and
-`cascade_ref_common.h`) and `kReferenceFepWindowKeV` (`examples/benchmark_mc_configs.cpp`, the
-writer of the `our_*_multi.csv` input to the `profiling/compare_validation.py` gate). Until the pins go, the gate and the tests are not
-measuring the library's own default. Two producers deliberately follow the new default instead and
-so are NOT comparable to the committed references: the harness itself
-(`EventAction`, defaulted, no CLI override) and `tools/geant4_validation/generate_all_spectra.cpp`. The gap is real where near-peak forward scatter is: config 8 at
-59.5 keV gives FEP 7.479e-02 +/- 0.161% at 1.5 keV vs 7.248e-02 +/- 0.163% at 0.75 keV, -3.09% at
-z = -13.5. Bare-NaI config 1 at 60/662/1332 keV is unaffected (|z| <= 1.0 at 0.1% precision).
+### Infeasible ICC/intensity pairs can cost branches their level scheme
+`[medium — decay data]`
+- **Effect:** some records pair a gamma intensity with an ICC for which
+  `I_gamma*(1+alpha) > 1`. The adapter bounds the transition and rejects a graph whose
+  reconciled feeding stays infeasible; rejected branches use the pairwise model above. The
+  regenerated-XML audit reports 4566 valid, 754 raw-only, 1782 partial-only and 1328
+  raw+partial branch instances, with 323 E0 repairs and 804 intensity caps in accepted
+  graphs (a distinct parent→child recount is still needed before quoting a rejection
+  rate). Rejected examples with T½ > 1 y: U-235 → Th-231 (raw_total_feed 2.37), Th-229 →
+  Ra-225, Hf-172 → Lu-172m, Pu-241 → U-237, Pa-231 → Ac-227, Sb-125 → Te-125, plus Am-242m,
+  Cf-249, Bk-247, Cm-243, Np-235, Ho-166m, Po-208, Sn-126, Es-252; also Pa-234 → U-234
+  (1.25). U-235's summing factors change 12–850× across the switch, so no absolute value
+  from a rejected nuclide's level path is trustworthy. The GEANT4-anchored cascade gate
+  (Am-241, Ba-133, Co-57, Co-60, Eu-152, I-125, Na-22) cannot see a regression here.
+- **Not a matching failure**: U-235's 19.59 keV gamma is correctly matched (Th-231 level
+  5 → 4, alpha = 114.7); the input evaluations disagreed, and the regenerated XML carries the
+  curated ENSDF override (0.00583 per decay).
+- **Already done:** a member's gamma intensity is capped at `1/(1+alpha)`, the ceiling that
+  holds whichever number is wrong (I-125's Te-125 transition loses 0.7%; U-235's 19.59 keV
+  loses a factor of 70, removing false sum peaks at 205.31 and 221.40 keV).
+- **Implementation:** uncurated records need a per-transition ENSDF check of whether the
+  tabulated intensity is the gamma or the transition rate (435 of the historical 1052
+  violations sit within 2% of the bound, where the two readings differ 15×); no heuristic
+  separates them.
+- **Shows up:** U/Pu-chain nuclides with strongly converted low-energy transitions; the
+  calibration set is unaffected.
 
-**Implementation.** Settle the default first (0.75 keV suits HPGe; the MC has no resolution
-smearing, so the window is really a choice about how much near-peak scatter to credit). Then
-regenerate the GEANT4 references with `EventAction::SetFepWindowKeV` set to the same value — the
-harness setter exists but has no CLI flag yet, so add one to `main.cc` — re-baseline the suite's
-expectations, and delete both pins plus the note at the top of
-`tests/data/geant4_reference/README.md`.
+### Analytic cascade summing: remaining approximations
+`[low]`
+- **Effect:** `compute_cascade_analytic` matches FullRealization to ≲1% at all geometries
+  including contact for the mainstream γ-γ / EC-x-ray / β⁺ cases (Co-57, Ba-133, Na-22,
+  Am-241, Eu-152, Co-60; |z| ≤ 0.97 at 2 cm). Known residuals:
+  - **Escape-peak recovery** (`Π(1−p·ε_tot)` treats the peak as a delta): misses events where
+    the primary's escape peak plus a coincident x-ray sum back into the window — I-125 35.49
+    @2 cm −4%, Ba-133 81 @2 cm −6%, Eu-152 121.78 −1.5%; ~0 by 20 cm. Not fixable from
+    ε_FEP/ε_tot alone; these rows are report-only in the gate.
+  - **W(θ)** uses the collinear limit `g = W(0)` for correlated summing-in pairs (recovers
+    Co-57 122+14 → 136 to ~0.2%); slight over-correction possible at very close geometry.
+  - **Triple-fed summing-in** is enumerated only for gamma lines on distinct transitions;
+    x-ray / EC / annihilation triples, 4+-member sums and topology-free residual gammas are
+    omitted (ε³-small, and a perf necessity).
+  - **Non-gamma primaries**: a 511 primary uses a marginal-product fallback; a peak at a
+    pure vacancy x-ray energy returns `found=false`.
+  - IC-electron deposition is whatever the ε provider models; Kα→L secondary vacancies are
+    dropped (summing-out is idempotent, summing-in ε²-small).
+- **Implementation:** a deposit-spectrum-aware provider (escape energy + fraction); a real
+  angular joint acceptance; EC/annihilation triples if a case needs them.
+- **Shows up:** very low-energy lines just above the detector K edge at contact;
+  sub-0.5% work on x-ray-rich EC nuclides at contact.
 
-**Shows up.** Any comparison of CeeLo-at-default against the committed references; low-energy and
-scattering-heavy configs (8, 7) most of all.
+### Transition-group (flat) x-ray model: remaining approximations
+`[low]`
+- **Effect:** the flat model (`vacancy_xray_model=false`; InterSpec's reference lines and
+  sum-peak check) carries K–K pairs (DESIGN.md) but: x-rays and gammas are linked as
+  independent (a Pb-203 K–K pair needs the 279 keV transition converted, yet the link treats
+  that gamma as coincident; K–K sum survival reads ~10–20% low at contact); EC capture and
+  conversions are independent in `D2` (+0.2% Pb-203, +2.8% Ba-133, +5.9% Te-123m); the MC
+  ignores `self_pair_prob`; no L x-ray pairs or K→L relaxation; and gamma-gamma links are
+  SandiaDecay's coincidence fractions verbatim, which disagree with the level scheme for
+  ~20k of ~27.5k links (Lu-177 all ~0.1×; Eu-152 125.7 → 562.9 keV 0.37 vs 0.99; clean:
+  Ba-133, Co-60, Ra-226, Tl-208, I-131).
+- **Implementation:** the vacancy model is exact but too slow for InterSpec's redraw
+  (36–78 ms per window for Eu-152); cheaper: condition the flat x-ray→gamma links on the
+  vacancy source. The gamma-gamma links are a decay-data question first.
+- **Shows up:** x-ray–gamma or x-ray–x-ray sums at contact for EC emitters (Pb-203, Ba-133,
+  Eu-152's EC branch).
+
+### Conditional estimator: sum-peak-fed and x-ray-fed summing-in
+`[low]`
+- **Effect:** `CascadeMethod::Conditional` captures gamma-gamma sum-fed summing-in and
+  vacancy x-ray summing-out, but not γ + coincident x-ray feeding into a window and it treats
+  partners of 3+-gamma cascades as independent: ≈1–2% from FullRealization at contact
+  (Co-57 136: 1.18 vs 1.20; Ba-133 356: 0.517 vs 0.494); ε²-small far away.
+- **Implementation:** enumerate γ + x-ray-pair and triple-γ channels in
+  `cascade_sum_pair_channels`, sample partners jointly, or route contact-geometry x-ray-heavy
+  summers to FullRealization.
+- **Shows up:** high-Z low-energy x-ray summers or sum-fed peaks at contact.
+
+### IC-electron summing: residuals and an auto mode
+`[low]`
+- **Effect:** with `enable_ic_electrons` (default OFF, GEANT4-validated to <1% at 2 cm):
+  (a) M+-shell and sub-15 keV conversion electrons are not deposited, under-counting
+  summing-out on IC-heavy low-energy peaks at bare-source contact (Ba-133 P356 ≈ +14% vs
+  GEANT4 there; ≈0 by 2 cm) — a crude full-energy M+ deposit over-corrected and was
+  reverted; (b) nothing turns it on by proximity, and it costs ~5–8% whenever on.
+- **Implementation:** (a) M-shell binding plus a partial-deposit model; (b) a tri-state
+  `Off/On/Auto` (Auto within a few cm), re-tuning the cascade test bands, which are
+  OFF-tuned.
+- **Shows up:** (a) bare/thin sources at contact or near 4π; (b) close-source callers.
+
+### L1/L2 conversion electrons use the L3 binding energy
+`[low]`
+- **Effect:** `build_radioactive_emissions()` and the IC-electron deposition take the L
+  binding from `LFluorescenceData::l3_edge_keV` for L1, L2 and L3, so L1/L2 electrons are
+  too energetic by up to ~4.8 keV (Np) or ~2.8 keV (U).
+- **Implementation:** carry per-subshell L edges in `LFluorescenceData` (the EADL generator
+  already reads them) and use the one matching each `ConversionShell`.
+- **Shows up:** IC-electron summing or escape studies for strongly L-converted heavy-element
+  transitions (Am-241, U/Pu chains).
+
+### Coincident L x-ray sum peaks slightly low
+`[low]`
+- **Effect:** L x-ray singles match GEANT4 to ~0.3% (Am-241/Np, Pb-203/Tl), but coincident
+  L sum peaks run low (Am-241 59.5+L ≈ 0.80, L+L ≈ 0.96 vs GEANT4), pointing at
+  under-weighted upper-level feeding into the 59.5 keV level.
+- **Implementation:** check the flow-conservation feeding in the level-path builder
+  (`SandiaDecayCascade.cpp`, `feeding = out_flow − in_flow`) against Am-241's α branching to
+  the Np 102.96 / 158 keV levels.
+- **Shows up:** sum-peak magnitudes for high-Z L-x-ray emitters at close geometry (<0.25% on
+  peak efficiency corrections).
+
+### β⁺ annihilation in the cascade: residuals
+`[low]`
+- **Effect:** the cascade β⁺ path ranges the positron (allowed-spectrum KE, in-flight
+  annihilation, escape from the source). Remaining: the source walk uses the electron
+  (Møller) stopping term — `walk_in_source_geometry` takes no `is_positron`, although the
+  Bhabha F⁺ term exists (`range_table_pos_`); no ortho-positronium 3γ; the Conditional
+  estimator still annihilates at the vertex.
+- **Implementation:** thread `is_positron` into `walk_in_source_geometry` (<1% effect, no
+  cost); range the positron in Conditional.
+- **Shows up:** β⁺ emitters (Na-22, F-18) at close geometry — the 511 / 1022 / γ+511 peaks.
+
+### Internal-pair formation for verified high-energy E0 transitions
+`[low — physics]`
+- **Effect:** verified pure-E0 transitions get `p_gamma = 0`; above 2mₑc² the remainder may
+  be internal pair formation, kept as an explicit `p_unmodeled` outcome, so N-16's
+  6048.2 keV 0+ → 0+ transition no longer emits an impossible photon but its pair deposit
+  is absent.
+- **Implementation:** emit a back-to-back 511 pair plus the (E − 1022) keV kinetic energy,
+  with the pair/conversion split from data. Do not promote GEANT4 multipole code 1 alone to
+  an E0 assertion (Ac-232 373.3 keV and Rb-78 189.8 keV must stay photons).
+- **Shows up:** verified E0 transitions above 1022 keV.
+
+### High-coverage partial graphs keep small topology-free residuals
+`[low — nuclear-data policy]`
+- **Effect:** accepted graphs have at most 0.01 absolute residual occurrence (and below 99%
+  coverage need complete RDM starts); residual transitions are kept as independent
+  categorical transitions. Th-234 stays on its inferred DAG: its old RDM starts disagree
+  with the newer 63.29/92.8 keV yields, and the record lacks GEANT4's 29.5 keV and 20.01 keV
+  transitions, so 103.42 keV is a 0.0565/decay sink whose Pa L conversions are never
+  generated.
+- **Implementation:** SandiaDecay data (add both Th-234 transitions, re-derive the feeds, a
+  reviewed levelFeed override); replace the independence approximation only with mapped
+  topology or authoritative joint correlations.
+- **Shows up:** unmatched transitions carrying <1% of a branch's occurrence sum.
+
+---
+
+## Source geometry
+
+### Extended-source totals: a small coherent offset
+`[low — fidelity]`
+- **Effect:** with source-electron transport on and both sides at high precision, extended
+  sources show sub-1% TOTAL structure that is statistically resolved: the uncored soil
+  shell G-C reads +0.62% (z 2.1) at 238.6 keV, +0.74% (z 2.9) at 583.2, −0.63% (z −3.6) at
+  2614.5; across the 16 cored + control rows χ²/n ≈ 3.2 with a positive mean (FEP is clean,
+  χ²/n ≈ 1.1); config 12 totals sit +0.9 to +1.3% at 200–1173 keV. Cored and uncored cases
+  agree, so it is the extended-source path, not cores.
+- **Implementation:** unknown; candidates are the secondary-channel normalization above the
+  pair threshold and the scattered-stream placement documented for config 8.
+- **Shows up:** extended-source TOTAL at high statistics.
+
+### Position bias ignores hollow-source voids
+`[low — coverage]`
+- **Effect:** `sample_biased_position` / `compute_auto_bias_params` use the outer
+  `radius` / `half_dims` only, so position bias on a hollow source emits from the void with
+  wrong weights. Unbiased sampling (the default for these shapes) is correct.
+- **Implementation:** reject-and-reweight (V_solid/V_shell), annulus-aware sampling, or
+  assert position bias off for hollow sources.
+- **Shows up:** hollow sources large enough for auto position bias.
+
+### Source-core validation gaps
+`[low — validation coverage]`
+- **Effect:** a partly filled core (leaving a real void) has no GEANT4 anchor; the G-E
+  confinement control exists only for the sphere; nothing cored is anchored at ~50 cm (the
+  far-field cone/two-stream path for a cored source).
+- **Implementation:** a G-D-like half-filled case at near distance and G-E-style controls
+  for the cylinder and box (a handful of 16M runs).
+- **Shows up:** cores that leave a central void, or cored sources far away.
+
+### `add_core()` overflow is silently clamped
+`[low — API]`
+- **Effect:** core thicknesses summing past the cavity are clamped (`.cwiseMax(0.0)` in
+  `rebuild_layer_dims`), silently dropping inner layers.
+- **Implementation:** assert or throw when the accumulated thickness exceeds the cavity.
+
+### Semi-infinite half-space (wall / floor / soil slab)
+`[medium — coverage + estimator]`
+- **Effect:** large-area surface or volumetric sources can be approximated today by a large,
+  deep box, but uniform box sampling wastes nearly every history far off-axis without
+  `lambda_lateral` position bias.
+- **Implementation:** a half-space template with built-in lateral importance weighting,
+  analytic lateral truncation, per-area/per-mass normalization, perhaps an angular-flux
+  estimator. Air matters more here than anywhere.
+- **Shows up:** in-situ / large-area measurements with standoff.
+
+### More source shapes and activity distributions
+`[low — coverage]`
+- **Effect:** not expressible today: frustum / cone; bottle with neck and partial fill;
+  several separated active regions in one run; graded activity (radial gradients, surface
+  plate-out); activity in more than one layer (a trace source spread through a shield or
+  attenuator — today one emitting layer sits between cores and shields). A thin disk /
+  planar deposit already works as a thin cylinder (only a convenience constructor and a
+  "massless deposit" flag are missing).
+- **Implementation:** frustum needs a cone-intersection routine; bottle is a composite;
+  multi-region and multi-layer activity need the source loop to sum over emitting regions;
+  graded activity extends the sampler weighting (`PositionBiasConfig` /
+  `DepthDistribution` hooks exist).
+- **Shows up:** specialised containers; composite or graded sources; contaminated shielding.
+
+---
+
+## Detector geometry and GDML export
+
+### GDML export emits no rotation for source volumes
+`[medium — silent mismatch]`
+- **Effect:** `write_gdml()` places source volumes with a position and an identity rotation,
+  so a `CylinderSideOn` source or a rotated box is exported unrotated while the MC honours
+  the rotation.
+- **Implementation:** write the outermost source volume's rotation from `cyl_rotation_` /
+  `rect_rotation_`; nested daughters share its frame.
+- **Shows up:** validating a side-on cylinder or tilted box against GEANT4.
+
+### Dead layer is not exported to GDML
+`[low — validation coverage]`
+- **Effect:** `write_gdml()` writes the whole crystal as `active_crystal` and only notes the
+  dead layer in a comment, so a dead-layer geometry is compared against a different solid.
+  Configs 25/26 carry no dead layer, and the bulletized active fillet has no GEANT4 anchor.
+- **Implementation:** export the crystal as a non-scoring volume with the active region as a
+  daughter (same material, so not a subtraction); the harness already scores
+  `active_crystal`.
+- **Shows up:** HPGe with realistic 0.5–1 mm dead layers, especially below ~100 keV.
+
+---
+
+## Electron / CSDA physics
+
+### Retire the empirical skin-escape gate with a Mott / Goudsmit–Saunderson MSC
+`[low — robustness; research]`
+- **Effect:** the regime-aware exit-state gate is the validated default (mean |err| at
+  662 keV: gate 0.56% < `tails` 0.62% < `gs` 0.92%; DESIGN.md has the per-config table). The
+  first-principles variants over-diffuse multi-wall boxes (`tails`) or under-scatter ~30%
+  (`gs`, screened Rutherford without Mott and nuclear form-factor corrections).
+- **Implementation:** replace the screened-Rutherford cross section with Mott, or sample a
+  tabulated Goudsmit–Saunderson angular distribution by inversion (no Gaussian+tail
+  double count); then re-validate ~1% across Z without the gate. Run time is ~free; the
+  cost is developer time and Mott data.
+- **Shows up:** shielded/extended box sources (configs 8, 11, 12, 20–24).
+
+### Electron tables for Np–Cf are uranium's
+`[low — coverage]`
+- **Effect:** ESTAR, ICRU-49 I and EPQ Seltzer–Berger stop at Z = 92, so Z 93–98 reuse
+  uranium's (DESIGN.md table: collision −2.1 .. +2.3%, radiative −1.9% (Np) .. −8.9% (Cf),
+  CSDA range −1.7 .. +2.9% above 50 keV). The efficiency effect is unmeasured.
+- **Implementation:** add ESTAR 93–98 as a production source and a bremsstrahlung source
+  above Z = 92 (EEDL2023 MF=26 MT=527 would be a new lineage). Cheaper for the radiative
+  part: rescale uranium's by Z(Z+1)/A (error −2.5 .. +3.9%).
+- **Shows up:** thick Pu/Am/Cf sources or shields at MeV energies.
+
+### In-crystal positron annihilation: residual approximations
+`[low]`
+- **Effect:** the PP positron is CSDA-tracked with Berger–Seltzer F⁺ stopping, annihilates
+  at its endpoint or in flight, and the pair gets the Koch–Motz opening angle (single/double
+  escape peaks now on GEANT4: −1.3% / −0.5%). Remaining: the in-flight pair uses an
+  isotropic energy split rather than exact two-body kinematics (a candidate for the small
+  single-escape offset); no ortho-positronium 3γ; the in-flight cross section is duplicated
+  (`positron_annih_xsec_per_electron` in `ElectronCsda.cpp`, `annih_xsec_per_electron` in
+  `EfficiencyCalculator.cpp`).
+- **Implementation:** exact boost kinematics; one physics home for the cross section.
+- **Shows up:** escape-peak / annihilation-continuum shape above 1.5 MeV, thin crystals.
+
+---
+
+## Cross-section data
+
+### Atomic weights through uranium are xraylib's two-decimal table
+`[low — fidelity]`
+- **Effect:** `g_atomic_weights` holds xraylib 4.2.1's rounded, partly outdated values: H
+  1.01 (+0.20% vs IUPAC), Au +0.12%, Ti +0.07%, Mg +0.06%, Ge −0.06%, Na +0.04%, Al
+  −0.04%, and Tm 167.27, which is erbium's (−0.98%). Atom densities move by the same
+  fraction the other way (hydrogen in water −0.2%, electron density −0.04%). The GDML export
+  uses IUPAC masses, so CeeLo and GEANT4 already differ by these amounts.
+- **Implementation:** take IUPAC 2021 abridged weights for Z ≤ 92 as a locked source in
+  `generate_element_support.py` (keep the actinide conventions below), re-run the migration
+  validators and spot-check the gates.
+- **Shows up:** hydrogenous and HPGe materials at 0.05–0.2%; thulium at 1%.
+
+### Actinide atomic weights are one conventional mass per element
+`[low — coverage]`
+- **Effect:** above uranium CeeLo uses xraylib's masses (Np 237, Pu 239.1, Am 243, Cm 247,
+  Bk 249, Cf 251). Pu and Bk match the isotope in hand; a material that is really Am-241
+  gets a μ 0.8% low (Cm-244 1.2%, Cf-252 0.4%).
+- **Implementation:** let `Material` take a per-component atomic mass or nuclide
+  composition (InterSpec knows the isotopics), keeping xraylib's as the default.
+- **Shows up:** per-gram quantities for Am/Cm/Cf sources or shields.
+
+### Rayleigh anomalous dispersion (f′, f″)
+`[low]`
+- **Effect:** the coherent angular model uses non-dispersive F(x,Z), overestimating by
+  several to tens of percent in narrow windows above high-Z edges. EPICS2023's *integrated*
+  coherent cross section is 1–34% below XCOM's for Z 92–98, mostly just below K edges — the
+  anomalous-scattering pattern — so only the angular sampling may lack it.
+- **Implementation:** f′(E) + if″(E) (xraylib Fi/Fii or RTAB) in the Rayleigh angular model,
+  after checking the integrated term.
+- **Shows up:** sub-30 keV high-Z work; Rayleigh-peak shape.
+
+---
 
 ## Error estimation
 
-### D3 — no systematic-error budget `[low]`
-- **Effect:** reported σ is purely statistical; documented model biases (LaBr3 ≥1 MeV residual, cfg-8
-  59 keV near-peak scatter, cfg-12 59 keV data difference, skin-escape; the former ≥2 MeV FEP family and
-  CZT escape were fixed Aug 2026) exceed σ_stat in their regimes, so a user computing
-  z = Δε/√(σ_MC²+σ_G4²) gets spuriously large |z| that is a known model effect, not a discrepancy to chase.
-- **Implementation:** document (and optionally expose) an energy/config-dependent σ_sys so z-scores in the
-  bias-dominated regimes use √(σ_stat²+σ_sys²); at minimum annotate the affected energies.
-- **Shows up when:** computing MC-vs-G4 z-scores in the known-bias regimes.
+### No systematic-error budget
+`[low]`
+- **Effect:** reported σ is statistical only, while documented model biases (LaBr3 ≥2 MeV,
+  cfg 8 at 59 keV, skin escape) and data differences (cfg 12 at 59 keV, cfg 27/28 at
+  60 keV) exceed σ_stat in their regimes, so z = Δε/√(σ_MC²+σ_G4²) is spuriously large
+  there. Cfg 12 at 59 keV (FEP −4.0%, total −3.2% against tolerances 2.1% / 1.9%) passes
+  the gate only on its 3σ allowance — a known offset carried as noise.
+- **Implementation:** document (optionally expose) an energy/config-dependent σ_sys; at
+  minimum widen or `SKIP` cfg 12 at 59 keV with the reason attached, as cfg 7 at 100 keV is.
+- **Shows up:** MC-vs-GEANT4 z-scores in the known-bias regimes.
 
 ---
 
-## Source geometry (new shapes)
+## Minor
 
-Current shapes: point, solid/annular cylinder, rectangular box, solid/hollow sphere, Marinelli beaker
-(`SourceGeometry::Shape`). Each supports a source material/density (self-attenuation), uniform (or
-exponential-depth) activity, isotropic emission, arbitrary rotation/off-axis placement, and full-MC
-source transport. Sphere/cylinder/box ray-intersection primitives exist (used for shield shells). A
-thin disk / planar deposit is **already expressible** as a degenerate thin solid cylinder
-(uniform-volume sampling and ray-cylinder self-attenuation are both correct in that limit) — only a
-convenience constructor and an optional "massless deposit" (self-attenuation off) flag are missing,
-not a new shape.
-
-(Done — **solid + hollow sphere** (`set_spherical_source`) and **hollow/annular cylinder**
-(`set_cylindrical_source(..., inner_radius)`) landed with the cascade geometry-parity work; see
-DESIGN.md "Source shapes" and `tests/test_spherical_source.cpp`. **Hollow rectangular box shell**
-(`set_rectangular_source(..., inner_half_dims)`, crate/container walls) landed with the Stage-B
-validation-matrix work; see `tests/test_hollow_box_source.cpp`.)
-
-### Position bias ignores hollow-source voids `[low — coverage]`
-- **Effect:** `sample_biased_position` / `compute_auto_bias_params` ignore `inner_radius` /
-  `inner_half_dims` (they sample the full solid proposal with solid-volume weights), so enabling
-  position bias on a hollow source emits from the void with wrong weights. Unbiased sampling
-  (the default for these shapes) is correct.
-- **Implementation:** reject-and-reweight (constant factor V_solid/V_shell) or annulus-aware lateral
-  sampling in `sample_biased_position`, or assert position bias off for hollow sources.
-- **Shows up when:** hollow sources large enough that auto position bias would otherwise engage.
-
-(Done — the "pipe wall source with attenuating contents" half of this item is resolved by
-`add_source_core()`: a hollow source's interior can now be filled with attenuating layers instead of
-being a mandatory void. See DESIGN.md "Source shapes" and `tests/test_source_core.cpp`.)
-
-### Extended-source TOTAL has sub-percent structure at the ends of the range `[low — fidelity]`
-- **Effect:** with source-electron transport enabled and both sides at high precision, the
-  uncored soil-shell control (G-C) total sits **+0.62% (z 2.1) at 238.6 keV, +0.74% (z 2.9) at
-  583.2, −0.05% at 911.2 and −0.63% (z −3.6) at 2614.5**. Sub-1% everywhere and inside the ~1%
-  goal, but now statistically resolved rather than lost in noise. The cored geometries (G-D/G-F/
-  G-G) show the same size and sign, so it is a property of the extended-source path, not of cores.
-- **Implementation:** unknown; candidates are the secondary-channel normalization above the pair
-  threshold (which now slightly over-delivers at 238-583 keV while still under-delivering at
-  2614) and the scattered-stream placement documented for config 8.
-- **Shows up when:** comparing extended-source TOTAL efficiency at high statistics.
-
-### GDML export emits no rotation for source volumes `[medium — silent mismatch]`
-- **Effect:** `write_gdml()` places every source volume with a `<position>` and **never** a
-  `<rotation>`, so a `CylinderSideOn` source (90° about y) or any rotated box is exported
-  **unrotated**. The MC honours the rotation, so the exported scene is not the simulated scene —
-  silently, and only for configurations no current benchmark uses.
-- **Implementation:** emit a `<rotation>` (or `<rotationref>`) alongside the position for the
-  outermost source volume, taking the angles from `cyl_rotation_` / `rect_rotation_`. Nested
-  daughters share the mother's frame, so only the world placement needs it.
-- **Shows up when:** validating a side-on cylinder or a tilted box source against GEANT4.
-
-### add_core() overflow is silently clamped `[low — API]`
-- **Effect:** core thicknesses summing to more than the source's inner extent are clamped to zero
-  extent (`.cwiseMax(0.0)` in `rebuild_layer_dims`) rather than rejected, so an over-specified stack
-  quietly loses its innermost layers. The hollow-source precondition IS asserted; the total is not.
-- **Implementation:** assert (or throw) when the accumulated core thickness exceeds the cavity.
-
-### Source-core validation gaps `[low — validation coverage]`
-- **Effect:** three things the Sep 2026 source-core campaign did not pin.
-  (a) A **partly-filled core** — cores that do not reach the centre, leaving a real non-attenuating
-  cavity — has never been GEANT4-validated; it is covered only by unit tests, although the design
-  doc called it out explicitly. (b) The **GPS-confinement ratio control (G-E) exists only for the
-  sphere**; the cylinder and box rely on their direct CeeLo-vs-G4 agreement instead. (c) The
-  **partly-filled and FAR (~50 cm) cored cases have no G4 anchor at all**, so the far-field
-  cone/two-stream path for a cored source is unvalidated.
-- **Implementation:** a G-D-like case with a half-filled cavity at NEAR, and G-E-style ratio
-  controls for the cylinder and box, would close (a) and (b) for a handful of 16M G4 runs.
-- **Shows up when:** a source whose cores leave a central void, or a cored source at ≫10 cm.
-
-### Extended-source TOTAL is a coherent family, not just noise `[low — fidelity]`
-- **Effect:** across the 16 cored + control rows, FEP is statistically clean (χ²/n ≈ 1.1) but
-  **TOTAL is not: χ²/n ≈ 3.2**, with 5 rows at |z| > 2 against ~0.7 expected and a positive mean.
-  Cored and uncored geometries show the same sign and size, so it is a property of the
-  extended-source path rather than of cores. Every deviation is still sub-1%.
-- **Implementation:** unknown; see the neighbouring item on sub-percent structure at the ends of
-  the range, which this generalises.
-- **Shows up when:** comparing extended-source TOTAL efficiency at high statistics.
-
-### Semi-infinite half-space (wall / floor / soil slab) `[medium — coverage + estimator]`
-- **Effect:** large-area surface or volumetric sources (contaminated wall/floor, bulk soil/concrete).
-  Approximable today as a **large, deep** rectangular box (thin box only for surface contamination;
-  volumetric needs depth of several mean-free-paths), but uniform-volume box sampling wastes nearly all
-  histories far off-axis — correct but impractically slow without `lambda_lateral` position biasing.
-- **Implementation:** a first-class half-space template with lateral importance weighting baked in
-  (instead of hand-tuned `lambda_lateral`), analytic lateral truncation (no "how big is big enough"
-  guesswork), per-area (Bq/cm²) / per-mass (Bq/g) normalization, and possibly an angular-flux estimator
-  rather than brute-force volume sampling. Air-path effect (below) matters more here than for compact
-  near-contact sources.
-- **Shows up when:** in-situ / large-area environmental measurement with standoff.
-
-### Lower-priority shapes (need new intersection / sampling code) `[low — coverage]`
-- **Effect:** truncated cone / frustum (funnels, tapered vials, conical piles); bottle / cylinder-with-
-  neck (partial fill + headspace, where the fill line and neck matter); multiple spatially-separated
-  active regions in one run; non-uniform activity beyond exponential-depth (radial gradients, surface
-  plate-out, shell-weighted). None are expressible with the current four shapes.
-- **Implementation:** frustum needs a new cone-intersection routine; bottle is a composite solid; multi-
-  region needs the source loop to sum over regions; non-uniform activity extends the sampler weighting
-  (the `PositionBiasConfig` / `DepthDistribution` hooks already exist) rather than the geometry.
-- **Shows up when:** specialized sample containers; composite / graded sources.
-
----
-
-## Detector geometry
-
-### Germanium shows a ~0.1% energy-structured offset vs GEANT4 at 60–122 keV `[low — residual]`
-- **Effect:** on the HPGe pair, CeeLo sits +0.135% above GEANT4 in FEP at 88 keV (z ≈ 3.5–3.9 at
-  ~0.03% MC precision) and about −0.1% at 122 keV, with ~+0.05% at 59.5 and ~−0.03% at 45. The
-  offset is **the same for the sharp and bulletized crystals** (88 keV: cfg 25 +0.135%, cfg 26
-  +0.136%, difference +0.000 pp), so it is a property of germanium transport, not of the fillet —
-  it cancels in the bulletization comparison. Originally mistaken for a bulletization residual;
-  higher CeeLo statistics showed the 45 keV part was scatter and the rest was common to both.
-- **Implementation:** the shape — small, energy-structured, sub-percent — matches the EPICS2023 vs
-  GEANT4-EPICS2017 photon-evaluation difference already established for Fe/Cr/Ni (commit 1ad196c).
-  Check it the same way: compare µ/ρ(Ge) from `element_data.cpp` against NIST XCOM (Hubbell &
-  Seltzer, SRD 126) over 40–150 keV, and against G4's own `EmCalculator` export via
-  `g4_extract_xs`. If EPICS2023 is closer to NIST, this is CeeLo being more accurate and the item
-  becomes a documented evaluation difference rather than an accuracy gap.
-- **Shows up when:** HPGe below ~150 keV. Well inside the ~1% goal.
-
-### Dead layer is not exported to GDML `[low — validation coverage]`
-- **Effect:** `write_gdml()` writes the full crystal as `active_crystal` and only *notes* the dead layer
-  in a comment, so any GEANT4 comparison of a dead-layer geometry is really comparing different solids.
-  Configs 25/26 therefore carry no dead layer, and the bulletized *active* fillet (the inward-offset arc
-  in `trace_cylinder_geometry`) has unit-test coverage but no G4 anchor.
-- **Implementation:** export the crystal as two nested solids and score only the inner one — the outer
-  shell is the same material, so it must be a separate logical volume rather than a subtraction. The
-  harness already keys on the `active_crystal` volume name, so only the export and the shell's naming
-  change.
-- **Shows up when:** validating HPGe with realistic 0.5–1 mm dead layers, especially below ~100 keV.
-
-### ANGLE `.outx` detector definitions are not importable `[low — convenience]`
-- **Effect:** the crystal geometry CeeLo now models (radius, length, `bulletizingRadius`, bore radius /
-  depth / `rounded`, inactive-Ge thicknesses, endcap and housing layers) is exactly what an ANGLE `.outx`
-  file already carries, but it has to be transcribed into `set_*` calls by hand.
-- **Implementation:** a small reader mapping `<crystal>`/`<core>`/`<inactiveGe>`/`<endCap>`/`<housing>`
-  onto `set_detector` + `set_bullet_radius` + `set_bore_hole` + `set_dead_layer` + `add_attenuator`.
-  Note `.outx` is in mm. Most naturally lives on the InterSpec side rather than in the library.
-- **Shows up when:** reproducing a vendor-characterised HPGe.
-
----
-
-## Other known limitations (documented; tracked for awareness)
-
-### High-coverage partial graphs can retain small topology-free residuals `[low — nuclear-data policy]`
-- **Effect:** coverage is measured in repaired transition-occurrence weight, including memberless E0
-  and highly converted transitions. Every accepted graph has at most 0.01 absolute residual occurrence;
-  below 99% relative coverage it additionally requires complete RDM starts that replay the matched
-  transitions. The remaining small topology-free residuals are retained as independent categorical
-  transitions because exact correlation information is absent.
-- **Known cross-evaluation case:** high-coverage Th-234 remains on the inferred DAG. Its old RDM exact
-  starts disagree with the newer evaluated 63.29/92.8-keV photon yields; forcing those starts would move
-  the result away from the photon evaluation the cascade currently models. Since SandiaDecay c83f5a3
-  (92.36/92.79/112.8 keV x1.16) the DAG enters the scheme 0.242 per decay against the levelFeed's
-  0.219; both feed sets (levelFeed from G4 RDM, `<beta>` summing to 0.924) are stale gamma-balance
-  derivations, not independent data. The record also lacks G4's 29.5 keV (103.42 -> 73.92, alpha 4390)
-  and 20.01 keV (186.73 -> 166.72, alpha 240) transitions, so 103.42 keV is a 0.0565/decay sink whose
-  Pa L-shell conversions are never generated. The fix is SandiaDecay data (add both transitions,
-  re-derive the feeds, a reviewed levelFeed override in the enricher); entry_probability then depends
-  on how the doublet excess splits between 92.38 (M1) and 92.80 keV (E1): 0.260 to 0.225.
-- **Implementation:** replace the independence approximation only if a future enrichment maps the
-  residual transition topology, or supplies authoritative joint correlations for it.
-- **Shows up when:** unmatched transitions carry less than one percent of the branch occurrence sum.
-
-### Air gap not simulated `[documented]`
-- **Effect:** air between the outermost source shield (or the source) and the detector face is not in the
-  MC transport; intended to be applied later as a deterministic analytic correction.
-- **Implementation (investigate):** split the air correction by component so it stays cheap. For the
-  **unscattered / full-energy** component, apply an analytic (analog) transmission T_air = exp(−μ_air·ℓ)
-  along the source→detector path — exact, essentially free, removes the build-out of FEP at low energy /
-  long standoff. For the **scattered** component (total efficiency / spectrum: small-angle air scatter
-  that still reaches the crystal, plus scatter-out), account for it with a GadrasShieldScatter-style
-  analytic scatter kernel rather than tracking air explicitly in the MC — or some other deterministic
-  add-on — so the bulk MC speed is preserved. Validate the split against a G4 run that includes the air
-  volume.
-- **Shows up when:** long source-detector standoff, low energy; matters most for the half-space / in-situ
-  geometry above.
-
-### Doppler-broadening approximations `[documented; NOT an FEP/total effect]`
-- **Effect:** the F(p_z) profile-reweighting factor is omitted (few-% tail) and there is no relaxation
-  cascade from the Compton vacancy. Compton-edge **shape** only — never cite for FEP/total discrepancies.
-- **Shows up when:** detailed Compton-edge shape comparisons.
+- Rename the `MCDET_NO_{STRAGGLE,B2,TAILS}` env knobs (`ElectronCsda.cpp`) to `CEELO_`.
+- `PhotonTransport.h` still mentions `diag_interactions`, now a dev-only study tool.
+- `ElectronCsda.h`'s `kSB_min_energy_keV` comment says the brems tables start at 200 keV;
+  they start at 10 keV.
+- Doppler broadening omits the F(p_z) profile-reweighting factor (few-% tail) and the
+  relaxation cascade from the Compton vacancy — Compton-edge **shape** only; never cite it
+  for FEP/total.

@@ -7167,12 +7167,15 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
       if( drf )
       {
-        result_json["detectorIntrinsicEfficiency"] = round_to_sig_figs( drf->farFieldIntrinsicEfficiency(energy_float), 6 );
+        // A breakdown of `det_eff`: the intrinsic efficiency and solid angle of the crystal the
+        //  efficiency is modeled for (exact for a flat-disk DRF; far-field for a geometry-modeled one)
+        const double intrinsic_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency( energy_float )
+                                                : drf->intrinsicEfficiencyEval( energy_float ).value;
+        result_json["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
 
         if( distance >= 0.0 && !fixed_geom )
         {
-          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
-                                                                    distance + drf->detectorSetback() );
+          const double geom_eff = drf->geometricEfficiency( distance );
           result_json["solidAngleFraction"] = round_to_sig_figs( geom_eff, 6 );
           result_json["detectorAbsoluteEfficiency"] = round_to_sig_figs( det_eff, 6 );
         }
@@ -8459,17 +8462,19 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     // With a distance, the detector's absolute efficiency there - `efficiency()` is the DRF's own
     //  answer: the flat-disk model, or a geometry-modeled detector's (a Monte-Carlo response, an
     //  efficiency transfer, an imported efficiency grid), near field included.  The solid angle and
-    //  far-field intrinsic efficiency are then only a breakdown, which a geometry-modeled detector
-    //  need not multiply to.
+    //  far-field intrinsic efficiency - both of the crystal the efficiency is modeled for - are then
+    //  only a breakdown, which a geometry-modeled detector need not multiply to close in.
     if( detector && detector->isValid() )
     {
-      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+      const float flt_energy = static_cast<float>( energy );
+      const double intrinsic_eff = detector->isFixedGeometry()
+                                     ? detector->farFieldIntrinsicEfficiency( flt_energy )
+                                     : detector->intrinsicEfficiencyEval( flt_energy ).value;
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
 
       if( has_distance )
       {
-        const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector->detectorDiameter(),
-                                                                   distance + detector->detectorSetback() );
+        const double solid_angle = detector->geometricEfficiency( distance );
         result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
 
         const double abs_eff = detector->efficiency( energy, distance );
@@ -9465,6 +9470,11 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
      || (geomType == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) )
   {
     result["detectorDiameter"] = drf->detectorDiameter();
+
+    // Where the crystal sits: distances are always given from the detector face, and the crystal is
+    //  this far behind it - for a geometry-modeled detector, as its geometry places it.
+    result["crystalDiameter"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalDiameter(), 4 );
+    result["crystalSetbackBehindFace"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalSetback(), 4 );
   }
 
   // Hash and source
@@ -9529,7 +9539,12 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
 
       try
       {
-        const float eff = drf->farFieldIntrinsicEfficiency( energy );
+        // Per photon reaching the crystal described by crystalDiameter/crystalSetbackBehindFace, so
+        //  the two multiply to the efficiency - which the stated-diameter curve does not, for a
+        //  geometry-modeled detector whose stated diameter is not its crystal's.
+        const float eff = drf->isFixedGeometry()
+                            ? drf->farFieldIntrinsicEfficiency( energy )
+                            : static_cast<float>( drf->intrinsicEfficiencyEval( energy ).value );
         effData["intrinsicEfficiency"] = round_to_sig_figs( eff, 6 );
 
         // Far-field relative 1-sigma uncertainty calculations use: stated, plus any geometry-model part.

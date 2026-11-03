@@ -76,7 +76,24 @@
   Cambiar ingenuamente el tipo de asimetría a {1} causó que el pico se volviera insignificante.<br />
   Por favor use el <b>Editor de picos</b> para hacer este cambio.
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">Picos de fondo faltantes</message>
+  <message id="psgu-missing-back-peaks-msg">
+    El espectro de fondo no tiene picos añadidos en las energías {1}, pero
+    probablemente hay picos reales en el espectro de fondo en esas energías -
+    ¿desea añadir esos picos al espectro de fondo?
+  </message>
+  <message id="psgu-btn-no-dont-add">No</message>
+  <message id="psgu-btn-add-peaks">Añadir picos...</message>
+  <message id="psgu-btn-add-all-detectable">Añadir todos los picos auto-ajustados</message>
+  <message id="psgu-back-peak-preview-title">Vista previa de picos de fondo</message>
+  <message id="psgu-back-peak-preview-msg">Los siguientes picos se añadirían al espectro de fondo:</message>
+  <message id="psgu-no-new-back-peaks">No se encontraron picos adicionales en el espectro de fondo en las energías indicadas.</message>
+  <message id="psgu-back-peaks-all-fit">{1} picos candidatos fueron ajustados al fondo.</message>
+  <message id="psgu-back-peaks-some-fit">{1} de {2} picos candidatos fueron significativos y ajustados al fondo.</message>
+  <message id="psgu-back-peaks-manual-hint">(también puede ajustar picos de fondo manualmente con la tecla Alt (mac: tecla Option) más doble<br />
+  clic en el espectro, o cargando el fondo como primer plano)</message>
+  <message id="psgu-err-adding-back-peaks">Error al añadir picos al fondo: {1}</message>
+  <message id="psgu-warn-no-back-spec">No hay espectro de fondo cargado, así que no se pueden sustraer áreas de picos de fondo del primer plano.</message>
 </messages>
 
 

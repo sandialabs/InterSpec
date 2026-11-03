@@ -39,6 +39,10 @@
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 #include <cmath>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -1312,6 +1316,202 @@ BOOST_AUTO_TEST_CASE(certificate_invariant_content_hash) {
         DetectorResponse::from_xml_string(certd->to_xml_string());
     BOOST_CHECK(!reload->certificate.empty());
     BOOST_CHECK_EQUAL(reload->content_hash(), h_bare);
+}
+
+namespace {
+
+// Every optional part of the stored response populated at once (bullet, rounded bore, dead
+// layer, endcap reference, eta_tot table + its near field, scatter-in recapture, model transfer,
+// grounding with points, near field), so content_hash_tracks_every_serialized_field sees them all.
+std::shared_ptr<DetectorResponse> make_kitchen_sink_response() {
+    auto r = make_synthetic_nai(0.5, /*with_grounding=*/true);
+    GeometryDescriptor& gd = r->descriptor;
+    gd.bullet_radius_cm = 0.4;
+    gd.bore = BoreHoleConfig{0.5, 4.0, true};
+    gd.dead_layer = DeadLayerConfig{0.07, 0.05, 0.03};
+    gd.reference_point = ReferencePoint::EndcapFront;
+
+    r->tot_eff.tier = TotEffTier::EtaTotTable;
+    r->tot_eff.eta_tot = r->eta_fep;
+    r->scatter_in_recapture = 0.8;
+    r->model_transfer = SigmaTransferModel{};
+    r->floors.fep_far = 0.012;
+    r->grounding.curve_derived = true;
+
+    ResponseProvenance& p = r->provenance;
+    p.ceelo_version = "test-version";
+    p.created_utc = "2026-11-01T00:00:00Z";
+    p.min_distance_cm = 2.5;
+    p.method = ProductionMethod::CurveTransfer;
+    p.generation_seed = 1234;
+
+    r->finalize();
+    add_near_field_table(*r);
+    r->tot_eff.near_field = r->near_field;
+    r->tot_eff.finalize();
+    return r;
+}
+
+// A box crystal with quadrant symmetry: the only layout whose eta table has a phi axis, and the
+// "not characterized" total tier.
+std::shared_ptr<DetectorResponse> make_quadrant_box_response() {
+    auto r = std::make_shared<DetectorResponse>();
+    r->descriptor.set_dimensions(BoxDims{1.0, 1.0, 1.5});
+    r->descriptor.symmetry = ResponseSymmetry::Quadrant;
+    r->descriptor.crystal_material_index = 0;
+    r->descriptor.materials = {MaterialSpec::from(make_CZT())};
+    r->mu_tables.push_back(MuTable::sample(make_CZT(), 0));
+
+    EtaTable& t = r->eta_fep;
+    t.energies_keV = {40.0, 662.0, 3000.0};
+    t.cos_thetas = {0.02, 0.5, 1.0};
+    t.phis_deg = {0.0, 45.0};
+    t.ln_eta.assign(3 * 3 * 2, std::log(0.6));
+    t.frac_sigma.assign(3 * 3 * 2, 0.004);
+    r->tot_eff.tier = TotEffTier::NotCharacterized;
+    r->provenance.kernel_n_rays = 1024;
+    r->finalize();
+    return r;
+}
+
+struct XmlEdit {
+    std::string what;
+    std::string xml;
+};
+
+// Every single edit of `xml` that content_hash_tracks_every_serialized_field makes: each attribute
+// value and each element's text changed - the first, middle and last token of a list, a number
+// scaled by (1 + 1e-6) and, separately, incremented by one (which is what moves an integer field),
+// a string with a character appended - and each element removed whole.
+std::vector<XmlEdit> single_edit_variants(const std::string& xml) {
+    std::vector<XmlEdit> out;
+
+    const auto edit_span = [&](const size_t begin, const size_t end, const std::string& context) {
+        const std::string text = xml.substr(begin, end - begin);
+        std::vector<std::pair<size_t, size_t>> toks;  // [start, end) within `text`
+        for (size_t i = 0; i < text.size();) {
+            while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+            const size_t s = i;
+            while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+            if (i > s) toks.emplace_back(s, i);
+        }
+
+        if (toks.empty()) {  // an empty attribute value
+            std::string x = xml;
+            x.insert(begin, "x");
+            out.push_back({context + " '' -> 'x'", std::move(x)});
+            return;
+        }
+
+        std::vector<size_t> picks{0, toks.size() / 2, toks.size() - 1};
+        picks.erase(std::unique(picks.begin(), picks.end()), picks.end());
+        for (const size_t k : picks) {
+            const std::string tok = text.substr(toks[k].first, toks[k].second - toks[k].first);
+            char* parse_end = nullptr;
+            const double v = std::strtod(tok.c_str(), &parse_end);
+            std::vector<std::string> replacements;
+            if (parse_end && (*parse_end == '\0')) {
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "%.17g", (v != 0.0) ? v * (1.0 + 1e-6) : 1e-6);
+                replacements.push_back(buf);
+                std::snprintf(buf, sizeof(buf), "%.17g", v + 1.0);
+                replacements.push_back(buf);
+            } else {
+                replacements.push_back(tok + "x");
+            }
+
+            for (const std::string& rep : replacements) {
+                std::string x = xml;
+                x.replace(begin + toks[k].first, toks[k].second - toks[k].first, rep);
+                out.push_back({context + " token " + std::to_string(k) + " '" + tok + "' -> '"
+                                   + rep + "'", std::move(x)});
+            }
+        }
+    };
+
+    // Attribute values.
+    for (size_t pos = xml.find("=\""); pos != std::string::npos; pos = xml.find("=\"", pos + 2)) {
+        const size_t name_begin = xml.find_last_of(" \t\n<", pos) + 1;
+        const size_t value_end = xml.find('"', pos + 2);
+        edit_span(pos + 2, value_end, "attribute " + xml.substr(name_begin, pos - name_begin));
+    }
+
+    // Element text (and, for each element, its removal).
+    for (size_t lt = xml.find('<'); lt != std::string::npos; lt = xml.find('<', lt + 1)) {
+        if ((xml[lt + 1] == '/') || (xml[lt + 1] == '?') || (xml[lt + 1] == '!')) continue;
+        const size_t name_end = xml.find_first_of(" \t\n/>", lt + 1);
+        const std::string name = xml.substr(lt + 1, name_end - lt - 1);
+        const size_t gt = xml.find('>', lt);
+
+        const size_t text_end = xml.find('<', gt);
+        if ((xml[gt - 1] != '/') && (text_end != std::string::npos)
+            && (xml.find_first_not_of(" \t\n", gt + 1) < text_end))
+            edit_span(gt + 1, text_end, "text of <" + name + ">");
+
+        // This schema never nests an element inside one of the same name, so the first closing tag
+        // is the matching one.
+        size_t elem_end = gt + 1;
+        if (xml[gt - 1] != '/') {
+            const size_t close = xml.find("</" + name + ">", gt);
+            if (close == std::string::npos) continue;
+            elem_end = close + name.size() + 3;
+        }
+        std::string x = xml;
+        x.erase(lt, elem_end - lt);
+        out.push_back({"remove <" + name + "> at " + std::to_string(lt), std::move(x)});
+    }
+
+    return out;
+}
+
+}  // namespace
+
+BOOST_AUTO_TEST_CASE(content_hash_tracks_every_serialized_field) {
+    // content_hash identifies a response by its stored content: two responses must hash alike
+    // exactly when they serialize alike.  Checked by editing each value (its first, middle and last
+    // token) and removing each element of the XML, one at a time, re-loading it, and asking both
+    // questions - so a field added to the XML but left out of the hash (or hashed but not stored,
+    // which breaks the save/load identity) fails here without this test having to list the fields,
+    // as long as one of the responses below populates it.
+    const std::vector<std::pair<std::string, std::shared_ptr<DetectorResponse>>> responses{
+        {"synthetic NaI", make_synthetic_nai(0.5, true)},
+        {"collimated NaI", make_collimated_nai()},
+        {"kitchen sink", make_kitchen_sink_response()},
+        {"quadrant box", make_quadrant_box_response()}};
+
+    for (const auto& named : responses) {
+        const std::string& name = named.first;
+        const DetectorResponse& base = *named.second;
+        BOOST_REQUIRE(base.certificate.empty());  // so to_xml_string() is exactly the hashed content
+
+        const std::string base_xml = base.to_xml_string();
+        const uint64_t base_hash = base.content_hash();
+        BOOST_CHECK_EQUAL(DetectorResponse::from_xml_string(base_xml)->content_hash(), base_hash);
+
+        size_t num_loaded = 0, num_changed = 0;
+        for (const XmlEdit& edit : single_edit_variants(base_xml)) {
+            std::shared_ptr<DetectorResponse> edited;
+            try {
+                edited = DetectorResponse::from_xml_string(edit.xml);
+            } catch (const std::exception&) {
+                continue;  // an edit the reader rejects says nothing about the hash
+            }
+            ++num_loaded;
+
+            const bool content_changed = (edited->to_xml_string() != base_xml);
+            const bool hash_changed = (edited->content_hash() != base_hash);
+            num_changed += content_changed;
+            BOOST_CHECK_MESSAGE(hash_changed == content_changed,
+                                name + ": " + edit.what + (content_changed
+                                    ? " changes the content but not content_hash"
+                                    : " changes content_hash but not the content"));
+        }
+
+        BOOST_TEST_MESSAGE(name + ": " + std::to_string(num_loaded) + " edits loaded, "
+                           + std::to_string(num_changed) + " changed the content");
+        BOOST_CHECK_MESSAGE(num_changed > 50, name + ": too few edits changed anything ("
+                                                  + std::to_string(num_changed) + ")");
+    }
 }
 
 // --- GeometryDescriptor standalone XML --------------------------------------

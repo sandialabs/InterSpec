@@ -2135,18 +2135,9 @@ static void assemble_included_observed( const GammaInteractionCalc::ShieldingSou
 
     double observed_counts = peak.peakArea();
     double observed_uncertainty = peak.peakAreaUncert();
-    double backCounts = 0.0, backUncert2 = 0.0;
-    const double nsigmaNear = 1.0;
-
-    for( const PeakDef &backPeak : back_peaks )
-    {
-      const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
-      if( fabs(backPeak.mean() - peak.mean()) < (nsigmaNear*sigma) )
-      {
-        backCounts += backPeak.peakArea();
-        backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
-      }
-    }//for( const PeakDef &backPeak : back_peaks )
+    const GammaInteractionCalc::BackgroundOverlap back_overlap
+                              = GammaInteractionCalc::overlapping_background( peak, back_peaks );
+    const double backCounts = back_overlap.counts, backUncert2 = back_overlap.uncert2;
 
     if( backCounts > 0.0 )
     {
@@ -4343,6 +4334,8 @@ void fit_model( const std::string wtsession,
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
   results->distance = chi2Fcn->distance();
   results->geometry = chi2Fcn->geometry();
+  results->source_offsets[0] = chi2Fcn->sourceOffsetX();
+  results->source_offsets[1] = chi2Fcn->sourceOffsetY();
   results->foreground_peaks = chi2Fcn->peaks();
   results->background_peaks = chi2Fcn->backgroundPeaks();
   results->background_normalization_factor = chi2Fcn->backgroundNormalizationFactor();

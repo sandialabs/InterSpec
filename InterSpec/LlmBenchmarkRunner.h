@@ -177,6 +177,7 @@ struct BenchmarkQuestionResult
   std::optional<size_t> totalTokens;
   std::optional<size_t> cachedTokens;        // Prompt tokens served from cache
   std::optional<size_t> cacheCreationTokens; // Prompt tokens written to cache
+  std::optional<double> cost;                // Provider-reported cost in USD (e.g. OpenRouter)
 
   std::chrono::milliseconds duration{0};
   bool hadError = false;
@@ -421,6 +422,7 @@ private:
   std::optional<size_t> m_lastQuestionTotalTokens;
   std::optional<size_t> m_lastQuestionCachedTokens;
   std::optional<size_t> m_lastQuestionCacheCreationTokens;
+  std::optional<double> m_lastQuestionCost;
 
   // Incremental-checkpoint / resume state.  Set up in runFresh()/runResume().
   std::string m_benchmarkHash;   // Truncated hash of the benchmark XML contents

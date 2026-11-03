@@ -1908,7 +1908,7 @@ bool SpectraFileModel::removeRows( int row, int count, const WModelIndex &parent
     return false;
   }//if( parent.isValid() )
 
-  if( row >= rowCount() )
+  if( (row < 0) || (row >= rowCount()) )
     return false;
 
   std::vector< std::shared_ptr<SpectraFileHeader> >::iterator startRow;
@@ -2037,42 +2037,31 @@ struct SortSpectraFileModel
   bool operator()( const std::shared_ptr<SpectraFileHeader> &lhs,
                    const std::shared_ptr<SpectraFileHeader> &rhs ) const
   {
-    if( m_order == SortOrder::Ascending )
-    {
-      switch( m_column )
-      {
-        case SpectraFileModel::kDisplayName:     return (lhs->displayName().toUTF8() < rhs->displayName().toUTF8());
-        case SpectraFileModel::kNumMeasurements: return (lhs->numSamples() < rhs->numSamples());
-        case SpectraFileModel::kNumDetectors:    return (lhs->numDetectors() < rhs->numDetectors());
-        case SpectraFileModel::kLiveTime:        return (lhs->totalLiveTime() < rhs->totalLiveTime());
-        case SpectraFileModel::kRealTime:        return (lhs->totalRealTime() < rhs->totalRealTime());
-        case SpectraFileModel::kGammaCounts:     return (lhs->totalGammaCounts() < rhs->totalGammaCounts());
-        case SpectraFileModel::kNeutronCounts:   return (lhs->totalNeutronCounts() < rhs->totalNeutronCounts());
-        case SpectraFileModel::kSpectrumTime:    return (lhs->spectrumTime() < rhs->spectrumTime());
-        case SpectraFileModel::kUploadTime:      return (lhs->uploadTime() < rhs->uploadTime());
-        case SpectraFileModel::kRiidResult:      return (lhs->riidSummary() < rhs->riidSummary());
-        case SpectraFileModel::NumDisplayFields: return false;
-      }//switch( m_column )
-    }//if( order == SortOrder::Ascending )
+    // Descending order swaps the arguments, rather than using `>=`, so the comparison stays a
+    //  strict weak ordering, as std::sort requires.
+    return (m_order == SortOrder::Ascending) ? less( lhs, rhs ) : less( rhs, lhs );
+  }//bool operator()
 
+  bool less( const std::shared_ptr<SpectraFileHeader> &lhs,
+             const std::shared_ptr<SpectraFileHeader> &rhs ) const
+  {
     switch( m_column )
     {
-      case SpectraFileModel::kDisplayName:     return (lhs->displayName().toUTF8() >= rhs->displayName().toUTF8());
-      case SpectraFileModel::kNumMeasurements: return (lhs->numSamples() >= rhs->numSamples());
-      case SpectraFileModel::kNumDetectors:    return (lhs->numDetectors() >= rhs->numDetectors());
-      case SpectraFileModel::kLiveTime:        return (lhs->totalLiveTime() >= rhs->totalLiveTime());
-      case SpectraFileModel::kRealTime:        return (lhs->totalRealTime() >= rhs->totalRealTime());
-      case SpectraFileModel::kGammaCounts:     return (lhs->totalGammaCounts() >= rhs->totalGammaCounts());
-      case SpectraFileModel::kNeutronCounts:   return (lhs->totalNeutronCounts() >= rhs->totalNeutronCounts());
-      case SpectraFileModel::kSpectrumTime:    return (lhs->spectrumTime() >= rhs->spectrumTime());
-      case SpectraFileModel::kUploadTime:      return (lhs->uploadTime() >= rhs->uploadTime());
-      case SpectraFileModel::kRiidResult:      return (lhs->riidSummary() >= rhs->riidSummary());
-      case SpectraFileModel::NumDisplayFields: return true;
+      case SpectraFileModel::kDisplayName:     return (lhs->displayName().toUTF8() < rhs->displayName().toUTF8());
+      case SpectraFileModel::kNumMeasurements: return (lhs->numSamples() < rhs->numSamples());
+      case SpectraFileModel::kNumDetectors:    return (lhs->numDetectors() < rhs->numDetectors());
+      case SpectraFileModel::kLiveTime:        return (lhs->totalLiveTime() < rhs->totalLiveTime());
+      case SpectraFileModel::kRealTime:        return (lhs->totalRealTime() < rhs->totalRealTime());
+      case SpectraFileModel::kGammaCounts:     return (lhs->totalGammaCounts() < rhs->totalGammaCounts());
+      case SpectraFileModel::kNeutronCounts:   return (lhs->totalNeutronCounts() < rhs->totalNeutronCounts());
+      case SpectraFileModel::kSpectrumTime:    return (lhs->spectrumTime() < rhs->spectrumTime());
+      case SpectraFileModel::kUploadTime:      return (lhs->uploadTime() < rhs->uploadTime());
+      case SpectraFileModel::kRiidResult:      return (lhs->riidSummary() < rhs->riidSummary());
+      case SpectraFileModel::NumDisplayFields: return false;
     }//switch( m_column )
 
-    //shouldnt ever get here
     return false;
-  }//bool operator()
+  }//bool less(...)
 
   SortOrder m_order;
   SpectraFileModel::DisplayFields m_column;

@@ -245,6 +245,46 @@ double transmission_coefficient_air( double energy, double length );
 double transmission_length_coefficient_air( double energy );
 
 
+/** The factor background peak areas are multiplied by to put them on the foreground's footing.
+
+ The user-chosen `user_scale_factor` (the background's display scale factor) is used when it is a
+ positive finite number; otherwise the live-time ratio `fore_live_time / back_live_time`.
+ */
+double background_peak_scale( const double user_scale_factor, const double fore_live_time,
+                              const double back_live_time );
+
+/** Returns the Gaussian peaks of `peaks`, with their areas and area uncertainties multiplied by `scale`.
+
+ Non-Gaussian peaks are left out - subtracting them isnt supported - and, if
+ `skipped_non_gaus_energies` is non-null, their means are appended to it.
+ */
+std::vector<PeakDef> scale_background_peaks( const std::vector<PeakDef> &peaks, const double scale,
+                                             std::vector<double> *skipped_non_gaus_energies );
+
+/** The summed area (`counts`) and area variance (`uncert2`) of the background peaks that overlap a
+ foreground peak.
+ */
+struct BackgroundOverlap
+{
+  double counts = 0.0;
+  double uncert2 = 0.0;
+};
+
+/** How close, in units of the foreground peaks sigma, a background peak must be to count as the same
+ peak, for background-peak subtraction.
+ */
+const double sm_background_peak_nsigma_near = 1.0;
+
+/** Sums the background peaks whose mean is within #sm_background_peak_nsigma_near sigma of `fore`'s
+ mean (for a non-Gaussian `fore`, a quarter of its ROI width is used as sigma).
+
+ @param scaled_back_peaks Background peaks already put on the foreground's footing; see
+        #scale_background_peaks.
+ */
+BackgroundOverlap overlapping_background( const PeakDef &fore,
+                                          const std::vector<PeakDef> &scaled_back_peaks );
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
@@ -377,6 +417,39 @@ bool rectangle_intersections( const double half_width, const double half_height,
 //distance(...): returns distance between two points specified in terms of x, y,
 //  and z.
 double distance( const double point_a[3], const double point_b[3] );
+
+
+/** How far the detector face's centre is from the outside of a source/shielding assembly: the
+ distance to the nearest point of the assembly's outer volume, or minus the depth when the face
+ centre is INSIDE it, for any geometry and source offsets.  The closest-approach estimate the
+ cascade-summing gates use; whether an assembly is allowed at all is
+ #detector_face_plane_clearance.
+
+ @param geometry The assembly geometry.
+ @param outer_dims The outermost shell's cumulative dimensions (PhysicalUnits), as the shieldings
+        accumulate them: sphere radius; cylinder radius and half-length (along the cylinder axis);
+        box half-width, half-height and half-depth.  Unused entries are ignored.
+ @param distance Assembly centre to detector face, along the detector axis (PhysicalUnits).
+ @param offset_x, offset_y The source offsets perpendicular to the detector axis (see
+        ShieldSourceConfig::source_offsets).
+ */
+double detector_face_clearance( const GeometryType geometry, const double outer_dims[3],
+                                const double distance, const double offset_x, const double offset_y );
+
+
+/** How far a source/shielding assembly stays in front of the plane of the detector face: the
+ distance along the detector axis less the assembly's outer extent along it - negative when some of
+ the assembly reaches beside or behind the face, whatever the offsets.  An assembly is only modelled
+ when this is not negative: the line path drops the lines that would reach the detector from behind
+ its face plane and has no response there, and the flat-disk element path treats every element as
+ looking straight into the face - so an assembly reaching beside the detector is not modelled, even
+ when it is clear of the detector itself.
+
+ @param geometry, outer_dims As for #detector_face_clearance.
+ @param distance Assembly centre to the detector-face plane, along the detector axis (PhysicalUnits).
+ */
+double detector_face_plane_clearance( const GeometryType geometry, const double outer_dims[3],
+                                      const double distance );
 
 
 /*
@@ -1531,6 +1604,16 @@ public:
   /** The query geometry the point-source evaluations use: polar angle from the detector axis and
    azimuth of the source offsets, and the straight-line source-to-detector-face distance. */
   void pointSourceEvalGeometry( double &theta, double &phi, double &true_dist ) const;
+
+  /** The crystal the model #pointSourceEffModel names places behind the detector face (both
+   PhysicalUnits): the resolved response's crystal disk at its endcap offset
+   (#PointEffModel::Response), else the DRF's stated diameter and setback (the flat-disk model);
+   zero for a fixed geometry.  The two need not agree (see
+   DetectorPeakResponse::modeledCrystalSetback), so anything that splits this fit's efficiency into
+   "intrinsic x solid angle" takes the crystal from here.  (The volumetric cascade-summing partner
+   legs deliberately do NOT - see DistributedSrcCalcT::cascade_correction_factor.)
+   */
+  void modelCrystalPlacement( double &diameter, double &setback ) const;
 
   double distance() const;
 

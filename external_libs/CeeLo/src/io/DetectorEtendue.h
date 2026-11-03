@@ -80,7 +80,7 @@ namespace ceelo {
 /// A fixed set of lines through the active crystal; see the file docs.
 struct EtendueLineSet {
     /// One KernelRay per kept line: `omega_w` = etendue weight / 4pi (cm^2),
-    /// `dir` = photon direction (into the crystal), `segs` = the full trace
+    /// `dir` = photon direction (into the crystal), `q.segs(ray)` = the full trace
     /// from outside the outermost shell, sorted along the direction, `active_len`
     /// > 0.  `cone_omega_frac` is 0 (no single cone) and `n_rays_total` is the
     /// number of lines SAMPLED, dropped ones included.

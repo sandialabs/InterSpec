@@ -58,4 +58,5 @@
  <pref name="LlmAssistantOnSide" type="Boolean">false</pref>
  <pref name="LlmSidePanelPct" type="Integer">33</pref>
  <pref name="LlmSidePanelPct_phone" type="Integer">45</pref>
+ <pref name="LlmShowDebugOptions" type="Boolean">false</pref>
 </preferences>

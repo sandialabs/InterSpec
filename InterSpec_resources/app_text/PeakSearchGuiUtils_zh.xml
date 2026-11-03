@@ -76,6 +76,22 @@
   天真地将偏斜类型更改为{1}导致峰变得不显著。<br />
   请使用<b>峰编辑器</b>进行此更改。
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">缺失的本底峰</message>
+  <message id="psgu-missing-back-peaks-msg">
+    本底谱在能量 {1} 处没有添加峰，但在这些能量处
+    本底谱中可能存在真实峰 - 您是否要将这些峰添加到本底谱中？
+  </message>
+  <message id="psgu-btn-no-dont-add">否</message>
+  <message id="psgu-btn-add-peaks">添加峰...</message>
+  <message id="psgu-btn-add-all-detectable">添加所有自动拟合峰</message>
+  <message id="psgu-back-peak-preview-title">本底峰预览</message>
+  <message id="psgu-back-peak-preview-msg">以下峰将被添加到本底谱中：</message>
+  <message id="psgu-no-new-back-peaks">在指定能量处的本底谱中未找到额外的峰。</message>
+  <message id="psgu-back-peaks-all-fit">{1} 个候选峰已拟合到本底。</message>
+  <message id="psgu-back-peaks-some-fit">{2} 个候选峰中有 {1} 个显著并已拟合到本底。</message>
+  <message id="psgu-back-peaks-manual-hint">（您也可以通过 Alt 键（mac：Option 键）加双击<br />
+  谱图来手动拟合本底峰，或将本底加载为前景）</message>
+  <message id="psgu-err-adding-back-peaks">向本底添加峰时出错：{1}</message>
+  <message id="psgu-warn-no-back-spec">没有加载本底谱，因此无法从前景减除本底峰面积。</message>
 </messages>
 

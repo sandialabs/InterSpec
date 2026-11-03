@@ -70,8 +70,12 @@ export GIT_HASH=$(git -C ${InterSpecCodePath} rev-parse HEAD)
 echo "GIT_HASH = ${GIT_HASH}"
 
 echo "Will install npm and global packages"
-yum update -y
-yum install -y npm
+# No `yum update`: it is slow, and could upgrade gcc-toolset past the compiler the cached dependency
+#  prefix was built with (which build_linux_deps_from_docker.sh goes out of its way to prevent).
+# libcurl-devel is for its headers only: the LLM transport (USE_NATIVE_HTTP_CLIENT) dlopen()s
+#  libcurl.so.4 at run time, so nothing links it.  Without the headers CMake only warns, and falls
+#  back to Wt::Http::Client - which has no HTTPS, as the prefix's Wt is built without SSL.
+yum install -y npm libcurl-devel
 # Use the 'n' package to install a fairly modern version of npm, by default we are on like version 6 or 8, which is too old to run some of the packages we need
 npm install -g n
 n 22.11.0
@@ -139,50 +143,12 @@ fi
 
 # -------------------------------------------------------------------------------------------------
 # ccache, for InterSpec's own ~330 objects.  (With a dependency prefix that is all that is left to
-#  compile.)  Unlike a cached build directory, ccache is content-addressed, so it is immune to
-#  `actions/checkout` rewriting every source mtime - which is the reason caching the build tree
-#  never saved CI any compilation at all.
-#
-# ccache is not in the AlmaLinux 8 repos this image uses (el8 moved it to EPEL, which manylinux
-#  does not enable), so take the official release binary: the musl-static build, which is fully
-#  static and so has no glibc floor of its own, as a .tar.gz so we need no `xz` either.
-#
-# Never fail the build over this - ccache is an optimization, not a correctness requirement.
-#
-# NOTE ON ERROR HANDLING: `set -e` is commented out at the top of this file and we rely on a
-#  `trap ... ERR`, which does not fire for commands inside an `if` condition or an && chain.  That
-#  is why the install is written as one `if ... && ... ; then` chain: a failed download must not
-#  abort the whole build.
+#  compile.)  See target/dep_build/manylinux_install_ccache.sh for why, and how it is installed.
 # -------------------------------------------------------------------------------------------------
-CCACHE_VERSION="4.13.6"
+. "${InterSpecCodePath}/target/dep_build/manylinux_install_ccache.sh"
+manylinux_install_ccache
+
 CCACHE_ARGS=()
-if ! command -v ccache > /dev/null 2>&1; then
-  case "$(uname -m)" in
-    x86_64)  _cc_arch="x86_64";  _cc_sha256="09e0547a0c3b250a76675c33130366f1399f3580842fb360c052520d56214ead" ;;
-    aarch64) _cc_arch="aarch64"; _cc_sha256="bff0e0c19165db8627c85c36b0885b3b180659eda67a028298d26565aad52f56" ;;
-    *)       _cc_arch=""; _cc_sha256="" ;;
-  esac
-
-  if [ -z "${_cc_arch}" ]; then
-    echo "WARNING: no pinned ccache build for $(uname -m) - compiling without ccache"
-  else
-    _cc_dir="ccache-${CCACHE_VERSION}-linux-${_cc_arch}-musl-static"
-    _cc_tar="/tmp/${_cc_dir}.tar.gz"
-    _cc_url="https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${_cc_dir}.tar.gz"
-    echo "Installing ccache ${CCACHE_VERSION} (${_cc_arch})"
-    if curl -fsSL "${_cc_url}" -o "${_cc_tar}" \
-       && echo "${_cc_sha256}  ${_cc_tar}" | sha256sum --check --status \
-       && tar -xzf "${_cc_tar}" -C /tmp \
-       && install -m 0755 "/tmp/${_cc_dir}/ccache" /usr/local/bin/ccache ; then
-      echo "Installed ccache from the official release tarball"
-    elif yum install -y epel-release > /dev/null 2>&1 && yum install -y ccache > /dev/null 2>&1 ; then
-      echo "Installed ccache from EPEL"
-    else
-      echo "WARNING: could not install ccache - compiling without it"
-    fi
-  fi
-fi
-
 if command -v ccache > /dev/null 2>&1; then
   ccache --version | head -n 1
   # Zero the counters so the stats printed at the end of this script describe THIS build.
@@ -215,7 +181,7 @@ CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/tar
   --CDInterSpec_NODE_MODULE_DIR="${WorkingDir}/node_modules" \
   "${DEP_ARGS[@]}" ${CCACHE_ARGS[@]+"${CCACHE_ARGS[@]}"} \
   --CDBUILD_AS_LOCAL_SERVER=OFF --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="${LEAFLET_KEY}" \
-  --CDUSE_REL_ACT_TOOL=ON \
+  --CDUSE_REL_ACT_TOOL=ON --CDCURL_INCLUDE_DIR=/usr/include \
   --out="${CmakeBuildDir}" --target install
 
 echo "ls ${CmakeBuildDir} (CmakeBuildDir)"
@@ -228,6 +194,15 @@ fi
 
 echo "This is a build of InterSpec for Linux, using InterSpec code git hash ${GIT_HASH}." > "${CmakeBuildDir}/app/build_information.txt"
 echo "This build is untested - please contact InterSpec@sandia.gov for support." >> "${CmakeBuildDir}/app/build_information.txt"
+
+# The LLM transport must be libcurl (see the yum install above); the addon names the libraries it
+#  dlopen()s, and does not link them.  (The fallback name is looked for, as only
+#  src/NativeHttpClient_curl.cpp has it; "libcurl.so.4" alone also appears in messages elsewhere.)
+if ! strings "${CmakeBuildDir}/app/InterSpecAddOn.node" | grep -c "libcurl-gnutls.so.4" > /dev/null; then
+  echo "Error: InterSpecAddOn.node has no libcurl HTTP backend (missing curl headers?), so LLM calls"
+  echo "  would go through Wt::Http::Client, without HTTPS."
+  exit 1
+fi
 
 # Fail here rather than shipping a binary that will not load on a supported distro; this is the
 #  guard for https://github.com/sandialabs/InterSpec/issues/51.

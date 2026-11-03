@@ -25,10 +25,12 @@
 
 #include "InterSpec_config.h"
 
-#include <memory>
-
 #include <map>
+#include <atomic>
+#include <memory>
+#include <string>
 #include <vector>
+#include <cstdint>
 
 #include <Wt/WContainerWidget.h>
 
@@ -53,12 +55,21 @@ struct DrfChartPoint
 };//struct DrfChartPoint
 
 
+/** A D3 chart of a DRF's efficiency (with its uncertainty band) and FWHM, optionally with per-angle
+ response curves.
+
+ The chart data is not computed when it is asked for, but once per render (see #render): callers
+ commonly push the same detector two or three times in one event.  For a DRF with a Monte-Carlo /
+ transfer response, computing it means evaluating the response a few hundred times, so that is done
+ on a worker thread, and the chart dims until the result arrives; a DRF without one is cheap and is
+ computed in place.
+ */
 class DrfChart : public Wt::WContainerWidget
 {
 protected:
   void defineJavaScript();
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
-  
+
   std::shared_ptr<const DetectorPeakResponse> m_detector;
 
   /** Whether to draw the per-angle response curves (only meaningful when the
@@ -88,6 +99,49 @@ protected:
   bool m_xRangeSet;
   double m_xRangeMin, m_xRangeMax;
 
+  /** Whether #setXAxisRange has been called since the last #updateChart.  The client resets the
+   x-axis to the detector's energy range whenever detector data arrives, so a range set after the
+   detector it is meant to override is sent again once that detector's data has been pushed.
+   */
+  bool m_xRangeSinceUpdate;
+
+  /** Set when #defineJavaScript restores the x-axis range, but the detector data it sent is not yet
+   up to date: the range has to survive that data's arrival too, as it did when the data was
+   computed in place.  Cleared by the next detector-data push.
+   */
+  bool m_xRangeAfterNextData;
+
+  /** Bumped by every change to what the chart data depends on: #m_detectorSerial by #updateChart;
+   #m_anglesSerial by that and by the angle settings.  #render computes data for the current serials
+   (once, however many changes there were), and a result is kept only if it was computed for the
+   serials still current when it is ready.
+   */
+  uint64_t m_detectorSerial, m_anglesSerial;
+
+  /** The client-side detector data (`DetectorPeakResponse::toJSON()`) and per-angle series last
+   computed, and the serials they were computed for - so a full re-render re-sends them rather than
+   computing them again.
+   */
+  std::string m_detectorJson, m_anglesJson;
+  uint64_t m_detectorJsonSerial, m_anglesJsonSerial;
+
+  /** The serials the most recent computation was started for, so a render while it is still running
+   does not start the same work again. */
+  uint64_t m_detectorRequestedSerial, m_anglesRequestedSerial;
+
+  /** Bumped by every computation #render starts; the one with the latest value clears the chart's
+   "computing" state when it lands. */
+  uint64_t m_computeGeneration;
+
+  /** Whether the chart is waiting on a background computation. */
+  bool m_pending;
+
+  /** Cleared by the destructor.  A background computation's completion runs on the session thread,
+   as does the destructor, and checks this before touching the chart - rather than looking the
+   chart up by id, which misses one sitting on a tab that has not been shown.
+   */
+  std::shared_ptr<std::atomic<bool>> m_alive;
+
   /** The measured-point overlay and its options, held for the same reason as #m_xRangeSet: the
    client-side object is rebuilt empty whenever a stub becomes a real element, so everything the
    chart is showing has to be re-sendable.  #m_dataPointsJs is the serialized array literal
@@ -115,7 +169,7 @@ public:
   void setShowResponseAngles( const bool show );
 
   /** Source distance (in PhysicalUnits) the absolute per-angle curves are
-   evaluated at; re-samples and pushes the angle series. */
+   evaluated at; the angle series is re-sampled for it at the next render. */
   void setSourceDistance( const double distance );
 
   /** Selects intrinsic (per-gamma-striking-face) vs absolute
@@ -144,9 +198,16 @@ public:
   void setKeepZoomOnUpdate( const bool keep );
 
 protected:
-  /** Re-samples the per-angle series (at #m_sourceDistance) and pushes it to
-   the client, or clears it when angle curves are disabled / unavailable. */
-  void pushAngleSeries();
+  /** Computes whatever chart data is out of date (see #m_detectorSerial) and pushes it to the client
+   - in place, or on a worker thread for a DRF with a Monte-Carlo / transfer response.
+   */
+  void refreshData();
+
+  /** Pushes #m_detectorJson and/or #m_anglesJson to the client. */
+  void pushData( const bool detector, const bool angles );
+
+  /** Shows (or clears) the client's "computing" state. */
+  void setPending( const bool pending );
 
   /** Calls one method on the client-side chart object, e.g. `setShowFwhm(true)`.
 

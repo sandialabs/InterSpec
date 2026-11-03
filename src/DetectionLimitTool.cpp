@@ -1267,6 +1267,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
   distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_distanceForActivityLimit->setValidator( distValidator );
+  HelpSystem::attachToolTipOn( m_distanceForActivityLimit, WString::tr("app-tt-distance-from-face"),
+                               showToolTips );
 
 
   // We will but the activity label/input right next to the distance stuff, but since we default to
@@ -2017,8 +2019,13 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType()
                                                 : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0.0));
-    const double intrinsic_eff = drf ? drf->farFieldIntrinsicEfficiency( energy ) : 1.0f;
-    const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance + drf->detectorSetback() ) : 1.0;
+    // Display only: the intrinsic efficiency against the crystal the efficiency is modeled for, and
+    //  that crystal's solid angle - the decomposition of `det_eff` (exact for a flat-disk DRF; in
+    //  the far field for a geometry-modeled one).  For fixed geometry, the per-decay efficiency.
+    const double intrinsic_eff = !drf ? 1.0
+                                 : (fixed_geom ? drf->farFieldIntrinsicEfficiency( energy )
+                                               : drf->intrinsicEfficiencyEval( energy ).value);
+    const double geom_eff = (drf && (distance >= 0.0)) ? drf->geometricEfficiency( distance ) : 1.0;
     const double det_eff = fixed_geom ? intrinsic_eff : (drf ? drf->efficiency(energy, distance) : 1.0);
      
     const double gammas_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
@@ -2405,7 +2412,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
       cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-detector-intrinsic-eff") );
 
-      if( distance >= 0.0 )
+      if( !fixed_geom && (distance >= 0.0) )
       {
         cell = table->elementAt( table->rowCount(), 0 );
         cell->addNew<WText>( WString::tr("dlt-solid-angle-fraction") );
@@ -2413,7 +2420,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         cell = table->elementAt( table->rowCount() - 1, 1 );
         cell->addNew<WText>( val );
         addTooltipToRow( WString::tr("dlt-tt-solid-angle-fraction") );
-      }//if( distance >= 0.0 )
+      }//if( !fixed_geom && (distance >= 0.0) )
 
       // The efficiency actually used - which the two factors above need not multiply to.
       if( !fixed_geom && (distance >= 0.0) )

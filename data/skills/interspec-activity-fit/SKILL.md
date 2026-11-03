@@ -26,7 +26,9 @@ Before fitting, verify:
 The loaded DRF type fundamentally affects how fits are configured. Use `detector_efficiency_function_info` to check.
 
 ### Far-Field (FarField) DRFs
-Characterize the detector's intrinsic or absolute efficiency as a function of energy, independent of source geometry. The source-to-detector distance and detector face diameter are used to compute the geometric solid angle.
+Characterize the detector's intrinsic or absolute efficiency as a function of energy, independent of source geometry. The source-to-detector distance and the detector's crystal diameter and setback are used to compute the geometric solid angle.
+
+**Distance convention:** `distance` is always from the CENTER of the source (a sphere's or cylinder's center, not its surface) to the FACE of the detector (the front of its endcap). The detector response accounts for how far behind the face the crystal sits - never add the setback yourself, and never give a surface-to-face gap. E.g., a 5 cm radius sphere whose surface is 20 cm from the detector face is at `distance: "25 cm"`.
 
 - **FarFieldIntrinsic**: Efficiency is the probability that a photon hitting the detector face produces a full-energy count. Requires `distance` and detector diameter (stored in the DRF) to compute activity.
 - **FarFieldAbsolute**: Efficiency is measured at a specific characterization distance. Requires `distance` to scale.

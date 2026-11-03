@@ -144,15 +144,16 @@
   <message id="dlt-tt-detection-limit">Corresponds to Currie&apos;s &quot;detection limit&quot;, L<sub>d</sub>,
     that is the &quot;true&quot; net signal level which may be, <i>a priori</i>.
     expected to lead to detection.</message>
-  <message id="dlt-tt-detector-intrinsic-eff">The efficiency for a gamma hitting the detector face,
-    to be detected in the full-energy peak.  This is the detector&apos;s far-field efficiency curve.
-    When the detector has a characterized response, the efficiency actually used in this
+  <message id="dlt-tt-detector-intrinsic-eff">The far-field efficiency for a gamma hitting the face
+    of the detector crystal, to be detected in the full-energy peak.
+    When the detector has a geometry-modeled response, the efficiency actually used in this
     calculation comes from that response, so it is not exactly this value times the solid angle
-    fraction below - near the detector the flat-disk product is an approximation, because the
+    fraction below - near the detector the product is an approximation, because the
     gammas interact some way inside the crystal rather than at its face.</message>
-  <message id="dlt-tt-solid-angle-fraction">The fraction of the solid angle, the detector face takes up, at the specified distance.
-    This is the nominal flat-disk geometry; see the note on the intrinsic efficiency above for why
-    the two do not necessarily multiply to the efficiency used.</message>
+  <message id="dlt-tt-solid-angle-fraction">The fraction of the solid angle the face of the detector
+    crystal takes up, for a source at the specified distance from the detector face (the crystal
+    sits the detector&apos;s setback behind that face).  See the note on the intrinsic efficiency
+    above for why the two do not necessarily multiply to the efficiency used.</message>
   <message id="dlt-tt-detector-eff-used">The probability that a gamma emitted by the source, at this distance, is detected in the full-energy peak - the efficiency this calculation actually uses.</message>
   <message id="dlt-tt-det-eff-uncert">The 1-sigma relative uncertainty of the detector efficiency at this energy and distance: what the detector response states of its own, plus - for a geometry-modeled detector - the uncertainty its geometry model adds near the detector or off axis.  An uncertainty the detector response does not state, but is assumed for it, is not included.</message>
   <message id="dlt-tt-systematic-uncert-used">The 1-sigma relative systematic uncertainty the Currie limits above used: the detector efficiency uncertainty, combined in quadrature with any entered efficiency or distance uncertainty.</message>

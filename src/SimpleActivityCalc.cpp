@@ -829,6 +829,8 @@ void SimpleActivityCalc::init()
   m_distanceEdit->setText( "1 m" );
   m_distanceEdit->setValidator( std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex ) );
   m_distanceEdit->changed().connect( this, &SimpleActivityCalc::handleDistanceChanged );
+  HelpSystem::attachToolTipOn( m_distanceEdit, WString::tr("app-tt-distance-from-face"),
+                    UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer ) );
 
   // Background subtract row (hidden if no background spectrum loaded)
   m_backgroundSubtractRow = addNew<WContainerWidget>();

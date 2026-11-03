@@ -141,8 +141,9 @@ public:
    */
   double detectorDiameter() const;
 
-  /** Get the user-entered detector setback distance.
-   Returns 0.0 if the field is empty or invalid.
+  /** The detector setback - the distance from the detector face to the crystal: the entered one in
+   diameter mode, or the geometry's endcap offset in geometry mode (what the DRF is assembled with).
+   Returns 0.0 if the input is empty or invalid.
    */
   double detectorSetback() const;
 
@@ -317,6 +318,9 @@ public:
   void setGeneratedMcResponse( std::shared_ptr<ceelo::DetectorResponse> response );
 
 private:
+  /** The setback typed into the diameter-mode field (PhysicalUnits; 0.0 if empty or invalid) -
+   #detectorSetback is what the DRF is actually assembled with. */
+  double enteredSetback() const;
 
   /** Optional peak fitting preferences to embed in the created DRF. */
   PeakFitDetPrefsGui *m_peakFitDetPrefsGui;

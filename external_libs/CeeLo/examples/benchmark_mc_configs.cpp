@@ -104,6 +104,11 @@ void print_usage(const char* argv0) {
         << "  --no-source-brems        Disable bremsstrahlung from electrons in source\n"
         << "  --no-source-electrons    Disable source-electron escape transport\n"
            "                           material/shielding (A/B quantification)\n"
+        << "  --no-source-fluorescence No K x-rays from photoelectric absorption in source\n"
+        << "                           material/shields (A/B)\n"
+        << "  --spectrum-fidelity      EfficiencyCalculator::enable_spectrum_fidelity (Compton\n"
+        << "                           K-vacancy x-rays, Detailed electron walk): how far\n"
+        << "                           the full-spectrum physics moves FEP and total\n"
         << "  --analog                 Force fully analog sampling (disable the\n"
         << "                           library's auto-enabled biasing)\n"
         << "  --histogram              Also write pulse-height spectra (1 keV bins)\n"
@@ -208,6 +213,11 @@ struct FomWriter {
     }
 };
 
+// --spectrum-fidelity, --no-source-fluorescence, --no-source-positrons: shared by
+// every config of one invocation.
+bool g_spectrum_fidelity = false;
+bool g_no_source_fluorescence = false;
+
 bool run_config(int cfg,
                 const std::vector<double>& energies,
                 uint64_t n_mc,
@@ -236,6 +246,8 @@ bool run_config(int cfg,
     if (fep_only) calc.enable_fep_only_mode(true);
     if (no_source_brems) calc.set_source_brems(false);
     if (no_source_electrons) calc.enable_source_electron_transport(false);
+    if (g_spectrum_fidelity) calc.enable_spectrum_fidelity(true);
+    if (g_no_source_fluorescence) calc.set_source_fluorescence(false);
 
     std::cout << "\n=== Config " << cfg << ": " << setup.description << " ===\n";
 
@@ -515,6 +527,14 @@ int main(int argc, char** argv) {
         }
         if (arg == "--no-source-electrons") {
             no_source_electrons = true;
+            continue;
+        }
+        if (arg == "--spectrum-fidelity") {
+            g_spectrum_fidelity = true;
+            continue;
+        }
+        if (arg == "--no-source-fluorescence") {
+            g_no_source_fluorescence = true;
             continue;
         }
         if (arg == "--no-source-brems") {

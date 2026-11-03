@@ -17,13 +17,10 @@
   height: 100%;
 }
 
-/* Menu icon positioned in upper-right corner.  Reserve room for Windows' native vertical
-   scrollbar, which occupies layout space and can otherwise cover the right edge of the button. */
-.LlmMenuIcon {
-  position: absolute;
-  top: 2px;
-  right: 20px;
-  z-index: 100;
+/* Details only of use when developing the assistant (raw JSON menus, invocation IDs, raw tool
+   parameters and results); LlmToolGui adds .LlmHideDebug to itself unless the user asked to see them. */
+.LlmHideDebug .LlmDebugOnly {
+  display: none !important;
 }
 
 /* Scroll area for conversations */
@@ -51,12 +48,13 @@
 /* Floating input area (overlays the scroll area) */
 /* ============================================ */
 
-/* Horizontal row pinned to the bottom of the scroll wrapper, floating over the conversation.  The
-   text-area column grows on the left; the icon submit/stop button stays pinned bottom-right. */
+/* Horizontal row pinned to the bottom of the scroll wrapper, floating over the conversation: the
+   conversation menu icon (unless it is in a header), the growing text-area column, and the icon
+   submit/stop button pinned bottom-right. */
 .LlmInputArea {
   position: absolute;
   left: 8px;
-  right: 22px;   /* leave room for the scrollbar / menu icon */
+  right: 22px;   /* leave room for the scrollbar */
   bottom: 8px;
   z-index: 50;
   display: flex;
@@ -68,6 +66,17 @@
   border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+/* The conversation menu icon leads the input bar (unless it is in the side panel's header); centered
+   against the 34px send button, as the row aligns its items to the bottom. */
+.LlmInputArea > button.LlmMenuIcon,
+.LlmInputArea > button.LlmMenuIcon:hover {
+  position: static;
+  flex-shrink: 0;
+  min-width: 24px;
+  margin: 0 0 5px 0;
+  padding: 0;
 }
 
 /* Auto-growing text area */
@@ -261,11 +270,51 @@
   margin-right: 10px;
 }
 
-/* Sub-agent nesting indentation */
+/* Sub-agent nesting indentation (phones; see .LlmSubAgentFlat for desktop) */
 .LlmSubAgentNesting {
   margin-left: 20px;
   margin-top: 10px;
   border-left: 3px solid var(--interspec-border-color);
+}
+
+/* Desktop: a sub-agent's conversation sits in its tool round's (blue-bordered) result item, which
+   already sets it apart, so it is not drawn as a panel of its own.  Its title bar (status, total
+   time, menu) is only shown with debug options on. */
+.LlmInteractionDisplay.LlmSubAgentFlat {
+  margin: 4px 0 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Grows to fit its text (InterSpec.css fixes .titlebar at 25px, which the other panels' padding
+   leaves room for), as the sub-agent's "question" usually wraps. */
+.LlmInteractionDisplay.LlmSubAgentFlat.Wt-panel > .titlebar {
+  height: auto;
+  min-height: 24px;
+  padding: 4px 0;
+  font-size: 13px;
+  border-bottom: none;
+  background-color: transparent !important;
+}
+
+.LlmInteractionDisplay.LlmSubAgentFlat.Wt-panel > .body {
+  padding: 0;
+  background-color: transparent;
+}
+
+/* A sub-agent's "question" is the whole task prompt it was given; limited to a few lines until
+   clicked. */
+.LlmSubAgentPrompt {
+  cursor: pointer;
+}
+
+.LlmSubAgentPrompt:not(.LlmExpanded) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .LlmUserQuestion {
@@ -470,6 +519,44 @@
   color: var(--interspec-text-color);
 }
 
+/* ============================================ */
+/* LlmToolRoundDisplay - a tool-call turn and its results, in one panel (it also has the
+   .LlmInteractionTurnDisplay class, for the common turn styling) */
+/* ============================================ */
+
+.LlmToolRoundDisplay.Wt-panel > .titlebar {
+  border-bottom: 1px solid var(--interspec-border-color);
+}
+
+.LlmToolRoundDisplay.LlmToolRoundError.Wt-panel > .titlebar .LlmTurnTitle {
+  color: var(--interspec-error-color);
+}
+
+/* The request and results panels inside: only debug options show their title bars (with their
+   menus), and the results are drawn flat, as part of the round. */
+.LlmToolRoundBody > .LlmInteractionTurnDisplay.Wt-panel > .titlebar {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.LlmToolRoundBody > .LlmToolRequestDisplay {
+  margin-bottom: 8px;
+}
+
+.LlmToolRoundBody > .LlmToolResultsDisplay {
+  margin-bottom: 0;
+  border: none;
+  background: transparent;
+}
+
+.LlmToolRoundBody > .LlmToolResultsDisplay.Wt-panel > .body {
+  padding: 0;
+}
+
+.LlmToolRoundBody .LlmToolResultItem:last-child {
+  margin-bottom: 0;
+}
+
 .LlmToolResultItem {
   margin-bottom: 12px;
   padding: 10px;
@@ -558,6 +645,7 @@
   margin: 6px 8px;
 }
 
+/* Phones only; on desktop the sub-agent is in a tool-round panel titled "X agent". */
 .LlmSubAgentLabel {
   display: block;
   margin-top: 12px;
@@ -639,6 +727,28 @@
   font-size: 13px;
   margin-top: 12px;
   font-style: italic;
+}
+
+/* A conversation cut off when the assistant, or InterSpec, was closed; see
+   LlmInteractionDisplay::showInterruptedPanel(). */
+.LlmInterruptedPanel {
+  color: var(--interspec-text-color);
+  background-color: var(--interspec-input-background);
+  border-left: 4px solid var(--interspec-warning-color);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.LlmInterruptedMessage {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.LlmResumeButton {
+  margin-right: 8px;
+  cursor: pointer;
 }
 
 /* ============================================ */
@@ -970,33 +1080,6 @@
 /* Side panel (InterSpec's LlmSidePanel)        */
 /* ============================================ */
 
-/* Not phones: next to the menu icon, a button to move the assistant to the right of the charts. */
-button.LlmSideDockBtn,
-button.LlmSideDockBtn:hover {
-  position: absolute;
-  top: 2px;
-  right: 48px;
-  z-index: 100;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: 12px;
-  background-color: transparent;
-  background-image: url('images/llm_dock_right.svg');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 18px 18px;
-  cursor: pointer;
-}
-
-button.LlmSideDockBtn { opacity: 0.6; }
-button.LlmSideDockBtn:hover { opacity: 0.9; }
-
-.LlmSidePanel button.LlmSideDockBtn { display: none; }
-
 /* The panel, right of the charts and tool tabs, with a draggable splitter to its left.  Opaque, as
    Wt's full-width splitter between the charts and the tool tabs is underneath it. */
 .LlmSidePanel {
@@ -1005,7 +1088,7 @@ button.LlmSideDockBtn:hover { opacity: 0.9; }
   border-left: 1px solid var(--interspec-border-color);
 }
 
-/* Title, then the move-out-of-the-panel button, then the close icon.
+/* Title, then the move-out-of-the-panel button, the conversation menu icon (desktop), and the close icon.
    Wt's layout leaves a 5px gap right of the panel (it reserves 10px for the splitter, but uses 5px);
    the gap shows the app background, same as the panel, so only the header bar needs extending -
    with a shadow, as changing the panels size or position would upset Wt's measuring of it. */
@@ -1053,6 +1136,32 @@ button.LlmSideDockBtn:hover { opacity: 0.9; }
 .LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToWindow { background-image: url('images/llm_dock_window.svg'); }
 .LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToFullScreen { background-image: url('images/llm_expand.svg'); }
 
+/* Desktop: the conversation menu icon, moved here from the input bar (LlmToolGui::setMenuIconHost). */
+.LlmSidePanelMenuSlot {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.LlmSidePanelMenuSlot:empty {
+  display: none;
+}
+
+.LlmSidePanelMenuSlot > button.LlmMenuIcon,
+.LlmSidePanelMenuSlot > button.LlmMenuIcon:hover {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin: 0;
+  padding: 0;
+  background-position: center;
+  background-size: 20px 20px;
+}
+
+/* The glyph is thin-stroked, so it needs more opacity than the other header buttons to match them. */
+.LlmSidePanelMenuSlot > button.LlmMenuIcon { opacity: 0.9; }
+.LlmSidePanelMenuSlot > button.LlmMenuIcon:hover { opacity: 1; }
+
 .LlmSidePanelHeader > .LlmSidePanelClose,
 .LlmSidePanelHeader > .LlmSidePanelClose:hover {
   flex-shrink: 0;
@@ -1074,8 +1183,7 @@ button.LlmSideDockBtn:hover { opacity: 0.9; }
 
 /* On phones, when full-screen, the dock button and conversation menu sit at the right of the windows
    header bar (see LlmToolGui::setPhoneWindowHeader).  The generic phone-header button rules would
-   otherwise strip their icons (background:none), and the .LlmMenuIcon rule would float the menu
-   icon over the conversation. */
+   otherwise strip their icons (background:none). */
 .PhoneAuxWindowFooter > .LlmHeaderTools {
   float: right;
   display: flex;

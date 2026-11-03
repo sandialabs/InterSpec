@@ -160,6 +160,9 @@
   </message>
   <message id="smm-failed-combine">Failed in combining files: {1}</message>
   <message id="smm-failed-sum">Failed summing spectra: {1}</message>
+  <message id="smm-nothing-to-sum">there were no spectra to sum</message>
+  <message id="smm-select-single-file">Please select records from a single spectrum file.</message>
+  <message id="smm-err-export">Error exporting the selected spectra: {1}</message>
 
   <!-- URI entry -->
   <message id="smm-qr-no-meas">No gamma measurements in URL/QR code</message>

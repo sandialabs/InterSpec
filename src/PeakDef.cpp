@@ -3492,9 +3492,12 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         const auto oldprecision = answer.precision();  //probably 6 always
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
         
+        // The lower energy of each channel, and then the upper energy of the last one, so the JS
+        //  knows the extent of every channel in 'continuumCounts' (which has one less entry).
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
+        answer << "," << foreground->gamma_channel_upper(lastbin);
         answer << "]," << q << "continuumCounts" << q << ":[";
         
         /*
@@ -3587,16 +3590,19 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         const size_t nchannel = hist->num_gamma_channels();
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
+        assert( (firstbin <= lastbin) && (lastbin <= (nchannel - 1)) );
         
         //see comments above in FlatStep section
         const auto oldprecision = answer.precision();
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
 
+        // As for the step continua above: each channel's lower energy, then the last one's upper.
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_lower(i);
+        answer << "," << hist->gamma_channel_upper(lastbin);
         answer << "]," << q << "continuumCounts" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_content(i);

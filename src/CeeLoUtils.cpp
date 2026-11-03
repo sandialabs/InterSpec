@@ -42,6 +42,7 @@
 
 #include "io/SolidAngle.h"
 #include "io/ResponseKernel.h"
+#include "io/ResponseGenerator.h"
 #include "geometry/Geometry.h"
 #include "cross_sections/CrossSectionData.h"
 
@@ -326,8 +327,8 @@ TransferAnchor transferAnchorForDrf(
   }//if( raw && !raw->empty() )
 
   // Fallback: sample the fitted intrinsic curve and convert it to absolute
-  //  efficiency at a single reference distance (mirrors
-  //  MakeMcResponseForDrf::groundingPointsForDrf, the vetted recipe -
+  //  efficiency at a single reference distance (MakeMcResponseForDrf::groundingPointsForDrf
+  //  grounds a Monte-Carlo response on this same anchor -
   //  farFieldIntrinsicEfficiency() already backs any air attenuation out, so the
   //  reconstructed absolute efficiencies are in-vacuum, consistent with the
   //  transfer kernel).
@@ -558,7 +559,8 @@ struct GeometryKernel::Impl
   std::vector<std::unique_ptr<ceelo::Material>> owned;  //must outlive `geometry`
   std::unique_ptr<ceelo::Geometry> geometry;
   int n_rays;
-  double a_cm;
+  double a_cm;          //transverse half-extent: sets the far-field distance
+  double footing_a_cm;  //radius of the disk the far-field intrinsic is quoted against
   std::map<long,ceelo::ApertureQuadrature> quads;  //keyed on micrometres of face distance
 
   const ceelo::ApertureQuadrature &quadrature( const double face_dist_cm )
@@ -575,7 +577,8 @@ struct GeometryKernel::Impl
 };//struct GeometryKernel::Impl
 
 
-GeometryKernel::GeometryKernel( const ceelo::GeometryDescriptor &geom, const int n_rays )
+GeometryKernel::GeometryKernel( const ceelo::GeometryDescriptor &geom, const int n_rays,
+                                const double footing_diameter_cm )
   : m_impl( new Impl() )
 {
   if( !geom.problems().empty() )
@@ -585,6 +588,7 @@ GeometryKernel::GeometryKernel( const ceelo::GeometryDescriptor &geom, const int
   m_impl->geometry.reset( new ceelo::Geometry( geom.build_geometry( m_impl->owned ) ) );
   m_impl->n_rays = std::max( 64, n_rays );
   m_impl->a_cm = geom.transverse_half_extent();
+  m_impl->footing_a_cm = (footing_diameter_cm > 0.0) ? (0.5 * footing_diameter_cm) : m_impl->a_cm;
 }//GeometryKernel(...)
 
 
@@ -613,7 +617,7 @@ double GeometryKernel::intrinsicFactor( const double energy_keV, const double fa
   const double k_far = kernel( energy_keV, d_far );
   if( k_far <= 0.0 )
     throw runtime_error( "GeometryKernel::intrinsicFactor: zero far-field kernel" );
-  const double omega_far = ceelo::disk_solid_angle_fraction( d_far, m_impl->a_cm );
+  const double omega_far = ceelo::disk_solid_angle_fraction( d_far, m_impl->footing_a_cm );
   return kernel( energy_keV, face_dist_cm ) * omega_far / k_far;
 }//intrinsicFactor(...)
 
@@ -705,10 +709,26 @@ TransferAnchor curveAnchorWithCovarianceForDrf(
   energies.erase( unique( begin(energies), end(energies) ), end(energies) );
 
   // Absolute efficiency at the reference distance, through the kernel: eta(E)*K(E,d_ref) with
-  //  eta pinned so the far-field intrinsic efficiency is the DRF's curve (see GeometryKernel).
-  GeometryKernel kernel( geom );
+  //  eta pinned so the far-field intrinsic efficiency is the DRF's curve (see GeometryKernel) -
+  //  quoted against the disk the curve is: the DRF's own stated diameter, which is what its
+  //  flat-disk evaluation multiplies back in.
+  const double footing_diam_cm = drf->detectorDiameter() / PhysicalUnits::cm;
+  GeometryKernel kernel( geom, 2048, footing_diam_cm );
   const double d_far = kernel.farFieldDistanceCm();
-  const double d_ref = (ref_distance_cm > 0.0) ? ref_distance_cm : d_far;
+  double d_ref = (ref_distance_cm > 0.0) ? ref_distance_cm : d_far;
+
+  // An absolute curve is a real measurement at a real distance: anchor there, on the flat-disk
+  //  value that reproduces it exactly, as #transferAnchorForDrf does - not on a far-field
+  //  reconstruction carried back in through the kernel.
+  const bool at_abs_distance = (ref_distance_cm <= 0.0)
+                    && (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
+                    && (drf->absoluteEfficiencyDistance() > 0.0);
+  if( at_abs_distance )
+    d_ref = drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
+  const double abs_solid_angle = at_abs_distance
+               ? DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
+                                    drf->absoluteEfficiencyDistance() + drf->detectorSetback() )
+               : 0.0;
 
   TransferAnchor answer;
   answer.curve_derived = true;
@@ -720,7 +740,7 @@ TransferAnchor curveAnchorWithCovarianceForDrf(
     const double intrinsic = drf->farFieldIntrinsicEfficiency( static_cast<float>(energies[i]) );
     if( (intrinsic <= 0.0) || std::isnan(intrinsic) || std::isinf(intrinsic) )
       continue;
-    const double g = kernel.intrinsicFactor( energies[i], d_ref );
+    const double g = at_abs_distance ? abs_solid_angle : kernel.intrinsicFactor( energies[i], d_ref );
     if( g <= 0.0 )
       continue;
     answer.curve.energies_keV.push_back( energies[i] );
@@ -803,6 +823,12 @@ Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd )
 }//farFieldSourcePosition(...)
 
 
+double farFieldCrystalSolidAngle( const ceelo::GeometryDescriptor &gd )
+{
+  return ceelo::disk_solid_angle_fraction( farFieldDistanceCm( gd ), crystalHalfExtent( gd ) );
+}//farFieldCrystalSolidAngle(...)
+
+
 Eigen::Vector3d sourcePositionFromFace( const ceelo::GeometryDescriptor &gd,
                                         const double theta_rad, const double phi_rad,
                                         const double dist_from_face_cm )
@@ -814,6 +840,35 @@ Eigen::Vector3d sourcePositionFromFace( const ceelo::GeometryDescriptor &gd,
   pos.z() -= gd.endcap_front_offset_cm();
   return pos;
 }//sourcePositionFromFace(...)
+
+
+void groundResponseToFacePoints( ceelo::DetectorResponse &response,
+                                 std::vector<ceelo::GroundingPoint> points,
+                                 const bool curve_derived )
+{
+  response.grounding = ceelo::GroundingBlock();
+
+  // A point where nothing reaches the crystal - its kernel underflows to 0 (e.g. ~1 cm of lead at
+  //  15 keV) - has a zero model, so says nothing about k = measured / model; k there comes from its
+  //  neighbours.
+  const ceelo::GeometryDescriptor &gd = response.descriptor;
+  vector<ceelo::GroundingPoint> usable;
+  for( ceelo::GroundingPoint &p : points )
+  {
+    const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
+    const double phi = p.phi_deg * PhysicalUnits::pi / 180.0;
+    const Eigen::Vector3d pos = sourcePositionFromFace( gd, theta, phi, p.distance_cm );
+    p.model_eff = response.eps_fep_at( p.energy_keV, pos ).value;
+    if( (p.model_eff > 0.0) && std::isfinite( p.model_eff ) )
+      usable.push_back( std::move(p) );
+  }
+
+  if( usable.empty() )
+    throw std::runtime_error( "the Monte-Carlo geometry passes no photons to its crystal at any"
+                              " energy it would be grounded at." );
+
+  ceelo::ResponseGenerator::ground_to_points( response, std::move(usable), curve_derived );
+}//groundResponseToFacePoints(...)
 
 
 Eigen::Vector3d detectorFacePosition( const ceelo::GeometryDescriptor &gd )
@@ -1984,10 +2039,8 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   //  disk solid angle.  Any divergence here would put the stored curve and the
   //  live query at odds.  The far-field DISTANCE is set by the whole object's
   //  extent; the SOLID ANGLE is the crystal's - see #crystalHalfExtent.
-  const double d_cm = farFieldDistanceCm( response->descriptor );
-
   const double crystal_a_cm = crystalHalfExtent( response->descriptor );
-  const double omega = ceelo::disk_solid_angle_fraction( d_cm, crystal_a_cm );
+  const double omega = farFieldCrystalSolidAngle( response->descriptor );
   if( omega <= 0.0 )
     throw runtime_error( "setLegacyEfficiencyFromResponse: degenerate solid angle." );
 
@@ -2018,16 +2071,18 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
     throw runtime_error( "setLegacyEfficiencyFromResponse: the response gave fewer"
                          " than two positive efficiencies." );
 
-  // setEfficiencyPoints resets the setback, the flags and the DRF source along
-  //  with the curve, so carry them across ourselves.
-  const double setback = drf.detectorSetback();
+  // setEfficiencyPoints resets the flags and the DRF source along with the curve, so carry the
+  //  source across ourselves.
   const DetectorPeakResponse::DrfSource source = drf.drfSource();
 
   drf.setEfficiencyPoints( points, static_cast<float>( 2.0 * crystal_a_cm * PhysicalUnits::cm ),
                           -1.0, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
-  if( setback > 0.0 )
-    drf.setDetectorSetback( setback );
+  // The curve and the diameter now both come from the response, so the setback does too: the
+  //  flat-disk evaluation - used when the response is not attached, or is turned off - then puts
+  //  the crystal where the response does.  Keeping a setback the DRF had before would pair this
+  //  curve with a crystal placement it was never quoted against.
+  drf.setDetectorSetback( response->descriptor.endcap_front_offset_cm() * PhysicalUnits::cm );
   drf.setDrfSource( source );
 }//setLegacyEfficiencyFromResponse(...)
 

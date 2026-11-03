@@ -75,8 +75,17 @@ struct ElectronDepositResult {
     /// Defaults to the start position (used when the walk produces no path,
     /// e.g. an empty ray trace).  Callers that annihilate a positron emit
     /// the back-to-back 511 keV pair from here rather than the creation
-    /// (pair-production) vertex.
+    /// (pair-production) vertex — unless `escaped`.
     Eigen::Vector3d stop_position{0.0, 0.0, 0.0};
+
+    /// True when the particle left all geometry still carrying kinetic
+    /// energy (`exit_KE_keV`, moving along `exit_direction` from
+    /// `stop_position`).  A positron that escapes does not annihilate in the
+    /// detector: the world outside the geometry is vacuum (no air transport),
+    /// so its annihilation photons are not emitted.
+    bool escaped = false;
+    double exit_KE_keV = 0.0;
+    Eigen::Vector3d exit_direction{0.0, 0.0, 1.0};
 
     /// Positron-only: set true when the positron annihilated IN FLIGHT during
     /// the walk (sampled per substep against the Heitler annihilation rate over

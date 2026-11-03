@@ -15,7 +15,14 @@ The release build uses quay.io/pypa/manylinux_2_28_x86_64, whose compiler is Red
 gcc-toolset-14; Developer Toolset links the *base* AlmaLinux 8 runtime and pulls only newer
 ABI bits from libstdc++_nonshared.a, so the ceilings below are what that base provides.
 
-Usage:  check_elf_compat.py <directory-or-file> [...]
+Usage:  check_elf_compat.py [--static-cxx-runtime] <directory-or-file> [...]
+
+--static-cxx-runtime is for the stdio MCP server (target/mcp_stdio), a stand-alone executable that
+links libstdc++ and libgcc statically on purpose (-static-libstdc++ -static-libgcc), so it needs
+nothing from the system but glibc.  Issue #51 was static libstdc++ inside a dlopen()ed shared
+object; an executable is less exposed, but its smoke test (which runs the installed binary) is the
+guard.  In this mode libstdc++/libgcc_s must NOT be linked, and no GLIBCXX/CXXABI/GCC version may
+be required; the GLIBC ceiling is the same.
 
 Only binaries InterSpec builds are checked.  Electron's own prebuilt binaries are reported for
 information but never failed on - we do not control how they were linked.
@@ -69,8 +76,13 @@ ALLOWED_NEEDED = {
 # Must be dynamically linked, not absorbed into the binary - this is the issue #51 guard.
 REQUIRED_NEEDED = { "libstdc++.so.6" }
 
+# With --static-cxx-runtime: the C++ runtime is inside the binary, so none of it may be NEEDED or
+#  versioned.
+STATIC_CXX_FORBIDDEN_NEEDED = { "libstdc++.so.6", "libgcc_s.so.1" }
+STATIC_CXX_FORBIDDEN_VERSIONS = { "GLIBCXX", "CXXABI", "GCC" }
+
 # Binaries InterSpec builds, as opposed to the Electron runtime we merely redistribute.
-OURS = re.compile( r"(^InterSpecAddOn\.node$)|(^libInterSpec\.so)|(^InterSpec_batch$)" )
+OURS = re.compile( r"(^InterSpecAddOn\.node$)|(^libInterSpec\.so)|(^InterSpec_batch$)|(^InterSpec-mcp-stdio$)" )
 
 VERSION_RE = re.compile( r"\b(GLIBC|GLIBCXX|CXXABI|GCC)_(\d+(?:\.\d+)*)\b" )
 NEEDED_RE = re.compile( r"\(NEEDED\).*\[([^\]]+)\]" )
@@ -139,7 +151,7 @@ def fmt( prefix, ver ):
   return "%s_%s" % (prefix, ".".join( str(p) for p in ver ))
 
 
-def check( path, strict ):
+def check( path, strict, static_cxx=False ):
   """Return a list of problem strings; empty means the binary is fine."""
   problems = []
   name = os.path.basename( path )
@@ -155,15 +167,26 @@ def check( path, strict ):
     return problems
 
   for prefix, ver in sorted( maxima.items() ):
+    if static_cxx and prefix in STATIC_CXX_FORBIDDEN_VERSIONS:
+      problems.append( "%s requires %s, but its C++ runtime is supposed to be linked statically"
+                       % (name, fmt(prefix, ver)) )
+      continue
     ceiling = MAX_VERSIONS.get( prefix )
     if ceiling and ver > ceiling:
       problems.append( "%s requires %s but the floor allows at most %s"
                        % (name, fmt(prefix, ver), fmt(prefix, ceiling)) )
 
-  for lib in sorted( REQUIRED_NEEDED - needed ):
-    problems.append( "%s does not link %s dynamically - this is the issue #51 regression;"
-                     " see cmake/CxxRuntimePolicy.cmake" % (name, lib) )
+  if static_cxx:
+    for lib in sorted( needed & STATIC_CXX_FORBIDDEN_NEEDED ):
+      problems.append( "%s links %s dynamically, but should link it statically"
+                       " (-static-libstdc++ -static-libgcc)" % (name, lib) )
+  else:
+    for lib in sorted( REQUIRED_NEEDED - needed ):
+      problems.append( "%s does not link %s dynamically - this is the issue #51 regression;"
+                       " see cmake/CxxRuntimePolicy.cmake" % (name, lib) )
 
+  # (With static_cxx, a linked libstdc++/libgcc_s was reported just above; it is in the allowlist,
+  #  so is not reported twice.)
   for lib in sorted( needed - ALLOWED_NEEDED ):
     problems.append( "%s depends on %s, which is not in the allowlist" % (name, lib) )
 
@@ -173,6 +196,8 @@ def check( path, strict ):
 def main():
   parser = argparse.ArgumentParser( description=__doc__,
                                     formatter_class=argparse.RawDescriptionHelpFormatter )
+  parser.add_argument( "--static-cxx-runtime", action="store_true",
+                       help="Require libstdc++/libgcc to be linked statically (the stdio MCP server)" )
   parser.add_argument( "paths", nargs="+", help="Files, or directories to search recursively" )
   args = parser.parse_args()
 
@@ -197,13 +222,13 @@ def main():
 
   if not ours:
     sys.exit( "error: none of the %d ELF binaries found look like InterSpec's own"
-              " (expected InterSpecAddOn.node); wrong directory?" % len(candidates) )
+              " (expected InterSpecAddOn.node or InterSpec-mcp-stdio); wrong directory?" % len(candidates) )
 
   problems = []
 
   print( "InterSpec binaries (enforced):" )
   for path in ours:
-    problems += check( path, strict=True )
+    problems += check( path, strict=True, static_cxx=args.static_cxx_runtime )
 
   if theirs:
     print( "\nRedistributed Electron binaries (informational only):" )

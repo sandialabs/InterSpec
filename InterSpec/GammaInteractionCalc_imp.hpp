@@ -1423,7 +1423,8 @@ struct DistributedSrcCalcT
 
    FlatDisk (or null #m_effResponse): returns `flat` unchanged (post-integration farFieldIntrinsicEfficiency
    then reproduces the legacy result).  MCTransfer/EffTran: returns the absolute FEP efficiency
-   `m_effResponse->eps_fep( m_energy, incidence-angle, 0, dist/cm )` - solid angle and intrinsic
+   `m_effResponse->eps_fep_at` at CeeLoUtils::sourcePositionFromFace( incidence-angle, dist from the
+   face ) - solid angle and intrinsic
    response already folded in, so farFieldIntrinsicEfficiency must NOT be applied afterward.
 
    Autodiff-safe: the value equals eps_fep exactly, while the (dominant) 1/r^2 gradient is carried by
@@ -1492,6 +1493,14 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
   //  energy - not scaling it - which costs a response query per partner per element and needs the
   //  aperture shared across partners plus a contribution-based partner cap first.  Until then these
   //  legs stay on the flat-disk geometry they were written for, which is at least self-consistent.
+  //
+  //  That geometry is the DRF's STATED diameter and setback, even on a response-modeled fit whose
+  //  response puts the crystal elsewhere - deliberately.  Moving the legs onto the response's own
+  //  crystal at its endcap offset (tried 2026-11-01) made EVERY extended truth scene in
+  //  test_CascadeSummingFit worse - the Co-60 disk at 1 cm went from 2.8% to 5.5% off the Monte-Carlo
+  //  summing factor - because a flat disk at the true crystal face ignores how deep in the crystal
+  //  photons interact, which a stated setback partly stands in for.  The real fix is the absolute
+  //  efficiency above, not a different disk.
   (void)near_field_ratio;
   const T nf = T(1.0);
 
@@ -4412,15 +4421,20 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     if( pos != std::end(cascade_nuc_active) )
       return pos->second;
 
-    // Upper-bound geometry: closest possible element, no attenuation.
-    double extent = 0.0;
+    // Upper-bound geometry: closest possible element, no attenuation, on the flat disk the partner
+    //  legs use.  The closest element is the assembly's outer surface nearest the detector face,
+    //  which for anything but an on-axis sphere is not the distance less one dimension.
+    double outer[3] = { 0.0, 0.0, 0.0 };
     for( const ShieldingSourceFitCalc::ShieldingInfo &sh : m_initial_shieldings )
     {
-      if( !sh.m_isGenericMaterial && sh.m_material )
-        extent += std::max( 0.0, sh.m_dimensions[0] );
+      if( sh.m_isGenericMaterial || !sh.m_material )
+        continue;
+      for( int i = 0; i < 3; ++i )
+        outer[i] += std::max( 0.0, sh.m_dimensions[i] );
     }
     const double closest = std::max( 0.1*PhysicalUnits::cm,
-                                     trueSourceToDetectorDistance() - extent );
+                                     detector_face_clearance( m_geometry, outer, m_distance,
+                                                              m_sourceOffsets[0], m_sourceOffsets[1] ) );
     const double det_diam = m_detector->detectorDiameter();
     const double omega = DetectorPeakResponse::fractionalSolidAngle( det_diam,
                                     closest + m_detector->detectorSetback() );
@@ -4776,31 +4790,15 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
               break;
           }//switch( m_geometry )
 
-          // Compare against the true (offset-aware) source-to-detector distance, not the
-          //  on-axis m_distance: with an off-axis offset the detector is farther away, so
-          //  using m_distance would spuriously flag a legitimate shell as past the detector.
-          //  On-axis the two are equal.
-          const double det_dist = trueSourceToDetectorDistance();
-          bool pastDetector = false;
-          switch( m_geometry )
-          {
-            case GeometryType::Spherical:
-            case GeometryType::CylinderSideOn:
-              pastDetector = (scalar_of(outer_dims[0]) > det_dist);
-              break;
-
-            case GeometryType::CylinderEndOn:
-              pastDetector = (scalar_of(outer_dims[1]) > det_dist);
-              break;
-
-            case GeometryType::Rectangular:
-              pastDetector = (scalar_of(outer_dims[2]) > det_dist);
-              break;
-
-            case GeometryType::NumGeometryType:
-              assert( 0 );
-              break;
-          }//switch( m_geometry )
+          // Every shell must stay in front of the detector-face plane, whatever the offsets: a shell
+          //  reaching beside the detector is not modelled (see detector_face_plane_clearance), so
+          //  this compares the extent along the axis with the ON-AXIS distance.  (It used to compare
+          //  with the offset-aware distance, which accepted such shells - and, for a sphere, ones
+          //  the detector body sits inside.)
+          const double scalar_outer[3] = { scalar_of(outer_dims[0]), scalar_of(outer_dims[1]),
+                                           scalar_of(outer_dims[2]) };
+          const bool pastDetector
+                        = (detector_face_plane_clearance( m_geometry, scalar_outer, m_distance ) < 0.0);
 
           if( pastDetector && !(m_detector && m_detector->isFixedGeometry()) )
             throw std::runtime_error( "expected_peak_counts_imp: radius > distance" );

@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <set>
 #include <deque>
 #include <mutex>
 #include <memory>
@@ -98,6 +100,10 @@ class SpecMeasManager : public Wt::WObject
 public:
   SpecMeasManager( InterSpec *viewer );
   void  startSpectrumManager();
+  
+  /** Closes the Spectrum Manager window, if open, keeping its table for the next time it opens. */
+  void deleteSpectrumManager();
+  
   virtual ~SpecMeasManager();
   SpectraFileModel *model();
   const SpectraFileModel *model() const;
@@ -120,6 +126,7 @@ public:
   //  it.  The measurment is not checked to see if its appropriate for
   //  displaying or working with; that is, conditions such as multiple
   //  calibrations are not checked for.
+  //  If the measurement is already in the file model, its existing header is returned.
   std::shared_ptr<SpectraFileHeader> addFile( const std::string &displayName,
                                       std::shared_ptr<SpecMeas> measurement );
 
@@ -150,12 +157,26 @@ public:
   void selectionChanged();
   void removeSelected();
   
+  /** Removes the file from the SpectraFileModel (and the in-memory cache).
+
+   If `undisplay` is true, the file is first un-displayed from every spectrum type (foreground,
+   background, secondary) showing it - a displayed file should always be in the model, so only pass
+   false for a file you know isnt displayed.  Also keeps the SpectraFileHeader from saving the file
+   to disk when the SpecMeas is destructed.  No-op if `header` isnt in the model.
+   */
+  void removeFile( const std::shared_ptr<SpectraFileHeader> &header, const bool undisplay );
+  
+  /** For each spectrum type `replaced` is displayed as, displays `replacement` instead - with the
+   same sample numbers if `replacement` has them all, or else its default ones.
+
+   For when a file is replaced by another version of itself (e.g., resuming previous work), so the
+   file can then be removed without un-displaying it from, e.g., the background.
+   */
+  void displayInPlaceOf( const std::shared_ptr<SpecMeas> &replaced,
+                         const std::shared_ptr<SpecMeas> &replacement );
+  
   //removeSpecMeas(): removes the entry cooresponding to the passed in SpecMeas
-  //  from the SpectraFileModel.   If 'undisplay' is specified, and the SpecMeas
-  //  was being displayed, then the SpecMeas will also be un-displayed from the
-  //  GUI.  Calling this function will also prevent the SpectraFileHeader
-  //  cooresponding to 'meas' from saving the file to disk from the destructor
-  //  of SpectraFileHeader
+  //  from the SpectraFileModel; see `removeFile(...)`.
   void removeSpecMeas( std::shared_ptr<const SpecMeas> meas,
                        const bool undisplay );
   
@@ -327,8 +348,19 @@ public:
                     const VariantChecksToDo viewingChecks
                     );
 
-  std::shared_ptr<SpectraFileHeader> selectedFile() const; //returns first file selected (I think)
-  std::vector<std::shared_ptr<SpectraFileHeader> > getSelectedFiles() const; //returns all selected
+  /** Returns the file the Spectrum Manager selection is from; nullptr if nothing, or more than
+   one file, is selected.
+   */
+  std::shared_ptr<SpectraFileHeader> selectedFile() const;
+  
+  /** Returns the files with a file-level row selected in the Spectrum Manager (rows of only
+   individual records arent included).
+   */
+  std::vector<std::shared_ptr<SpectraFileHeader> > getSelectedFiles() const;
+  
+  /** The sample numbers selected in the Spectrum Manager, for when a single file is selected (see
+   `samplesForIndexes(...)` for how a selected file row is interpreted).
+   */
   std::set<int> selectedSampleNumbers() const;
   void setDisplayedToSelected();
 
@@ -543,7 +575,6 @@ protected:
   
 private:
   Wt::WContainerWidget *createButtonBar();
-  void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
   void closeNonSpecFileDialog();
 
@@ -712,8 +743,28 @@ private:
                                       SpecUtils::SpectrumType type );
   
 protected:
+  /** Maps model indexes (file and/or record rows) to the files, and their sample numbers, they
+   select.  A file row means all of its records, unless any of its record rows are also in
+   `indexes`, in which case only those records are used (e.g., the user selected the file, then
+   de-selected some of its records).
+   */
+  std::map<std::shared_ptr<SpectraFileHeader>,std::set<int>>
+                               samplesForIndexes( const Wt::WModelIndexSet &indexes ) const;
+  
+  /** Connected to `InterSpec::displayedSpectrumChanged()`: makes sure a displayed spectrum file
+   is in the file model, adding it if not.  The "Spectrum Files" tab, swapping spectra, stepping
+   through samples, and saving states, all require a displayed file to be in the model.
+   */
+  void ensureInFileModel( const std::shared_ptr<SpecMeas> &meas );
+  
   Wt::Core::observing_ptr<AuxWindow> m_spectrumManagerWindow;
-  RowStretchTreeView    *m_treeView;
+  
+  /** The Spectrum Manager table.  It is owned by `m_spectrumManagerWindow` while that is open,
+   and by `m_parkedTreeView` otherwise; it can only be null during session teardown.
+   */
+  Wt::Core::observing_ptr<RowStretchTreeView> m_treeView;
+  std::unique_ptr<Wt::WWidget> m_parkedTreeView;
+  
   std::shared_ptr<SpectraFileModel> m_fileModel;
   Wt::WFileUpload  *m_fileUpload;
   InterSpec   *m_viewer;

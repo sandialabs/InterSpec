@@ -49,7 +49,6 @@
   <message id="ssd-cb-atten-for-air">Atténuer pour l'air</message>
   <message id="ssd-tt-atten-for-air">Lorsque cette case est cochée, l'atténuation due à l'air entre la source, ou le blindage extérieur, et le détecteur sera prise en compte dans les calculs.</message>
   <message id="ssd-cb-sub-back-peaks">Soustraire les pics d'arrière-plan</message>
-  <message id="ssd-tt-sub-back-peaks">Cela force les isotopes d'un élément à avoir tous le même âge dans l'ajustement.</message>
   <message id="ssd-cb-same-el-same-age">Isotopes du même élément de même âge</message>
   <message id="ssd-tt-same-el-same-age">Imposer que les isotopes d'un même élément aient tous le même âge.</message>
   <message id="ssd-cb-corr-for-decay">Corriger pour la désintégration pendant la mesure.</message>
@@ -80,23 +79,6 @@
     premier plan, identifier les pics à potentiellement soustraire, puis revenir à votre
     combinaison premier plan/arrière-plan actuelle.
   </message>
-  <message id="ssd-missing-back-peaks-title">Pics d'arrière-plan manquants</message>
-  <message id="ssd-missing-back-peaks-msg">
-    Le spectre d'arrière-plan ne contient pas de pics ajoutés aux énergies {1}, mais il
-    y a probablement des pics réels dans le spectre d'arrière-plan à ces énergies -
-    souhaitez-vous ajouter ces pics au spectre d'arrière-plan ?
-  </message>
-  <message id="ssd-btn-no-dont-add">Non</message>
-  <message id="ssd-btn-add-peaks">Ajouter des pics...</message>
-  <message id="ssd-btn-add-all-detectable">Ajouter tous les pics auto-ajustés</message>
-  <message id="ssd-back-peak-preview-title">Aperçu des pics d'arrière-plan</message>
-  <message id="ssd-back-peak-preview-msg">Les pics suivants seraient ajoutés au spectre d'arrière-plan :</message>
-  <message id="ssd-no-new-back-peaks">Aucun pic supplémentaire n'a été trouvé dans le spectre d'arrière-plan aux énergies indiquées.</message>
-  <message id="ssd-back-peaks-all-fit">{1} pics candidats ont été ajustés à l'arrière-plan.</message>
-  <message id="ssd-back-peaks-some-fit">{1} sur {2} pics candidats étaient significatifs et ajustés à l'arrière-plan.</message>
-  <message id="ssd-back-peaks-manual-hint">(vous pouvez également ajuster manuellement les pics d'arrière-plan avec la touche Alt (mac : touche Option) plus double<br />
-  clic sur le spectre, ou en chargeant l'arrière-plan comme premier plan)</message>
-  <message id="ssd-err-adding-back-peaks">Erreur lors de l'ajout de pics à l'arrière-plan : {1}</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Les épaisseurs de blindage ont été mises à l'échelle pour être inférieures à la distance du détecteur.</message>
   <message id="ssd-err-fit-only-one-an">Vous ne pouvez ajuster que le numéro atomique d'un seul blindage générique à la fois.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Un chi2 invalide a été calculé pour {1} keV, d'autres résultats peuvent être invalides</message>

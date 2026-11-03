@@ -2,50 +2,35 @@
 
 Developer-facing record of how CeeLo is built, what physics it models, how it is
 validated against GEANT4, and what is deliberately approximated. For an
-introduction to the library see [README.md](README.md); for the list of open
-shortcomings see [TODO.md](TODO.md).
+introduction to the library see [README.md](README.md); open problems live only in
+[TODO.md](TODO.md) (each entry records its **Effect**, what its **Implementation**
+would take, and where it **Shows up**; entries are deleted when resolved). This
+document records what *is* modelled and why.
 
 ## Purpose
 
-CeeLo is a C++17 Monte Carlo photon transport library for computing gamma-ray and X-ray detector efficiency. Given a detector geometry (NaI, LaBr3, CZT, etc.), optional attenuators/shielding, and a source configuration, it computes:
+CeeLo is a C++17 Monte Carlo photon transport library for computing gamma-ray and
+X-ray detector efficiency. Given a detector geometry (NaI, LaBr3, HPGe, CZT, ...),
+optional attenuators/shielding, and a source configuration, it computes:
 
-- **Full-energy peak (FEP) efficiency**: probability that a photon deposits 100% of its energy in the detector crystal
+- **Full-energy peak (FEP) efficiency**: probability that a photon deposits 100% of its energy in the crystal
 - **Total efficiency**: probability that a photon deposits any energy in the crystal
-- **Pulse-height spectrum**: energy deposit histogram (compatible with spectral analysis software)
-- **Cascade summing corrections**: coincidence summing-in and summing-out factors. Optional
-  internal-conversion (IC) electron + coincident K-Auger energy deposition is available via
-  `CascadeConfig::enable_ic_electrons` (default OFF, both estimators). It transports the conversion
-  electron through the source geometry + air gap and deposits it in the crystal only when it can
-  physically reach it (auto distance/solid-angle/air gate), so distant sources are unaffected and the
-  off path is bit-identical. Matters at contact/well/4π (e.g. Ba-133 356 keV summing factor drops
-  ~0.44→0.31 at contact). GEANT4-validated: flag-ON matches G4 per-decay peak areas to <1% at 2 cm
-  (Ba-133), measured with the dev-only IC-electron probe. Two G4 gotchas for the
-  cascade cross-check: use an **air world** (`vacuum_world=false`, so G4's IC electrons air-degrade like
-  the engine's) and set `/process/had/rdm/thresholdForVeryLongDecayTime 1.0e+60 year` (else a long-lived
-  ion parent never decays). Cs-137's Ba-137m isomer does not fully decay under these G4 settings.
+- **Pulse-height spectrum**: energy-deposit histogram (compatible with spectral analysis software)
+- **Cascade summing corrections**: coincidence summing-in and summing-out factors
 
-The goal is for this library to achieve agreement with GEANT4 11.4.0 reference simulations within ~1% across validated configurations (30 keV to 3 MeV).  Full-energy peak and total efficiencies are the priority; capturing the spectrum accurately is also wanted, and is worth a few percent of slowdown but not much more.
+The goal is agreement with the large, fully detailed Monte Carlo engines (in practice
+GEANT4 11.4.0) to ~1% from 30 keV to 3 MeV, with anything beyond that understood and
+documented (Validated Configurations and Known differences below). Full-energy peak and total
+efficiencies are the priority; capturing the spectrum accurately is also wanted,
+and is worth a few percent of slowdown but not much more.
 
+## Build notes
 
-## Build
+Build commands, dependencies and the CMake options are in [README.md](README.md#build).
+Use `-DCMAKE_BUILD_TYPE=Debug` only for assert checking: it is several times slower,
+and the MC test suite (~15–30 min in the default `RelWithDebInfo`) grows with it.
 
-```bash
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j8
-cd build && ctest --output-on-failure
-```
-
-Tests take ~15-30 minutes (MC simulations with statistical convergence checks).
-
-Dependencies: C++17 compiler, CMake 3.15+, Boost (for Boost.Test), Eigen3.
-
-**Compile-time options** (CMake cache vars): `CEELO_WITH_SANDIADECAY=ON` (cascade adapter),
-`CEELO_SOURCE_ESCAPE_MODEL=gate|tails|gs` (source-electron skin-escape model; default `gate` — the
-validated empirical gate; `tails`/`gs` are first-principles A/B variants — see Known Limitations →
-"Source-electron skin escape" for the per-config accuracy comparison),
-`CEELO_BUILD_RESPONSE=ON` (storable detector-response payload — needs header-only **rapidxml**).
-
-**Portability notes** (both learned getting the vendored copy to build with GCC 12 on Linux —
+**Portability** (both learned getting the vendored copy to build with GCC 12 on Linux —
 neither shows up on macOS/libc++, so do not "clean them up" without a Linux build):
 
 - The library links `Threads::Threads` **PUBLIC**. `EfficiencyCalculator.cpp` and
@@ -57,699 +42,651 @@ neither shows up on macOS/libc++, so do not "clean them up" without a Linux buil
   `initializer_list` form produced, bit for bit — adding or reordering words would move
   every seeded result in the library, including the GEANT4-gated validation numbers.
 
-**rapidxml** (only for `CEELO_BUILD_RESPONSE`): NOT vendored — for ODR safety the host
-application's own copy is used. The CMake configure searches a few sibling `3rdparty`
-directories for `rapidxml/rapidxml.hpp` (SandiaDecay bundles a copy, as does SpecUtils);
-when none resolves, pass `-DCEELO_RAPIDXML_DIR=<dir containing rapidxml/>`.
-
-## Open items
-
-[TODO.md](TODO.md) is the single source of truth for known shortcomings, deferred
-features, and fidelity/speed/data improvements. Each entry records its **Effect**, what
-its **Implementation** would take, and the regime where it **Shows up**; items are
-deleted as they are resolved. This document records what *is* modelled and what is
-deliberately approximated — not the open-items list.
+**rapidxml** (only for `CEELO_BUILD_RESPONSE`) is NOT vendored — for ODR safety the host
+application's own copy is used. Configure searches a few sibling `3rdparty` directories
+for `rapidxml/rapidxml.hpp` (SandiaDecay and SpecUtils each bundle a copy); otherwise pass
+`-DCEELO_RAPIDXML_DIR=<dir containing rapidxml/>`. The cascade adapter's SandiaDecay
+source is located the same way (`CEELO_SANDIADECAY_DIR`); point it at the host's copy
+when vendoring.
 
 ## Repository layout
 
 The tracked file set is the reusable library: `git archive HEAD` produces exactly the
-payload that gets vendored into a host application (library + tests + examples + the
-GEANT4 harness + the GEANT4 reference results). CeeLo's own efficiency results are
+payload that gets vendored into a host application. CeeLo's own efficiency results are
 regenerated rather than committed (`tests/data/ceelo_reference/README.md`), paired 1:1
 with the GEANT4 references in `tests/data/geant4_reference/`;
 `profiling/compare_validation.py` gates them against each other.
 
-One-off studies, parameter sweeps, external-code benchmarks, and design notes live in a
-`studies/` tree that is **not** part of the distributed source. The root `CMakeLists.txt`
-adds it only `if(EXISTS studies/CMakeLists.txt)`, so it is a no-op here. A few comments
-in the source refer to those studies by name for provenance; the conclusions they reached
-are summarised in this document.
-
-The cascade adapter's SandiaDecay dependency is located via the `CEELO_SANDIADECAY_DIR`
-CMake variable — point it at the host project's copy when vendoring.
-
-## Source Layout
-
 ```
 src/
-  cascade/          True-coincidence (cascade) summing: analytic + correlated-MC
-                    estimators, beta/IC spectra, optional SandiaDecay adapter
-  cross_sections/   Compiled-in photon cross-section data (auto-generated
-                    element_data.cpp) and its lookup/interpolation
+  cascade/          True-coincidence summing: analytic + correlated-MC estimators,
+                    beta/IC spectra, optional SandiaDecay adapter
+  cross_sections/   Compiled-in photon data (generated element_data.cpp etc.) and lookup
   efficiency/       EfficiencyCalculator - main entry point
   export/           GDML and macro export for GEANT4 validation
   geometry/         Ray tracing (cylinder, box, sphere), attenuator shells, source geometry
   io/               Storable detector-response payload, MC-free response kernel,
                     EFFTRAN-style efficiency transfer (CEELO_BUILD_RESPONSE)
   materials/        Material definitions (composition, density), builtin materials
-  physics/          Electron CSDA range tables, stopping powers, Moliere scattering
+  physics/          Electron CSDA range tables, stopping powers, Moliere scattering, FEP window
   transport/        Photon transport (Compton, PE, Rayleigh, PP, fluorescence, bremsstrahlung)
-tests/              Boost.Test suites (~35 ctest targets)
+examples/           Examples; benchmark_mc_configs + bench_configs.h (validation configs)
+tests/              Boost.Test suites + reference data
 tools/
   prepare_cross_sections/  Locked EPQ/EPICS2023/ESTAR generators and reports
-  geant4_validation/    G4 harness and aggregate-observable comparison tools
+  geant4_validation/       GEANT4 harness (ceelo_g4val); generate_all_spectra (built with examples)
+  efftran_transfer_demo, make_golden_response, response_presets.h
+profiling/          compare_validation.py — the GEANT4 gate
 visualization/      Dependency-free WebGL viewer for exported GDML geometries
 ```
+
+One-off studies, parameter sweeps, external-code benchmarks and design notes live in a
+`studies/` tree that is **not** part of the distributed source; the root `CMakeLists.txt`
+adds it only `if(EXISTS studies/CMakeLists.txt)`. A few source comments name those
+studies for provenance; their conclusions are summarised here.
 
 ## Key Design Decisions
 
 ### Physics
 
-- **Analog MC transport**: No variance reduction inside the detector crystal. Each photon interaction (Compton, PE, Rayleigh, pair production) is sampled explicitly. Electron energy deposition uses CSDA (continuous slowing-down approximation) with Moliere multiple scattering for KE > 200 keV; the condensed-history walk applies the Highland log term on the accumulated path (not per sub-step) and per-step Bohr energy-loss straggling for steps above 500 keV (Aug 2026 — closed the ≥2 MeV FEP family and most of the CZT electron-escape deficit; see Known Limitations).
+- **Transport**: every photon interaction (Compton, PE, Rayleigh, pair production) is
+  sampled explicitly; histories are analog unless a biasing technique applies (see Event
+  Biasing — forced first interaction is auto-enabled for optically thin crystals).
+  Electron energy deposition uses CSDA with Molière multiple scattering for KE > 200 keV.
+  The crystal's condensed-history walk applies the Highland log term on the accumulated
+  path (not per sub-step), adds Bohr energy-loss straggling to each step while the
+  electron's KE exceeds 500 keV (the final, budgeted step stays deterministic), and walks
+  until KE → 0 rather than dropping a residual when the step budget runs out. Those three
+  changes (Aug 2026) closed a coherent −0.4 to −0.5% FEP deficit at ≥2 MeV and most of the
+  thin-crystal (CZT) electron-escape deficit; a matched GEANT4 process-isolation
+  decomposition exonerated the Seltzer–Berger brems sampling (≤0.2%). Env knobs
+  `CEELO_NO_CRYSTAL_STRAGGLE` / `CEELO_DIAG_STRAGGLE_ALL_KE` A/B the straggling.
+  A walk that leaves all geometry reports `ElectronDepositResult::escaped`: an escaping
+  positron emits **no** annihilation photons (the world outside is vacuum; CeeLo does not
+  transport charged particles in air), where it used to annihilate at the last surface
+  it crossed.
 
-- **Cone importance sampling**: For point sources with no shielding, photons are emitted within a cone subtending the detector (not isotropic 4pi). Each event carries a weight = cone solid angle fraction. This gives ~100x speedup for typical geometries. The standard IS estimator is `(1/N) * sum(w_i * I_i)` -- the denominator is N (number of events), NOT sum of weights.
+- **Cone importance sampling**: for point sources with no shielding, photons are emitted
+  within a cone subtending the detector, each event weighted by the cone's solid-angle
+  fraction (~100× speedup for typical geometries). The estimator is
+  `(1/N) * sum(w_i * I_i)` — the denominator is N (events), NOT the sum of weights.
 
-- **Cross-section data**: Photon magnitudes and angular factors are generated
-  directly from locked **EPICS2023 EPDL** records for **Z = 1–98 (H–Cf) from
-  10 keV to 20 MeV** (`kMaxZ`, `kPhotonDataMinEnergy_keV`/`kPhotonDataMaxEnergy_keV`
-  in `CrossSectionData.h`; outside that window the accessors return the endpoint
-  value, so a caller that must not clamp should refuse the query). Each process has
-  its own per-element grid with source nodes, thresholds, and both sides of absorption
-  discontinuities retained. Adaptive interval probes gate maximum material
-  representation error at 0.1% and integrated error at 0.05%; angular tables
-  additionally gate CDF and mean-cosine errors. Generated tables must not be
-  hand-edited; regenerate and audit them through `tools/prepare_cross_sections/`.
-  Against NIST XCOM (an independent evaluation), photoelectric + Compton + pair
-  agreed to ≤ 0.3% for Z 92–98 at 15 keV–10 MeV and to ≤ 0.5% for every element
-  compared at 12–20 MeV (Sep 2026). The two differ in the coherent (Rayleigh) term:
-  for Z 92–98 EPDL's is 1–34% below XCOM's, most just below K edges — the pattern of
-  the anomalous-scattering correction EPDL applies and XCOM omits — which moves the
-  total *including* coherent by up to −2.6% for U and −4.8% for Am (122 keV, just
-  under its K edge). Electron-side tables stop at uranium; see Known Limitations →
-  "Electron tables above uranium".
+- **Cross-section data**: photon magnitudes and angular factors come directly from locked
+  **EPICS2023 EPDL** records for **Z = 1–98 (H–Cf), 10 keV–20 MeV** (`kMaxZ`,
+  `kPhotonDataMinEnergy_keV`/`kPhotonDataMaxEnergy_keV` in `CrossSectionData.h`; outside
+  that window the accessors return the endpoint value, so a caller that must not clamp
+  should refuse the query). Each process has its own per-element grid with source nodes,
+  thresholds and both sides of absorption edges; adaptive probes gate the maximum material
+  representation error at 0.1% and integrated error at 0.05%, and angular tables also
+  gate CDF and mean-cosine errors. Generated tables must not be hand-edited; regenerate
+  and audit them through `tools/prepare_cross_sections/`. Against NIST XCOM,
+  photoelectric + Compton + pair agree to ≤0.3% for Z 92–98 at 15 keV–10 MeV and ≤0.5%
+  for every element compared at 12–20 MeV. The coherent term differs: for Z 92–98 EPDL's
+  is 1–34% below XCOM's, mostly just below K edges (the anomalous-scattering correction
+  EPDL applies and XCOM omits), moving the total *including* coherent by up to −2.6% (U)
+  and −4.8% (Am, 122 keV). Electron-side tables stop at uranium (see Known differences).
 
-- **K-shell fluorescence**: After photoelectric absorption, K-shell vs
-  outer-shell is sampled using direct EPICS2023 EPDL MT=534/MT=522 fractions.
-  K-shell vacancies produce fluorescence X-rays or Auger electrons using direct
-  EPICS2023 EADL MF=28/MT=533 relaxation data through Z=99, covering
-  radioactive-decay daughters one beyond the Z=98 photon tables.
+- **K-shell fluorescence**: after photoelectric absorption, K vs outer shell is sampled
+  from EPICS2023 EPDL MT=534/MT=522 fractions; K vacancies produce fluorescence X-rays or
+  Auger electrons from EPICS2023 EADL MF=28/MT=533 relaxation data through Z = 99
+  (radioactive-decay daughters one beyond the photon tables). L lines are deposited
+  locally in the crystal (TODO.md). The same K relaxation (`sample_k_relaxation`)
+  follows photoelectric absorption in **source material and shields**
+  (`set_source_fluorescence`, default on; the x-ray joins the source secondaries) and,
+  with spectrum fidelity, the K vacancy a Doppler-sampled **Compton** collision leaves
+  (`TransportConfig::enable_compton_fluorescence`).
 
-- **Bremsstrahlung**: Seltzer–Berger scaled differential cross-sections (Z = 1–92,
-  the complete NIST EPQ set; Np–Cf reuse uranium's table, **27 native electron
-  energies from 10 keV–20 MeV × 32 κ**).
-  Rejection sampling uses a 1/k envelope and transports brems photons
-  recursively. The `float32` production table comes from pinned public-domain
-  NIST EPQ. A fixed transformation constructs κ=0.025 quadratically through
-  EPQ {0, 0.05, 0.1} and κ=0.075 cubically through {0, 0.05, 0.1, 0.15}; all
-  remaining values are copied from equal-κ EPQ nodes. There is no row
-  normalization or element/energy-specific correction. This aligns the low-κ
-  grid with the current Geant4 grid without extracting or fitting G4EMLOW
-  coefficients. Aggregate Geant4 spectra/rates are retained only as validation
-  observables, with manual shape approval required before feature migration.
+- **Bremsstrahlung**: Seltzer–Berger scaled differential cross sections (Z = 1–92, the
+  complete NIST EPQ set; Np–Cf reuse uranium's), **27 native electron energies from
+  10 keV–20 MeV × 32 κ**, `float32`, from pinned public-domain NIST EPQ. κ = 0.025 is a
+  quadratic through EPQ {0, 0.05, 0.1} and κ = 0.075 a cubic through {0, 0.05, 0.1, 0.15};
+  everything else is copied from equal-κ EPQ nodes, with no row normalization or
+  element-specific correction. Rejection sampling uses a 1/k envelope; brems photons are
+  transported recursively. Aggregate GEANT4 spectra/rates are kept only as validation
+  observables.
 
-- **Compton scattering**: Butcher-Messel method (same as GEANT4 G4LowEPComptonModel) for the scattering angle, with S(x,Z) bound-electron rejection. A previous implementation using Kahn's method had a subtle bug that caused +5-7% FEP overestimates. The scattered-photon energy is Doppler-broadened by the bound electron's momentum (impulse approximation, analytic subshell profiles) — see Known Limitations → Doppler broadening.
+- **Compton scattering**: Butcher–Messel sampling (as GEANT4's `G4LowEPComptonModel`)
+  with S(x,Z) bound-electron rejection. (An earlier Kahn's-method implementation had a
+  subtle bug worth +5–7% FEP.) The scattered energy is Doppler-broadened by the bound
+  electron's momentum (impulse approximation, analytic subshell profiles).
+
+### Spectrum fidelity (`enable_spectrum_fidelity`)
+
+`EfficiencyCalculator::enable_spectrum_fidelity(true)` switches on the detector physics
+that shapes the pulse-height spectrum but moves FEP and total by well under 0.1%, so
+FEP/total runs leave it off (the default). Here it sets
+`TransportConfig::enable_compton_fluorescence` (`enable_compton_fluorescence`): the K
+vacancy a Doppler-sampled Compton collision leaves (`ComptonScatterResult::shell_index`)
+relaxes through `sample_k_relaxation` and its x-ray is transported as after photoelectric
+absorption (`FluorescenceRecord::from_compton`); off, the whole binding energy is
+deposited on the spot. It restores the K-escape peaks above ~300 keV (NaI, CZT: 0.90–0.95
+of GEANT4 → 1.00–1.02).
 
 ### Distances, frames and reference points
 
-Every distance in CeeLo is one of three things, and confusing them is the single
-easiest way to introduce a silent few-percent bias. They do not crash and no
-test of internal self-consistency catches them — only a comparison against an
-external truth does.
+Every distance in CeeLo is one of three things, and confusing them is the easiest way to
+introduce a silent few-percent bias that no internal self-consistency test catches.
 
-- **The crystal frame.** The one frame the tracer works in. `z = 0` is the front
-  face of the **crystal solid**, `z = L` its back face; a source in front is at
-  **negative z**. Radial distance is from the symmetry axis.
-
-- **The dead layer is carved out of the inside of the crystal.** With a dead
-  layer the solid still spans `[0, L]` at radius `R`; only the *active* volume
-  shrinks, to `[t_front, L - t_back]` and radius `R - t_side`. Two consequences
-  that have each already caused a bug: the crystal face stays at `z = 0` no
-  matter how thick the dead layer is, and **a dead layer must never be added to
-  an outward distance**. "The front of the crystal" and "the front of the active
-  volume" are different planes `t_front` apart — always say which you mean.
-
-- **Only attenuator shells sit in front of the crystal.** Each extends its front
-  thickness toward negative z, so the outermost front surface — the "endcap
-  front", the face a user can touch — is at `z = -Σ(layer front thicknesses)`.
+- **The crystal frame.** The one frame the tracer works in. `z = 0` is the front face of
+  the **crystal solid**, `z = L` its back face; a source in front is at **negative z**.
+  Radial distance is from the symmetry axis.
+- **The dead layer is carved out of the inside of the crystal.** The solid still spans
+  `[0, L]` at radius `R`; only the *active* volume shrinks, to `[t_front, L - t_back]` and
+  radius `R - t_side`. So the crystal face stays at `z = 0` however thick the dead layer
+  is, and **a dead layer must never be added to an outward distance**. "The front of the
+  crystal" and "the front of the active volume" are planes `t_front` apart — say which.
+- **Only attenuator shells sit in front of the crystal.** Each extends its front thickness
+  toward negative z, so the "endcap front" (the face a user can touch) is at
+  `z = -Σ(layer front thicknesses)`.
 
 `ReferencePoint` selects which plane a caller's `dist_cm` is measured from, and
-`GeometryDescriptor::endcap_front_offset_cm()` is the **only** conversion
-between them, applied in `DetectorResponse::query_position()`. Anything else
-building a source position from a user distance must go through that function or
-reproduce it exactly.
-
-That function used to add the dead layer to the offset, which placed every
-`EndcapFront`-referenced source one dead-layer thickness too far from the
-crystal — ~0.7 mm on a typical HPGe. In the far field that is invisible; at
-contact geometry it is a near-uniform ~3 % efficiency deficit above ~100 keV,
-which is exactly what it looked like when finally caught against ANGLE's own
-numbers for a GEM35-70 (`EFFTRAN` vs ANGLE went from a 2.5 % median error to
-0.9 % when it was fixed). Below ~50 keV it does not show up at all: the crystal
-is effectively large enough there that its solid angle has saturated and is
-insensitive to a fraction of a millimetre.
+`GeometryDescriptor::endcap_front_offset_cm()` is the **only** conversion between them,
+applied in `DetectorResponse::query_position()`. Anything else building a source position
+from a user distance must go through it. (It once added the dead layer, placing every
+`EndcapFront` source ~0.7 mm too far on a typical HPGe — invisible far-field, a ~3%
+deficit at contact.)
 
 Two nearby functions look like the same bug and are **not** — do not "fix" them:
 
 | function | includes dead layer? | why |
 |---|---|---|
-| `endcap_front_offset_cm()` | **no** (fixed) | a real distance, query-time only, so correcting it costs nothing |
-| `transverse_half_extent()` | yes, deliberately | a *scale parameter*, not a dimension; computed identically at generation and query time, so changing it desynchronises stored responses |
+| `endcap_front_offset_cm()` | **no** | a real distance, query-time only, so correcting it costs nothing |
+| `transverse_half_extent()` | yes, deliberately | a *scale parameter* computed identically at generation and query time; changing it desynchronises stored responses |
 | `Geometry::outer_bounding_radius()` | yes, deliberately | a sampling *bound*; over-estimating is safe, under-estimating loses paths |
 
-The rule of thumb: if a quantity is used at generation **and** query it is a
-model parameter and must not change; if it is used only at query time it is an
-interpretation and can be corrected.
+Rule of thumb: a quantity used at generation **and** query is a model parameter and must
+not change; one used only at query time is an interpretation and can be corrected.
 
 ### Geometry
 
-- **Detector shapes**: Cylinder and box. Declared with `set_detector(material, CylinderDims{radius, full_length})` or `set_detector(material, BoxDims{half_x, half_y, full_length})` -- transverse extents are HALVES, the axial extent is the FULL crystal length. That mix is deliberate and is what `GeometryDescriptor::dimensions_cm` serializes; the convention is stated once, in the CRYSTAL DIMENSION CONVENTION block of `src/geometry/Geometry.h`, and nowhere else. (Sources are a separate, uniformly half-extent convention -- `half_length`, `half_dims`.) Crystal front face at z=0, extends along +z.
+- **Detector shapes**: cylinder and box, declared with `set_detector(material,
+  CylinderDims{radius, full_length})` or `set_detector(material, BoxDims{half_x, half_y,
+  full_length})` — transverse extents are HALVES, the axial extent is the FULL length.
+  That mix is deliberate and is what `GeometryDescriptor::dimensions_cm` serializes; the
+  convention is stated once, in the CRYSTAL DIMENSION CONVENTION block of
+  `src/geometry/Geometry.h`. (Sources use half-extents throughout: `half_length`,
+  `half_dims`.)
 
-- **Bulletized (rounded) front edge**: HPGe crystals are usually *bulletized* -- the outer front edge is a quarter-torus fillet rather than a sharp 90° corner (ANGLE `.outx` files call it `bulletizingRadius`). `set_bullet_radius(r_b)` turns it on for cylinders; 0 (the default) is a sharp edge. The fillet's ring circle has radius `rho_c = R - r_b` and lies in the plane `z = r_b`, tangent to the front face and to the side wall. Removed material, by Pappus: `V = 2 pi rho_c r_b^2 (1 - pi/4) + pi r_b^3 / 3` (1.28% of the crystal for the GEM35-70 example: R=2.915, L=6.89, r_b=0.8 cm).
+- **Bulletized (rounded) front edge**: `set_bullet_radius(r_b)` replaces the cylinder's
+  outer front corner with a quarter-torus fillet (ANGLE's `bulletizingRadius`); 0 is a
+  sharp edge. The ring circle has radius `rho_c = R - r_b` in the plane `z = r_b`.
+  Removed volume (Pappus): `V = 2 pi rho_c r_b^2 (1 - pi/4) + pi r_b^3 / 3`. The solid is
+  convex and a subset of the sharp cylinder, so `Cylinder.cpp` computes the sharp interval
+  and moves only an endpoint that lands inside the removed corner onto the fillet:
+  safeguarded Newton on `G(t) = (rho - rho_c)^2 + (z - z_c)^2 - r_b^2`, convex on every
+  corner-zone sub-segment; grazing chords that stay in the corner zone minimise the same
+  `G`. The closed-form ray–torus quartic is deliberately not used (catastrophic
+  cancellation at near-double roots — exactly the grazing case); it survives as a comment
+  and a test oracle. Every consumer (photon transport, the electron walk, `ResponseKernel`,
+  the stochastic-Rayleigh re-trace) goes through `Geometry::trace_ray`, so this covers all
+  of them; cone biasing uses the bounding cylinder, which bulletization only shrinks
+  inside. Attenuator shells stay sharp (the endcap does not follow the fillet). With a dead
+  layer the active volume gets the inward-offset fillet, radius
+  `r_b - max(t_front, t_side)`. Sharp crystals pay one predicate and run the original code
+  bit for bit.
 
-  The solid is **convex and a subset of the sharp cylinder**, and `Cylinder.cpp` exploits that rather than intersecting a torus outright: the sharp interval is computed exactly as before, and only an endpoint that lands *inside the removed corner* is moved onto the fillet. Endpoints on a shared surface (front face inside `rho_c`, side wall above `z_c`, back face) are already exact and are left untouched bit for bit. The fillet root is found by safeguarded Newton on `G(t) = (rho - rho_c)^2 + (z - z_c)^2 - r_b^2`, which is **convex wherever rho >= rho_c** -- i.e. on every corner-zone sub-segment -- and whose bracket is guaranteed because every corner-zone exit point inside the sharp cylinder is within `r_b` of the ring centre. Chords that stay in the corner zone end to end (grazing corner clips) are resolved by minimising the same convex `G`. The closed-form ray-torus quartic is deliberately **not** used: its coefficients cancel catastrophically for near-double roots, which is exactly the grazing-corner case. It is kept as a comment and as an independent test oracle.
+- **Rounded bore tip**: `set_bore_hole(r, depth, rounded_tip=true)` caps the bore with a
+  hemisphere of the bore radius (ANGLE's `<core rounded="yes"/>`), keeping the stated
+  depth (the apex sits where the flat bottom would). The capped bore is convex within its
+  own z range, so its ray interval is the hull of the tube's and the ball's — closed form.
+  For a blunt tip (`depth < 2 r`) the ball reaches past `bore_z_end`, so
+  `rounded_bore_interval` clips it to `z <= bore_z_end`.
 
-  Because every consumer -- photon transport, the electron CSDA/Molière walk (which re-traces per substep), `ResponseKernel`, the stochastic-Rayleigh re-trace -- goes through `Geometry::trace_ray`, implementing the shape in `trace_cylinder_geometry` covers all of them. Cone biasing and solid angle are untouched: they use the bounding cylinder, which bulletization only shrinks material inside of. Attenuator shells stay sharp, which is physically right -- the endcap does not follow the crystal fillet.
+- **The dead layer is `solid - active - bore`**: a bore is empty over its whole length,
+  including where it runs through dead material (a back dead layer, a bore reaching the
+  front dead layer, a bore wider than the active radius, or the removed corner of a
+  bulletized crystal). `trace_cylinder_geometry` cuts the bore from the dead pieces as well
+  as from the active volume (at most 3 dead pieces). When the whole bore lies inside the
+  active volume the cut is skipped and the original code runs bit for bit. InterSpec's
+  `DetectorGeometryDiagram` (`v_dead = v_solid - v_bore - v_active`) and `Geant4Export`
+  (one polycone whose `rmin` is the bore) describe the same solid.
 
-  With a dead layer, the active volume gets the inward-offset fillet: radius `r_b - max(t_front, t_side)` about a centre placed to stay tangent to both offset faces. For equal front/side thicknesses (the usual case) that is the exact offset surface -- same ring centre, radius `r_b - t`. Dead layers are ~0.1 mm against an ~8 mm fillet, so the convention for unequal thicknesses is far below any measurable effect.
+- **Stored geometry (`GeometryDescriptor`)**: the serializable form of all of the above
+  and the only thing a saved response carries; `build_geometry()` and
+  `ResponseGenerator::configure_calculator()` replay it. `bullet_radius_cm` and the bore's
+  rounded-tip flag are written to XML only when non-default (`bulletRadius`,
+  `roundedTip`), so sharp, flat-bored responses keep their exact bytes and
+  `content_hash`. `sm_xmlSerializationVersion` is deliberately **not** bumped for purely
+  additive attributes — the only version logic is a range check, so a higher version
+  would be rejected outright by existing builds. `Geometry`'s preconditions are
+  `assert`s; `GeometryDescriptor::problems()` is the release-safe mirror (plus too-short
+  `dimensions_cm`, a dead layer that consumes the crystal, a bore wider than the *active*
+  radius, a bore clearing the outer fillet but not the active one). `build_geometry()` and
+  `configure_calculator()` run it and throw; callers building geometry from user input
+  should consult it first and relax rather than throw (InterSpec's ANGLE `.outx` import
+  drops an unrepresentable fillet or rounded tip with a warning).
 
-  **Performance**: sharp crystals pay one predicate (`bullet_radius_ > 0.0`) and take the original code paths, verified bit-identical on fixed-seed runs of a bare-NaI and a bored-HPGe geometry. Timing on config 1 (2M events, single thread, min of 3) went 9.03 s -> 8.20 s across the change: no regression -- the small speedup is a code-layout side effect, since the results are unchanged bit for bit.
+- **Attenuators** (detector shielding): cup-shaped shells around the crystal,
+  `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`, concentric
+  (each wraps the previous) and always traversed.
 
-- **Rounded bore tip**: `set_bore_hole(r, depth, rounded_tip=true)` caps the bore's closed end with a hemisphere of the bore radius (a round-tipped drill; ANGLE's `<core rounded="yes"/>`). The stated depth is preserved -- the hemisphere's apex sits where the flat bottom would -- so rounding returns `pi r^3 / 3` of crystal (0.13 cm³, ~0.07%, for the GEM35-70 bore). The capped bore is convex *within its own z range* -- the radius profile rises over the cap and then sits flat -- so the ray interval is just the hull of the straight tube's and the ball's intervals: a closed-form quadratic, no iteration. The confinement is enforced, not assumed. For a **blunt** tip (`depth < 2 r`, which `set_bore_hole` permits) the capping ball reaches past `bore_z_end`, the profile steps *down* there, and convexity fails: the hull then spans up to ~0.98 cm of non-bore space for `r=0.5, depth=0.6`. `rounded_bore_interval` clips the ball to `z <= bore_z_end`, which removes exactly that step. Callers also clamp the bore to the solid they cut, which hid the flaw for every geometry whose solid ends at the crystal back face -- but not for a *negative* back dead layer, where the active cylinder extends past it and real active material was being dropped (measured 1.8% of the overhang band).
+- **Source shielding**: spherical shells (point source) or concentric shells matching the
+  source shape — `add_source_shield(material, thickness)`, `(material, t_radial, t_end)`
+  (cylinders), `(material, t_x, t_y, t_z)` (boxes). Per-dimension thicknesses apply to both
+  ± faces; components may be zero (not all). Call `set_*_source()` first. Full mode
+  transports in the shields (Compton/PE/Rayleigh with re-tracing); FEP-only mode uses
+  stochastic Rayleigh.
 
-- **The dead layer is `solid - active - bore`**: a bore is a hole drilled in from the back face and is empty over its *whole* length, so wherever it runs through dead material rather than active there is no germanium either. That happens in four ways: `z > dl_z_max` (a back dead layer to drill through), `z < dl_z_min` (a bore deep enough to reach the front dead layer), `rho > dl_r` (a bore wider than the active radius -- `set_bore_hole` only checks the *outer* radius, so only `GeometryDescriptor::problems()` rejects it), and the removed front corner of a bulletized crystal. `trace_cylinder_geometry` therefore cuts the bore out of the dead layer as well as out of the active volume: both subtrahends are convex, so it cuts the active volume out of the crystal interval (0-2 pieces) and then the bore out of each piece, yielding at most 3 dead pieces -- a bore reaching both would have to span the active gap between them, trimming a suffix from one and a prefix from the other. Until this was fixed the dead layer was `outer - unbored active cylinder`, which refilled the hole with a phantom plug of `pi r_bore^2 t_back`: 1.4-1.7% of the dead-layer volume, and up to ~3% at a 0.8 cm bore with a 3 mm back dead layer.
+  Full-mode source transport also generates **secondaries** for every source shape
+  (`SourceFullTransportResult::secondaries`): K x-rays from photoelectric absorption in
+  source material/shields; 511 keV pairs from pair production there; bremsstrahlung from electrons stopping there (Seltzer–Berger along a
+  Molière walk, `ElectronCsda::walk_in_source_geometry`); and escaped electrons that reach
+  the crystal (`enable_source_electron_transport`). The Molière diffusion matters:
+  straight-line CSDA overestimates escape from dense shields 2.4–10×. These channels
+  matter above the 1022 keV threshold and for recoil electrons >200 keV; for config 11
+  (0.5 cm Fe) at 3 MeV they add ~+4.2% (annihilation), ~+3% (brems) and ~+1% (electron
+  escape) of total efficiency. `set_source_brems(false)` and
+  `benchmark_mc_configs --no-source-brems` / `--no-source-electrons` A/B them. Electrons
+  whose CSDA range cannot reach their birth region's surface
+  (`SourceGeometry::min_distance_to_boundary`) skip the walk and use the geometry-free
+  `sample_brems_in_material` (same physics, escape provably impossible; ~1.2× faster on
+  configs 11/12).
 
-  The two other descriptions of the same solid already agreed and are now in step with the tracer: InterSpec's `src/DetectorGeometryDiagram.cpp` reports `v_dead = v_solid - v_bore - v_active`, and `Geant4Export` writes one polycone whose `rmin` is the bore over the whole profile.
-
-  **Performance / no-op guarantee**: when the whole bore already lies inside the active volume the cut is skipped and the block runs its original code bit for bit, so an ordinary coaxial HPGe pays only four `double` comparisons per trace. Every validation config and both stored golden presets (`hpge_coax`, `detective_x`) use `back = 0` with the bore inside the active slab, so **no tabulated number in this document moves**, and no stored response needs regenerating. Nor do responses for a bored crystal *with* a back dead layer (the one combination the bug reached, produced only by InterSpec's detector-file import, `src/CeeLoUtils.cpp`) need regenerating, and that was measured rather than assumed: on a 3 mm back dead layer the front-hemisphere efficiency moves by at most 0.21%, inside the MC noise floor at 3e6 events/point, and `ResponseGenerator` samples `cos_theta` in `[cos_theta_min, 1]` with the source at `z = -d cos_theta` -- the front hemisphere only. Direct `EfficiencyCalculator` use at *back* angles is a different story: a source behind the crystal firing down the bore gained +262% FEP at 60 keV, because the phantom plug was 3 mm of germanium (~6x opaque there) sitting across the bore mouth. That number is the size of the invented material, and it is the reason the fix is worth having even though no stored response moves.
-
-- **Stored geometry (`GeometryDescriptor`)**: the serializable form of all of the above, and the only thing a saved response carries -- `build_geometry()` (and `ResponseGenerator::configure_calculator()`) replay it onto a `Geometry` / `EfficiencyCalculator`. It holds `bullet_radius_cm` alongside `dimensions_cm`, and the rounded-tip flag inside its `BoreHoleConfig`. Both are written to XML only when non-default (`bulletRadius` on `<Detector>`, `roundedTip` on `<Bore>`), so responses for sharp-edged, flat-bored crystals keep their exact bytes and `content_hash`; a reader that predates the attributes, or a file that predates them, defaults to sharp-and-flat, which is what those crystals actually were. `sm_xmlSerializationVersion` is deliberately **not** bumped for such purely additive attributes -- the only version logic is a range check, so a higher version would be rejected outright by existing builds instead of degrading gracefully.
-
-  `Geometry`'s preconditions (fillet vs radius/length/dead layer, bore vs radius/depth/fillet) are `assert`s, so a bad descriptor would trace silent garbage in a release build. `GeometryDescriptor::problems()` is the release-safe mirror of those asserts, plus the cases they miss: a `dimensions_cm` too short for the shape (`set_detector_from_dimensions_vector` only asserts its length, then indexes it), a dead layer that consumes the crystal, a bore wider than the *active* radius `R - t_side`, and a bore that clears the outer fillet but not the dead-layer-offset *active* fillet. The last two are policy as much as mirroring -- they produce zero active volume rather than tripping an assert, and refusing to load beats silently computing zero efficiency. `build_geometry()` and `configure_calculator()` both run it and throw. Callers building geometry from user input or an imported file should consult it first and report or relax rather than throw (InterSpec's ANGLE import drops an unrepresentable fillet or rounded tip, with a warning, instead of failing the import).
-
-- **Attenuators** (detector shielding): Cup-shaped shells around the crystal, added via `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`. These are concentric -- each layer wraps around the previous. Attenuators are part of the detector geometry and are always traversed in ray tracing.
-
-- **Source shielding** (around the source): Spherical shells (point source) or concentric shells matching source shape. Added via `add_source_shield(material, thickness)` (uniform), `add_source_shield(material, t_radial, t_end)` (cylindrical sources), or `add_source_shield(material, t_x, t_y, t_z)` (rectangular sources). Per-dimension thicknesses apply symmetrically to both ± faces of each axis; individual components may be zero (but not all), e.g. `(t_radial, 0)` = side wall with open ends. Call `set_*_source()` before adding per-dimension shields. Source shielding uses full MC transport in full mode (Compton/PE/Rayleigh with re-tracing after scatter) and stochastic Rayleigh in FEP-only mode.
-
-  Full-mode source transport also generates **secondaries** for all source shapes (`SourceFullTransportResult::secondaries`, processed by the detector-transport loop in `simulate_thread`): (1) 511 keV annihilation gammas from pair production in source material/shields; (2) bremsstrahlung from Compton-recoil / photo / pair electrons stopping in the source geometry (Seltzer-Berger sampling along a Molière condensed-history walk, `ElectronCsda::walk_in_source_geometry`); and (3) escaped electrons that cross the gap into the crystal (Molière walk escape detection; enabled per-config via `enable_source_electron_transport`). The Molière direction diffusion is essential for the electron-escape channel — straight-line CSDA overestimates escape from dense shields (Fe) by 2.4–10x. **All source shapes (incl. Marinelli) now use this walk** for electron escape — the legacy straight-line `try_source_electron` was retired when Marinelli migrated to `walk_in_source_geometry` (water → the regime-aware exit-state gate runs fully analog), which let config 8 join the gated set; `min_distance_to_boundary` has a Marinelli case so the containment fast-path applies there too. These channels matter only above the 1022 keV PP threshold and/or for recoil electrons > 200 keV; for config 11 (0.5 cm Fe) at 3 MeV they contribute ~+4.2% (annihilation), ~+3% (brems), and ~+1% (electron escape) of total efficiency. A `set_source_brems(false)` toggle and `benchmark_mc_configs --no-source-brems` exist for A/B quantification. **Perf**: the geometry-tracing Molière walk (it re-traces the source segments every substep) dominated these channels' cost. `process_electron` now takes a cheap path for electrons that stop inside their birth material — the common case: an exact containment test (the electron's CSDA range in its birth material `mat`, `range/density`, < distance to the `mat`-region surface, `SourceGeometry::min_distance_to_boundary`) routes them to the geometry-free `sample_brems_in_material` (same SB physics, creation-point emission — the Marinelli sampler) and skips escape (provably impossible). Only electrons that can reach an interface or escape take the full walk. ~1.2–1.25x faster on configs 11/12 above 1 MeV; totals unchanged within statistics. Further speedups would have to touch the genuine transport of escape-capable electrons and emitted brems photons.
-
-- **GDML export**: Attenuators are exported as cup-shaped subtraction solids (outer full cylinder minus shorter inner cylinder) to properly cover the crystal front face. This avoids the hollow-tube bug that caused -26% discrepancy at 30 keV.
-
-  A crystal with a **bore and/or a bulletized front edge** is a surface of revolution, so it is exported as one native `<polycone>` named `CrystalSolid` rather than a stack of boolean solids: the `rmax` profile follows the fillet arc up to `R` over the first `r_b` of depth, and the `rmin` profile is 0 until the bore starts and then the bore radius (via the tip hemisphere first, if round-tipped). Circular arcs become 64 chord segments, which keeps the sagitta well under a micron (~1e-4 % of the crystal volume — verified against the tracer's own volume across bore/fillet combinations). Plain cylinders still export as a single `<tube>`, so every pre-existing config's GDML is byte-for-byte what it was.
-
-  This is not just tidiness. An earlier subtraction-based version of this export (tube minus a corner-ring-minus-torus cutter, plus a tube∪orb bore) produced **~3250 stuck-track warnings per million** under cone-biased runs — GEANT4 navigation struggles with tracks skimming a subtracted surface — which both floods the log and risks biasing the very comparison the export exists to support. The polycone produces ~25 per million, the same rate as a plain tube. Two consequences worth remembering: the two profiles must be merged onto the *union* of their z values rather than truncating one at the other's start (otherwise a bore whose closed end reaches into the front fillet silently cuts the arc short), and the harness's `--cone-bias` bounds parser has to understand `<polycone>` as well as `<tube>`.
-
-  **The bore cavity must not be filled with a daughter volume.** The bore is already subtracted from the crystal solid, so an `Air` daughter placed in it lies *outside* its mother and G4 navigation gets stuck on it. The cavity is left to the world material, which matches the MC (the bore region gets no material there either) whenever the export uses `vacuum_world=true`, as the validation configs do. This bug was latent until configs 25/26: no earlier exported config used `set_bore_hole`. (Note also that GDML resolves `volumeref` only against volumes already read, so any daughter must be *defined before* the volume that places it.)
+- **GDML export**: attenuators export as cup-shaped subtraction solids (outer full
+  cylinder minus a shorter inner cylinder) so the front face is covered (a hollow tube
+  once cost −26% at 30 keV). A crystal with a **bore and/or bulletized edge** is one
+  native `<polycone>` (`CrystalSolid`): `rmax` follows the fillet arc, `rmin` is the bore
+  radius (via the tip hemisphere if rounded); arcs become 64 chords (sagitta ≪ 1 µm). An
+  earlier boolean-solid version produced ~3250 stuck-track warnings per million under cone
+  bias (the polycone ~25, like a plain tube). The two profiles must be merged on the
+  *union* of their z values, and the harness's `--cone-bias` bounds parser understands
+  `<polycone>`. **The bore cavity must not get a daughter volume** (it lies outside its
+  mother and G4 navigation sticks); it is left to the world material, which matches the MC
+  when exporting with `vacuum_world=true`. GDML resolves `volumeref` only against volumes
+  already read, so a daughter must be defined before the volume that places it.
 
 ### The full-energy window
 
 `src/physics/FepWindow.h` holds the single definition of "in the peak":
-`ceelo::kDefaultFepWindowKeV` (0.75 keV half-width, suited to HPGe). Everything
-that has to agree on it reads from there -- the MC's FEP tally, the transport
-layer's FEP-only early kill (`TransportConfig::fep_window_keV`), the cascade
-`PeakWindow` default, and the analytic in-window Compton fraction
-(`kn_in_window_fraction`). `EfficiencyCalculator::set_fep_window_keV()` moves
-the tally and the early kill together; the kill must never assume a window
-narrower than the one being scored, or it discards events that would have
-counted and FEP comes out low with no error and no flag.
-`ResponseGenerator` applies the window to every node it builds and records it in
-`ResponseProvenance::fep_window_keV`, so a consumer crediting in-window Compton
-can match the window a response was actually scored at instead of assuming one.
+`ceelo::kDefaultFepWindowKeV` (0.75 keV half-width, suited to HPGe). Everything that has
+to agree reads it: the MC's FEP tally, the FEP-only early kill
+(`TransportConfig::fep_window_keV`), the cascade `PeakWindow` default, and the analytic
+in-window Compton fraction (`kn_in_window_fraction`).
+`EfficiencyCalculator::set_fep_window_keV()` moves tally and kill together; the kill must
+never assume a narrower window than the one scored, or FEP comes out low with no error.
+`ResponseGenerator` records the window in `ResponseProvenance::fep_window_keV`. Callers
+that know the peak override it: `CascadeSummingCalc` takes each window from the fitted
+peak's sigma.
 
-**Rayleigh in the analytic FEP transmission (2026-09-04).** `fep_survival_removal_mu`
-drops `mu_rs` entirely -- coherent scatter is elastic, so it cannot leave the
-window by energy -- which silently treats a Rayleigh-scattered photon as
-continuing UNDEFLECTED. That is right for a thin layer and wrong for a thick
-one: in Fe at 60 keV half the coherent scatters exceed 20 deg (`<cos> = 0.80`,
-pinned to xraylib in `test_fep_only`), the deflection lengthens the remaining
-path, and the fraction of those photons then absorbed grows with the layer's
-depth. `rayleigh_deflection_loss_fraction(E, tau_nr, mat)` (ResponseKernel.h)
-gives that fraction h(T) from the same form-factor sampler the transport uses:
-h -> P(theta >= 90 deg) as T -> 0, 0.25 at the 4.4 non-Rayleigh mfp of 0.5 cm
-Fe at 60 keV, where `mu_rs * h * t` is 9% of the peak. An analytic consumer
-adds `mu_rs * h(mu_rem * t)` for each layer OUTSIDE the emitting volume (an
-emitting matrix self-selects a ~1 mfp skin, where the term is ~1%). This was the
-whole of InterSpec's +10% model-over-MC residual behind 0.5 cm Fe at 60 keV:
-with the term, the residual is the transfer's own ~1% floor from 60 to
-1332 keV, and a point-behind-steel depth sweep that was quadratic in tau
-(+4% at tau 4.2) is flat. Known approximations: h is taken at the layer's
-NORMAL depth and per layer (oblique rays and stacked shields under-correct a
-little), and the flat in-window Compton credit still carries no deflection
-penalty of its own (`fep_survival_removal_mu_depth` is the empirical stand-in).
+**Most committed GEANT4 references were generated at 1.5 keV** (configs 27/28 at
+0.75 keV). Until the rest are regenerated, everything compared against them pins 1.5 keV:
+`kTestFepWindowKeV` (`tests/test_fep_window.h`, the C++ suite and `cascade_ref_common.h`)
+and `kReferenceFepWindowKeV` (`examples/benchmark_mc_configs.cpp`, which takes
+`--fep-window` to override). The difference is real where near-peak forward scatter is:
+config 8 at 59.5 keV is FEP 7.479e-02 ± 0.161% at 1.5 keV vs 7.248e-02 ± 0.163% at
+0.75 keV (−3.09%, z −13.5); bare-NaI config 1 shows none (|z| ≤ 1.0). The harness
+(`EventAction`) and `generate_all_spectra` already score at 0.75 keV, with no CLI flag to
+change the harness, so **their new output is not comparable with the 1.5 keV references**.
 
-Callers that know the peak should override it, and do: `CascadeSummingCalc`
-takes each window from the fitted peak's own sigma, which is what a
-lower-resolution detector needs.
-
-**The committed GEANT4 references were generated at 1.5 keV**, the window that
-predates this consolidation. Until they are regenerated, everything compared
-against them pins that window rather than the default:
-`tests/test_fep_window.h` (`kTestFepWindowKeV`) for the C++ suite and
-`cascade_ref_common.h`, and `kReferenceFepWindowKeV` in
-`examples/benchmark_mc_configs.cpp` for the `compare_validation.py` gate. The
-difference is not cosmetic -- config 8 at 59.5 keV measures FEP
-7.479e-02 +/- 0.161% at 1.5 keV versus 7.248e-02 +/- 0.163% at 0.75 keV, a
--3.09% shift at z = -13.5, which would read as a physics regression against a
-1.5 keV reference. Bare-NaI config 1 at 60/662/1332 keV shows no significant
-shift (|z| <= 1.0 at 0.1% precision); the sensitivity is concentrated where
-near-peak forward scatter is (low energy, scattering geometry). Regenerating the
-references means moving the harness (`EventAction::SetFepWindowKeV`) and CeeLo
-to the same value and dropping these pins together.
+**Rayleigh in the analytic FEP transmission.** `fep_survival_removal_mu` drops `mu_rs`
+(coherent scatter cannot leave the window by energy), which treats a Rayleigh-scattered
+photon as continuing undeflected — right for a thin layer, wrong for a thick one (in Fe at
+60 keV half the coherent scatters exceed 20°, `<cos> = 0.80`). 
+`rayleigh_deflection_loss_fraction(E, tau_nr, mat)` (`ResponseKernel.h`) gives the fraction
+h(T) of deflected photons then absorbed, from the transport's own form-factor sampler
+(h → P(θ ≥ 90°) as T → 0; 0.25 for 0.5 cm Fe at 60 keV). An analytic consumer adds
+`mu_rs * h(mu_rem * t)` per layer OUTSIDE the emitting volume. This was all of InterSpec's
++10% model-over-MC residual behind 0.5 cm Fe at 60 keV. Approximations: h at the layer's
+normal depth, per layer; the flat in-window Compton credit carries no deflection penalty
+(`fep_survival_removal_mu_depth` is the empirical stand-in).
 
 ### Simulation Modes
 
-- **Full mode** (default): Tracks all photon interactions through attenuators and crystal. Electron CSDA with bremsstrahlung. Gives both FEP and total efficiency, plus pulse-height spectrum.
-
-- **FEP-only mode**: Full MC transport inside the scoring crystal (same Compton/PE/fluorescence physics as full mode), but uses importance-weighted stochastic Rayleigh through non-scoring segments (attenuators, source shielding) -- treating Compton/PE as absorption and only sampling Rayleigh scattering. Photons that exit the crystal boundary are immediately killed (can't contribute to FEP). Faster than full mode but only computes FEP efficiency (no spectrum or total efficiency).
+- **Full mode** (default): tracks all photon interactions through attenuators and crystal,
+  electron CSDA with bremsstrahlung; gives FEP, total efficiency and the spectrum.
+- **FEP-only mode**: full MC inside the scoring crystal, but importance-weighted stochastic
+  Rayleigh through non-scoring segments (attenuators, source shielding), treating
+  Compton/PE there as absorption; photons leaving the crystal are killed. Faster; FEP only.
 
 ### Analytic cascade summing (`compute_cascade_analytic`)
 
-`cascade/AnalyticCascade.h` gives per-window summing factors from a nuclide's `DecayCascade`s and an
-injected efficiency provider, with no MC (the exact level-scheme joint-probability form; see the
-header). Everything that does not depend on the efficiencies or windows - level-scheme DAGs, x-ray
-line tables, summing-in occurrence lists - is prepared once in an `AnalyticCascadeModel`; callers that
-evaluate the same cascades repeatedly (a fit) build the model once and call the model overload. The
-vector overload builds a temporary model, and both give identical results. Within one call the engine
-computes each branch's survival factors and DPs once, and memoizes each primary's summing-out factor
-and each summing-in pair key's coincident survival (the ~25 vacancy x-ray lines of one transition
-share one key), so a U-235/U-238 evaluation over ~300 windows takes tens of ms rather than seconds.
-Providers must be deterministic and side-effect free (their values are memoized per energy).
+`cascade/AnalyticCascade.h` gives per-window summing factors from a nuclide's
+`DecayCascade`s and an injected efficiency provider, with no MC (the exact level-scheme
+joint-probability form; see the header). Everything independent of efficiencies and
+windows — level-scheme DAGs, x-ray line tables, summing-in occurrence lists — is prepared
+once in an `AnalyticCascadeModel`; callers evaluating the same cascades repeatedly (a fit)
+build it once. Each primary's summing-out factor and each summing-in pair key's coincident
+survival are memoized, so a U-235/U-238 evaluation over ~300 windows takes tens of ms.
+Providers must be deterministic and side-effect free.
+
+The MC estimators (`compute_cascade`) can also deposit **internal-conversion electrons**
+and the coincident K-Auger (`CascadeConfig::enable_ic_electrons`, default OFF, off path
+bit-identical): the conversion electron is transported through the source geometry and
+air and deposited only when it can physically reach the crystal (an automatic
+distance/solid-angle/air gate). It matters at contact/well/4π (Ba-133's 356 keV summing
+factor ~0.44 → 0.31 at contact) and matches GEANT4 per-decay peak areas to <1% at 2 cm.
 
 ### Decay x-ray models (SandiaDecay adapter)
 
 `cascade_adapter::build_cascades` represents a branch's decay x-rays in one of two ways.
 
-- **Vacancy model** (default, `CascadeOptions::vacancy_xray_model`): the branch carries its K/L
-  vacancy sources (EC shell fractions, per-transition K/L ICCs), and the engine emits lines from the
-  daughter's EPICS relaxation data. Line exclusivity per vacancy and the per-decay multiplicity are
-  exact, and with a valid level scheme the analytic engine's summing-in enumerates x-ray–x-ray pairs
-  exactly (EC-K x IC-K at the fed level, IC-K x IC-K along the walk). The cost is ~25 line
-  occurrences per converting transition in that enumeration.
-- **Transition-group ("flat") model** (`vacancy_xray_model=false`, or a branch with no vacancy
-  data): SandiaDecay's tabulated x-ray lines become `Xray` members. Each is linked to the branch's
-  gammas at the gamma's intensity, which encodes independence. InterSpec's reference-line display
-  and sum-peak check use it for speed, enumerating sums from the links themselves.
-  With `kxray_coincidences` (default on) and the enriched EC/ICC data, the K x-ray members are
-  also linked to each other, because two K x-rays of one decay need two K vacancies. With P_EC
-  the K-capture probability, N_IC the K conversions, and N_ICIC the pairs of K-converted
-  transitions in one cascade, the expected vacancy pairs per branch decay are
-  `D2 = P_EC*N_IC + N_ICIC`. The capture and the conversions are taken as independent.
-  N_ICIC walks the level scheme where both transitions are placed in it (`from_level`/
-  `to_level`): each level splits its flux among its out-going transitions by their occurrence
-  weights, the same weights the level path uses. A pair with an unplaced transition falls back on
-  SandiaDecay's gamma-gamma link, P(transition j | transition i) = P(gamma j | gamma i) /
-  (gamma fraction of j). The scheme is preferred because those links often disagree with it.
-  Lu-177's links are all ~0.10x the scheme (208.4 keV -> 112.9 keV is 0.032 against 0.31), which
-  left its K-K pairs 10x low. A vacancy
-  is filled by line a with `p_a = I_a / max(P_EC + N_IC, sum I_K)`, so the fluorescence yield
-  cancels. The max caps sum p_a at 1 where the tabulated yields exceed one x-ray per vacancy:
-  Pb-203's Tl lines exceed it by ~3%. The (a,b) pair is emitted `D2*2*p_a*p_b` times per decay.
-  This is stored as links in both directions, P(b|a) = joint/I_a. A line with itself is emitted
-  `D2*p_a^2` times, which is stored in `CascadeMember::self_pair_prob`, because a link always
-  joins two different members. For Pb-203, Ka1+Ka2 is 0.029/decay. Against the vacancy-model
-  engine's exact enumeration (`flat_model_kxray_pairs_match_vacancy_model`), the flat D2 equals
-  it to machine precision for the beta- emitters Lu-177 and Eu-155, where it is all IC x IC on the
-  same scheme. Where EC x IC enters, the residual is the independence assumption: Pb-203 +0.2%,
-  Ce-139 0%, Bi-206 +3%, Ba-133 +2.8%, Hf-175 +4.6%, Te-123m +5.9%. Without the IC x IC term,
-  Ba-133 would be 12% low (its 53/79.6/356 keV transitions feed the alpha_K = 1.4 81 keV one).
-  The emitted pair rates also inherit SandiaDecay's line yields, which can differ from EPICS's
-  by 10-20% (Bi-206, Eu-155). The analytic
-  engine's pairwise summing-out of a flat x-ray uses these links, and the self term
-  2*self_pair_prob/I_a. Every K line then sums out alike: the other vacancy's line does not
-  depend on which line filled the first. Before, every other K line counted as independent at
-  its full intensity, and the line's own second photon not at all. For Pb-203 that expected
-  ~2x too many partner x-rays (0.48 vs 0.22 per K x-ray). For Ba-133 it expected too few
-  (0.57 vs 0.71), because its decays average more K vacancies; at eps_tot = 0.1 its Kalpha1
-  c_out went 0.821 -> 0.810, and Pb-203's went 0.842 -> 0.864. The links add only
-  (number of K lines)^2 per branch. The engine's per-window time is unchanged. `build_cascades`
-  pays for the transition splits and the IC x IC walk: Eu-152 goes 0.03 -> 0.06 ms, and the
-  U-238 chain 0.3 -> 0.7 ms (Release, 2026-10). InterSpec's reference-line redraw is unchanged.
+- **Vacancy model** (default, `CascadeOptions::vacancy_xray_model`): the branch carries
+  its K/L vacancy sources (EC shell fractions, per-transition K/L ICCs) and the engine
+  emits lines from the daughter's EPICS relaxation data. Line exclusivity per vacancy and
+  per-decay multiplicity are exact, and with a valid level scheme the analytic engine
+  enumerates x-ray–x-ray pairs exactly. The cost is ~25 line occurrences per converting
+  transition.
+- **Transition-group ("flat") model** (`vacancy_xray_model=false`, or no vacancy data):
+  SandiaDecay's tabulated x-ray lines become `Xray` members linked to the branch's gammas
+  at the gamma's intensity (independence). InterSpec's reference lines and sum-peak check
+  use it for speed. With `kxray_coincidences` (default on) the K x-ray members are also
+  linked to each other: with P_EC the K-capture probability, N_IC the K conversions and
+  N_ICIC the pairs of K-converted transitions in one cascade, the expected vacancy pairs
+  per decay are `D2 = P_EC*N_IC + N_ICIC`. N_ICIC walks the level scheme where both
+  transitions are placed (each level splits its flux by occurrence weight); otherwise it
+  falls back on SandiaDecay's gamma-gamma links (which often disagree with the scheme —
+  Lu-177's are ~0.1×). A vacancy is filled by line a with
+  `p_a = I_a / max(P_EC + N_IC, sum I_K)`; the pair (a,b) is emitted `D2*2*p_a*p_b` times
+  per decay (stored as links P(b|a) = joint/I_a) and a line with itself `D2*p_a^2` times
+  (`CascadeMember::self_pair_prob`). The analytic engine's summing-out of a flat x-ray uses
+  these links plus `2*self_pair_prob/I_a`. Against the vacancy model's exact enumeration,
+  D2 matches to machine precision where it is all IC×IC (Lu-177, Eu-155); where EC×IC
+  enters the independence assumption gives +0.2% (Pb-203) to +5.9% (Te-123m).
+  `build_cascades` cost: Eu-152 0.06 ms, the U-238 chain 0.7 ms.
+
+### Aperture quadratures and stored-response identity (`CEELO_BUILD_RESPONSE`)
+
+- **Quadrature storage.** An `ApertureQuadrature` keeps every ray's material stretches in one
+  contiguous `segments` array (a ray holds an offset and count; iterate with `q.segs(ray)`), and
+  each stretch carries a slot into the quadrature's distinct `materials`, so a kernel evaluates mu
+  once per material per call rather than searching per segment. Build rays one at a time with
+  `add_segment` (`discard_segments` drops a ray that turns out unused); rays traced in parallel into
+  separate quadratures are joined with `append_rays`. Against per-ray vectors this made tracing
+  1.3-1.7x and the per-energy kernel ~1.2x faster, bit-identical (Release, 2026-11).
+- **`content_hash()`** identifies a response by exactly what `to_xml_string()` stores - the
+  certificate and the version stamp excluded - but is hashed from the members (FNV-1a over raw
+  values, length-prefixed, presence-flagged) rather than from the formatted XML, which cost ~1 ms a
+  call. It mirrors `serialize_xml` field by field and condition by condition, so a new stored field
+  must be added to both - and an optional one (written only when present or non-default) must
+  contribute nothing to the hash when absent and a uniquely named `tag()` plus its content when
+  present, so existing responses keep their hash, as they keep their bytes.
+  `test_detector_response_io/content_hash_tracks_every_serialized_field` edits the first, middle and
+  last token of every attribute and element value, and removes each element, one at a time, and
+  fails if the hash does not change exactly when the stored content does - for the fields its test
+  responses populate. The definition changed in 2026-11 (from hashing the XML text), so every
+  response's hash changed once.
 
 ### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
 
-`src/io/DetectorEtendue.h` builds a fixed set of LINES through the active
-crystal, for hosts that integrate an EXTENDED source. The per-element kernel
-(`eps_fep_element`, Eq. 5) integrates over source points and, at each, over a fan
-of rays toward the crystal; reversing the order of integration gives an integral
-over lines parameterised on the DETECTOR side by a hull point `x` and a direction
-`w`, with the etendue measure `dA |w·n| dΩ` — the same number, since
-`dV dΩ = dA |w·n| dΩ ds`.
-
-Why that helps: everything on the detector side of a line (hull point, direction,
-the material segments through endcap / dead layer / crystal) depends on neither
-the source nor the energy, so one line set serves every energy and every
-iteration of a fit, and the source integral along each line is analytic for a
-uniform source. `build_etendue_lines` samples hull point and direction from a
+`src/io/DetectorEtendue.h` builds a fixed set of LINES through the active crystal, for
+hosts that integrate an EXTENDED source. Reversing the order of integration of the
+per-element kernel (`eps_fep_element`, Eq. 5) gives an integral over lines parameterised
+on the DETECTOR side by a hull point `x` and direction `w`, with measure `dA |w·n| dΩ`
+(`dV dΩ = dA |w·n| dΩ ds`). Everything detector-side of a line is independent of source
+and energy, so one line set serves every energy and fit iteration, and the source
+integral along a line is analytic for a uniform source. `build_etendue_lines` samples a
 4-D Halton set (`src/io/LowDiscrepancy.h`) aimed at a target sphere;
-`sample_hull_points` + `append_etendue_line` are the two halves, so a host with a
-better direction proposal (aimed at its own source solid, say) composes them
-itself. `line_interaction_probabilities` (live cross sections) and
-`DetectorResponse::fep_line_probabilities` (stored mu tables) give the per-line
-kernel, parallel to the rays.
-
-Directions that do not leave the hull, and lines with no active-crystal chord,
-are dropped WITHOUT renormalising — they are counted in `n`, which is what keeps
-the estimator unbiased. Validated in `tests/test_detector_etendue.cpp` against
-the per-point aperture kernel (transparent sphere sources, cylinder and box
-crystals, on and off axis: within ~0.4% at 2^16 lines) and against the analytic
-hull measure. InterSpec's volumetric Activity/Shielding fit is the first
-consumer.
+`sample_hull_points` + `append_etendue_line` let a host use its own direction proposal.
+`line_interaction_probabilities` (live cross sections) and
+`DetectorResponse::fep_line_probabilities` (stored mu tables) give the per-line kernel.
+Lines that miss are dropped WITHOUT renormalising (they count in `n`), which keeps the
+estimator unbiased. Validated in `tests/test_detector_etendue.cpp` against the per-point
+aperture kernel (~0.4% at 2^16 lines) and the analytic hull measure. InterSpec's
+volumetric Activity/Shielding fit is the first consumer.
 
 ### Total efficiency close in (`CEELO_BUILD_RESPONSE`)
 
 A generated `DetectorResponse` stores the total as a far-field tier (kernel, b(E) or
-eta_tot(E,θ) measured at `far_distance_a`) and carries it inward with the ray-traced
-kernel. Measured against direct point-source MC on a 5×5 cm closed-end HPGe coax
-(1–27 cm, 0/45/75°, 60–2614 keV, 0.2% MC): on axis that holds to ≤1.3%, but off axis it
-drifts to 1.7% at 1 cm, 2.7% at 2 cm and 4.4% at 5 cm (75°, 60 keV) - 2–3× the FEP's
-error, which has its measured near-field table N. So the near-field nodes, which run full
-transport anyway, now also keep their totals: `TotEffPayload::near_field` holds
-ln N_tot = ln(MC total / far-field model) on the FEP table's lattice and breakpoints, built
-after the tier is final, and every total query applies it below its breakpoint. Re-measured
-on the same detector and points with the table: worst 0.44/0.90/0.88/0.94% (RMS ≤0.4%) at
-1/2/5/10 cm - the FEP's level. A far-field-profile or transfer response has none, and a
-response without one serializes exactly as before (same bytes, same `content_hash`).
-
-A host that keeps only the total and the on-axis FEP (InterSpec grafting the total onto an
-imported FEP grid) sets `GenerationOptions::scans_stop_on_total`: the angular and near-field
-nodes stop on total precision, the backbone still on FEP. At 0.3% the total converges on
-6-16× fewer histories at ≥662 keV, where the cap-limited nodes are, so the same General run
-took 2260 CPU-s (10 min on 4 threads) instead of about an hour. Its total, re-measured the
-same way: worst 0.84/0.57/0.81/0.53% at 1/2/5/10 cm, RMS ≤0.47% - the FEP-stopped run's
-accuracy, a little looser at 1 cm (there 0.44%, RMS 0.26%). The FEP off the backbone is left
-at 0.3-1.2%, honestly in its sigma.
+eta_tot(E,θ) at `far_distance_a`) carried inward by the ray-traced kernel. On a 5×5 cm HPGe
+coax that holds to ≤1.3% on axis but drifts to 4.4% off axis close in (75°, 60 keV), so
+the near-field nodes, which run full transport anyway, also keep their totals:
+`TotEffPayload::near_field` holds ln(MC total / far-field model) on the FEP table's lattice
+and applies it below its breakpoint (worst 0.44–0.94%, RMS ≤0.4% at 1–10 cm). A response
+without it serializes exactly as before. A host keeping only the total and on-axis FEP
+sets `GenerationOptions::scans_stop_on_total`, so the angular and near-field nodes stop on
+total precision (6–16× fewer histories at ≥662 keV; worst total 0.84%).
 
 ### Efficiency transfer (EFFTRAN-style, `CEELO_BUILD_RESPONSE`)
 
-`src/io/EfficiencyTransfer.h` packages the classic EFFTRAN workflow: anchor an
-efficiency curve at ONE reference position (from CeeLo MC **or** user-measured
-`(E, eff)` points) and transfer it to any other position via the ratio of the
+`src/io/EfficiencyTransfer.h` anchors an efficiency curve at ONE reference position (from
+CeeLo MC **or** measured `(E, eff)` points) and transfers it via the ratio of the
 interaction-weighted effective solid angle,
-`eps(E, target) = eps_ref(E) · K(E, target) / K(E, ref)`, where
-`K = ApertureQuadrature::interaction_omega` (the same MC-free
-`ResponseKernel` the parameterized DRF already uses). This is EFFTRAN's `T`-ratio
-transfer, but fully 3-D (off-axis native), Rayleigh-aware, and chord-exact —
-holding the response factorization's residual `eta(E) = eps_ref/K` constant
-across positions. Two entry points: the standalone `EfficiencyTransfer` class
-(live cross sections; `eps_at`, `eps_at_with_tsrc` for MEFFTRAN extended-source
-self-absorption), and `make_transfer_response(...)`, which emits a normal
-`DetectorResponse` (angle-flat eta over stored mu tables) so XML / extended-source
-/ cascade / grounding all work unchanged. `ResponseGenerator` gains a
-`GenerationOptions::transfer_mode` (+ `n_anchor_angles`) that builds a DRF from
-MC at only the on-axis backbone (~8 nodes flat; a few forced cos-theta anchors
-when `n_anchor_angles > 1`), vs. hundreds for the General profile. **Validity**:
-the K ratio transfers distance at fixed angle to ~1% for d ≳ a few `a` and to
-<0.3% far-field (campaign D1); it has no near-field N model (below ~2a it flags
-`NearFieldUnmodeled`) and a single on-axis anchor does not carry the `eta(E,theta)`
-angular residual (campaign D2). Both regimes are covered by an unconditionally-applied
-`DetectorResponse::model_transfer` (`SigmaTransferModel`) that inflates the
-reported sigma off-axis/near. `tools/efftran_transfer_demo` reproduces EFFTRAN's
-`et.bat`: MC once, transfer over a distance×angle ladder, compare to direct MC
-with z-scores. Tests: `tests/test_efficiency_transfer.cpp` (MC-free identities +
-a `CEELO_RUN_MC_TESTS`-gated consistency case).
+`eps(E, target) = eps_ref(E) · K(E, target) / K(E, ref)`, with
+`K = ApertureQuadrature::interaction_omega` (the MC-free `ResponseKernel`). It is EFFTRAN's
+T-ratio transfer, fully 3-D, Rayleigh-aware and chord-exact. Entry points: the standalone
+`EfficiencyTransfer` class (`eps_at`, `eps_at_with_tsrc` for MEFFTRAN self-absorption) and
+`make_transfer_response(...)`, which emits a normal `DetectorResponse`.
+`GenerationOptions::transfer_mode` (+ `n_anchor_angles`) builds a DRF from MC at only the
+on-axis backbone (~28 MC nodes vs ~544 for the General profile, 11–16× faster); a
+measured curve needs no MC. `DetectorResponse::model_transfer` (`SigmaTransferModel`)
+inflates the reported sigma off-axis and near-field (`NearFieldUnmodeled` below ~2a).
+The total kernel credits passive-layer Compton scatter-in (`passive_compton_recapture`,
+`kTotalScatterInRecapture = 0.8`), which took the HPGe contact total from −2.5% to −1.4%
+with FEP unchanged. `tools/efftran_transfer_demo` reproduces EFFTRAN's `et.bat`. Tests:
+`tests/test_efficiency_transfer.cpp`.
 
-**Measured accuracy/timing** (July 2026; harness + report in the dev-only
-the dev-only transfer study; NaI 3×3 and a representative HPGe coax — 0.5 cm bore, 0.7 mm
-Li dead layer, 1.5 mm Al endcap + 5 mm gap — transferring a far-field on-axis
-anchor vs direct MC at ~0.6% stats): **FEP** on-axis ≤1% for d≥5a (median
-0.2–0.55%, p95 ≤1.8%), ~1.5–2% at 3–5a, ~3–3.6% median (≤5%) near contact (d<3a);
-**off-axis** ~3.2–3.6% median / ~6% p95 from a single on-axis anchor, dropping to
-**<1% median** (p95 2–3%) with 3 forced cos-theta anchors (`n_anchor_angles=3`,
-~+25 s MC). **Total efficiency**: on-axis ≤0.6%, NaI ~1% everywhere. The HPGe
-*near-field* total under-prediction (dead-layer/endcap Compton scatter-in the
-removal-only kernel misses; −2.5% at contact) is corrected by a **passive-layer
-scatter-in credit** in the total kernel (`interaction_omega`'s
-`passive_compton_recapture`; `DetectorResponse::scatter_in_recapture`, default
-`kTotalScatterInRecapture = 0.8`, calibrated in the transfer study): it folds
-`(mu_total − r·mu_cs)` on non-scoring segments so the credit grows with the
-oblique/near-field passive path and vanishes far-field — HPGe contact total
-−2.5%→−1.4%, NaI unaffected, FEP bit-identical (peak photons can't be
-scatter-in). HPGe total *off-axis* still drifts (the angle-flat tier can't carry
-the angular η_tot shape) — use the few-anchor mode's η_tot table there. **Timing** (matched 0.01 per-node precision, auto-threaded): a
-transfer-flat DRF is ~45 s / 28 MC nodes vs a full General-profile DRF at 496 s
-(NaI) / 714 s (HPGe) / 544 nodes — **11–16× faster**; a user-supplied *measured*
-curve needs **zero** MC (sub-second deterministic transfer). Bottom line for a
-host (InterSpec): viable as a "quick DRF" or a measured-curve → other-geometry
-estimator; on-axis-far is ≤1%, near/off-axis is a few % with honest inflated σ +
-provenance flags, and the full MC stays available as an upgrade.
+**Measured accuracy** (NaI 3×3 and an HPGe coax, far-field on-axis anchor vs direct MC):
+FEP on-axis ≤1% for d ≥ 5a (median 0.2–0.55%), ~1.5–2% at 3–5a, ~3–3.6% median near
+contact; off-axis ~3.5% median from one anchor, <1% median with `n_anchor_angles=3`. Total
+on-axis ≤0.6%; the HPGe total still drifts off axis (use the few-anchor mode). Bottom line
+for a host: a viable "quick DRF" and measured-curve → other-geometry estimator, ≤1%
+on-axis far, a few % near/off-axis with honest inflated σ, full MC as the upgrade.
 
 ## Cone Biasing Policy
 
-**Use pure cone biasing only for point sources with no source shielding or source material — or when using FEP-only mode.**
+**Pure cone biasing is used only for point sources with no source shielding or source
+material — or in FEP-only mode.**
 
-When source shielding or extended sources (non-zero density) are present in full mode, photons can scatter in the source material and change direction. Pure cone biasing would miss these scattered photons since they may originate from directions outside the cone. In full mode with source effects, emit isotropically into 4π — or use **mixture angular biasing** (`BiasingConfig::mixture_cone_alpha`, see Event Biasing below), which is unbiased even with source scatter because its emission pdf q(Ω) = α·(1/4π) + (1−α)·(1/Ω_cone) is nonzero over all 4π.
+With source shielding or an extended (non-zero density) source in full mode, photons can
+scatter in the source and change direction, so pure cone emission would miss them. Those
+runs use either isotropic 4π emission or, by default when the detector subtends
+Ω/4π < 0.15 from the source centre (not Marinelli), the **two-stream estimator** (Event
+Biasing), whose direct stream is cone-emitted and weighted by the analytic no-interaction
+probability while its scatter stream stays isotropic. **Mixture angular biasing**
+(`BiasingConfig::mixture_cone_alpha`) is also unbiased with source scatter but is only a
+manual knob.
 
-In FEP-only mode, cone biasing is safe even with source material, because the stochastic Rayleigh transmission weighting handles source effects without changing direction (most of the time). Per-position cone sizing is used for extended sources: each event computes its own cone from the sampled source position, giving much tighter cones for positions near the detector axis.
+In FEP-only mode cone biasing is safe even with source material: the stochastic Rayleigh
+weighting handles source effects without changing direction. Extended sources size the
+cone per event from the sampled position.
 
-This applies to both our MC code and the GEANT4 validation harness:
-- `generate_all_spectra.cpp`: `run_config(..., use_cone_bias)` controls both MC histogram generation and the generated `run_g4_all.sh` script
-- G4 harness: `--cone-bias` flag on the command line
-- Isotropic G4 runs need ~50-100x more events to achieve comparable statistics in the detector
+The same rules apply to the GEANT4 harness (`--cone-bias` for point sources only;
+`generate_all_spectra.cpp`'s `run_config(..., use_cone_bias)` sets both sides). Isotropic
+GEANT4 runs need ~50–100× more events for comparable statistics.
 
 ## Event Biasing (Variance Reduction)
 
-`BiasingConfig` (set via `EfficiencyCalculator::set_biasing()`) provides additional unbiased
-variance-reduction techniques beyond cone/position biasing. When `set_biasing()` is NOT called,
-`compute()` auto-enables them per geometry, energy, and termination targets
-(`compute_effective_biasing()`); pass a default-constructed `BiasingConfig` to force fully
-analog sampling (used by A/B consistency tests).
+`BiasingConfig` (`EfficiencyCalculator::set_biasing()`) adds unbiased variance reduction.
+When `set_biasing()` is NOT called, `compute()` enables techniques per geometry, energy and
+termination targets (`compute_effective_biasing()`); a default-constructed `BiasingConfig`
+forces fully analog sampling (used by A/B consistency tests).
 
-- **Forced first interaction** (`force_detector_interaction`): the primary photon's first
-  interaction is forced inside the detector geometry; the history carries weight
-  `1 − exp(−τ)` ≤ 1 (`TransportResult::weight`), with the interaction point drawn from the
-  truncated exponential across path segments. Secondaries are never re-forced (the flag is
-  cleared in transport's local config copy before any recursion). Gated off for the Marinelli
-  primary path (re-entry physics needs the un-collided pass-through branch). For source-effect
-  events the gate is **per event** (`force_this_event` in `simulate_thread`): forcing is valid
-  only when the primary is the sole depositing branch, so events whose source transport
-  produced secondaries (annihilation gammas, shield brems) or escaped electrons run the
-  primary analog. Unbiased because the estimator choice conditions only on already-sampled
-  source randomness.
-  **Measured**: wins where pass-through probability is high — CZT ≥ 200 keV (FEP FOM ×1.2–1.4,
-  total ×1.5–2.7); *hurts* FEP FOM ×0.75–0.95 in thick crystals (every event pays full
-  transport cost) while helping total ×1.3–1.8. Auto-enable: central-ray optical depth
-  τ < 0.7 when FEP precision matters; τ < 4 when only total efficiency is targeted.
+- **Forced first interaction** (`force_detector_interaction`): the primary's first
+  interaction is forced inside the detector; the history carries weight `1 − exp(−τ)`, the
+  point drawn from the truncated exponential across segments. Secondaries are never
+  re-forced. Off for the Marinelli primary path. For source-effect events the gate is per
+  event: forcing applies only when the primary is the sole depositing branch. Wins where
+  pass-through is likely (CZT ≥200 keV: FEP FOM ×1.2–1.4, total ×1.5–2.7); hurts FEP FOM
+  in thick crystals. **Auto**: central-ray τ < 0.7 when FEP precision matters, τ < 4 when
+  only total is targeted.
 
-- **Mixture angular biasing** (`mixture_cone_alpha` = α): for full-mode runs with source
-  effects (non-Marinelli), emit from q(Ω) = α·(1/4π) + (1−α)·(1/Ω_cone); weight
-  w = (1/4π)/q(Ω) ≤ 1/α. Replaces pure-isotropic emission; unbiased for source-scattered
-  photons. Isotropic-branch draws landing inside the cone must get the in-cone weight (the
-  membership test shares the cone sampler's axis, `normalize(−src_pos)`). Degenerate cones
-  (half-angle ≥ π − 0.01) fall back to isotropic with w = 1.
-  **Measured**: FEP FOM ×5.6–6.8 (config 11) and ×17–29 (config 12) at α = 0.1–0.2, but total
-  efficiency FOM *degrades* (×0.04–0.6) because the scattered-in component is sampled only
-  α of the time at weight 1/α. **No longer auto-enabled** — superseded by the two-stream
-  estimator (below); kept as a manual `set_biasing()` knob.
+- **Mixture angular biasing** (`mixture_cone_alpha` = α): emit from
+  q(Ω) = α/4π + (1−α)/Ω_cone with weight (1/4π)/q ≤ 1/α; isotropic draws landing in the
+  cone get the in-cone weight; degenerate cones fall back to isotropic. FEP FOM ×5.6–29 on
+  configs 11/12 but total FOM degrades, so it is **manual only**, superseded by two-stream.
 
-- **Two-stream stratified estimator** (`two_stream`, `two_stream_direct_fraction` = f): for
-  full-mode source-effect runs (non-Marinelli), every tally partitions exactly by the
-  primary's source-transport outcome (`SourceFullTransportResult::interacted`): the u-term
-  (zero interactions — straight line, full energy, no secondaries; the only meaningful FEP
-  contributor plus the direct part of total) and the s-term (interacted — the wide-angle
-  scattered-in component that dominates total under shielding; it still carries real FEP:
-  small-angle Compton at ≤100 keV and Rayleigh-only chains stay inside the ±1.5 keV window,
-  up to ~24% of FEP for cellulose at 59 keV — never assume FEP_s = 0). A deterministic
-  round-robin fraction f of events runs the **direct stream**: cone emission weighted by
-  (Ω/4π)·T, T = exp(−Σ μ_tot·ℓ) = `SourceGeometry::no_interaction_probability()` (exactly
-  the analog zero-interaction probability — source transport samples unmasked μ_total), then
-  plain detector transport at E₀ (forcing always valid: provably sole branch). The rest run
-  the **scatter stream**: isotropic analog source transport, killed early when the primary
-  did not interact (required for unbiasedness of the split + a time win), else the unchanged
-  legacy detector processing. Stream weight factors 1/f and 1/(1−f) keep the single-pool
-  estimator Σw·I/N unbiased for FEP/total/spectrum with no tally-machinery changes; the
-  reported variance is slightly conservative (between-strata term of the iid formula).
-  **Measured** (vs same-session analog): at f=0.25 + Compton bias γ=0.3, joint
-  min(FOM_fep, FOM_tot) ×2.9–6.1 (cfg 11), ×5.4–15.7 (cfg 12), ×5.9–17.3 (2 cm Pb stress),
-  with total FOM ×1.8–3.8 (the mixture's total regression is reversed); FEP-only-target
-  f=0.5 keeps FEP FOM ×5–30 (×670+ for tiny-detector/big-source). f ≥ 0.85 is dangerous at
-  low energy (FEP_s undersampling: cfg-12-like @59 keV FEP FOM ×0.16). Auto-enable: f=0.5
-  when only FEP precision targeted, else f=0.25 — but only when the detector cone from the
-  source center subtends Ω/4π < 0.15 (close geometries like a puck 1 cm from the face
-  measurably lose and stay analog).
+- **Two-stream stratified estimator** (`two_stream`, `two_stream_direct_fraction` = f):
+  for full-mode source-effect runs (non-Marinelli), every tally partitions exactly by
+  whether the primary interacted in the source geometry
+  (`SourceFullTransportResult::interacted`). A deterministic round-robin fraction f of
+  events runs the **direct stream** — cone emission weighted by (Ω/4π)·T,
+  T = `SourceGeometry::no_interaction_probability()`, then plain detector transport (forcing
+  always valid). The rest run the **scatter stream** — isotropic analog source transport,
+  killed when the primary did not interact. Weights 1/f and 1/(1−f) keep Σw·I/N unbiased;
+  the reported variance is slightly conservative. The scattered stream still carries real
+  FEP (small-angle Compton and Rayleigh-only chains stay inside the FEP window — up to
+  ~24% of FEP for cellulose at 59 keV), so never assume FEP_s = 0. Measured with Compton
+  bias γ = 0.3: joint min(FOM_fep, FOM_tot) ×2.9–6.1 (cfg 11), ×5.4–15.7 (cfg 12). f ≥ 0.85
+  is dangerous at low energy (FEP_s undersampled). **Auto**: f = 0.5 when only FEP
+  precision is targeted, else 0.25, only when Ω/4π < 0.15 (close geometries stay analog).
 
 - **Compton-angle mixture biasing** (`compton_cone_fraction` = γ): at the primary's FIRST
-  Compton vertex in the source geometry, the outgoing direction is sampled from
-  q(ω) = (1−γ)·p(ω) + γ·1[ω ∈ cone]/Ω_d, where p = KN×S(x,Z) density on the sphere and the
-  cone subtends the detector bounding sphere from the vertex; the event weight gains
-  p/q ≤ 1/(1−γ). Energy/recoil at the sampled angle use the exact analog kinematics
-  (`finish_compton_at_angle`; analog RNG draw order unchanged). The angular norm is composite
-  GL32 in s = sin(θ/2) (the substitution removes the √(1−μ) cusp S(x,Z) imprints at μ→1;
-  ~1e-6 relative, unit-tested) and cached — first-vertex-only keeps every norm call at the
-  constant primary energy. Annihilation/brems recursion and Marinelli are never biased.
-  **Measured**: total FOM ×1.8–3.8 on shielded configs on top of two-stream; γ ≥ 0.5
-  degrades large unshielded sources (20 cm water: total ×0.52 at γ=0.7). Auto-enable: γ=0.3
-  iff total/spectrum requested (γ only helps totals).
+  Compton vertex in the source geometry, sample the direction from
+  q(ω) = (1−γ)·p(ω) + γ·1[ω ∈ cone]/Ω_d (p = KN × S(x,Z); the cone subtends the detector's
+  bounding sphere), weight p/q ≤ 1/(1−γ); kinematics at the sampled angle are exact
+  (`finish_compton_at_angle`). The angular norm is composite GL32 in s = sin(θ/2)
+  (~1e-6, cached). Total FOM ×1.8–3.8 on shielded configs; γ ≥ 0.5 hurts large unshielded
+  sources. **Auto**: γ = 0.3 unless only FEP precision is targeted.
 
 Weight-composition rules (apply to any new technique):
-- One weight per event: every recursive `transport_photon()` call belongs to the same history;
-  the weight is applied exactly once at the tally.
-- The estimator denominator stays N (`sum_weights += 1.0` per event) — see Common Pitfalls.
-- Branch-level Russian roulette is **fundamentally unsafe for FEP**: the FEP indicator
-  I(Σ deposits = E₀) is non-linear in per-branch deposits, so killing one branch with survivor
-  reweighting biases FEP even though it preserves the mean total deposit. Only whole-event
-  roulette/splitting is valid.
-- FOM benchmark harness: `build/examples/benchmark_mc_configs --fom-csv <file>` with
-  `--analog` / `--force-interaction` / `--mixture-alpha <a>` / `--two-stream <f>` /
-  `--compton-bias <g>` / `--precision <p>` for A/B comparisons (FOM = 1/(σ_rel² · T));
-  physics-channel A/B via `--no-source-brems` / `--no-source-electrons`; precision-targeted
-  runs also write `our_<cfg>_multi.csv` (consumed by `profiling/compare_validation.py`);
-  consistency tests in `tests/test_biasing_consistency.cpp`. Out-of-sample stress configs
-  13–17, 19 in `examples/bench_configs.h` (thin Al / 2 cm Pb / 20 cm water / close puck /
-  CZT+soil cube / off-axis Fe) guard the auto-policy outside the G4-anchored set.
-- Per-event time ceiling (profiled June 2026): the source-electron brems machinery
-  (`sample_brems_in_material`, `residual_energy_keV`, `brems_pemit_corr`, Molière walk) is
-  40–60% of CPU on source-electron configs; further FOM there is perf work, not estimator work.
+- One weight per event, applied once at the tally; every recursive `transport_photon()`
+  belongs to the same history.
+- The estimator denominator stays N (`sum_weights += 1.0` per event).
+- Branch-level Russian roulette is **unsafe for FEP**: the FEP indicator is non-linear in
+  per-branch deposits, so killing a branch with survivor reweighting biases FEP even though
+  it preserves the mean deposit. Only whole-event roulette/splitting is valid.
+- FOM harness: `build/examples/benchmark_mc_configs --fom-csv <file>` with `--analog` /
+  `--force-interaction` / `--mixture-alpha <a>` / `--two-stream <f>` / `--compton-bias <g>`
+  / `--precision <p>` (FOM = 1/(σ_rel² · T)); every run also writes `our_<cfg>_multi.csv`
+  (consumed by `profiling/compare_validation.py`). Consistency tests:
+  `tests/test_biasing_consistency.cpp`. Stress configs 13–17, 19 in
+  `examples/bench_configs.h` guard the auto-policy outside the GEANT4-anchored set.
+- On source-electron configs the electron brems machinery is 40–60% of CPU; further FOM
+  there is perf work, not estimator work.
 
 ## Source Geometry vs Detector Geometry
 
-The simulation distinguishes two separate geometry systems:
+- **Detector geometry** (`Geometry` / `RayTrace`): the crystal plus attenuator shells. Ray
+  tracing returns `PathSegment`s with material, thickness and an `is_scoring` flag.
+- **Source geometry** (`SourceGeometry`): the radioactive volume plus its cores and
+  shields (`set_source_material()`, `add_source_core()`, `add_source_shield()`), separate
+  from the detector with open space in between.
 
-- **Detector geometry** (`Geometry` / `RayTrace`): The crystal plus attenuator shells. Ray tracing returns `PathSegment` vectors with material, thickness, and `is_scoring` flag. Both full and FEP-only modes traverse these segments. Attenuators are added via `add_attenuator()` on `EfficiencyCalculator`.
+The photon's journey: emission point → source material → source shields → air gap →
+detector attenuators → crystal. Full mode uses analog transport in the source geometry
+(`transport_source_photon()`); FEP-only mode uses stochastic Rayleigh weighting
+(`compute_transmission_fep_only()`).
 
-- **Source geometry** (`SourceGeometry`): Source material (the radioactive volume itself) plus source shielding shells around it. Configured via `set_source_material()` and `add_source_shield()`. These are geometrically separate from the detector -- there is open space between the outermost source shield and the detector front face.
+**Air between the source geometry and the detector is not transported.** An opt-in
+analytic correction, `set_air_attenuation(AirAttenuation::AnalyticNoScatter)`, multiplies
+each event's weight by exp(−μ·d) over the source-to-detector air path (μ without
+Rayleigh); it is not yet validated against GEANT4, and air scatter is not modelled.
 
 ### Source shapes (`SourceType` / `SourceGeometry::Shape`)
 
-`Point`, `Cylindrical`, `Rectangular`, `Spherical`, `Marinelli`. All extended shapes self-attenuate (`set_source_material`), take concentric shape-matched shields, and support uniform or exponential-depth activity. Shape-dispatch is centralized: `sample_source_position`, `source_material_path`, `trace_source_segments`, `compute_transmission[_fep_only]`, `min_distance_to_boundary`, GDML export. **Both `compute` and `compute_cascade` pick up every shape for free** (cascade routes through `sample_source_position` + `transport_source_photon`).
+`Point`, `Cylindrical`, `Rectangular`, `Sphere`, `Marinelli`. Every extended shape
+self-attenuates (`set_source_material`), takes concentric shape-matched shields, and
+supports uniform or exponential-depth activity. Shape dispatch is centralised
+(`sample_source_position`, `source_material_path`, `trace_source_segments`,
+`compute_transmission[_fep_only]`, `min_distance_to_boundary`, GDML export), so `compute`
+and `compute_cascade` pick up every shape for free.
 
-- **Spherical** (`set_spherical_source(center, radius, rotation=I, inner_radius=0)`): solid ball or, with `inner_radius > 0`, a hollow **shell** (non-attenuating void center — round flasks, spherical phantoms, void-center shells). Uniform-in-shell sampler `r = cbrt(r_in³+(r_out³−r_in³)U)`; spherical shields reuse the point-source shell tracer (`spherical_shell_path`). Rotation is stored but physically irrelevant (rotation-invariant).
-- **Hollow / annular cylinder** (`set_cylindrical_source(..., inner_radius>0, inner_half_length=-1)`): tube/pipe/ring with a central cavity. A negative/defaulted `inner_half_length` is a **through-bore** (a pipe) and keeps the closed-form annular sampler `r = √(r_in²+(r_out²−r_in²)U)`; a value SHORTER than the source half-length is a **closed cavity** — what a nested stack needs, since InterSpec nests cylinders in radius *and* length — and switches the sampler to rejection over the outer-cylinder proposal. `source_material_path` charges only the material (subtracting the cavity chord, not merely the bore). `inner_radius = 0` reduces bit-identically to the solid cylinder.
-- **Hollow rectangular box shell** (`set_rectangular_source(..., inner_half_dims)`): crate/container walls — outer box minus a centered inner void box (same rotation, non-attenuating). Rejection sampler over the outer-box proposal (acceptance `1 − Vi/Vo`); `source_material_path` subtracts the void chord (`box_shell_path`); GDML fill exports as a nested `SrcVoidSolid` inside `SrcMaterialSolid`, not a subtraction. All-zero `inner_half_dims` reduces bit-identically to the solid box. See `tests/test_hollow_box_source.cpp`; pipe-modeling conventions (contents vs wall, side-on shield composition) in `tests/test_pipe_source.cpp`.
-- **CylinderEndOn vs CylinderSideOn** (InterSpec orientations) are set by the `set_cylindrical_source` rotation: **EndOn** = identity (cylinder axis ∥ detector axis, the default); **SideOn** = 90° about y, `R = [[0,0,1],[0,1,0],[-1,0,0]]` (local-z ← detector-x, detector views the curved side).
-- **Source cores** (`add_source_core`, `EfficiencyCalculator::add_source_core`): attenuating
-  layers filling **inward** from a hollow source's inner surface, the mirror of
-  `add_source_shield()`, given **outermost first**. Cores never emit and never change the
-  source volume or the per-emitted-photon normalization; they only attenuate. Whatever is
-  left at the centre stays a genuine non-attenuating void. Without them a source shell
-  around a dense object over-reported: the far half of the shell was not shadowed at all.
-  This is what lets CeeLo express InterSpec's Activity/Shielding model, whose analytic path
-  has always allowed a source shell that is not the innermost layer.
-- **One stored layer stack.** Cores, the emitting shell and shields are the same thing
-  geometrically, and `SourceGeometry` stores them as a single **innermost-first**
-  `std::vector<SourceLayer>` (`layers()`), each entry carrying the outer boundary of the
-  region its material fills; a null material is a void. "Core" and "shield" name only which
-  side of `source_layer_index()` a layer sits on. The ray march walks that vector directly
-  and **the GDML export emits that same vector**, so the traced geometry and the validated
-  geometry cannot describe different scenes. An attenuating interior makes segment ORDER
-  load-bearing (`transport_source_photon_impl` places an interaction by accumulating segment
-  lengths, so a merged near-wall/far-wall segment would place a far-wall interaction short by
-  the whole cavity chord), so those sources take an ordered concentric ray march; with
-  nothing attenuating inside the source, the original closed-form per-shape path runs
-  unchanged, and `has_attenuating_interior()` is a cached bool because it is read once per
-  Molière substep.
-- **Trace vs self-attenuating** are not separate shapes — see `set_source_material` doc: efficiency depends only on the spatial distribution (uniform / exponential-depth) + self-attenuating medium; InterSpec's per-cm³/g/m² concentration and mass-fraction are downstream activity normalization (Bq×volume) that does not affect efficiency.
-
-The photon's journey: source emission point -> source material -> source shields -> air gap -> detector attenuators -> crystal. In full mode, source geometry uses analog MC transport (`transport_source_photon()`); in FEP-only mode, it uses stochastic Rayleigh weighting (`compute_transmission_fep_only()`). The detector geometry always uses full ray tracing and segment-by-segment transport.
-
-When source geometry has effects (`has_source_effects() == true`) and the simulation is in full mode, photon emission is isotropic 4pi (not cone-biased), since scattering in source material can redirect photons toward the detector from any initial direction.
-
-**Note**: Air between the outermost source shielding layer (or the source itself if no shielding is present) and the detector is **not simulated** in the MC transport. Air attenuation/scatter effects will eventually be applied as a deterministic (analytical) correction after the simulation.
+- **Spherical** (`set_spherical_source(center, radius, rotation=I, inner_radius=0)`): solid
+  ball or, with `inner_radius > 0`, a shell with a non-attenuating void centre.
+- **Hollow / annular cylinder** (`set_cylindrical_source(..., inner_radius>0,
+  inner_half_length=-1)`): a negative `inner_half_length` is a through-bore (closed-form
+  annular sampler); a value shorter than the half-length is a closed cavity (rejection
+  sampling) — what InterSpec's nested cylinders need. `inner_radius = 0` reduces
+  bit-identically to the solid cylinder.
+- **Hollow box shell** (`set_rectangular_source(..., inner_half_dims)`): outer box minus a
+  centred inner void (rejection sampler; `box_shell_path` subtracts the void chord). See
+  `tests/test_hollow_box_source.cpp`; pipe conventions in `tests/test_pipe_source.cpp`.
+- **CylinderEndOn vs CylinderSideOn** (InterSpec orientations) are the
+  `set_cylindrical_source` rotation: EndOn = identity; SideOn = 90° about y,
+  `R = [[0,0,1],[0,1,0],[-1,0,0]]`.
+- **Source cores** (`add_source_core`): attenuating layers filling **inward** from a hollow
+  source's inner surface, given outermost first — the mirror of `add_source_shield()`.
+  Cores never emit and never change the per-emitted-photon normalization; whatever is left
+  at the centre stays a void. This is what lets CeeLo express InterSpec's
+  Activity/Shielding model, whose source shell need not be the innermost layer.
+- **One stored layer stack.** Cores, the emitting shell and shields are one
+  **innermost-first** `std::vector<SourceLayer>` (`layers()`); "core" and "shield" name only
+  which side of `source_layer_index()` a layer sits on. The ray march walks that vector and
+  **the GDML export emits the same vector**. An attenuating interior makes segment ORDER
+  load-bearing (`transport_source_photon_impl` places interactions by accumulated length),
+  so those sources take an ordered concentric march; with nothing attenuating inside, the
+  closed-form per-shape path runs unchanged (`has_attenuating_interior()` is cached).
+- **Trace vs self-attenuating** are not separate shapes: efficiency depends only on the
+  spatial distribution and the medium; InterSpec's per-volume/mass concentrations are
+  downstream activity normalization.
 
 ## GEANT4 Validation
 
 ### Harness
 
-**What you need:** a GEANT4 11.4.0 installation (`bin/geant4.sh` to set the environment
-and data paths before any run; `lib/cmake/Geant4` for the CMake config). It is
-required only for validation; production coefficients come from the locked EPQ,
-EPICS2023, ESTAR, and xraylib sources. Having the GEANT4 *source* tree available
-is useful for comparing model choices (see "Inspecting G4 internals" below).
+GEANT4 11.4.0 is needed only for validation (source `bin/geant4.sh` before any run; CMake
+config in `lib/cmake/Geant4`). The harness, `tools/geant4_validation/`, builds either
+through `-DCEELO_BUILD_GEANT4_VALIDATION=ON` or standalone:
 
-The harness source is `tools/geant4_validation/` and builds separately against GEANT4
-(done once):
 ```bash
-source <your-geant4-install>/bin/geant4.sh
-cmake -B <g4val-build> -S tools/geant4_validation \
-      -DGeant4_DIR=<your-geant4-install>/lib/cmake/Geant4
+source <geant4-install>/bin/geant4.sh
+cmake -B <g4val-build> -S tools/geant4_validation -DGeant4_DIR=<geant4-install>/lib/cmake/Geant4
 cmake --build <g4val-build>
 ```
-(On macOS, if a run aborts with exit 134 / a dyld error: the GEANT4 libraries dynamically
-link Qt, so `brew install qtbase`.)
 
-**Running a G4 comparison — full workflow:**
+(On macOS, exit 134 / a dyld error means the GEANT4 libraries' Qt dependency is missing:
+`brew install qtbase`.)
+
+**Running a comparison:**
 ```bash
-# 1. Generate the G4 inputs (GDML geometry + GPS macro) from the engine, so the G4 geometry
-#    and source EXACTLY match the MC. Exportable configs: 1-7, 12, 20-24 (benchmark_mc_configs);
-#    --events tiny just to trigger the export, --macro-events sets the G4 /run/beamOn count.
+# 1. Export the GDML geometry + GPS macro from the engine, so GEANT4 runs exactly the MC's
+#    geometry and source. benchmark_mc_configs exports configs 1-3, 5-7, 12 and 20-28
+#    (`can_export`, a vetted opt-in list: an extended source's GPS volume must EXACTLY equal
+#    the engine's source region); configs 8 and 11 are exported by generate_all_spectra.
 cd build/examples
 ./benchmark_mc_configs --config 20 --energies 662,2614 --events 20000 --macro-events 12000000
-#    -> writes detector_20.gdml + run_20_662keV.mac + run_20_2614keV.mac
-#    (Marinelli/cfg 8 + cfg 11 are exported by generate_all_spectra instead — see "Why some
-#     cfgs aren't exportable": can_export in benchmark_mc_configs.cpp is a vetted opt-in list,
-#     because an extended source's GPS sampling volume must EXACTLY equal the engine source
-#     region or escape/self-absorption is silently biased.)
+#    -> detector_20.gdml + run_20_662keV.mac + run_20_2614keV.mac
 
-# 2. Run G4 (MUST source the env first). Point sources: add --cone-bias (matches the MC cone).
-#    Extended/shielded sources: ISOTROPIC (no --cone-bias) and need 16M+ events for stats.
-source ~/install/GEANT4-11.4.0/bin/geant4.sh
-~/install/src/g4val-build/ceelo_g4val detector_20.gdml run_20_662keV.mac g4val_cfg20_662keV.csv
+# 2. Run GEANT4. Point sources: --cone-bias. Extended/shielded sources: isotropic, 16M+ events.
+source <geant4-install>/bin/geant4.sh
+<g4val-build>/ceelo_g4val detector_20.gdml run_20_662keV.mac g4val_cfg20_662keV.csv
 
-# 3. Compare: assemble a tests/data/geant4_reference/<name>_multi.csv from the per-energy CSVs,
-#    add the config to profiling/compare_validation.py CONFIGS, then run it against our_N_multi.csv
-#    (written by `benchmark_mc_configs --config N --precision p`).
+# 3. Assemble tests/data/geant4_reference/<name>_multi.csv from the per-energy CSVs, add the
+#    config to profiling/compare_validation.py CONFIGS, write our_N_multi.csv with
+#    `benchmark_mc_configs --config N --precision p` (add --fep-window 0.75 to match a new
+#    harness run), and compare:
 python3 ../../profiling/compare_validation.py
 ```
-**The exported source region is NESTED**, GEANT4's native idiom: each source volume is a
-*full* solid (ball / tube / box) at its own outer boundary, carrying the next one in as a
-daughter at its own origin, with only the outermost placed in the world. A daughter displaces
-its mother's material exactly, so there are **no hollow solids and no boolean subtractions** in the concentric source
-region, and no epsilon between its layers (two exceptions survive on purpose: the
-innermost sphere keeps `rmin = 1e-4` as the documented GPS-at-the-centre
-workaround, and the Marinelli well-bottom annulus keeps its 0.001 cm gap) — a point on a mother/daughter
-face is unambiguous to the navigator, where a point on the shared face of two *siblings* is
-not. It is also what keeps `/gps/pos/confine SrcMaterialPV` sampling the emitting shell
-alone even when the shell is cored: `G4SPSPosDistribution::IsSourceConfined()` locates the
-point with `LocateGlobalPointAndSetup()`, which returns the **deepest** volume containing it,
-so anything inside a core daughter is rejected automatically. Verified against GEANT4 — see
-the source-core rows below. (Marinelli is the exception: an L-shaped fill on absolute
-z-planes is not a concentric stack, so it keeps its four-tubes-per-layer decomposition.)
 
-**Sphere angles are written at full precision on purpose.** `deltatheta` printed as
-`3.1415927` *exceeds* π by 4.6e-8 rad, which makes a `G4Sphere` wrap past the pole and
-self-overlap: GEANT4 then reports "Likely geometry overlap" and pushes the track to get
-unstuck — 33 pushes per 20k events, versus 0 with exact values. Measured at 6M events per
-arm the pushes showed no measurable bias (FEP −0.42%, z = −0.95; total −0.04%, z = −0.16;
-the FEP arm bounds this at ±0.89% at 2σ rather than proving it zero), so
-references generated before the fix remain valid, but do not generate new ones on a geometry
-that needs rescuing.
+**The exported source region is NESTED**, GEANT4's native idiom: each source volume is a
+*full* solid at its own outer boundary carrying the next one in as a daughter, with only
+the outermost placed in the world — no hollow solids, no boolean subtractions, no epsilon
+between layers (two deliberate exceptions: the innermost sphere keeps `rmin = 1e-4` as the
+GPS-at-the-centre workaround, and the Marinelli well-bottom annulus its 0.001 cm gap). A
+point on a mother/daughter face is unambiguous to the navigator; a point on a shared face of
+two siblings is not. It also keeps `/gps/pos/confine SrcMaterialPV` sampling the emitting
+shell alone when the shell is cored (`IsSourceConfined()` locates the **deepest** volume).
+Marinelli keeps its four-tubes-per-layer decomposition (an L-shaped fill is not concentric).
+
+**Sphere angles are written at full precision**: `deltatheta` printed as `3.1415927`
+exceeds π and makes a `G4Sphere` self-overlap (GEANT4 "pushes" stuck tracks). At 6M events
+the pushes showed no measurable bias, so older references stand, but new ones must not be
+generated on geometry that needs rescuing.
 
 Output CSV columns: `energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events`.
-Macros carry a `/run/beamOn <N>` line set by `--macro-events`; `sed` it to change the count without
-re-exporting.
+Macros carry `/run/beamOn <N>` from `--macro-events`; `sed` it to change the count.
 
-**Radioactive-ion (cascade) source macros — two gotchas that silently give wrong/empty output:**
-For a full-decay cascade source (`/gps/particle ion` + `/gps/ion <Z> <A>`, used for true-coincidence
-summing validation, e.g. `56 133` = Ba-133):
-- **`/process/had/rdm/thresholdForVeryLongDecayTime 1.0e+60 year`** must be in the macro (right after
-  `/run/initialize`) — otherwise a long-lived parent (Ba-133 10.5 yr, Cs-137 30 yr, most calibration
-  nuclides) is treated as effectively stable and **never decays → an empty histogram / zero deposits**.
-  This bites *any* long-lived ion source, so it is easy to forget and hard to diagnose (the run
-  "succeeds" with no counts).
-- A **metastable isomer with a minutes-scale half-life is still not fully decayed** under these
-  settings — e.g. Cs-137 → **Ba-137m (2.55 min)** → 662 γ emits in only ~half the primaries, so the
-  662 peak is ~2× low. Use a parent that decays directly (Ba-133) as the reliable probe, or handle the
-  isomer explicitly.
-- Match the **world material** to what the MC assumes: for the electron-bearing channels (IC/β
-  electrons crossing the source→detector gap) use an **air world** (`write_gdml(..., vacuum_world=false)`)
-  so G4's electrons air-degrade like the engine's; a vacuum world lets them through undegraded. Photon
-  air attenuation over cm-scale gaps is negligible either way.
+**Radioactive-ion (cascade) macros** (`/gps/particle ion` + `/gps/ion <Z> <A>`) — two
+gotchas that silently give empty or wrong output:
+- Add **`/process/had/rdm/thresholdForVeryLongDecayTime 1.0e+60 year`** after
+  `/run/initialize`, or a long-lived parent (Ba-133, Cs-137, most calibration nuclides)
+  never decays — the run "succeeds" with no counts.
+- A **minutes-scale isomer is not fully decayed** under these settings (Cs-137 → Ba-137m:
+  the 662 peak is ~2× low). Use a parent that decays directly (Ba-133).
+- For electron-bearing channels (IC/β electrons crossing the gap) use an **air world**
+  (`write_gdml(..., vacuum_world=false)`) so GEANT4's electrons air-degrade like the engine's.
 
 **Harness flags** (`ceelo_g4val <gdml> <mac> <out.csv> [flags]`):
-- `--cone-bias` — cone importance sampling (point sources only; matches the MC cone estimator).
-- `--histogram` — write `<out>_histogram.csv` pulse-height spectrum (`# Events:` header; lower-channel-energy bins).
-- `--correlated-gamma` — enable `G4PolarizationTransition` γ-γ angular correlation W(θ) (cascade summing).
-- `--diagnostics` — 11 per-interaction crystal-side histograms (debug scatter angles / interaction depths / escape energies).
-- `--entry-diag` — external-electron-entry counters at the crystal (the source-electron escape channel; u/s source-class decomposition printed when s-events exist).
-- `--lowcut` — production cut 0.001 mm (default 0.7 mm); needed for fluorescence X-rays from heavy attenuators (e.g. Pb Kα range < 0.7 mm).
-- `--em-standard` — use `G4EmStandardPhysics` instead of option4.
+- `--cone-bias` — cone importance sampling (point sources only; matches the MC estimator).
+- `--histogram` — write `<out>_histogram.csv` (`# Events:` header; lower-channel-energy
+  bins); `--bin-width <keV>` sets the bin width (default 1 keV).
+- `--correlated-gamma` — `G4PolarizationTransition` γ-γ angular correlation (cascade summing).
+- `--diagnostics` — 11 per-interaction crystal-side histograms.
+- `--entry-diag` — external-electron-entry counters at the crystal (u/s decomposition).
+- `--lowcut` — production cut 0.001 mm (default 0.7 mm), for thin-detector secondaries;
+  fluorescence is already kept by `SetDeexcitationIgnoreCut(true)`.
+- `--em-standard` — `G4EmStandardPhysics` instead of option4.
 - `--fep-precision <p>` — run until FEP relative precision ≤ p (cap 100M events).
+- `--vis`, `--vis-batch` — visualization.
 
-Physics: **FTFP_BERT + `G4EmStandardPhysics_option4`** (full Doppler broadening). Deexcitation
-`SetFluo(true)`, `SetAuger(true)`, `SetDeexcitationIgnoreCut(true)` — the last is critical so
-fluorescence X-rays from heavy-element attenuators are produced (else killed by the default cut).
-
-**Inspecting G4 internals (how G4 does things):**
-- **Source tree** `<geant4-source>/source/processes/electromagnetic/` — the EM models CeeLo is
-  validated against: `G4LowEPComptonModel` (our Compton reference), `G4eCoulombScatteringModel` /
-  `G4WentzelVIModel` / `G4UrbanMscModel` (multiple scattering — relevant to the source-escape tails),
-  `G4eBremsstrahlung` / `G4SeltzerBergerModel`, `G4eplusAnnihilation`, `G4PEEffectFluoModel`,
-  `G4Livermore*` (low-energy). Read these to compare a sampling/cross-section choice against ours.
-- **Aggregate reference export:** `tools/geant4_validation/` records configured
-  spectra, rates, efficiencies, and histograms for comparison. Raw G4
-  cross-section columns are not production inputs and must not be committed.
-  Diagnostic binaries may still print transient spot checks during model
-  investigations (for example, the cfg-7 Pb K-edge investigation).
-- **In-macro introspection:** add `/run/verbose 1`, `/process/em/printParameters`, `/process/list`,
-  `/process/em/verbose 1` to a macro to print the active processes, models, and EM parameters G4 uses.
+Physics: **FTFP_BERT + `G4EmStandardPhysics_option4`**; deexcitation `SetFluo(true)`,
+`SetAuger(true)`, `SetDeexcitationIgnoreCut(true)` (the last is what keeps fluorescence
+from heavy-element attenuators). To compare model choices read the GEANT4 source under
+`source/processes/electromagnetic/` (`G4LowEPComptonModel`, `G4UrbanMscModel` /
+`G4WentzelVIModel`, `G4SeltzerBergerModel`, `G4PEEffectFluoModel`, `G4Livermore*`), or add
+`/run/verbose 1`, `/process/em/printParameters`, `/process/list` to a macro. The harness
+records aggregate observables only; raw GEANT4 cross-section columns are not production
+inputs and must not be committed.
 
 ### Validated Configurations
 
@@ -757,53 +694,33 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 |--------|----------|------------|--------|---------------|-----------------|
 | 1 | 3"x3" NaI | bare | point, 10cm on-axis | ≤ 0.6% | ≤ 0.5% |
 | 2 | 3"x3" NaI | 1mm Al | point, 10cm on-axis | ≤ 0.4% | ≤ 0.5% |
-| 3 | 2"x2" LaBr3 | 0.5mm Al | point, 5cm on-axis | ≤ 0.8%; +0.7% @2000, +0.6% @3000 (LaBr3 residual, TODO.md)§ | ≤ 0.4% |
+| 3 | 2"x2" LaBr3 | 0.5mm Al | point, 5cm on-axis | ≤ 0.8%; +0.7% @2000, +0.6% @3000 (TODO.md) | ≤ 0.4% |
 | 5 | 1x1x0.5cm CZT | bare | point, 5cm on-axis | ≤ 0.8% (≤ 800 keV); −1.5% @1000, −2.5% @1500 (G4-reference-limited, \|z\| ≤ 1.7) | ≤ 0.5% |
 | 6 | 3"x3" NaI | bare | point, 15cm 45deg off-axis | ≤ 0.5% | ≤ 0.8% |
 | 7 | 3"x3" NaI | 1mm Al + 2mm Pb | point, 15cm on-axis | ≤ 0.8% (≥ 200 keV) | ≤ 0.5% (≥ 200 keV)*** |
-| 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 0.9% (≥ 100 keV); −1.6% @ 59* | ≤ 0.6%* |
-| 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.5% (100-3000)** | ≤ 0.8%** |
+| 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 0.9% (≥ 100 keV); −1.6% @ 59* | ≤ 0.6% |
+| 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.5% (200-3000)** | ≤ 0.8%** |
 | 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −4.0% @ 59 | ≤ 1.4% (≥ 200 keV); −3.2% @ 59 |
 | 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 0.5% | ≤ 0.4% |
-| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.4%† |
-| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | +0.3% @122; −9.1% @60‡ | +0.1% @122‡ |
-| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | +0.5% @122; −9.1% @60‡ | +0.2% @122‡ |
+| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.4% |
+| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | +0.1% @122; −8.2% @60‡ | +0.2% @122 |
+| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | +0.4% @122; −8.7% @60‡ | −0.0% @122 |
 
-**Measured Sep 7 2026** against the committed GEANT4 references, from
-CeeLo results (`our_*_multi.csv`) regenerated on the EPICS2023 photon data, after the
-Aug 2026 crystal-electron-walk fixes (path-consistent Highland + Bohr straggling +
-step-budget guard; `studies/high_e_fep/FINDINGS.md`).
+CeeLo at `--precision 0.003` (`benchmark_mc_configs --config N`; Sep 2026, main @21d883e)
+against the committed references, on the EPICS2023 photon data and after the crystal-walk
+fixes (Physics above). Later main changes (photon tables extended to Cf, the source-core
+fixes) move μ by ≤0.1% and do not touch these geometries. Configs 27/28 are scored at
+0.75 keV on both sides (`--fep-window 0.75`), from a Sep 22 regeneration.
+A precision target is met only when *every* requested target is (FEP as well as total);
+a few tenths of a percent of every entry is still statistics. `compare_validation.py`
+prints every per-energy deviation with both 1σ and z. GEANT4 references: 64M events per
+energy for cone-biased point sources, 16M isotropic for extended/shielded sources (64M for
+cfg 11 at 2000/3000 and cfg 12 at 662/1173/2614 keV).
 
-**These rows are tighter than the Aug 2026 set because the precision target now
-means what it says.** `TerminationCriteria`'s FEP and total targets used to stop the
-run independently, so asking for 0.3% on both stopped at whichever converged first
-— always `total`, the larger efficiency — and left FEP short. Across the previous
-reference set FEP relative precision was a **median 1.44x worse than total**, and
-worse than 2x on 29 of 122 rows. Requiring *all* requested targets took the rows
-above 0.35% FEP from **62/122 to 1** (config 7 @ 100 keV, capped at `max_events`
-and already a SKIP). Most entries in the table therefore *improved* — the old
-numbers carried MC noise on top of the physics.
-
-§ **The LaBr3 residual is narrower than the old table implied.** The previous
-entry read "+0.8 to +1.5% ≥1 MeV"; at 1000 / 1173 / 1332 keV config 3 now runs
-+0.27 / +0.03 / −0.10%, so that band was largely statistics. What survives is the
-≥2 MeV structure the TODO item describes: **+0.72% (z 2.3) @2000 and +0.63%
-(z 1.9) @3000**. Those z-scores are *lower* than the +4.0 / +2.6 quoted in
-TODO.md only because that item was measured in a dedicated 0.16%-precision study,
-not at the 0.3% these reference rows carry — the deltas agree, so the item stands.
-
-A per-energy comparison of every configuration, with both sides' 1-sigma
-uncertainties and z-scores, was written to `scratch/20260907_CeeLo_G4_comp.md`.
-Note `scratch/` is gitignored and is NOT part of the vendored payload, so that
-file is local to the machine it was generated on; regenerate it from the
-committed reference pair if you need it.
-
-**Configs 25/26 are a matched pair** (added Aug 2026 with bulletization support):
-the same GEM35-70 HPGe coax with a sharp and a bulletized front edge, 4M
-cone-biased G4 events per energy (12M for config 26 at 45 and 88 keV) and
-CeeLo at ~0.03% precision below 122 keV, ~0.1–0.35% above, over 45–1332 keV. Each config agrees with GEANT4 on its own (above), but the
-quantity the pair exists to measure is the **bulletization effect itself**,
-Δ = 1 − ε(26)/ε(25), computed independently in each code:
+**Configs 25/26 are a matched pair**: the same GEM35-70 coax with a sharp and a
+bulletized front edge. The quantity the pair measures is the **bulletization effect**,
+Δ = 1 − ε(26)/ε(25), computed independently in each code (values as
+`compare_validation.py` prints them):
 
 | E (keV) | Δ FEP CeeLo | Δ FEP G4 | difference | z |
 |---------|-------------|----------|------------|---|
@@ -815,145 +732,86 @@ quantity the pair exists to measure is the **bulletization effect itself**,
 | 662 | 3.01% | 3.15% | −0.14 pp | −0.36 |
 | 1332 | 1.82% | 2.47% | −0.65 pp | −1.49 |
 
-**These are the values `profiling/compare_validation.py` prints from the committed
-references**, refreshed Sep 7 2026. The table previously carried numbers from an
-uncommitted ~0.03%-precision run while claiming to be the committed rows; against the
-current 0.3% references two entries changed sign (45 and 122 keV), which is scatter at
-this precision, not a change in the effect. Every point still agrees within |z| ≤ 2.1 on
-an effect running from 16% down to 2%, and the pair still gates.
+Every point agrees within |z| ≤ 2.1 on an effect running from 16% down to 2%. The effect is
+far larger than the 1.28% of crystal volume the fillet removes: from this source position
+bulletization removes 17% of the rays that hit the crystal but only 2.4% of the path
+length (it eliminates short grazing corner clips), which costs most at low energy where
+photons stop in the first millimetres. A dedicated ~0.03%-precision study found a small
+shared germanium offset (+0.135% at 88 keV in *both* configs, ~−0.1% at 122 keV) that
+cancels in Δ (TODO.md). The pair validates "CeeLo's tracer agrees with CeeLo's exported
+solid under GEANT4 physics"; the link to ANGLE's `bulletizingRadius` rests on the Pappus
+closed form and the unit tests in `tests/test_geometry.cpp` and
+`tests/test_geant4_export.cpp`.
 
-† **The apparent config-26 low-energy residual was statistics plus a shared
-offset — not bulletization.** The first pass showed config 26 running +0.16 to
-+0.28% above GEANT4 at 45 and 88 keV where config 25 did not, which looked
-geometry-specific. Re-running CeeLo at ~0.03% precision (two independent
-seeds, 45–122 keV; the committed rows are those runs combined) resolved it:
+‡ **Configs 27/28 are the deep-iron low-energy probe** (GEM35-70 + point source + 0.5 cm
+Fe shell at 2 / 10 cm). The absolute 60 keV FEP gap is the EPICS2023-vs-EPICS2017 iron
+photoelectric difference (~2% in μ, CeeLo = NIST) through the shell's 4.6 mfp, the same
+at both distances as a cross-section effect must be; 60/88 keV are `SKIP`ped and 122 keV
+gates at 1%. The u/s decomposition on both sides agrees on the *scattered share* of the
+peak (60 keV: 30.0% vs 30.6% at 2 cm), so the forward-Rayleigh / small-angle-Compton
+placement behind thick iron matches GEANT4 to ~2% of that stream.
 
-- At **45 keV** the excess vanished — it was CeeLo statistics. The original
-  run carried ~0.10% uncertainty and the "excess" was ~2.4σ of it. Config 26
-  now sits −0.08% FEP / −0.01% total.
-- At **88 keV** a real +0.135% FEP offset survives and sharpens (z = 3.5–3.9),
-  but it is **identical in both configs** — cfg 25 +0.135%, cfg 26 +0.136%, a
-  difference of +0.000 pp. It has nothing to do with the fillet. 122 keV
-  carries a similar shared offset of about −0.1%.
+\* **Config 8 (water Marinelli)**: the reference is a 32M-event run on the current
+geometry, gating all six energies (FEP tolerance 2.5%, total 1.0%). The residual at
+59 keV is the scattered FEP stream: the unscattered FEP `eps_u` matches GEANT4 to
+0.01–0.3% at every energy, but the small scattered stream `eps_s` (forward Rayleigh /
+small-angle Compton landing in the window) is ~15% low. Its electron escape uses the
+regime-aware `walk_in_source_geometry` (water → fully analog).
 
-  (Those per-energy figures are from the Aug 2026 ~0.03%-precision study. Against
-  the Sep 2026 committed references, which carry 0.3%, the same rows read cfg 25
-  −0.01% and cfg 26 +0.02% at 88 keV — consistent, but far too coarse to resolve a
-  0.135% offset. The conclusion that the offset is shared and fillet-independent
-  rests on the dedicated study, not on the committed rows.)
+\*\* **Configs 11/12**: the cfg 11 GDML uses `rmin = 1e-4 cm` for the Fe shell (GPS at the
+exact centre of an `rmin = 0` sphere misnavigates). Total agreement above 1022 keV requires
+the source-shield secondary channels (Source shielding above), up to ~6% of total at
+3 MeV; the electron-escape channel must stay on (without it cfg 11 @3000 total is −3.05%,
+z 17). The escape is calibrated by an analog surface-emergence (1 − albedo) gate on the
+escape outcome (brems kept): it suppresses the sub-MeV skin escapers GEANT4 backscatters
+and saturates to ≈1 above ~1.5 MeV (Known differences → source-electron skin escape).
 
-So what remains is a ~0.1% CeeLo-vs-GEANT4 offset on germanium with energy
-structure across 60–122 keV, common to sharp and bulletized crystals alike and
-therefore outside the scope of this feature. The leading candidate is the
-photon-evaluation difference already documented above: CeeLo is on EPICS2023
-while GEANT4 11.4.0 ships EPICS2017, which produced exactly this kind of
-energy-structured sub-percent difference for iron in config 12. Confirming it
-for germanium means comparing µ/ρ(Ge) against NIST XCOM the way commit 1ad196c
-did for Fe/Cr/Ni. Tracked in TODO.md; it is well inside the ~1% goal.
+\*\*\* **Config 7 at 100 keV** (~−25 to −31% total) is excluded from the gate (`SKIP`).
+GEANT4's *in-tracking* μ_total(Pb) is smeared across the 88 keV K edge relative to its own
+`G4EmCalculator` export (which matches XCOM to 0.23%): measured through the 2 mm Pb stack,
+Δμ/μ = +0.35% at 80 keV, −18% at 90 keV, −4.4% at 100 keV — the classic λ-table edge
+interpolation signature. CeeLo's tables equal XCOM and below-edge transmission matches
+GEANT4. (A follow-up — CeeLo's escaped Pb Kα/Kβ ratio 0.67 vs GEANT4's 0.82 — is in TODO.md.)
 
-**What the pair does and does not establish.** GEANT4's transport is
-independent, but the *solid* it navigates comes from `write_gdml()` in the same
-change, built from the same arc parameterisation the tracer uses. So the pair
-validates "CeeLo's tracer agrees with CeeLo's exported solid, under GEANT4
-physics" — it does not, by itself, establish that either matches ANGLE's
-`bulletizingRadius`. That last link rests on the Pappus closed form and the unit
-tests in `tests/test_geometry.cpp` (chords against an independent
-point-in-solid oracle) and `tests/test_geant4_export.cpp` (exported profile
-against the traced solid).
+**EPICS2023 vs GEANT4's EPICS2017.** CeeLo's photon magnitudes come from a *newer*
+evaluation than GEANT4 11.4.0 ships, so exact agreement is not the expected outcome.
+Migrating from the previous GEANT4-fitted representation moved the mean |deviation| over
+174 gated points from 0.366% to 0.432% (70 closer, the rest further); the largest moves were
+config 12 @59 keV (see Known differences) and config 11 @3000 keV. Acceptance: 0.72% p95 /
+1.64% worst contribution-weighted attenuation change, with independent NIST XCOM checks
+favouring the direct EPICS values
+(`tools/prepare_cross_sections/reports/migration_acceptance.json`).
 
-Every point agrees within |z| ≤ 1.9, on an effect that runs from 16% down to
-2%. The effect is far larger than the 1.28% of crystal volume the fillet
-removes, and strongly energy dependent, for a geometric reason worth recording:
-from this source position bulletization removes **17% of the rays that hit the
-crystal at all** but only **2.4% of the total path length**, because the rays it
-eliminates are short grazing corner clips. At 45 keV, where photons stop within
-the first millimetres, losing those rays (and pushing the entrance surface
-deeper for the rest) costs ~16%. By 1332 keV a 0.5 cm chord interacts only
-~14% of the time against ~64% for an average chord, so dropping them costs only
-a few percent. That, not the volume fraction, sets the high-energy limit.
+### Spherical / annular source geometries
 
-**EPICS2023 vs GEANT4's EPICS2017.** CeeLo's photon magnitudes now come from a
-*newer* evaluation than the one GEANT4 11.4.0 ships, so exact agreement is no
-longer the expected outcome. Migrating from the previous Geant4-fitted
-representation moved the mean |deviation from GEANT4| over the 174 gated
-(config, energy, metric) points from 0.366% to 0.432%, with 70/174 points moving
-closer and the rest further. The two largest movements are **config 12 @ 59 keV**
-(FEP −0.05% → −3.76%, total +0.92% → −3.02%) and **config 11 @ 3000 keV**
-(FEP −0.13% → −1.65%). The accepted migration gate was a 0.7173% p95 /
-1.6447% worst contribution-weighted attenuation change, with independent NIST
-XCOM spot checks favouring the direct EPICS values over the historical fit; see
-`tools/prepare_cross_sections/reports/migration_acceptance.json`.
+`examples/sphere_g4_validation.cpp`: three 3"×3" NaI geometries — **G-A** bare
+self-attenuating thorium sphere (R = 2 cm), **G-B** trace source in a soil sphere
+(R = 3 cm) + Al(0.2)/Fe(0.5) shells, **G-C** void-centre soil shell [2,3] cm + Fe(0.5) — at
+~2 cm and ~50 cm, Th-232 chain energies, 4M-event isotropic GEANT4 volume sources.
 
-‡ **Configs 27/28 (2026-09-04) are the deep-iron low-energy probe**, added when InterSpec's
-analytic model was found to be missing the Rayleigh-deflection loss (see the FEP-window section)
-and the question became whether CeeLo places the scattered-into-peak stream right behind thick
-iron.  Scored at a 0.75 keV window on BOTH sides (the harness default; `--fep-window 0.75` for
-CeeLo).  The absolute FEP gap is the documented EPICS2023-vs-EPICS2014 iron photoelectric
-difference (~2% in μ near 58 keV, CeeLo = NIST) compounded through the shell's 4.6 mfp at 60 keV
-and 1.9 mfp at 88 keV, and it is the same at 2 cm and 10 cm, as a cross-section effect must be.
-The u/s decomposition on both sides says the same: at 60 keV the unscattered FEP stream is
-−7.6% / −8.2% (2 / 10 cm) and the scattered one −10.4% / −9.5%, i.e. the two streams move
-together, and the scattered SHARE of the peak is 30.0% vs 30.6% (2 cm) and 30.5% vs 30.8% (10 cm);
-at 88 keV 18.1% vs 17.8% and 17.5% vs 18.0%; at 122 keV 10.5% vs 10.5% and 10.2% vs 10.4%.
-So the forward-Rayleigh / small-angle-Compton placement agrees with GEANT4 to ~2% of that stream
-in a Rayleigh-dominated case, and the cfg-8 "eps_s ~15% low" residual does not generalise to iron.
-60/88 keV are `SKIP`ped in `compare_validation.py` with that reason; 122 keV gates at 1%.
-Main's Sep 7 2026 CeeLo rows for 27/28 were scored at 1.5 keV by mistake (~3% more FEP at
-60 keV, hidden by those SKIPs; see the README beside the CSVs). They were regenerated at
-0.75 keV on Sep 22 2026, which is where the table's 27/28 entries come from.
+- **FEP agrees everywhere**: |z| ≤ 1.4 at 238.6/583/911 keV, validating geometry,
+  sampling and self-attenuation.
+- **Low-Z totals agree**: G-C, re-measured with source-electron transport on and a
+  0.75 keV window, agrees to ≤0.74% (source-core table below). (G-B was measured with the
+  channel off, which costs several percent of total above 1022 keV.)
+- **High-Z self-attenuating total**: G-A (near, against 16M-event option4 runs) reads total
+  −1.29% / −0.76% / −0.50% / +0.09% (z −4.1 / −3.9 / −3.1 / +0.7) at 238.6/583/911/2614.5
+  keV and FEP within 0.2% (|z| ≤ 0.6). Before source K fluorescence was emitted the totals
+  read −22% / −4.1% / −2.6%. The ~1% left at low energy is plausibly Th L x-rays escaping
+  the bare sphere's skin (CeeLo emits no L lines; TODO.md).
 
-\* **Config 8 reference was regenerated at 32M on the CURRENT geometry (June 26 2026).** The previous
-March `g4_cfg8_*_v2` reference was **stale**: it predated the June source-effect/biasing/cascade
-toolchain (GDML export rebuilt Jun 11, harness Jun 25) and sat **+0.9% (662 keV total) to +6.1%
-(59 keV total) ABOVE both current MC and a fresh G4 run on the current geometry**. Against the fresh
-reference, MC agreed to ≤0.7% total and ≤1.1% FEP across 100–2614 keV (z ≤ 2.4) on the
-then-current photon data; on EPICS2023 (Aug 2026) that is **≤1.2% FEP and ≤1.1% total**
-over the same range, with 59 keV FEP at −2.30%;
-`compare_validation.py` gates **all six energies** (59/100/200/662/1173/2614; FEP tol 2.5%, total 1.0%;
-**no SKIPs**). The earlier "low-energy Marinelli transport deficit" (FEP −4 to −7%, total −2 to −5.6%)
-and the "−2.5% albedo-recovery FEP deficit @662" were **largely stale-reference artifacts** — fresh
-current-MC-vs-current-G4 is −0.17% FEP @662, −0.25% total @59. The one **genuine residual is FEP −2.1%
-at 59 keV** (z=5): the G4-harness u/s decomposition shows the unscattered FEP `eps_u` matches G4 to
-0.01–0.3% at every energy (geometry + self-attenuation are right; water μ = XCOM to 0.6%), but the
-small *scattered* FEP stream `eps_s` is ~15% low — MC under-places forward Rayleigh / small-angle-Compton
-photons in the ±1.5 keV window (shrinks to ≈0 by 200 keV; same family as the MC-delta-vs-G4-0–1-keV-smear).
-A small real albedo-recovery effect (G4 recovers crystal-escaped e⁻/γ backscattering off the surrounding
-water; MC's ≤3-bounce photon-only re-entry + one-way electron escape miss it) may persist but is ~10×
-smaller than the previously documented −2.5%. See the reference CSV header for the regeneration record. Config 8's Marinelli electron-escape path
-uses the regime-aware `walk_in_source_geometry` (water is light-Z → fully analog).
+At ~50 cm the MC converges well via the two-stream direct stream; a matching GEANT4 run
+needs much higher isotropic statistics and has not been done. The cascade path on a
+sphere is exercised by `tests/test_spherical_source.cpp`.
 
-\*\* Config 11 GDML uses `rmin=1e-4 cm` for the Fe source shield sphere to avoid G4 navigation issues when a GPS source is at the exact center of a solid sphere (`rmin=0`). Configs 11/12 cover 200–3000 / 59–2614 keV; total agreement above the 1022 keV PP threshold requires the source-shield secondary channels (annihilation gammas, shield bremsstrahlung, electron escape — see Source Geometry section), which together contribute up to ~6% of total efficiency at 3 MeV. References upgraded June 2026: cfg 11 {2000, 3000} and cfg 12 {662, 1173, 2614} rows are 64M-event G4 runs (old-vs-new G4 z ≤ 1.3); the previously documented "−1.3% FEP at 3000" was an old-reference fluctuation (vs 64M: −0.4 to −1.1% across repeat runs, part of the high-energy electron-transport family — resolved Aug 2026, post-fix +0.33%, z 0.7). **Config 12 totals agreed to −0.5 to +0.8% across 59–2614 keV (z ≤ 1.5)** on the then-current photon data; on EPICS2023 (Aug 2026) 200–2614 keV is +0.01 to +1.32% while 59 keV moved to −3.02% (see the Validated Configurations note) after the June 2026 skin-escape-transmission fix (`ElectronCsda::walk_in_source_geometry`). The pre-fix excess was +1.8–2.5% ABOVE G4 at 662–1173 keV (z = 4–7) — root-caused (June 2026 residual triage) to the source-electron *escape* channel delivering ~5× G4's electron-arrival rate (MC 8.7e-5/event vs the G4 electron-entry-with-deposit rate 1.96e-5 ± 0.11e-5) for sub-MeV skin escape from dense shields (the Gaussian-core Molière walk lacks large-angle tails/backscatter). The fix is an analog surface-emergence (1 − albedo) survival gate, A(E, Z_eff), applied to the escape outcome only (bremsstrahlung is kept): it suppresses the near-surface τ≈0 sub-MeV escapers G4 backscatters, while saturating to ≈1 above ~1.5 MeV so the MeV channel is preserved. Post-fix electron channel (`TOT` − `--no-source-electrons`): cfg 12 @662 = 2.11e-5 ± 0.35e-5/event vs the G4 electron-entry target 2.0e-5 ± 0.1e-5 (z = 0.3, was 8.7e-5 pre-fix); cfg 11 @3000 = 3.03% of total vs the G4-implied +3.05% (×1.21 → ×1.0 vs G4). The channel must stay enabled (without it, cfg 11 @3000 total is −3.05% ± 0.18%, z = 17). See Known Limitations → "Source-electron skin escape".
+### Source cores — attenuating layers inside a hollow source
 
-\*\*\* Config 7 at 100 keV: ~−25–31% total discrepancy, excluded from the automated gate (`SKIP` in `profiling/compare_validation.py`). **Localized June 2026** to a G4-side effect: G4's *in-tracking* μ_total(Pb) is smeared across the K-edge (88 keV) relative to its own G4EmCalculator export, while the exported table matches NIST XCOM to 0.23% (5.536 vs 5.549 cm²/g at 100 keV). Measured via cone-biased uncollided-FEP ratios through the 2 mm Pb stack (Δμ/μ = ln(FEP_G4/FEP_MC)/τ): **+0.35% ± 0.15% at 80 keV (below edge, μ pulled up), −18% ± 1.5% at 90 keV (just above, pulled down), −4.4% ± 0.5% at 100 keV (recovering)** — the classic λ-table edge-interpolation signature; 73.5/75 keV agree to ±0.2–1%. Consequences: G4 transmits/escapes far more just-above-edge flux; the K-escape channel gains ~+10–15% from the deeper PE-production profile (forward K escape ∝ μ_PE/(μ₁−μ₂), front-face dominated — NOT e^(−μ₁t)). The Kα-specific ratio (G4/MC ×1.50, Kβ ×1.22) is additionally driven by the escaped Kα/Kβ ratio: G4's 0.82 matches a simple emission×attenuation estimate (BR_Kβ/Kα ≈ 0.30, Δμ₂t ≈ 1.4), MC's 0.67 is low — follow-up: verify MC's Pb K-line branching ratios/energies from EADL. G4's run-to-run scatter resolved: three runs {1.366 ± 0.006, 1.476 ± 0.025, 1.377 ± 0.013}e-5; the high one was the outlier; G4 ≈ 1.371e-5 ± 0.6%. NOT an MC transport bug (MC tables = XCOM; below-edge transmission matches G4). Exclusion retained.
-
-G4 reference data: 64M events/energy (cone-biased for point sources), 16M events/energy (isotropic for extended/shielded sources, except cfg 11 {2000, 3000} and cfg 12 {662, 1173, 2614} which are 64M — June 2026). MC comparison: 4M events/energy (or precision-targeted ~0.3% with auto biasing).
-
-### Spherical / annular source geometries (June 2026, unnumbered)
-
-Added with the cascade geometry-parity work (`examples/sphere_g4_validation.cpp`,
-`build/examples/sphere_g4val/`). Three 3"×3" NaI geometries — **G-A** bare self-attenuating Thorium
-sphere (R=2 cm), **G-B** trace source in a soil sphere (R=3 cm) + Al(0.2)/Fe(0.5) shells, **G-C**
-void-center soil shell [2,3] cm + Fe(0.5) — at near (~2 cm gap) and far (~50 cm); Th-232 chain energies.
-Vacuum world. G4 = 4M-event isotropic GPS volume source.
-
-- **FEP agrees across all geometries/energies**: |z| ≤ 1.4 at 238.6/583/911 keV (e.g. G-A FEP z = −0.5/0.4/0.7; G-B/G-C within ±1.5). FEP is the priority metric and validates the geometry, sampling, and self-attenuation path. (G-A FEP at 2614 keV was −4.2%, z≈−3.3 on the pre-Aug-2026 engine — then attributed to the high-energy electron-transport family, amplified by the thick high-Z source, not geometry. The crystal-side share of that family is fixed (see Known Limitations); the sphere anchors have not been re-run since.)
-- **Low-Z trace-source totals agree**: G-B and G-C total efficiency match G4 to ≲1.5% (|z| mostly ≤2) across 238.6–2614 keV — **these June 2026 numbers were taken at a 1.5 keV FEP window and with `enable_source_electron_transport` OFF** (the harness never set it, unlike every config in `bench_configs.h`), which cost several percent of TOTAL above the 1022 keV pair-production threshold. Directly measured on G-C at 2614 keV, enabling the channel moved total from −2.33% (z = −13.4) to −0.63% (z = −3.6), so it is the likely dominant cause of G-A's −4.0% at that energy too — though G-A has not been re-run, and the high-energy electron-transport family noted above may also contribute there. Re-measured Sep 2026 with the channel on and a 0.75 keV window, G-C's total agrees to ≤0.74% (see the source-core section below) — validates the trace + void-center-shell geometry and shielding.
-- **High-Z self-attenuating total is low**: G-A (Thorium) total is **−22% / −4.1% / −2.6%** at 238.6/583/911 keV — the source-material **K-fluorescence** that is not emitted (Th Kα ≈90/93 keV escaping the source), confirmed by the G4 histogram and FEP-clean. See Known Limitations. (G-A 2614 keV total −4.0% was measured pre-Aug-2026-fix; see the FEP note above.)
-
-### Source cores — attenuating layers inside a hollow source (Sep 2026)
-
-`add_source_core()` fills a hollow source's interior with attenuating layers (the mirror of
-`add_source_shield()`), so the emitting shell no longer has to be the innermost layer.
-Validated against GEANT4 with three new geometries at the NEAR distance, all with an **iron**
-core (Z=26: its K X-rays reabsorb within microns, so TOTAL stays judgeable, unlike the
-high-Z missing-K-fluorescence channel below), plus **G-C as the uncored control**:
-
-- **G-D** — G-C's soil shell [2,3] cm with the centre filled by Fe, + Fe(0.5) shield
-- **G-F** — closed-cavity **cylinder** (R=3/hz=3, cavity r=2/hz=2), soil + Fe core
-- **G-G** — **box** shell (half-dims 3 cm, cavity 2 cm), soil + Fe core
-
-16M isotropic G4 events per energy, CeeLo precision-targeted to 0.2% **on FEP**, both sides
-scoring `kDefaultFepWindowKeV`, vacuum world, source-electron transport enabled.
+Three geometries at the NEAR distance, all with an **iron** core (its K x-rays reabsorb
+within microns, keeping TOTAL judgeable), plus G-C as the uncored control: **G-D** (G-C's
+shell with an Fe-filled centre), **G-F** (closed-cavity cylinder, R=3/hz=3, cavity r=2/hz=2,
+soil + Fe core), **G-G** (box shell, half-dims 3 cm, cavity 2 cm, soil + Fe core). 16M
+isotropic GEANT4 events per energy, CeeLo at 0.2% on FEP, both at `kDefaultFepWindowKeV`,
+vacuum world, source-electron transport on.
 
 | Config | FEP agreement | Total agreement |
 |--------|---------------|-----------------|
@@ -962,74 +820,37 @@ scoring `kDefaultFepWindowKeV`, vacuum world, source-electron transport enabled.
 | G-F cored cylinder | −0.12 to +0.09% (\|z\| ≤ 0.5) | −0.14 to +0.47% (\|z\| ≤ 2.4) |
 | G-G cored box | −0.74 to +0.03% (\|z\| ≤ 2.7) | −0.36 to +0.26% (\|z\| ≤ 1.8) |
 
-Largest deviation over all 16 (case, energy) rows and both metrics: **0.74%**. The cored
-geometries hold the same *band* as the uncored control (cored max 0.736%, control max 0.738%),
-though not row for row — G-G's FEP at 911.2 keV is −0.74% (z −2.70) against the control's
-+0.08%, so individual rows do differ.
+Largest deviation over the 16 (case, energy) rows: 0.74%, cored and uncored alike. FEP is
+statistically clean (χ²/n = 1.1); TOTAL is not (χ²/n ≈ 3.2, positive mean, same in cored
+and uncored cases — a property of the extended-source path, tracked in TODO.md). The iron
+core removes 10–18% of the peak (238.6 → 2614.5 keV), so a missing or mis-sized core would
+be obvious.
 
-FEP is statistically clean across the 16 rows (χ²/n = 1.1). **TOTAL is not**: χ²/n ≈ 3.2, with
-5 rows at |z| > 2 against ~0.7 expected and a positive mean. Cored and uncored geometries show
-the same sign and size, so this is a property of the extended-source path rather than of cores
-— it is tracked in TODO.md — but it is a coherent family, not just high precision sharpening
-individual rows.
+Two export controls exist because the GEANT4 geometry is generated by CeeLo:
+- **G-E, self-core vs solid** (a shell cored with its own material is optically a solid
+  ball but emits only from the shell): FEP ratio CeeLo 1.0330 ± 0.0028 vs GEANT4
+  1.0354 ± 0.0022 (z −0.66), the GEANT4 ratio 16σ from the 1.0000 that GPS leaking into
+  the core would give. It cannot detect a mis-sized core (the core is optically
+  invisible); G-D/F/G and the GDML-vs-tracer tests cover that.
+- **G-Eadd, additivity** (one 2 cm core vs four 0.5 cm cores): CeeLo 1.0045 ± 0.0028
+  (+1.6σ). Only CeeLo's arm is informative (GEANT4 sees the same soil either way).
 
-**The effect being measured is large**, which is what makes a missing or mis-sized core
-obvious rather than subtle: the iron core removes 17.6 / 15.2 / 14.0 / 10.3% of the peak at
-238.6 / 583.2 / 911.2 / 2614.5 keV (G-D vs G-C, CeeLo, from the same
-electron-transport-enabled runs as the table).
-
-**Two export controls, both passing.** They exist because the GEANT4 geometry is generated by
-CeeLo, so a bad export would look like a transport bug:
-- **G-E, self-core vs solid.** A shell cored with its OWN material is optically identical to a
-  solid ball but emits only from the shell, so ε(G-E)/ε(G-Esolid) is *not* 1 — and both codes
-  must agree on it. FEP ratio CeeLo 1.0330 ± 0.0028 vs G4 1.0354 ± 0.0022 (z = −0.66), with
-  the G4 ratio **16.3σ from 1.0000**, the value GPS confinement leaking into the core would
-  give. (The naive form of this test — expecting the two *geometries* to agree — cannot work,
-  because their emission regions differ.)
-
-  Two limits worth stating. **G-E's core is the same material as the shell, so it is optically
-  invisible**: the control proves emission is confined to the shell and the outer radius is
-  right, but it cannot detect a mis-sized core, a wrong core radius, or a wrong core material.
-  Those rest on G-D/G-F/G-G and on the GDML-vs-tracer tests in `tests/test_geant4_export.cpp`.
-  And the **G-E CeeLo arms were run with source-electron transport OFF** (unlike the tables
-  above). The channel moves 583.2 keV FEP by only −0.07 / +0.13% per arm against a ±0.28%
-  ratio error, so the FEP conclusion is unaffected; the TOTAL rows are weaker, because the
-  channel moves each arm's total by ~0.45–0.49% and the two arms differ in `single_material`
-  (G-E is cored so it takes the full Molière walk; G-Esolid takes the containment fast path),
-  so that cancellation is assumed rather than measured.
-- **G-Eadd, additivity.** One 2 cm core vs four 0.5 cm cores of the same material: the same
-  scene through a different layer stack, so this ratio is 1, and is (CeeLo 1.0045 ± 0.0028,
-  i.e. +1.6σ from 1; χ² = 3.2/4 over the four energies). Note the **GEANT4 arm carries no
-  information here** — every layer is the same soil, so G4 returns 1 whatever the daughters
-  do. The informative arm is CeeLo's, which is where a layer-stack ordering bug would show.
-
-**The nested export shows no measurable physics change.** Running the pre-nesting and nested
-GDML for G-C through the same macro at 2614.5 keV (16M events each) agrees to FEP z = −1.21,
-total z = −0.30. Read that as a bound, not a proof of zero: the FEP arm resolves only ±0.86%
-at 2σ, the same scale as the 0.74% headline agreement, so it excludes a *gross* geometry
-error rather than a sub-percent one (the TOTAL arm is tighter, ±0.32%). The two arms also
-share a RNG seed while being treated as independent, which if anything makes the quoted z
-*understate* a real difference. Sub-percent assurance comes instead from the GDML-vs-tracer
-tests, which compare the exported solids against `trace_source_segments` exactly.
-
-The far (~50 cm) MC efficiencies converge well via the auto two-stream/cone direct stream; a matching G4 cross-check at 50 cm needs much higher isotropic stats (cone bias is invalid with source scatter) and is left for a dedicated high-stats run. The cascade path on a sphere is exercised by `tests/test_spherical_source.cpp` (`co60_summing_out_on_sphere`); `compute_cascade` is geometry-agnostic (routes through `sample_source_position` + `transport_source_photon`).
+The nested export itself showed no measurable physics change against the pre-nesting GDML
+(G-C at 2614.5 keV, 16M each: FEP z −1.21, total z −0.30 — a bound of ±0.9% / ±0.3%);
+sub-percent assurance comes from the GDML-vs-tracer tests, which compare the exported
+solids against `trace_source_segments` exactly.
 
 ### Generating Reference Data
 
 ```bash
 cd build/examples
 ./generate_all_spectra [n_mc_histo] [n_g4_macro] [n_mc_multi]
-# Defaults: 4M histogram, 100M G4 macro, 100k efficiency
-
-# Then run G4 (generated script handles cone bias per config):
-bash run_g4_all.sh
+# Defaults: 4M histogram, 100M G4 macro, 100k efficiency; scores at kDefaultFepWindowKeV
+bash run_g4_all.sh    # generated script handles cone bias per config
 ```
 
-### Diagnostic Tools
-
-- `diag_interactions [energy_keV] [num_events]` -- per-interaction MC histograms (11 CSVs)
-- `ceelo_g4val ... --diagnostics` -- per-interaction G4 histograms
-- Useful for debugging scatter angle distributions, interaction depths, escape energies
+`ceelo_g4val ... --diagnostics` gives per-interaction GEANT4 histograms for debugging
+scatter angles, interaction depths and escape energies.
 
 ## Histogram CSV Format
 
@@ -1046,66 +867,22 @@ Energy (keV),Counts
 ...
 ```
 
-- Use lower channel energy (not bin center)
-- `RealTime` line has no `#` prefix (compatible with spectral analysis software)
-- `RealTime = N_events / (1E6 * omega_frac)` for cone-biased; `N_events / 1E6` for isotropic
-- This represents equivalent measurement time for a 1 MBq source with 100% branching ratio
+- Lower channel energy (not bin centre).
+- The `RealTime` line has no `#` prefix (spectral analysis software reads it):
+  `N_events / (1E6 * omega_frac)` cone-biased, `N_events / 1E6` isotropic — the equivalent
+  measurement time for a 1 MBq source with 100% branching ratio.
 
-## Known Limitations
+## Known differences and approximations
 
-Open limitations, shortcomings, and deferred features are tracked in **`TODO.md`** (repo root) — the
-single source of truth. Add new shortcomings there, not here. Detailed root-cause and fixed-issue history
-is in the git history.
+Standing explanations that are easy to trip over. Open work on any of them is in TODO.md.
 
-Standing notes that are easy to trip over:
-- **High-energy FEP family — RESOLVED (Aug 2026).** Above ~2 MeV the FEP residual used to be
-  negative and coherent across NaI/LaBr3 configurations, growing with energy: measured at ~0.1% MC
-  precision (Aug 2026 triage, `studies/high_e_fep/FINDINGS.md`) the true family was pooled
-  −0.37% (z −6.5) over the eleven ≥2 MeV gate rows, −0.535% ± 0.089% pooled at 3000 keV with
-  χ²/ndf 1.9/4 (the old headline "−2.06% cfg 2 @3000" was 0.3%-precision noise on top of this).
-  Root cause was the crystal condensed-history electron walk, established by three independent
-  A/Bs plus a matched process-isolation GEANT4 decomposition (16M `noEBrem`/`noMSC`/`noBoth` runs
-  at 2614/3000): the Seltzer-Berger brems *sampling* share matched G4 to ≤0.2% throughout
-  (exonerated), while the electron-transport share suppressed FEP 0.64%/0.98% more than G4 at
-  2614/3000 (z 3.6/5.0). Three defects, all fixed in `ElectronCsda::deposited_in_scoring`:
-  1. the Highland log term was evaluated per sub-step instead of on the accumulated path
-     (θ0 ~13% low for 20 steps) — fix worth +0.22% ± 0.08% FEP pooled at ≥2.6 MeV;
-  2. no per-step energy-loss straggling (deterministic escape threshold) — Bohr straggling
-     (KE > 500 keV steps; final budgeted step deterministic; ~1% CPU at 3 MeV, ~0% at 662,
-     `CEELO_NO_CRYSTAL_STRAGGLE`/`CEELO_DIAG_STRAGGLE_ALL_KE` env A/B knobs) — worth
-     +0.4–0.5% FEP at 3 MeV;
-  3. walks could exhaust their sub-step budget with residual KE silently dropped (0.02% of walks
-     @3 MeV; also the mechanism that had sunk an earlier straggling A/B as "4–5% contained-U
-     deficits") — fixed by continuing the walk to KE → 0.
-  Post-fix: pooled ≥2 MeV **+0.24% (z +4.2)**, 3000-only +0.21% (z +2.4), no coherent family;
-  <2 MeV pooled shift +0.013% (z +0.4, 103 rows). Null A/Bs recorded for the pair-lepton
-  n_steps=20 floor and the forward-only brems angle. Remaining structure: LaBr3 (cfg 3)
-  +0.5–0.6% ≥1 MeV, and the cfg 7 Pb-attenuator total +0.25% (z≈3) — see TODO.md. CZT (cfg 5),
-  formerly −2.28/−4.12/−5.34% at 800/1000/1500 keV, is largely fixed by the same changes —
-  thin-crystal escape was straggling-starved. On the Sep 2026 references (FEP genuinely at
-  0.3%, where the Aug numbers were 0.77–1.18%) those rows read **+0.28/−1.54/−2.47%, |z| up
-  to 1.7**, rather than the +0.66/−0.31/−1.31% (|z| < 0.7) measured before. The comparison
-  there is limited by the GEANT4 reference, not by CeeLo, which is why config 5 carries a
-  7% FEP tolerance; the deltas are ~1σ of scatter apart, not a regression.
-- **Config 12 at 59 keV is a data difference, not a transport defect** (attributed Aug 2026;
-  probe in the dev-only `studies/xs_probe/`). cfg 12 @59 keV moved from −0.05% to −3.76% FEP
-  (−3.72% ± 0.42%, z = 8.9) across the EPICS2023 migration. Measuring μ at 59 keV on both data
-  sets: **SS304 +1.730%**, cellulose +0.249%, NaI −0.014%. The 0.2 cm steel wall has
-  τ = μ·t = 1.99, so first-order attenuation predicts
-  ΔFEP = −(τ·sec θ·Δμ_SS + τ_cell·Δμ_cell) = **−3.79%**, against **−3.72% ± 0.42%** observed —
-  agreement to 0.2σ. The same model reproduces the energy dependence (predicted/observed:
-  −0.24%/−0.74% at 100 keV, −0.12%/+0.00% at 200 keV, ≈0 above), i.e. the effect is confined to
-  the steel's photoelectric regime.
-
-  The underlying change is a **smooth ~30 keV-wide bump in the iron photoelectric cross section**,
-  peaking at **+2.23% near 58 keV** and falling to +0.34% at 40 keV and +0.81% at 90 keV. It is
-  smooth rather than oscillatory, so it is an evaluation-level difference between EPICS2023 and the
-  previous Geant4-fitted representation, not a grid/interpolation artifact. 59 keV sits almost
-  exactly on the peak — the configuration is unluckily placed.
-
-  **Arbitrated against NIST (Aug 2026): EPICS2023 is the correct one.** Against the NIST *X-Ray
-  Mass Attenuation Coefficients* tables (Hubbell & Seltzer, SRD 126 — derived from neither
-  EPICS2017 nor EPICS2023), mu/rho deviations are:
+- **Config 12 at 59 keV is a data difference, not a transport defect.** Its FEP moved
+  from −0.05% to −3.76% (z 8.9) across the EPICS2023 migration. μ at 59 keV changed by
+  +1.73% for SS304, +0.25% cellulose, −0.01% NaI; the 0.2 cm steel wall has τ = 1.99, so
+  first-order attenuation predicts −3.79% against −3.72% ± 0.42% observed, and the same
+  model reproduces the energy dependence (≈0 above 200 keV). The change is a smooth
+  ~30 keV-wide bump in iron's photoelectric cross section peaking at +2.23% near 58 keV.
+  Arbitrated against NIST (Hubbell & Seltzer SRD 126, derived from neither evaluation):
 
   | element | 50 keV | 60 keV | 80 keV | 100 keV |
   |---|---|---|---|---|
@@ -1116,79 +893,61 @@ Standing notes that are easy to trip over:
   | Ni pre-migration | −0.97% | −1.07% | −0.42% | +0.06% |
   | Ni EPICS2023 | **+0.31%** | **+0.38%** | **+0.35%** | **+0.29%** |
 
-  At 50–60 keV EPICS2023 is ~4x closer to NIST. Its offset is also *flat* (+0.27 to +0.39% over
-  3 elements x 4 energies), the signature of a coherent evaluation, whereas the old data carries
-  strong energy structure (−1.3% at 50–60 keV recovering to ~0 by 100 keV) — the same ~30 keV bump
-  seen in the direct comparison. The ~1.6 percentage-point mu difference times tau ~ 2 predicts
-  ~3.2% in transmitted flux, consistent with the −3.76% observed.
+  EPICS2023 is ~4× closer to NIST at 50–60 keV and its offset is flat, the signature of a
+  coherent evaluation. **So config 12 @59 keV is CeeLo being more accurate than GEANT4.**
 
-  **So config 12 @59 keV is CeeLo being more accurate than GEANT4, not less.** Full working in the
-  dev-only `studies/xs_probe/nist_arbitration.md`.
+- **Config 8 at 59 keV is separate**: water's μ moved only +0.26% and the beaker's τ ≲ 1,
+  so attenuation explains ≲0.3% of it; it is the scattered-FEP stream (footnote *).
 
-- **Config 8 at 59 keV is unchanged and separate.** Its shift across the migration is −1.14% ±
-  0.59% (z = 1.9) — statistically marginal, and consistent with the ≈−2% residual documented for
-  that point since June 2026. Water's μ moved only +0.264% at 59 keV and the beaker's water path
-  gives τ ≲ 1, so attenuation accounts for ≲0.3% of it. This remains the scattered-FEP stream
-  `eps_s` (small-angle Compton and forward Rayleigh that should land in the ±1.5 keV window)
-  under-populated relative to GEANT4.
-- **Doppler broadening** (impulse approximation, default ON) broadens the Compton *edge* to match
-  GEANT4; the subshell binding energy is deposited locally, so FEP/total efficiency are statistically
-  unchanged. **Never cite Doppler broadening as a cause of FEP/total discrepancies** — its effect on
-  those is well below the FEP window.
+- **Doppler broadening** (impulse approximation, default ON) broadens the Compton *edge*
+  to match GEANT4; the subshell binding energy is deposited locally (or, with spectrum
+  fidelity, a K vacancy relaxes), so FEP and total are statistically unchanged. **Never cite Doppler broadening as a cause of FEP/total
+  discrepancies.**
+
 - **Source-electron skin escape** uses an empirical surface-emergence albedo gate
-  (`ElectronCsda::source_escape_survival_exit`), now **regime-aware**: evaluated at the EXIT state
-  (exit KE + exit-material Z), with a light-Z floor (η₀ ≤ 0.16 → fully analog, so Al positrons / water
-  match G4 with no per-caller flag) and an exit-energy window. This one material-general gate replaced
-  the old birth-energy gate + the `apply_skin_escape_gate=false` positron flag + the Fe-only `kAlbScale`.
-  Validated across Z = 5→82 (PE/water/Al/Fe/SS304/Sn/W/Pb) to ~1–2% vs GEANT4. The MeV electron-entry
-  channel it gates is REQUIRED for cfg 11/12 totals above the 1022 keV PP threshold — disabling it gives
-  −3% at 3 MeV.
-  - The escape model is **COMPILE-TIME selectable** (`cmake -DCEELO_SOURCE_ESCAPE_MODEL=gate|tails|gs`,
-    default `gate`): `gate` = this empirical gate; `tails` / `gs` are first-principles (straggling +
-    screened-Rutherford hard tail, no gate) differing only in the soft Gaussian-core width
-    (Highland-minus-hard-variance vs the screened-Rutherford soft transport moment). They differ only
-    inside `walk_in_source_geometry` (per-step MSC + the escape decision):
+  (`ElectronCsda::source_escape_survival_exit`), evaluated at the EXIT state (exit KE +
+  exit-material Z) with a light-Z floor (η₀ ≤ 0.16 → fully analog, so water and Al
+  positrons match GEANT4 with no per-caller flag) and an exit-energy window. Validated
+  across Z = 5–82 (PE/water/Al/Fe/SS304/Sn/W/Pb) to ~1–2%. The model is **compile-time
+  selectable** (`-DCEELO_SOURCE_ESCAPE_MODEL=gate|tails|gs`, default `gate`; env A/B knobs
+  `MCDET_NO_{STRAGGLE,B2,TAILS}`): `tails` / `gs` are first-principles (straggling +
+  screened-Rutherford hard tail, no gate), differing only in the soft Gaussian-core width,
+  and only inside `walk_in_source_geometry`.
 
-    | Model | Gaussian core θ₀ | hard tail | straggling | escape decision |
-    |-------|------------------|-----------|------------|-----------------|
-    | **gate** (0) | Highland (per-step) | — | — | empirical exit-state (1−albedo) gate |
-    | **tails** (1) | Highland-B2 − hard variance | screened-Rutherford μ<μ_c | Bohr/clamped | analog (walk decides) |
-    | **gs** (2) | √(G₁,soft·Δx), soft transport moment of the screened cross-section | screened-Rutherford μ<μ_c | Bohr/clamped | analog (walk decides) |
+  | Model | Gaussian core θ₀ | hard tail | straggling | escape decision |
+  |-------|------------------|-----------|------------|-----------------|
+  | **gate** | Highland (per-step) | — | — | empirical exit-state (1−albedo) gate |
+  | **tails** | Highland − hard variance | screened-Rutherford μ<μ_c | Bohr/clamped | analog |
+  | **gs** | √(G₁,soft·Δx) (screened-Rutherford soft moment) | screened-Rutherford μ<μ_c | Bohr/clamped | analog |
 
-    Total-efficiency error vs GEANT4 at 662 keV (%, MC ~0.2%), across the Z = 5→82 box/shell sweep:
+  Total-efficiency error vs GEANT4 at 662 keV (%, MC ~0.2%):
 
-    | Config | Z / geom | gate | tails | gs |
-    |--------|----------|------|-------|-----|
-    | cfg 24 PE    | ~5  box   | −0.80 | −0.57 | (≈−0.6) |
-    | cfg 8 water  | ~7.5 L-shape | −0.95 | (≈−1.0) | −1.06 |
-    | cfg 23 Al    | 13  box   | −0.39 | −0.36 | −0.57 |
-    | cfg 11 Fe    | 26  shell | −0.17 | +0.13 | +0.13 |
-    | cfg 12 SS304 | 26  box   | **+0.46** | +1.07 | +1.65 |
-    | cfg 22 Sn    | 50  box   | **+0.32** | +1.17 | +1.69 |
-    | cfg 21 W     | 74  box   | +0.95 | +1.94 | (high) |
-    | cfg 20 Pb    | 82  box   | −1.46 | **−0.36** | −0.58 |
+  | Config | Z / geom | gate | tails | gs |
+  |--------|----------|------|-------|-----|
+  | cfg 24 PE    | ~5  box   | −0.80 | −0.57 | (≈−0.6) |
+  | cfg 8 water  | ~7.5 L-shape | −0.95 | (≈−1.0) | −1.06 |
+  | cfg 23 Al    | 13  box   | −0.39 | −0.36 | −0.57 |
+  | cfg 11 Fe    | 26  shell | −0.17 | +0.13 | +0.13 |
+  | cfg 12 SS304 | 26  box   | **+0.46** | +1.07 | +1.65 |
+  | cfg 22 Sn    | 50  box   | **+0.32** | +1.17 | +1.69 |
+  | cfg 21 W     | 74  box   | +0.95 | +1.94 | (high) |
+  | cfg 20 Pb    | 82  box   | −1.46 | **−0.36** | −0.58 |
 
-    **Verdict (mean |err| @662): gate 0.56% < tails 0.62% < gs 0.92%** — `gate` is the validated default.
-    `tails` is competitive and better at extreme Z (the gate's 0.92 albedo cap over-suppresses Pb), but its
-    per-step Gaussian+tail over-diffuses sub-MeV mid-Z **boxes** (+0.6–1.2% vs gate; the double-counting
-    variance subtraction halved that) — a **box-specific multi-wall artifact**, since a large-angle scatter
-    is as likely to redirect toward a wall as away. On sphere/shell geometries (G-B/G-C at 238.6–2614 keV,
-    and the cfg-11 Fe shell) all three models agree to **~±1%**, so the first-principles models are as good
-    as the gate for radial escape; the gate stays default because it is the only one that also handles the
-    multi-wall box case well. `gs` under-scatters ~30% (its screened-Rutherford G₁ omits the Mott spin and
-    nuclear-form-factor corrections GEANT4 uses), so its soft core is too narrow and boxes over-escape more;
-    a proper Mott / tabulated Goudsmit-Saunderson MSC is the path to retiring the gate (`TODO.md` B2/B3).
-    **Timing**: `tails` ≈1.03–1.10× `gate`, `gs` ≈1.1–1.2× — immaterial, since the source-escape walk is
-    <10% of runtime (photon transport dominates and is identical across models).
-    High-Z is **not** a single gate knob: Sn/W over-predict while Pb under-predicts at the *same* capped
-    albedo, and lowering the cap 0.92→0.85 worsened Sn (+0.32→+0.84) and W without helping Pb (whose
-    electron channel is tiny — Pb stops electrons — so its −1.46% is mostly photon transport).
-- **Electron tables above uranium are uranium's.** NIST ESTAR stopping powers, ICRU-49 mean excitation
-  energies and the NIST EPQ Seltzer–Berger tables stop at Z = 92, so every element Np–Cf is treated as
-  uranium throughout the electron physics (`electron_table_z()`): the tables themselves and the atomic
-  weight, Z/A, Z(Z+1)/A weights, radiation length and effective Z used with them, which keeps each
-  material's electron view self-consistent. The photon side uses each element's own data and mass
-  (Pu 239.1). Measured against ESTAR for Z 93–98 at all 53 nodes (per unit mass):
+  Mean |err|: gate 0.56% < tails 0.62% < gs 0.92%. `tails` is better at extreme Z but
+  over-diffuses sub-MeV mid-Z **boxes** (a large-angle scatter is as likely to redirect
+  toward a wall as away); on spheres/shells all three agree to ~±1%. `gs` under-scatters
+  ~30% (its screened-Rutherford G₁ lacks the Mott and nuclear-form-factor corrections
+  GEANT4 uses). High Z is not one knob: Sn/W over-predict while Pb under-predicts at the
+  same capped albedo, and Pb's −1.46% is mostly photon transport (Pb stops electrons). Run
+  time is immaterial (`tails` 1.03–1.10×, `gs` 1.1–1.2× `gate`).
+
+- **Electron tables above uranium are uranium's.** ESTAR stopping powers, ICRU-49 mean
+  excitation energies and the EPQ Seltzer–Berger tables stop at Z = 92, so Np–Cf are
+  treated as uranium throughout the electron physics (`electron_table_z()`): the tables
+  and the atomic weight, Z/A, Z(Z+1)/A, radiation length and effective Z used with them,
+  keeping each material's electron view self-consistent. The photon side uses each
+  element's own data and mass. Against ESTAR (per unit mass; negative = reusing U
+  underestimates):
 
   | Z | I (eV; U 890) | collision | radiative | CSDA range |
   |---|---:|---:|---:|---:|
@@ -1199,37 +958,62 @@ Standing notes that are easy to trip over:
   | 97 Bk | 952 | −1.9 .. +1.1% | −8.2 .. −3.6% | −4.7 .. +2.9% |
   | 98 Cf | 966 | −2.1 .. +2.3% | −8.9 .. −3.4% | −6.8 .. +2.8% |
 
-  (Negative = reusing U underestimates; the largest range errors are at the 10–20 keV nodes, where the
-  range is about a micron.) Electron transport is a secondary channel for photon efficiency (electron
-  escape, bremsstrahlung, source-electron channels); the resulting efficiency error has not been measured.
-  The reuse itself is pinned in `test_csda` (`ActinideElectronReuse`). Tracked in `TODO.md`.
-- **Above 10 MeV, transport is not validated against GEANT4.** The photon tables reach 20 MeV so that
-  attenuation is available for high-energy reaction lines; the MC runs there (a narrow-beam PuO₂/Pb test
-  at 15 MeV agrees with exp(−μL) to 0.09%, |z| ≤ 1.4) but nothing above ~3 MeV is in the GEANT4 gate.
-  Pair production splits the kinetic energy evenly between the two leptons. Photonuclear absorption is
-  not modelled: EPDL and XCOM omit it too, but at the giant resonance (12–15 MeV for heavy nuclei) it adds
-  a few percent to the attenuation of Pb/U (≈0.64 b for Pb-208 at 13.4 MeV against 18.8 b atomic).
-- **Source-material fluorescence is not emitted**: photoelectric absorption in the source material/shields
-  drops the photon without a characteristic K X-ray, so **total** efficiency for **high-Z
-  self-attenuating** sources is low where PE dominates (validated June 2026: a Thorium sphere is −22% /
-  −4% / −2.6% in total at 238.6 / 583 / 911 keV vs GEANT4, tracking the missing Th Kα ≈90/93 keV escape).
-  **FEP is unaffected** (the X-ray cannot fall in the primary peak) and **low-Z sources are unaffected**.
-  Tracked in `TODO.md` (Photon transport physics → "Source-material fluorescence not emitted").
+  The largest range errors are at the 10–20 keV nodes (micron ranges). The efficiency
+  effect has not been measured; the reuse is pinned in `test_csda`
+  (`ActinideElectronReuse`).
+
+- **Above 3 MeV transport is not GEANT4-validated.** The photon tables reach 20 MeV so
+  attenuation is available for high-energy reaction lines; a narrow-beam PuO₂/Pb test at
+  15 MeV agrees with exp(−μL) to 0.09%. Pair production splits the kinetic energy evenly
+  between the leptons, and photonuclear absorption is not modelled (as in EPDL and XCOM;
+  a few percent of Pb/U attenuation at the 12–15 MeV giant resonance).
+
+- **HPGe at 59.5 keV behind a thick dead layer is a data difference.** Behind a
+  0.0739 cm front dead layer (τ ≈ 0.82) CeeLo reads ~1.0–1.1% below GEANT4 in FEP and
+  total at 59.5 keV with either GEANT4 list. GEANT4's photoelectric cross section for light
+  and mid-Z elements carries a smooth deficit near 60 keV: CeeLo / GEANT4 at 59.54 keV is
+  Ge +1.25%, Al +2.1%, C/O +2.2% (I, Cd, Te, Pb within 0.15%). Against NIST (SRD 126),
+  μ/ρ(Ge) is CeeLo +0.22…+0.43% at 30–100 keV (flat) and GEANT4 +0.9% at 30–40 keV,
+  −0.72% at 60 keV: CeeLo is the closer. Through the dead layer and endcap that predicts
+  −0.97% in transmission.
+
+- **Pair production near threshold.** EPICS2023's pair cross section is 3–9% below
+  GEANT4's parameterization at 1332 keV (Ge −9%, I −3%, Na −6%) and 21% below at 1.2 MeV
+  for iodine, converging above ~2 MeV (Pb +2.3%, Ge −1.0% at 2614 keV). Single and double
+  escape peaks at 1332 keV read 5–13% low against GEANT4 for that reason. Unarbitrated
+  (TODO.md).
+
+- **EADL K line energies** come from subshell binding-energy differences: within 0.04 keV
+  of the measured lines for Ge, Cd, Te and I, but Pb Kα1 sits at 75.25 keV against
+  74.97 keV measured (GEANT4 puts it at 74.97). Visible as a 0.3 keV shift of shield
+  fluorescence peaks on HPGe (TODO.md).
 
 ## Common Pitfalls
 
-- **Two Z domains**: `kMaxZ` (98) is the photon and material domain; electron tables stop at
-  `kMaxElectronTableZ` (92). Index an electron table only through `electron_table_z()` — the
-  `ElectronCsda` per-Z accessors map and throw outside 1..`kMaxZ`, and the generated ESTAR accessor and
-  the row helpers assert. The hand-maintained `photon_epics_data.h` and `element_data.h` are sized by these
-  constants and the generated sources `static_assert` against them, so a changed domain fails to compile
-  until the tables are regenerated.
-- **Physics tables are auto-generated**: Do not edit `element_data.cpp`,
-  `photon_epics_data.cpp`, `relaxation_epics_data.cpp`, or
-  `estar_stopping_data.cpp` by hand. Use the locked generators and update the
-  generated manifest last.
-- **C++ `const` linkage**: Namespace-scope `const` arrays have internal linkage by default. If a header declares `extern const T arr[]`, the .cpp definition must also use `extern`.
-- **Eigen `.cross()`**: Requires `#include <Eigen/Geometry>`, not just `<Eigen/Core>`.
-- **Batch size in `compute()`**: Must be much smaller than `num_events` so threads check termination frequently. Currently `max(10000, num_events/10)`.
-- **Importance sampling denominator**: The IS estimator is `(1/N) * sum(w_i * I_i)`. Using `sum(w_i)` in the denominator gives intrinsic efficiency (cancels the cone weight), not absolute efficiency.
-- **Source-shield GDML coincident surfaces** (historical): for an extended source (cylinder/box) wrapped by a shield, each shell used to be a subtraction solid whose inner solid was inflated by a `kZeroDimEps = 1e-4 cm` epsilon, so its inner face did not coincide with the source-material outer face (or the previous shell). The source region is nested now (Sep 2026), so neither the subtraction nor the epsilon exists. Coincident G4 boolean surfaces stall navigation ("track stuck", ~20k warnings/run) and — critically — **spuriously inflate the crystal electron-entry `--entry-diag` rate ~1.75×** while leaving totals (geometry-robust) unchanged, so they silently corrupt channel-level comparisons. Fixed June 2026; `benchmark_mc_configs` also now exports source-effect box configs (12/20/21/22) with `vacuum_world=true` to match `generate_all_spectra`. A residual ~1.5k warnings/run at `active_crystal_PV` is a separate benign detector artifact present in the validated point-source configs too.
+- **Two Z domains**: `kMaxZ` (98) is the photon and material domain; electron tables stop
+  at `kMaxElectronTableZ` (92). Index an electron table only through `electron_table_z()`.
+  The hand-maintained `photon_epics_data.h` and `element_data.h` are sized by these
+  constants and the generated sources `static_assert` against them, so a changed domain
+  fails to compile until the tables are regenerated.
+- **Physics tables are generated**: do not edit `element_data.cpp`, `photon_epics_data.cpp`,
+  `relaxation_epics_data.cpp` or `estar_stopping_data.cpp` by hand. Use the locked
+  generators and update the generated manifest last.
+- **C++ `const` linkage**: namespace-scope `const` arrays have internal linkage; if a
+  header declares `extern const T arr[]`, the definition must also say `extern`.
+- **Eigen `.cross()`** needs `#include <Eigen/Geometry>`, not just `<Eigen/Core>`.
+- **Batch size**: the convenience `compute(double, …)` uses `max(10000, num_events/10)` so
+  threads check termination often; `compute(SimulationConfig)` uses `config.batch_size`
+  (default 10000, floor 100) for the first wave and doubles later waves.
+- **Code placement moves timings by ~10%**: the same library code linked at different
+  addresses ran `benchmark_mc_configs` 8–11% slower in CPU time on Apple silicon whenever
+  the electron walk landed differently (a driver that only parsed three new flags did
+  it). Before attributing a cost change to a code change, rebuild the comparison from the
+  same driver and check the hot functions' addresses (`nm`); measure CPU time, interleaved,
+  at fixed event counts.
+- **Importance-sampling denominator**: `(1/N) * sum(w_i * I_i)`. Using `sum(w_i)` gives
+  intrinsic efficiency (it cancels the cone weight), not absolute efficiency.
+- **Coincident GEANT4 boolean surfaces** stall navigation ("track stuck") and — worse —
+  inflate the `--entry-diag` electron-entry rate ~1.75× while leaving totals unchanged, so
+  they silently corrupt channel-level comparisons. The nested source export avoids them;
+  keep it that way. (~1.5k benign warnings per run at `active_crystal_PV` remain in every
+  config.)

@@ -76,5 +76,23 @@
   Naively changing the skew type to {1} caused the peak to become insignificant.<br />
   Please use the <b>Peak Editor</b> to make this change.
   </message>
-  
+  <!-- Background peaks missing under foreground peaks; shared by the Activity/Shielding fit and the Flux Tool -->
+  <message id="psgu-missing-back-peaks-title">Missing Background Peaks</message>
+  <message id="psgu-missing-back-peaks-msg">
+    The background spectrum does not have peaks added at energies {1}, but there
+    are likely real peaks in the background spectrum at those energies - would you
+    like to add those peaks to the background spectrum?
+  </message>
+  <message id="psgu-btn-no-dont-add">No</message>
+  <message id="psgu-btn-add-peaks">Add Peaks...</message>
+  <message id="psgu-btn-add-all-detectable">Add all auto-fit peaks</message>
+  <message id="psgu-back-peak-preview-title">Preview Background Peaks</message>
+  <message id="psgu-back-peak-preview-msg">The following peaks would be added to the background spectrum:</message>
+  <message id="psgu-no-new-back-peaks">No additional peaks were found in the background spectrum at the indicated energies.</message>
+  <message id="psgu-back-peaks-all-fit">{1} candidate peaks were fit to the background.</message>
+  <message id="psgu-back-peaks-some-fit">{1} of {2} candidate peaks were significant and fit to the background.</message>
+  <message id="psgu-back-peaks-manual-hint">(you can also manually fit background peaks by Alt-key (mac: Option-key) plus double<br />
+  clicking on the spectrum, or by loading the background as the foreground)</message>
+  <message id="psgu-err-adding-back-peaks">Error adding peaks to background: {1}</message>
+  <message id="psgu-warn-no-back-spec">There is no background spectrum loaded, so can not subtract background peak areas from foreground.</message>
 </messages>

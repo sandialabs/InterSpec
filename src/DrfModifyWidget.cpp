@@ -1749,9 +1749,15 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
     {
       try
       {
-        const float fep = drf->farFieldIntrinsicEfficiency( ref_energy );
-        const float tot = drf->totalIntrinsicEfficiencyAny( ref_energy );
-        if( (fep > 0.0f) && (tot > fep) )
+        // A ratio of far-field ABSOLUTE efficiencies, so it does not matter which disk each half's
+        //  intrinsic is quoted against - the peak efficiency may come from the response and the
+        //  total from a curve, or the other way round.
+        const shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+        const double d_far = resp ? (CeeLoUtils::farFieldDistanceCm( resp->descriptor ) * PhysicalUnits::cm)
+                                  : (10.0 * PhysicalUnits::m);
+        const double fep = drf->efficiencyEval( ref_energy, d_far ).value;
+        const double tot = drf->totalEfficiencyEval( ref_energy, 0.0, 0.0, d_far ).value;
+        if( (fep > 0.0) && (tot > fep) )
           txt = WString::tr("dmw-info-toteff-ratio").arg( txt )
                   .arg( WString::fromUTF8( SpecUtils::printCompact( tot/fep, 2 ) ) );
       }catch( std::exception & )
@@ -1772,10 +1778,28 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
 
   if( drf && (drf->detectorDiameter() > 0.0f) )
   {
-    WString txt = length_str( drf->detectorDiameter() / PhysicalUnits::cm );
-    if( drf->detectorSetback() > 0.0 )
-      txt = WString::tr("dmw-info-diam-setback").arg( txt )
-              .arg( length_str( drf->detectorSetback() / PhysicalUnits::cm ) );
+    const auto diam_txt = [&length_str]( const double diam, const double setback ) -> WString {
+      WString answer = length_str( diam / PhysicalUnits::cm );
+      if( setback > 0.0 )
+        answer = WString::tr("dmw-info-diam-setback").arg( answer )
+                   .arg( length_str( setback / PhysicalUnits::cm ) );
+      return answer;
+    };
+
+    // With a geometry-modeled response, its crystal is what every efficiency uses; the stated
+    //  diameter and setback are only what the flat-disk curve was quoted against - say so when they
+    //  place the crystal somewhere else.
+    WString txt = diam_txt( drf->detectorDiameter(), drf->detectorSetback() );
+    if( drf->ceeloResponse() && !drf->isFixedGeometry() )
+    {
+      const double diam = drf->modeledCrystalDiameter(), setback = drf->modeledCrystalSetback();
+      txt = diam_txt( diam, setback );
+      if( (fabs( drf->detectorSetback() - setback ) > 0.1*PhysicalUnits::cm)
+         || (fabs( drf->detectorDiameter() - diam ) > 0.01*diam) )
+        txt = WString::tr("dmw-info-diam-flat-differs").arg( txt )
+                .arg( diam_txt( drf->detectorDiameter(), drf->detectorSetback() ) );
+    }//if( a geometry-modeled response )
+
     set_row( InfoDiameter, txt );
   }else
   {

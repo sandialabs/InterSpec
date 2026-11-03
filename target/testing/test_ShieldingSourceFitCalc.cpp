@@ -3647,6 +3647,75 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
 }//BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
 
 
+/** A shell reaching past the detector-face plane is refused even beside the detector, clear of it:
+ nothing there is modelled (GammaInteractionCalc::detector_face_plane_clearance).  The end-on
+ cylinder below, 2 cm across from the detector's face centre, reaches 2 cm past the face plane at
+ half-length 8 cm; at half-length 4 cm it stays in front of the plane and is accepted.
+ */
+BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  for( const double half_length : { 4.0*cm, 8.0*cm } )
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, 6.0*cm, 4.0*cm, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    input.config.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+
+    ShieldingSourceFitCalc::TraceSourceInfo trace;
+    trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+    trace.m_fitActivity = true;
+    trace.m_nuclide = db->nuclide( "Ba133" );
+    trace.m_activity = 10.0*PhysicalUnits::microCi;
+    trace.m_relaxationDistance = 0.0f;
+
+    ShieldingSourceFitCalc::ShieldingInfo shell;
+    shell.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+    shell.m_isGenericMaterial = false;
+    shell.m_forFitting = true;
+    shell.m_material = water;
+    shell.m_dimensions[0] = 2.0*cm;
+    shell.m_dimensions[1] = half_length;
+    shell.m_dimensions[2] = 0.0;
+    shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+    shell.m_traceSources.push_back( trace );
+
+    input.config.shieldings = { shell };
+    input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+
+    // Clear of the detector's face centre either way...
+    const double outer[3] = { shell.m_dimensions[0], shell.m_dimensions[1], 0.0 };
+    BOOST_REQUIRE_GT( GammaInteractionCalc::detector_face_clearance( input.config.geometry, outer,
+                                                     input.config.distance, 4.0*cm, 0.0 ), 0.0 );
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn.first );
+
+    // ...but only the shorter one is evaluated; the longer one's evaluation throws, which the
+    //  effective-shielding report turns into a warning.
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    vector<string> warnings;
+    fcn.first->computeEffectiveShielding( fcn.second.values(), cache, &warnings );
+    const bool refused = !warnings.empty();
+    BOOST_CHECK_MESSAGE( refused == (half_length > input.config.distance),
+                         "half-length " << half_length/cm << " cm at 6 cm, 4 cm off axis: "
+                         << (refused ? "refused" : "accepted") );
+  }//for( half_length )
+}//BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
+
+
 /** The fit report names the detector-efficiency model for the POINT sources even when the fit has
  no volumetric source at all, and names the model the fit actually used.
  */

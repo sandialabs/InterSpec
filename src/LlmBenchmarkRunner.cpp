@@ -2057,6 +2057,7 @@ void LlmBenchmarkRunner::extractAnswerAndJudge()
         m_lastQuestionTotalTokens = lastConvo->totalTokens;
         m_lastQuestionCachedTokens = lastConvo->cachedTokens;
         m_lastQuestionCacheCreationTokens = lastConvo->cacheCreationTokens;
+        m_lastQuestionCost = lastConvo->cost;
 
         // Walk responses backward to find the last FinalLlmResponse
         for( int i = static_cast<int>( lastConvo->responses.size() ) - 1; i >= 0; --i )
@@ -2437,11 +2438,13 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
   if( !result.totalTokens ) result.totalTokens = m_lastQuestionTotalTokens;
   if( !result.cachedTokens ) result.cachedTokens = m_lastQuestionCachedTokens;
   if( !result.cacheCreationTokens ) result.cacheCreationTokens = m_lastQuestionCacheCreationTokens;
+  if( !result.cost ) result.cost = m_lastQuestionCost;
   m_lastQuestionPromptTokens.reset();
   m_lastQuestionCompletionTokens.reset();
   m_lastQuestionTotalTokens.reset();
   m_lastQuestionCachedTokens.reset();
   m_lastQuestionCacheCreationTokens.reset();
+  m_lastQuestionCost.reset();
 
   // Likewise the attempt logs and tool calls, which writeAttemptLog() collected.
   if( result.conversationLogs.empty() )
@@ -2478,6 +2481,7 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
   << "\tjudgementReason: " << result.judgementReason << endl
   << "\tduration: " << (result.duration.count() / 1000) << " seconds" << endl
   << "\tcompletionTokens: " << (result.completionTokens.has_value() ? std::to_string(result.completionTokens.value()) : string("n/a")) << endl
+  << "\tcost: " << (result.cost.has_value() ? ("$" + std::to_string(result.cost.value())) : string("n/a")) << endl
   << endl;
 
   log( output.str() );
@@ -2666,6 +2670,10 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
   const auto tok = []( const std::optional<size_t> &v ) -> nlohmann::json {
     return v.has_value() ? nlohmann::json( v.value() ) : nlohmann::json( nullptr );
   };
+  // Likewise an optional cost (USD).
+  const auto usd = []( const std::optional<double> &v ) -> nlohmann::json {
+    return v.has_value() ? nlohmann::json( v.value() ) : nlohmann::json( nullptr );
+  };
 
   nlohmann::json j;
   j["benchmarkName"] = results.benchmarkName;
@@ -2698,11 +2706,12 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
   // Running totals and per-problem aggregates (time each problem took + tokens).
   size_t totPrompt = 0, totCompletion = 0, totCached = 0, totCacheCreate = 0;
   bool anyPrompt = false, anyCompletion = false, anyCached = false, anyCacheCreate = false;
+  std::optional<double> totCost;
   long long totDurationMs = 0;
 
   // Preserve first-seen problem order for the summaries array.
   vector<string> problemOrder;
-  struct ProblemAgg { long long durationMs = 0; size_t prompt = 0, completion = 0, cached = 0, cacheCreate = 0; int numQuestions = 0; };
+  struct ProblemAgg { long long durationMs = 0; size_t prompt = 0, completion = 0, cached = 0, cacheCreate = 0; std::optional<double> cost; int numQuestions = 0; };
   std::map<string,ProblemAgg> aggByProblem;
 
   nlohmann::json questionsArray = nlohmann::json::array();
@@ -2731,6 +2740,7 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
     qj["totalTokens"] = tok( r.totalTokens );
     qj["cachedTokens"] = tok( r.cachedTokens );
     qj["cacheCreationTokens"] = tok( r.cacheCreationTokens );
+    qj["cost"] = usd( r.cost );
     qj["conversationLogs"] = r.conversationLogs;
     nlohmann::json toolCalls = nlohmann::json::array();
     for( const BenchmarkToolCall &call : r.toolCalls )
@@ -2743,6 +2753,7 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
     if( r.completionTokens ){ totCompletion += *r.completionTokens; anyCompletion = true; }
     if( r.cachedTokens ){ totCached += *r.cachedTokens; anyCached = true; }
     if( r.cacheCreationTokens ){ totCacheCreate += *r.cacheCreationTokens; anyCacheCreate = true; }
+    if( r.cost ) totCost = totCost.value_or( 0.0 ) + *r.cost;
 
     if( !aggByProblem.count( r.problemId ) )
       problemOrder.push_back( r.problemId );
@@ -2753,6 +2764,7 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
     if( r.completionTokens ) pa.completion += *r.completionTokens;
     if( r.cachedTokens ) pa.cached += *r.cachedTokens;
     if( r.cacheCreationTokens ) pa.cacheCreate += *r.cacheCreationTokens;
+    if( r.cost ) pa.cost = pa.cost.value_or( 0.0 ) + *r.cost;
   }//for( each result )
 
   j["questions"] = questionsArray;
@@ -2762,6 +2774,7 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
   j["totalCompletionTokens"] = anyCompletion ? nlohmann::json( totCompletion ) : nlohmann::json( nullptr );
   j["totalCachedTokens"] = anyCached ? nlohmann::json( totCached ) : nlohmann::json( nullptr );
   j["totalCacheCreationTokens"] = anyCacheCreate ? nlohmann::json( totCacheCreate ) : nlohmann::json( nullptr );
+  j["totalCost"] = usd( totCost );
 
   nlohmann::json problemSummaries = nlohmann::json::array();
   for( const string &pid : problemOrder )
@@ -2775,6 +2788,7 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
     pj["completionTokens"] = pa.completion;
     pj["cachedTokens"] = pa.cached;
     pj["cacheCreationTokens"] = pa.cacheCreate;
+    pj["cost"] = usd( pa.cost );
     problemSummaries.push_back( pj );
   }
   j["problemSummaries"] = problemSummaries;
@@ -2851,6 +2865,7 @@ bool LlmBenchmarkRunner::resultsFromJson( const string &path,
         if( qj.contains( "totalTokens" ) ) r.totalTokens = optTok( qj["totalTokens"] );
         if( qj.contains( "cachedTokens" ) ) r.cachedTokens = optTok( qj["cachedTokens"] );
         if( qj.contains( "cacheCreationTokens" ) ) r.cacheCreationTokens = optTok( qj["cacheCreationTokens"] );
+        if( qj.contains( "cost" ) && qj["cost"].is_number() ) r.cost = qj["cost"].get<double>();
         if( qj.contains( "conversationLogs" ) && qj["conversationLogs"].is_array() )
           r.conversationLogs = qj["conversationLogs"].get<vector<string>>();
         if( qj.contains( "toolCalls" ) && qj["toolCalls"].is_array() )

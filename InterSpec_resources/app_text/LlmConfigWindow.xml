@@ -138,7 +138,7 @@
   <!-- Confirmation shown after Accept when there is an active conversation -->
   <message id="lcw-apply-title">Apply LLM settings?</message>
   <message id="lcw-apply-reset-msg"><![CDATA[These settings change the API format, so your current conversation <strong>cannot</strong> be carried over and will be <strong>cleared</strong> if you apply them now.<br/><br/>You can apply them and start fresh, or just save the file (it will take effect next time you start, or when you reset the LLM config).]]></message>
-  <message id="lcw-apply-keep-msg"><![CDATA[Your conversation will be kept.<br/><br/>Because the active model changed, the assistant may occasionally error on the next message. If that happens, clear the conversation (assistant menu &rarr; &ldquo;Reset LLM Config&rdquo;) and continue.]]></message>
+  <message id="lcw-apply-keep-msg"><![CDATA[Your conversation will be kept.<br/><br/>Because the active model changed, the assistant may occasionally error on the next message. If that happens, clear the conversation (assistant menu &rarr; &ldquo;Clear Conversation&rdquo;) and continue.]]></message>
   <message id="lcw-apply-continue">Apply now</message>
   <message id="lcw-apply-file-only">Save file only</message>
 
@@ -164,7 +164,7 @@
 
   <!-- Getting-started / welcome panel shown in the empty conversation area (LlmToolGui) -->
   <message id="lcw-welcome-title">InterSpec LLM Assistant</message>
-  <message id="lcw-welcome-summary"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below to get started. Use the menu in the upper&#8209;right to clear, compact, export, or reconfigure the conversation.]]></message>
+  <message id="lcw-welcome-summary"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below to get started. Use the menu at the left of the input box (or in the title bar, when the assistant is to the right of the spectrum) to clear, compact, or reconfigure the conversation.]]></message>
   <message id="lcw-welcome-summary-phone"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below, then tap the arrow to send it. Use the menu in the upper&#8209;right to clear, compact, or reconfigure the conversation.]]></message>
   <!-- Phone-only: the tool calls of a question are folded into a single summary row with these titles
        ({1} is a comma-separated list of tool names); the titles are HTML-escaped, so use plain text. -->
@@ -175,6 +175,9 @@
   <!-- Live status at the right of a conversation panel's title, followed by the time counting up. -->
   <message id="lcw-status-pending-llm">Pending LLM response...</message>
   <message id="lcw-status-running-tools">Running tools...</message>
+  <!-- A tool round waiting on an agent that was stopped (or whose request failed); see lcw-error-help-agent. -->
+  <message id="lcw-status-stopped">Stopped</message>
+  <message id="lcw-status-stopped-tt">Waiting on an agent that was stopped, or that hit an error: use Retry or Cancel Agent on the agent's error below, or ask a new question to move on.</message>
   <!-- A live status ({1}) and the time it has been counting ({2}, like "5 s"). -->
   <message id="lcw-status-counting">{1} {2}</message>
   <!-- Durations; lcw-time-s is also the live counter's whole seconds. -->
@@ -183,8 +186,18 @@
   <message id="lcw-time-min-s">{1} m {2} s</message>
   <!-- A conversation's title: {1} is the (truncated) question. -->
   <message id="lcw-title-complete">{1} - Complete</message>
-  <message id="lcw-title-running-tools">{1} - Performing tool calls...</message>
-  <message id="lcw-title-pending-llm">{1} - Pending LLM response...</message>
+  <message id="lcw-title-stopped">{1} - Stopped</message>
+  <message id="lcw-title-running-tools">Working: {1} - Performing tool calls...</message>
+  <message id="lcw-title-pending-llm">Working: {1} - Pending LLM response...</message>
+  <message id="lcw-title-interrupted">{1} - Interrupted</message>
+  <!-- A conversation cut off when the assistant (or InterSpec) was closed while it was working; {1} is
+       the time it was cut off, like "14:05:31". -->
+  <message id="lcw-interrupted-closed">The assistant was closed at {1}, before it finished this request.</message>
+  <message id="lcw-interrupted-session">InterSpec was closed at {1}, before the assistant finished this request.</message>
+  <message id="lcw-interrupted-spectrum">A different spectrum was shown at {1}, before the assistant finished this request.</message>
+  <message id="lcw-interrupted-resume">Resume</message>
+  <message id="lcw-interrupted-dismiss">Dismiss</message>
+  <message id="lcw-interrupted-help">Resume continues from where it stopped; Dismiss ends it here, as does asking a new question.</message>
   <message id="lcw-total-time">(total time: {1})</message>
   <!-- The summary line at the bottom of a conversation. -->
   <message id="lcw-summary-start">Start Time: {1}</message>
@@ -193,17 +206,44 @@
   <message id="lcw-summary-cache">Cache: {1} read</message>
   <message id="lcw-summary-cache-pct">Cache: {1} read ({2}% of input)</message>
   <message id="lcw-summary-cache-written">{1}, {2} written</message>
+  <message id="lcw-summary-cost">Cost: ${1}</message>
   <message id="lcw-response-duration"> | Duration: {1}</message>
   <message id="lcw-tool-took"> - took {1}</message>
-  <message id="lcw-subagent-ended">This sub-agent has ended, so there is nothing to retry or continue.</message>
+  <message id="lcw-subagent-ended">This agent has ended (e.g., a new question was asked), so it can no longer be retried or cancelled.</message>
+  <!-- The buttons on an error in the conversation.  An agent's error pauses it, and the agent that
+       invoked it; for the main agent, Skip drops the failed step. -->
+  <message id="lcw-error-retry">Retry</message>
+  <message id="lcw-error-skip">Skip</message>
+  <message id="lcw-error-cancel-agent">Cancel Agent</message>
+  <message id="lcw-error-help-main">Retry sends this request again; Skip drops it, so you can ask something else.</message>
+  <message id="lcw-error-help-agent">Retry continues this agent from where it stopped; Cancel Agent lets the assistant carry on without it.</message>
+  <message id="lcw-error-skipped">Skipped; the failed step was dropped from the conversation.</message>
+  <message id="lcw-error-retried">Retried; the conversation continues below.</message>
+  <message id="lcw-error-agent-cancelled">Agent cancelled; the assistant is continuing without it.</message>
   <!-- Final durations at the right of a panel title; {1} is like "6.2 s". -->
   <message id="lcw-duration-llm">(LLM: {1})</message>
   <message id="lcw-duration-llm-tt">How long the LLM took to respond to this, including network, queueing, and generation time.</message>
   <message id="lcw-duration-tools">(tools: {1})</message>
   <message id="lcw-duration-tools-tt">How long InterSpec took to run these tools.</message>
+  <!-- A tool round's panel: the LLM's time to respond to the tools' results ({1}), and the tools' run time ({2}). -->
+  <message id="lcw-duration-round">(LLM: {1}, tools: {2})</message>
+  <message id="lcw-duration-round-tt">LLM: how long the LLM took to respond to these tools' results, including network, queueing, and generation time.  Tools: how long InterSpec took to run these tools.</message>
+  <!-- A tool round's title; {1} is a comma-separated list of tools (HTML-escaped, so use plain text).
+       A sub-agent tool ("invoke_X") is listed as lcw-round-agent, with {1} being "X". -->
+  <message id="lcw-round-tools">Tools: {1}</message>
+  <message id="lcw-round-tools-errors">Tools (some failed): {1}</message>
+  <message id="lcw-round-agent-failed">{1} (failed)</message>
+  <message id="lcw-round-agents-errors">{1} (some failed)</message>
+  <message id="lcw-round-agent-cancelled">{1} (cancelled)</message>
+  <message id="lcw-round-agents-cancelled">{1} (some cancelled)</message>
+  <message id="lcw-round-tools-cancelled">Tools (some cancelled): {1}</message>
+  <message id="lcw-round-no-tools">Tools: (none)</message>
+  <message id="lcw-round-agent">{1} agent</message>
   <message id="lcw-phone-dock-tt">Shrink the assistant, to see the spectrum alongside it</message>
   <message id="lcw-phone-expand-tt">Make the assistant full-screen</message>
-  <message id="lcw-dock-side-tt">Show the assistant to the right of the spectrum</message>
+  <message id="lcw-dock-side-menu">Show to Right of Spectrum</message>
+  <message id="lcw-show-debug-options">Show Debug Options</message>
+  <message id="lcw-show-debug-options-tt">Show the details useful when developing the assistant: raw tool parameters and results, invocation IDs, and menus to view the JSON sent to and from the LLM.</message>
   <message id="lcw-welcome-learn-more">Learn more about the LLM Assistant</message>
   <message id="lcw-help-menu">Help</message>
 </messages>

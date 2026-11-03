@@ -230,6 +230,56 @@ deque<shared_ptr<const PeakDef>> make_peaks( const double mean, const double amp
 }//make_peaks(...)
 
 
+#if( USE_LLM_INTERFACE )
+/** A one-conversation LLM history, whose question is `question`. */
+shared_ptr<vector<shared_ptr<LlmInteraction>>> make_history( const string &question )
+{
+  LlmConversationHistory history;
+  history.addUserMessageToMainConversation( question );
+  return make_shared<vector<shared_ptr<LlmInteraction>>>( history.getConversations() );
+}
+
+
+/** Checks the LLM conversations stored under `key` are the same in both files. */
+void check_history( const SpecMeas &orig, const SpecMeas &reloaded, const set<int> &key, const string &label )
+{
+  const string key_str = "{" + SpecUtils::sequencesToBriefString( key ) + "}";
+  const shared_ptr<vector<shared_ptr<LlmInteraction>>> before = orig.llmConversationHistory( key );
+  const shared_ptr<vector<shared_ptr<LlmInteraction>>> after = reloaded.llmConversationHistory( key );
+  BOOST_REQUIRE_MESSAGE( before && !before->empty(), label << ": no LLM history on " << key_str << " to start with" );
+  BOOST_REQUIRE_MESSAGE( after, label << ": LLM history on " << key_str << " was lost" );
+  BOOST_REQUIRE_EQUAL( before->size(), after->size() );
+
+  for( size_t i = 0; i < before->size(); ++i )
+  {
+    const LlmInteraction &lhs = *(*before)[i];
+    const LlmInteraction &rhs = *(*after)[i];
+    BOOST_CHECK_EQUAL( lhs.conversationId, rhs.conversationId );
+    BOOST_REQUIRE( !lhs.responses.empty() && !rhs.responses.empty() );
+
+    const LlmInteractionInitialRequest * const lhs_request
+                  = dynamic_cast<const LlmInteractionInitialRequest *>( lhs.responses.front().get() );
+    const LlmInteractionInitialRequest * const rhs_request
+                  = dynamic_cast<const LlmInteractionInitialRequest *>( rhs.responses.front().get() );
+    BOOST_REQUIRE( lhs_request && rhs_request );
+    BOOST_CHECK_EQUAL( lhs_request->content(), rhs_request->content() );
+  }//for( loop over conversations )
+}//check_history(...)
+
+
+/** Whether any of the file's parse warnings are about the LLM conversation history. */
+bool has_llm_history_warning( const SpecMeas &meas )
+{
+  for( const string &warning : meas.parse_warnings() )
+  {
+    if( SpecUtils::icontains( warning, "LLM conversation" ) )
+      return true;
+  }
+  return false;
+}//has_llm_history_warning(...)
+#endif //#if( USE_LLM_INTERFACE )
+
+
 /** Attaches state to `meas`: user peaks on `single` and on `summed`, auto-search peaks on
  `single`, `summed` as the displayed foreground, and an LLM conversation on `single`.  The peak
  amplitudes identify which set they were put on.
@@ -242,10 +292,8 @@ void add_state( const shared_ptr<SpecMeas> &meas, const set<int> &single, const 
   meas->displayedSpectrumChangedCallback( SpecUtils::SpectrumType::Foreground, meas, summed, meas->detector_names() );
 
 #if( USE_LLM_INTERFACE )
-  LlmConversationHistory history;
-  history.addUserMessageToMainConversation( "What is in sample " + SpecUtils::sequencesToBriefString(single) + "?" );
   meas->setLlmConversationHistory( single,
-                     make_shared<vector<shared_ptr<LlmInteraction>>>( history.getConversations() ) );
+                     make_history( "What is in sample " + SpecUtils::sequencesToBriefString(single) + "?" ) );
 #endif
 }//add_state(...)
 
@@ -606,6 +654,98 @@ BOOST_AUTO_TEST_CASE( ChangeSampleNumbersRemapsState )
   BOOST_CHECK( meas->sampleNumsWithLlmHistory() == set<set<int>>( { {16} } ) );
 #endif
 }//BOOST_AUTO_TEST_CASE( ChangeSampleNumbersRemapsState )
+
+
+#if( USE_LLM_INTERFACE )
+/* For search-mode data the LLM Assistant keys its conversation by the empty set of sample numbers (so
+ it persists as the user changes the time range), which is written as <LlmConversationHistory samples="">.
+ */
+BOOST_AUTO_TEST_CASE( SearchModeConversationKeyedByEmptySet )
+{
+  set_data_dir();
+
+  const set<int> search_mode_key;
+
+  {// As the app writes it: the only conversation is on the empty set
+    const shared_ptr<SpecMeas> meas = create_file( search_mode_layout( range_inclusive( 1, 11 ) ) );
+    BOOST_REQUIRE( meas->passthrough() );
+    meas->setLlmConversationHistory( search_mode_key, make_history( "What is in this search?" ) );
+
+    const string xml = write_n42( *meas );
+    BOOST_CHECK( xml.find( "<LlmConversationHistory samples=\"\">" ) != string::npos );
+
+    const shared_ptr<SpecMeas> reloaded = load_n42( xml );
+    BOOST_REQUIRE( reloaded->passthrough() );
+    BOOST_CHECK( !has_llm_history_warning( *reloaded ) );
+    BOOST_CHECK( reloaded->sampleNumsWithLlmHistory() == set<set<int>>{ search_mode_key } );
+    check_history( *meas, *reloaded, search_mode_key, "search-mode conversation" );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // The developer check compares conversations by content, so accepts a file read back in.
+    try
+    {
+      SpecMeas::equalEnough( *meas, *reloaded );
+    }catch( std::exception &e )
+    {
+      BOOST_ERROR( "SpecMeas::equalEnough rejected the reloaded file: " << e.what() );
+    }
+#endif
+
+    // The stream reader, which app states saved in the database are read back with.
+    {
+      const shared_ptr<SpecMeas> from_stream = make_shared<SpecMeas>();
+      stringstream strm( xml );
+      BOOST_REQUIRE( from_stream->load_from_N42( strm ) );
+      check_history( *meas, *from_stream, search_mode_key, "search-mode conversation, from stream" );
+    }
+
+    // And it stays put when the reloaded file is saved again.
+    const shared_ptr<SpecMeas> reloaded_twice = load_n42( write_n42( *reloaded ) );
+    check_history( *meas, *reloaded_twice, search_mode_key, "search-mode conversation, saved twice" );
+  }
+
+  {// Alongside a conversation keyed by sample numbers
+    const shared_ptr<SpecMeas> meas = create_file( search_mode_layout( range_inclusive( 1, 11 ) ) );
+    BOOST_REQUIRE( meas->passthrough() );
+    add_state( meas, {6}, {2,3,4,5,6,7,8,9,10,11} );
+    meas->setLlmConversationHistory( search_mode_key, make_history( "What is in this search?" ) );
+
+    const shared_ptr<SpecMeas> reloaded = load_n42( check_round_trip( meas, "search-mode, both conversation keys" ) );
+    BOOST_CHECK( reloaded->sampleNumsWithLlmHistory() == set<set<int>>( { search_mode_key, {6} } ) );
+    check_history( *meas, *reloaded, search_mode_key, "both conversation keys, empty set" );
+    check_history( *meas, *reloaded, {6}, "both conversation keys, sample 6" );
+  }
+}//BOOST_AUTO_TEST_CASE( SearchModeConversationKeyedByEmptySet )
+
+
+/* A missing or garbled `samples` attribute is still skipped (with a warning), rather than being taken
+ as the search-mode (empty set) key.
+ */
+BOOST_AUTO_TEST_CASE( MalformedLlmHistorySamplesSkipped )
+{
+  set_data_dir();
+
+  const shared_ptr<SpecMeas> meas = create_file( search_mode_layout( range_inclusive( 1, 11 ) ) );
+  meas->setLlmConversationHistory( set<int>{}, make_history( "What is in this search?" ) );
+  const string xml = write_n42( *meas );
+  const string written_tag = "<LlmConversationHistory samples=\"\">";
+  BOOST_REQUIRE( xml.find( written_tag ) != string::npos );
+
+  const vector<string> replacements{ "<LlmConversationHistory>",
+                                     "<LlmConversationHistory samples=\"abc\">",
+                                     "<LlmConversationHistory samples=\"6 x\">" };
+  for( const string &replacement : replacements )
+  {
+    string garbled = xml;
+    SpecUtils::ireplace_all( garbled, written_tag.c_str(), replacement.c_str() );
+    BOOST_REQUIRE( garbled != xml );
+
+    const shared_ptr<SpecMeas> reloaded = load_n42( garbled );
+    BOOST_CHECK_MESSAGE( reloaded->sampleNumsWithLlmHistory().empty(), "History with " << replacement << " was not skipped" );
+    BOOST_CHECK_MESSAGE( has_llm_history_warning( *reloaded ), "No parse warning for " << replacement );
+  }
+}//BOOST_AUTO_TEST_CASE( MalformedLlmHistorySamplesSkipped )
+#endif //#if( USE_LLM_INTERFACE )
 
 
 BOOST_AUTO_TEST_CASE( RealFilesRoundTrip )

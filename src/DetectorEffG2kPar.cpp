@@ -939,7 +939,7 @@ const double sm_ladder_hi_cm = 30.0;
  geometrically into `max(m_lnE, m_tau)` pieces.
 
  The rule is FIXED, not residual-adaptive, and that is deliberate: the node set
- is serialized, `content_hash()` hashes the serialization, and DRF identity (and
+ is serialized, `content_hash()` hashes the serialized content, and DRF identity (and
  parent-hash lineage) is that hash - so a residual-vs-tolerance rule would let
  one ULP of libm difference flip a node in or out and give the same `.PAR` a
  different identity on macOS vs Windows.  This rule depends only on the file's
@@ -1719,7 +1719,9 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  no-data (endcap-volume) note in the ladder fill above.
   //
   // Also note d_min_cm is a floor on the ON-AXIS reach only, not a validity
-  //  radius: it is measured along the axis from the endcap FACE, whereas the
+  //  radius: it is measured along the axis from the CRYSTAL-face origin (CeeLo's
+  //  frame, as every provenance distance is - CeeLoUtils::faceDistanceFromCrystalOrigin
+  //  converts it for display), whereas the
   //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on DET1381).
   //  A point further than d_min_cm from the face centre can therefore still be
   //  inside the housing once it is past 90 deg - validity off-axis is bounded by
@@ -1762,7 +1764,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
 
   // The crystal sits the endcap-front offset (D7) behind the face - the GADRAS setback convention.  Only
   //  flat-disk paths read it (the response places the crystal itself); without it they put the
-  //  crystal AT the endcap face.  setLegacyEfficiencyFromResponse carries it across.
+  //  crystal AT the endcap face.  (setLegacyEfficiencyFromResponse sets the same value.)
   drf->setDetectorSetback( gd.endcap_front_offset_cm() * PhysicalUnits::cm );
 
   // Sample an on-axis far-field legacy curve so the DRF is valid/serializable

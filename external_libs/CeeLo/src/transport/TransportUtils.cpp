@@ -23,6 +23,7 @@
  */
 
 #include "transport/TransportUtils.h"
+#include "cross_sections/CrossSectionData.h"
 
 #include <cmath>
 
@@ -64,6 +65,28 @@ Eigen::Vector3d sample_isotropic_direction(std::mt19937_64& rng) {
         sin_theta * std::cos(phi),
         sin_theta * std::sin(phi),
         cos_theta);
+}
+
+KRelaxation sample_k_relaxation(const FluorescenceData& fl, std::mt19937_64& rng) {
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    KRelaxation out;
+    if (uniform(rng) >= fl.fluorescence_yield) {
+        out.local_keV = fl.k_edge_keV;  // Auger electrons, sub-mm range
+        return out;
+    }
+    const double xi_line = uniform(rng);
+    double cum = 0.0;
+    float line = fl.line_energy_keV[0];
+    for (int li = 0; li < fl.num_lines; ++li) {
+        cum += fl.line_probability[li];
+        if (xi_line <= cum) {
+            line = fl.line_energy_keV[li];
+            break;
+        }
+    }
+    out.line_keV = static_cast<double>(line);
+    out.local_keV = fl.k_edge_keV - static_cast<double>(line);
+    return out;
 }
 
 } // namespace ceelo

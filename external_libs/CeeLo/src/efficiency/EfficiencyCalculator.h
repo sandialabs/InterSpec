@@ -826,6 +826,17 @@ public:
     void set_min_energy_keV(double e) { transport_config_.min_energy_keV = e; }
     void enable_rayleigh(bool on) { transport_config_.enable_rayleigh = on; }
     void enable_doppler_broadening(bool on) { transport_config_.enable_doppler_broadening = on; }
+    /// K x-ray from a Compton K-shell vacancy in the detector (see
+    /// TransportConfig::enable_compton_fluorescence). Off by default.
+    void enable_compton_fluorescence(bool on) { transport_config_.enable_compton_fluorescence = on; }
+
+    /// Spectrum-fidelity physics: detector-side refinements that shape the
+    /// deposited spectrum but move FEP and total efficiency by well under the
+    /// ~1% goal. Off by default; turn it on when the pulse-height spectrum's
+    /// shape matters: Compton K-vacancy fluorescence.
+    void enable_spectrum_fidelity(bool on) {
+        enable_compton_fluorescence(on);
+    }
     void enable_electron_csda(bool on) { transport_config_.enable_electron_csda = on; }
     void enable_cone_sampling(bool on) { use_cone_sampling_ = on; }
     void enable_fep_only_mode(bool on) { fep_only_mode_ = on; }
@@ -855,6 +866,10 @@ public:
     /// Disable bremsstrahlung from electrons stopping in source
     /// material/shielding (on by default; off switch for A/B quantification).
     void set_source_brems(bool on) { source_geometry_.set_source_brems(on); }
+    /// K x-rays from photoelectric absorption in source material/shielding
+    /// (on by default; see SourceGeometry::set_source_fluorescence). Full
+    /// mode only: FEP-only runs never transport source secondaries.
+    void set_source_fluorescence(bool on) { source_geometry_.set_source_fluorescence(on); }
     void set_air_attenuation(AirAttenuation mode) { air_attenuation_ = mode; }
 
     // --- Event Biasing (variance reduction) ---

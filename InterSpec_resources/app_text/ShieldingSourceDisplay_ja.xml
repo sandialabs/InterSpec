@@ -54,7 +54,6 @@
   <message id="ssd-cb-atten-for-air">空気減衰を考慮</message>
   <message id="ssd-tt-atten-for-air">チェックすると、線源または外側遮蔽と検出器間の空気による減衰が計算に考慮されます。</message>
   <message id="ssd-cb-sub-back-peaks">バックグラウンドピークを差し引く</message>
-  <message id="ssd-tt-sub-back-peaks">同一元素の同位体をフィットにおいて全て同じ年齢にすることを強制します。</message>
   <message id="ssd-cb-same-el-same-age">同一Z同一年齢</message>
   <message id="ssd-tt-same-el-same-age">同一元素の同位体が全て同じ年齢を持つことを強制します。</message>
   <message id="ssd-cb-corr-for-decay">測定中の壊変を補正</message>
@@ -81,23 +80,6 @@
     差し引く可能性のあるピークを同定してから、現在の前景/バックグラウンドの組み合わせに
     戻してください。
   </message>
-  <message id="ssd-missing-back-peaks-title">不足しているバックグラウンドピーク</message>
-  <message id="ssd-missing-back-peaks-msg">
-    バックグラウンドスペクトルにはエネルギー {1} にピークが追加されていませんが、
-    それらのエネルギーにおいてバックグラウンドスペクトルに実際のピークが存在する可能性があります -
-    それらのピークをバックグラウンドスペクトルに追加しますか？
-  </message>
-  <message id="ssd-btn-no-dont-add">いいえ</message>
-  <message id="ssd-btn-add-peaks">ピークを追加...</message>
-  <message id="ssd-btn-add-all-detectable">全自動フィットピークを追加</message>
-  <message id="ssd-back-peak-preview-title">バックグラウンドピークのプレビュー</message>
-  <message id="ssd-back-peak-preview-msg">以下のピークがバックグラウンドスペクトルに追加されます：</message>
-  <message id="ssd-no-new-back-peaks">指定されたエネルギーにおいてバックグラウンドスペクトルに追加のピークは見つかりませんでした。</message>
-  <message id="ssd-back-peaks-all-fit">{1} 個の候補ピークがバックグラウンドにフィットされました。</message>
-  <message id="ssd-back-peaks-some-fit">{2} 個の候補ピークのうち {1} 個が有意でバックグラウンドにフィットされました。</message>
-  <message id="ssd-back-peaks-manual-hint">(Altキー（mac: Optionキー）を押しながらスペクトル上でダブル<br />
-  クリックすることで、手動でバックグラウンドピークをフィットすることもできます。また、バックグラウンドをフォアグラウンドとして読み込む方法もあります)</message>
-  <message id="ssd-err-adding-back-peaks">バックグラウンドへのピーク追加エラー: {1}</message>
   <message id="ssd-scaled-shield-to-be-less-dist">遮蔽厚さが検出器距離未満になるようスケーリングされました。</message>
   <message id="ssd-err-fit-only-one-an">一度にフィットできる汎用遮蔽の原子番号は1つだけです。</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keVに対して無効なchi2が計算されました。他の結果も無効である可能性があります</message>

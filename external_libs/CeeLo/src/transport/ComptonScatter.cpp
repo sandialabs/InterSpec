@@ -424,6 +424,7 @@ ComptonScatterResult finish_compton_at_angle(
     // Doppler-broadened by the bound electron's momentum.
     double scattered_energy = compton_scattered_energy(energy_keV, cos_theta);
     double binding_keV = 0.0;
+    int shell_index = -1;
 
     const ElementData* elem = (doppler && Z > 0)
         ? &CrossSectionData::instance().element(Z) : nullptr;
@@ -466,6 +467,7 @@ ComptonScatterResult finish_compton_at_angle(
             scattered_energy =
                 std::max(0.0, std::min(scattered_energy, energy_keV - U));
             binding_keV = U;
+            shell_index = shell;
         }
         // No eligible shell (E below every binding energy): free-line fallback.
     }
@@ -483,7 +485,7 @@ ComptonScatterResult finish_compton_at_angle(
         new_dir = rotate_direction(direction, cos_theta, phi);
     }
 
-    return {scattered_energy, deposited, cos_theta, new_dir, binding_keV};
+    return {scattered_energy, deposited, cos_theta, new_dir, binding_keV, shell_index};
 }
 
 } // namespace ceelo

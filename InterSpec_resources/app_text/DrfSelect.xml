@@ -128,7 +128,7 @@
   <message id="ds-modify-btn">Modify...</message>
   <message id="ds-chip-far-field">Far-field</message>
   <message id="ds-chip-fixed-geom">Fixed geometry</message>
-  <message id="ds-chip-tt-far-field">Efficiency is intrinsic (per gamma striking the detector face); solid-angle corrections are applied for the source distance.</message>
+  <message id="ds-chip-tt-far-field">Efficiency is intrinsic (per gamma striking the detector crystal); solid-angle corrections are applied for the source distance from the detector face.</message>
   <message id="ds-chip-tt-fixed-geom">Efficiency is for one specific source/detector geometry - distances do not apply.</message>
   <message id="ds-chip-fwhm">FWHM</message>
   <message id="ds-chip-tt-fwhm">Detector energy-resolution (FWHM) information.</message>
@@ -208,7 +208,7 @@
   <message id="dsi-characterize">Characterize...</message>
   <message id="dsi-building">Building the detector response...</message>
   <message id="dsi-need-diameter">Enter the detector diameter.</message>
-  <message id="dsi-need-distance">Enter the source-to-detector distance the efficiencies are for.</message>
+  <message id="dsi-need-distance">Enter the source-to-detector-face distance the efficiencies are for.</message>
   <message id="dsi-geometry-only">This file describes the detector, but not its efficiency; characterize it with Monte Carlo to use it.</message>
   <message id="dsi-parse-error">Could not use '{1}' as a detector efficiency file: {2}</message>
   <message id="dsi-build-error">Could not create the detector response: {1}</message>

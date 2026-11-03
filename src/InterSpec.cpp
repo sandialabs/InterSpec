@@ -1472,7 +1472,7 @@ InterSpec::~InterSpec() noexcept(true)
   //  conversation (handleLlmToolClose() would also rearrange the layout, which, mid-teardown, gives
   //  a client-side layout exception).
   if( m_llmToolWindow )
-    handleLlmToolClose();   //syncs conversation history into the SpecMeas before deleting
+    closeLlmTool();   //syncs conversation history into the SpecMeas before deleting
   else if( m_llmTool )
     syncLlmHistoryToSpecMeas();
 #endif
@@ -1524,6 +1524,11 @@ InterSpec::~InterSpec() noexcept(true)
 #if( USE_SEARCH_MODE_3D_CHART )
   AuxWindow::deleteAuxWindow( m_3dViewWindow.get() );
 #endif
+
+  // The Spectrum Manager window holds the file managers table while open; this hands it back to
+  //  the file manager (no undo step is added, as `m_undo` is already gone).
+  if( m_fileManager )
+    m_fileManager->deleteSpectrumManager();
 
   // Backstop for every dialog the named teardowns above do not cover.  Most tool dialogs are
   //  created *locally* with no member holding them (`SpecFileSummary`, the External RID warning,
@@ -1703,7 +1708,7 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
 void InterSpec::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment)
 {
-    CompactFileManager::handleUserIncrementSampleNum(type, increment, this, m_fileManager->model(), NULL);
+    CompactFileManager::handleUserIncrementSampleNum( type, increment, this, nullptr );
 }
 
 std::shared_ptr<DataBaseUtils::DbSession> InterSpec::sql()
@@ -3617,22 +3622,34 @@ void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_pt
   
   const set<int> &sample_nums = displayedSamples( spectrum );
   
-  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas->peaks(sample_nums);
-  
-  if( orig_peaks.get() == peaks.get() )
+  const std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> current_peaks = meas->peaks(sample_nums);
+
+  if( current_peaks.get() == peaks.get() )
     throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
-  
-  auto set_peaks = [this,&peaks,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+
+  // Snapshot the current peaks: `current_peaks` is the SpecMeas's own deque, which
+  //  PeakModel::setPeaks clears and refills in place, so holding it would leave undo nothing to go
+  //  back to.  (The PeakDefs themselves are const, so sharing them is fine.)
+  const auto orig_peaks = make_shared<const deque<shared_ptr<const PeakDef>>>(
+                            current_peaks ? *current_peaks : deque<shared_ptr<const PeakDef>>{} );
+
+  auto set_peaks = [spectrum]( const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &new_peaks ){
+    InterSpec *viewer = InterSpec::instance();
+    if( !viewer || !viewer->m_peakModel )
+      return;
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-    m_peakModel->setPeaks( (peaks ? *peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
+    viewer->m_peakModel->setPeaks( (new_peaks ? *new_peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
   };
-  
-  set_peaks(peaks);
-  
+
+  {
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    m_peakModel->setPeaks( *peaks, spectrum );
+  }
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [set_peaks,peaks,orig_peaks](){ set_peaks(orig_peaks); };
-    auto redo = [set_peaks,peaks,orig_peaks](){ set_peaks(peaks); };
+    auto undo = [set_peaks,orig_peaks](){ set_peaks(orig_peaks); };
+    auto redo = [set_peaks,peaks](){ set_peaks(peaks); };
     m_undo->addUndoRedoStep( undo, redo, "Set peaks." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
@@ -4316,6 +4333,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( parent )
     {
+      // `background` and `second` may be the same objects as the parent foreground/background
+      //  (when they are the same file); we'll re-point them below to the snapshot copies.
+      const shared_ptr<SpecMeas> parentForeground = foreground;
+      const shared_ptr<SpecMeas> parentBackground = background;
+
       if( foregroundheader && snapforeground )
       {
         foregroundheader->setMeasurmentInfo( snapforeground );
@@ -4348,6 +4370,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
         }
       }
+
+      // A background/secondary that was the same file as the foreground (or secondary as the
+      //  background) still points at the parent copy, whose header now holds the snapshot copy;
+      //  left alone it would display the parent's data, and not be in the file manager.
+      if( parentForeground && (background == parentForeground) )
+        background = foreground;
+      if( parentForeground && (second == parentForeground) )
+        second = foreground;
+      else if( parentBackground && (second == parentBackground) )
+        second = background;
     }//if( parent )
     
     
@@ -9200,6 +9232,11 @@ void InterSpec::handleDisplayScaleFactorChangeFromSpectrum( const double sf, con
 {
   // This function is called when the user slides the slider on the spectrum, through the
   //  D3SpectrumDisplayDiv::yAxisScaled() signal.
+
+  // Tell the tools that show background-scaled numbers (Flux Tool, Energy Range Sum, ...).  The
+  //  CompactFileManager also emits this when it is around (it calls setDisplayScaleFactor), but it
+  //  isnt always - e.g., with the tool tabs hidden - and an extra emit is harmless.
+  m_spectrumScaleFactorChanged.emit( spec_type, sf );
   
   if( !m_undo || m_undo->isInUndoOrRedo() )
     return;
@@ -12946,8 +12983,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   // Update the energy calibration tool, as there is new data.
+  //  We emit the sample numbers actually displayed (e.g., all valid foreground samples when the
+  //  caller passed an empty set), so listeners dont record or show the empty request.
   const auto shownDets = detectorsToDisplay(spec_type);
-  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
+  const set<int> shownSamples = displayedSamples(spec_type);
+  m_displayedSpectrumChangedSignal.emit( spec_type, meas, shownSamples, shownDets );
   
   if( meas )
   {
@@ -15217,6 +15257,13 @@ void InterSpec::createLlmTool()
       showLlmToolInWindow( std::move(llmTool) );
 
     m_llmToolMenuItem->disable();
+
+    // Pick back up a conversation cut off when the tool, or the session, last closed - on the next
+    //  pass of the event loop, so any state being restored (see loadStateFromDb()) is all in place first.
+    postToInterSpec( this, []( InterSpec *viewer ){
+      if( LlmToolGui * const tool = viewer->currentLlmTool() )
+        tool->resumeInterruptedConversation();
+    } );
   }catch( const std::exception &e )
   {
     std::cout << "Error creating LLM tool: " << e.what() << std::endl;
@@ -15401,9 +15448,11 @@ std::unique_ptr<Wt::WWidget> InterSpec::detachLlmTool()
   if( !m_llmTool )
     return nullptr;
 
-  // Bring the tools phone header controls back from any window, before the window goes.
+  // Bring the tools phone header controls, or its menu icon in the side panels header, back, before
+  //  the window or panel goes.
   if( isPhone() )
     m_llmTool->setPhoneWindowHeader( nullptr );
+  m_llmTool->setMenuIconHost( nullptr );
 
   std::unique_ptr<WWidget> tool;
   if( m_llmSidePanel )
@@ -15440,6 +15489,11 @@ void InterSpec::showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
 
   std::unique_ptr<LlmSidePanel> panel = std::make_unique<LlmSidePanel>( this, std::move(tool) );
   m_llmSidePanel = panel.get();
+
+  // On desktop, the conversation menu icon goes in the panels header, rather than the input bar.
+  if( !isPhone() )
+    m_llmTool->setMenuIconHost( panel->menuIconSlot() );
+
   m_llmSidePanelWidth = llmSidePanelInitialWidth();
   addLlmSidePanelToLayout( std::move(panel) );
 }//void showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
@@ -15626,6 +15680,16 @@ void InterSpec::syncLlmHistoryToSpecMeas()
 
 void InterSpec::handleLlmToolClose()
 {
+  // The user is closing it, so a conversation it cuts off is not resumed without asking.
+  if( m_llmTool )
+    m_llmTool->noteClosedByUser();
+
+  closeLlmTool();
+}//void handleLlmToolClose()
+
+
+void InterSpec::closeLlmTool()
+{
   if( !m_llmTool )
     return;
 
@@ -15646,6 +15710,7 @@ void InterSpec::handleLlmToolClose()
     // The tool lives in the panel, so dropping the panel destroys it too.
     if( isPhone() )
       m_llmTool->setPhoneWindowHeader( nullptr );
+    m_llmTool->setMenuIconHost( nullptr );
     takeLlmSidePanelFromLayout();
   }else if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
   {
@@ -15658,6 +15723,6 @@ void InterSpec::handleLlmToolClose()
 
   assert( !m_llmTool );         // observing_ptr auto-clears when the widget is destroyed
   assert( !m_llmToolWindow );
-}
+}//void closeLlmTool()
 #endif // USE_LLM_INTERFACE
 
