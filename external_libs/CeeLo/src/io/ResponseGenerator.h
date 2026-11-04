@@ -119,15 +119,6 @@ struct NodeProgress {
     double wall_s = 0.0;
 };
 
-/// Per-node MC precision policy (the D0 speedup dial). Uniform reproduces the
-/// historical single-target behaviour bit-for-bit; RelaxMild installs the
-/// energy-graded map measured in the D0 policy memo (~2-2.5x cheaper high-E
-/// nodes at a bounded p95 cost).
-enum class PrecisionProfile : uint8_t {
-    Uniform,    ///< node_fep_precision everywhere (default; unchanged)
-    RelaxMild   ///< graded target precision by (stage, energy) -- see below
-};
-
 /// The `relax_mild` graded target-precision map (D0 policy memo): low-E rows
 /// stay tight, stepping toward 3 MeV where the cap-limited nodes live. Applies
 /// to STAGE 2 (angular) and STAGE 3 (near) rows; STAGE 1 backbone stays at
@@ -193,9 +184,9 @@ struct GenerationOptions {
     /// Minimum MC events per node before precision-based termination.
     uint64_t min_events_per_node = 20000;
 
-    /// Stop each angular (stage 2) and near-field (stage 3) node on TOTAL-efficiency precision
-    /// (the node's resolved target) rather than FEP precision; the on-axis backbone (stage 1)
-    /// still stops on FEP.  For a host that keeps only the total and the on-axis FEP - InterSpec
+    /// Stop each angular (stage 2), near-field (stage 3) and side & back (stage 4) node on
+    /// TOTAL-efficiency precision (the node's resolved target) rather than FEP precision; the
+    /// on-axis backbone (stage 1) still stops on FEP.  For a host that keeps only the total and the on-axis FEP - InterSpec
     /// attaching the total to an imported FEP grid, grounded on axis.  The total converges on far
     /// fewer histories: 6-16x less CPU per node at >= 662 keV, and a General run of a 5x5 cm HPGe
     /// took 2260 CPU-s instead of about an hour on 4 threads, its total still within 0.84% of
@@ -233,6 +224,16 @@ struct GenerationOptions {
 
     double far_distance_a = 10.0;   ///< far-field scan distance, units of a
     double cos_theta_min = 0.02;    ///< grazing cutoff of the theta grid
+
+    /// Side and back incidence (theta past 90 degrees, a source beside or behind the detector):
+    /// a far-field angular scan behind the face plane, at `back_precision_scale` times the node
+    /// precision, whose columns are added to the eta tables below the grazing node.  Each node
+    /// samples with the general cone (EfficiencyCalculator::enable_general_cone_sampling).  The
+    /// front of the response - every node, value and seed - is identical to a None run.
+    /// FullMc fixed-grid generation only (not transfer_mode, not closed_loop).
+    using BackCoverage = ceelo::BackCoverage;
+    BackCoverage back_coverage = BackCoverage::None;
+    double back_precision_scale = 2.0;
 
     /// EFFTRAN transfer mode: MC ONLY the on-axis energy backbone (stage 1) and
     /// let the geometry kernel K carry all angular/distance transfer -- the
@@ -344,14 +345,18 @@ public:
         int n_near_positions = 0;      ///< stage 3 (cos_theta x distance) MC positions per
                                        ///< shape energy (0 for FarField / transfer)
         bool transfer_anchors = false; ///< stage 2 nodes are transfer-mode angle anchors
+        int n_back_cos_theta = 0;      ///< side & back incidence angles per shape energy (stage 4)
         int n_backbone() const { return static_cast<int>(backbone_energies_keV.size()); }
+        int n_back() const {
+            return static_cast<int>(shape_energies_keV.size()) * n_back_cos_theta * n_phi;
+        }
         int n_angular() const {
             return static_cast<int>(shape_energies_keV.size()) * n_cos_theta * n_phi;
         }
         int n_near() const {
             return static_cast<int>(shape_energies_keV.size()) * n_near_positions;
         }
-        int total() const { return n_backbone() + n_angular() + n_near(); }
+        int total() const { return n_backbone() + n_angular() + n_near() + n_back(); }
     };
     /// NOTE: the fixed-grid path only. `closed_loop` generation refines data-driven, so its node
     /// count is not known upfront and its per-phase NodeProgress counts restart; plan_nodes()

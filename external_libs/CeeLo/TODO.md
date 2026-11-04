@@ -121,6 +121,52 @@ sub-statistical in the gated configs are kept for awareness.
 
 ---
 
+## Monte-Carlo sampling (cone)
+
+Found by review on 2026-11-03 and measured there with direct Monte Carlo; not yet re-verified.
+
+### Near-axis cone shortcut samples about ±z
+`[medium — accuracy]`
+- **Effect:** `sample_cone_about` (`EfficiencyCalculator.cpp`) samples about ±z whenever the
+  wanted axis is within 0.81° of it (`cos_rot > 0.9999`), so the cone is tilted off the detector.
+  For a 3x3 NaI with the source at (0.5, 0, −40) cm, the coned total efficiency was 1.7292e-3 ±
+  7.8e-7 against 1.7585e-3 ± 6.6e-6 isotropic: −1.67%, z ≈ 4.4.
+- **Implementation:** an exact rotation. Keep the identity branch for a source exactly on the
+  axis, so those runs stay bit-identical.
+- **Shows up:** point sources slightly off the axis, far away.
+
+### The legacy cone half-angle misses thin detectors
+`[medium — accuracy]`
+- **Effect:** `compute_raw_cone_half_angle`'s six candidate points miss the widest angle for thin
+  crystals (L/R about 0.5).
+  - Example: a planar Ge (R 2.55, L 1.25, 0.05 Al) with the source at d 5.2 cm, θ 86°. Coned vs
+    isotropic: FEP −2.1% (z ≈ 4.2), total −2.7% (z ≈ 13.5).
+  - Up to 10% of the directions that hit the detector fall outside the padded cone at d = 2a.
+  - The side & back stage uses this cone for sources beyond z_max. For thin detectors that costs
+    about 0.3% at d_far and up to 1.1% close behind.
+- **Implementation:** use the exact `envelope_bounding_cone` wherever bit-identity with old runs is
+  not required, e.g. whenever general cone sampling is on.
+
+### `Geometry::outer_z_extent()` does not accumulate front thicknesses
+`[low — accuracy]`
+- **Effect:** with stacked layers (all `z_start` = 0; a 0.4 cm gap front, then a 0.1 cm can
+  front), it reports z_min = −0.4. The traced front surface and `outer_envelope()` are at −0.5.
+  Both the legacy and the general cone use the smaller extent (`RayTrace.cpp`).
+- **Implementation:** accumulate as `outer_envelope()` does.
+
+### General cone sampling re-derives the cone every history
+`[low — performance]`
+- **Effect:** with `enable_general_cone_sampling` on, `sampling_cone` calls
+  `envelope_bounding_cone` (about 19 µs CPU) once per history. That happens on the per-position
+  cone path and on the source-effects direct-stream and mixture paths.
+  - For an extended source beside the detector, this can cancel the roughly tenfold saving in
+    histories.
+  - The side & back generation stage uses point sources, so it is unaffected.
+- **Implementation:** cache the cone per source position bin, or bound it once over the source
+  volume.
+
+---
+
 ## Photon transport physics
 
 ### Air between source and detector
@@ -431,6 +477,18 @@ sub-statistical in the gated configs are kept for awareness.
   for the cylinder and box (a handful of 16M runs).
 - **Shows up:** cores that leave a central void, or cored sources far away.
 
+### A source overlapping the detector is simulated without complaint
+`[low — API]`
+- **Effect:** `EfficiencyCalculator` transports whatever source position and geometry it is given;
+  a volumetric source cutting into the housing (or a point inside it) runs silently.
+  `outermost_extent_radius()` only sizes the GDML world.
+- **Implementation:** a `SourceGeometry::outer_solid(position)` checked with `convex_separation()`
+  against `GeometryDescriptor::outer_envelope().solid()`. It needs an overlap depth, not the
+  separation alone: a source at contact and one barely overlapping (by up to ~1e-4 of the size,
+  near tangency) read the same. One way is to test the source solid shrunk by a tolerance. It must
+  skip Marinelli sources, which wrap around the detector.
+- **Shows up:** a host passing a mis-placed source.
+
 ### `add_core()` overflow is silently clamped
 `[low — API]`
 - **Effect:** core thicknesses summing past the cavity are clamped (`.cwiseMax(0.0)` in
@@ -483,6 +541,20 @@ sub-statistical in the gated configs are kept for awareness.
   daughter (same material, so not a subtraction); the harness already scores
   `active_crystal`.
 - **Shows up:** HPGe with realistic 0.5–1 mm dead layers, especially below ~100 keV.
+
+### Side & back incidence: no near-field model behind the face plane
+`[medium — accuracy close beside/behind]`
+- **Effect:** `back_coverage` scans the far field only; close beside or behind the detector the
+  kernel alone carries the distance dependence, with the `NearFieldUnmodeled` envelope; and
+  behind a thick back, the removal-only kernel misses full-energy in-scatter (shadow-gated, so
+  flagged rather than wrong, but unanswered).
+- **Implementation:** a back near-field table on (E, cos theta < 0, phi, clearance s/a), clearance
+  measured past `outer_envelope()` so no node falls inside the detector, with an ln N = 0 anchor
+  row. In the shadow regime (s < 0.3) even back nodes do not help - the in-scatter ratio varies too
+  steeply between them (measured 20-70% off) - so that needs either much denser nodes there or a
+  scatter term in the kernel. `closed_loop` probe families and transfer-mode back anchors could
+  follow.
+- **Shows up:** sources within a few detector widths of the side wall or the back.
 
 ---
 

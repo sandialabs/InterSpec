@@ -319,6 +319,31 @@ BOOST_AUTO_TEST_CASE(plain_cylinder_still_exports_as_a_tube) {
     std::remove(path.c_str());
 }
 
+BOOST_AUTO_TEST_CASE(back_plate_layer_exports_as_a_cup) {
+    // A layer with no front wall but a z_end past the crystal's back is a can with a BACK plate in
+    // the ray tracer (outer solid minus the inner envelope); the export used to write it as an
+    // open annular tube, so GEANT4 saw no back.  A layer with neither still exports as the tube.
+    Material ge = make_HPGe();
+    Material al = make_Aluminum();
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&ge, CylinderDims{R, L});
+    calc.add_attenuator(&al, 0.0, 0.1, 0.0, L);          // side wall only: a tube
+    calc.add_attenuator(&al, 0.0, 0.1, 0.0, L + 0.3);    // side wall + 3 mm back plate: a cup
+
+    const std::string path = tmp_gdml("back_plate");
+    calc.export_geant4_gdml(path, /*vacuum_world=*/true);
+
+    std::ifstream f(path);
+    const std::string txt((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+    BOOST_CHECK(txt.find("<subtraction name=\"AttSolid0\"") == std::string::npos);
+    BOOST_CHECK(txt.find("<tube name=\"AttSolid0\"") != std::string::npos);
+    BOOST_CHECK(txt.find("<subtraction name=\"AttSolid1\"") != std::string::npos);
+    BOOST_CHECK(txt.find("att1_inner_offset") != std::string::npos);
+    std::remove(path.c_str());
+}
+
 // ---------------------------------------------------------------------------
 // Source cores.  These close the export<->tracer loop for the concentric source
 // stack the same way the polycone tests do for the crystal: the GDML is parsed

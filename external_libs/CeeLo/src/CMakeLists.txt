@@ -8,6 +8,8 @@ add_library(CeeLo
     geometry/Cylinder.cpp
     geometry/Box.cpp
     geometry/RayTrace.cpp
+    geometry/BoundingCone.cpp
+    geometry/ConvexSeparation.cpp
     geometry/SourceGeometry.cpp
     transport/ComptonScatter.cpp
     transport/PhotonTransport.cpp

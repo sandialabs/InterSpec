@@ -27,6 +27,7 @@
 #include "cascade/LevelDag.h"
 #include "cross_sections/CrossSectionData.h"
 #include "export/Geant4Export.h"
+#include "geometry/BoundingCone.h"
 #include "geometry/RayTrace.h"
 #include "geometry/SourceGeometry.h"
 #include "physics/ElectronCsda.h"
@@ -1107,6 +1108,41 @@ Eigen::Vector3d EfficiencyCalculator::sample_cone_direction(
     const Eigen::Vector3d& from_pos,
     double cos_theta_max, std::mt19937_64& rng) const
 {
+    Eigen::Vector3d to_detector = -from_pos;
+    to_detector.normalize();
+    return sample_cone_about(to_detector, cos_theta_max, rng);
+}
+
+EfficiencyCalculator::SamplingCone EfficiencyCalculator::sampling_cone(
+    const Eigen::Vector3d& from_pos) const
+{
+    SamplingCone c;
+    c.half_angle = compute_cone_half_angle(from_pos);
+    c.axis = -from_pos;
+    c.axis.normalize();
+
+    if (general_cone_sampling_ && !(c.half_angle < kPi - 0.01)) {
+        // Beside the detector: no cone about the direction to the origin exists, but one about
+        // its own axis usually does.  outer_bounding_radius x outer_z_extent is the same envelope
+        // the legacy cone bounds (a box detector's circumscribed cylinder).
+        const auto [z_min, z_max] = geometry_.outer_z_extent();
+        Eigen::Vector3d axis;
+        double cos_alpha = -1.0;
+        if (envelope_bounding_cone(true, geometry_.outer_bounding_radius(), 0.0, 0.0,
+                                   z_min, z_max, from_pos, axis, cos_alpha)) {
+            c.half_angle = std::min(std::acos(cos_alpha) * 1.025, kPi);
+            c.axis = axis;
+        }
+    }
+
+    c.cos_max = std::cos(c.half_angle);
+    return c;
+}
+
+Eigen::Vector3d EfficiencyCalculator::sample_cone_about(
+    const Eigen::Vector3d& axis_in,
+    double cos_theta_max, std::mt19937_64& rng) const
+{
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     double cos_theta = 1.0 - uniform(rng) * (1.0 - cos_theta_max);
@@ -1119,8 +1155,7 @@ Eigen::Vector3d EfficiencyCalculator::sample_cone_direction(
         cos_theta
     );
 
-    Eigen::Vector3d to_detector = -from_pos;
-    to_detector.normalize();
+    const Eigen::Vector3d& to_detector = axis_in;
 
     Eigen::Vector3d z_axis(0.0, 0.0, 1.0);
     double cos_rot = z_axis.dot(to_detector);
@@ -1325,10 +1360,13 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
     double pre_cone_half_angle = kPi;
     double pre_cos_theta_max   = -1.0;
     double pre_event_weight    = 1.0;
+    Eigen::Vector3d pre_cone_axis(0.0, 0.0, 1.0);   // used for a point source only
     bool per_position_cone = false;
     if (use_cone_sampling_) {
         if (source_type_ == SourceType::Point) {
-            pre_cone_half_angle = compute_cone_half_angle(source_position_);
+            const SamplingCone cone = sampling_cone(source_position_);
+            pre_cone_half_angle = cone.half_angle;
+            pre_cone_axis = cone.axis;
         } else {
             // For solid-angle-matched sampling, per-position cones are
             // essential: the radial IS weight q(r) ∝ r/(r²+h²) is designed
@@ -1345,6 +1383,10 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 double omega_worst = kTwoPi * (1.0 - std::cos(worst));
                 double omega_best  = kTwoPi * (1.0 - std::cos(best));
                 if (omega_worst > 2.0 * omega_best) {
+                    per_position_cone = true;
+                } else if (general_cone_sampling_ && !(worst < kPi - 0.01)) {
+                    // Some of the source is beside the detector: only per-position cones, each
+                    // with its own axis, can avoid sampling the full sphere there.
                     per_position_cone = true;
                 } else {
                     pre_cone_half_angle = worst;
@@ -1435,10 +1477,10 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 double omega_frac = 1.0;
                 bool coned = false;
                 if (use_cone_sampling_) {
-                    const double cone_half = compute_cone_half_angle(src_pos);
-                    if (cone_half < kPi - 0.01) {
-                        const double cos_max = std::cos(cone_half);
-                        direction = sample_cone_direction(src_pos, cos_max, rng);
+                    const SamplingCone cone = sampling_cone(src_pos);
+                    if (cone.half_angle < kPi - 0.01) {
+                        const double cos_max = cone.cos_max;
+                        direction = sample_cone_about(cone.axis, cos_max, rng);
                         omega_frac = 0.5 * (1.0 - cos_max);
                         coned = true;
                     }
@@ -1526,26 +1568,24 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             bool mixture_done = false;
 
             if (alpha > 0.0 && alpha <= 1.0) {
-                const double cone_half = compute_cone_half_angle(src_pos);
+                const SamplingCone cone = sampling_cone(src_pos);
                 // Degenerate cone (source beside/inside the detector
                 // envelope): fall back to pure isotropic with weight 1.
-                if (cone_half < kPi - 0.01) {
-                    const double cos_max = std::cos(cone_half);
+                if (cone.half_angle < kPi - 0.01) {
+                    const double cos_max = cone.cos_max;
                     const double omega_c = kTwoPi * (1.0 - cos_max);
                     bool in_cone;
                     if (uniform(rng) < alpha) {
                         // Isotropic branch; membership test must use the
-                        // same axis the cone sampler rotates onto:
-                        // normalize(-src_pos), toward the detector origin.
+                        // same axis the cone sampler rotates onto.
                         double ct = 2.0 * uniform(rng) - 1.0;
                         double st = std::sqrt(1.0 - ct * ct);
                         double ph = kTwoPi * uniform(rng);
                         direction = Eigen::Vector3d(
                             st * std::cos(ph), st * std::sin(ph), ct);
-                        const Eigen::Vector3d axis = -src_pos.normalized();
-                        in_cone = direction.dot(axis) >= cos_max;
+                        in_cone = direction.dot(cone.axis) >= cos_max;
                     } else {
-                        direction = sample_cone_direction(src_pos, cos_max, rng);
+                        direction = sample_cone_about(cone.axis, cos_max, rng);
                         in_cone = true;
                     }
                     w_mix = in_cone
@@ -2023,19 +2063,28 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             event_weight = w;
         } else if (use_cone_sampling_) {
             double cone_half_angle, cos_theta_max;
+            Eigen::Vector3d cone_axis;
             if (per_position_cone) {
-                cone_half_angle = compute_cone_half_angle(src_pos);
-                cos_theta_max = std::cos(cone_half_angle);
+                const SamplingCone cone = sampling_cone(src_pos);
+                cone_half_angle = cone.half_angle;
+                cos_theta_max = cone.cos_max;
+                cone_axis = cone.axis;
                 double solid_angle = kTwoPi * (1.0 - cos_theta_max);
                 event_weight = solid_angle / kFourPi;
             } else {
                 cone_half_angle = pre_cone_half_angle;
                 cos_theta_max   = pre_cos_theta_max;
                 event_weight    = pre_event_weight;
+                if (source_type_ == SourceType::Point) {
+                    cone_axis = pre_cone_axis;
+                } else {
+                    cone_axis = -src_pos;
+                    cone_axis.normalize();
+                }
             }
 
             if (cone_half_angle < kPi - 0.01) {
-                direction = sample_cone_direction(src_pos, cos_theta_max, rng);
+                direction = sample_cone_about(cone_axis, cos_theta_max, rng);
             } else {
                 double cos_theta = 2.0 * uniform(rng) - 1.0;
                 double sin_theta = std::sqrt(1.0 - cos_theta * cos_theta);
@@ -3369,7 +3418,7 @@ double EfficiencyCalculator::emit_vacancy_xray_deposit(
 EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread(
     const std::vector<DecayCascade>& cascades, std::size_t primary_branch,
     std::size_t primary_index, double peak_keV, double tol_keV,
-    double cos_theta_max, bool coned,
+    double cos_theta_max, bool coned, const Eigen::Vector3d& cone_axis,
     const std::vector<CascadeVacancyDraw>& prim_vacancies,
     const std::vector<CascadeSumPairChannel>& channels,
     uint64_t num_events, uint64_t seed, bool ic_electrons,
@@ -3447,7 +3496,7 @@ EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread
 
         // Primary gamma: cone-biased toward the detector (else isotropic).
         const Eigen::Vector3d pdir = coned
-            ? sample_cone_direction(vertex, cos_theta_max, rng)
+            ? sample_cone_about(cone_axis, cos_theta_max, rng)
             : sample_isotropic_dir(uniform, rng);
         const double dep_primary =
             transport_cascade_member(vertex, pdir, primary.energy_keV, seg_buffer, rng);
@@ -3688,7 +3737,7 @@ EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread
                         ch.weak_outcome_posterior.size()) - 1;
             }
             const Eigen::Vector3d da = coned
-                ? sample_cone_direction(vertex, cos_theta_max, rng)
+                ? sample_cone_about(cone_axis, cos_theta_max, rng)
                 : sample_isotropic_dir(uniform, rng);
             double dsum = transport_cascade_member(vertex, da, ch.e_a_keV, seg_buffer, rng);
             double a2 = 0.0, a4 = 0.0;
@@ -4771,9 +4820,13 @@ CascadeResult EfficiencyCalculator::compute_cascade(const CascadeConfig& config)
     // photon can reach the detector from outside any cone, so cone biasing would
     // be biased there).
     double cone_half = kPi;
+    Eigen::Vector3d cone_axis(0.0, 0.0, 1.0);
     if (use_cone_sampling_ && source_type_ == SourceType::Point
-        && !source_geometry_.has_source_effects())
-        cone_half = compute_cone_half_angle(source_position_);
+        && !source_geometry_.has_source_effects()) {
+        const SamplingCone cone = sampling_cone(source_position_);
+        cone_half = cone.half_angle;
+        cone_axis = cone.axis;
+    }
     const bool coned = (cone_half < kPi - 0.01);
     const double cos_max = std::cos(cone_half);
     const double prim_w = coned ? 0.5 * (1.0 - cos_max) : 1.0;  // Omega/4pi
@@ -4888,10 +4941,10 @@ CascadeResult EfficiencyCalculator::compute_cascade(const CascadeConfig& config)
             }
             const bool ic_e = config.enable_ic_electrons;
             futures.push_back(std::async(std::launch::async,
-                [this, &config, bp, mip, pkv, tolv, cos_max, coned,
+                [this, &config, bp, mip, pkv, tolv, cos_max, coned, cone_axis,
                  &prim_vacs, &channels, ne, seed, ic_e, flush] {
                     return cascade_peak_thread(config.cascades, bp, mip, pkv, tolv,
-                                               cos_max, coned, prim_vacs, channels,
+                                               cos_max, coned, cone_axis, prim_vacs, channels,
                                                ne, seed, ic_e, flush);
                 }));
         }
@@ -5005,7 +5058,7 @@ BiasingConfig EfficiencyCalculator::compute_effective_biasing(
         Eigen::Vector3d ref_pos = source_position_;
         if (source_type_ == SourceType::Cylindrical) ref_pos = cyl_src_.center;
         if (source_type_ == SourceType::Rectangular) ref_pos = rect_src_.center;
-        const double cone_half = compute_cone_half_angle(ref_pos);
+        const double cone_half = sampling_cone(ref_pos).half_angle;
         const double omega_frac = 0.5 * (1.0 - std::cos(cone_half));
         if (cone_half < kPi - 0.01 && omega_frac < 0.15) {
             const bool total_or_spectrum =

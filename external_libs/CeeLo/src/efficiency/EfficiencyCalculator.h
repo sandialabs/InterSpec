@@ -839,6 +839,13 @@ public:
     }
     void enable_electron_csda(bool on) { transport_config_.enable_electron_csda = on; }
     void enable_cone_sampling(bool on) { use_cone_sampling_ = on; }
+    /// Cone-sample sources BESIDE the detector too.  The legacy cone is centred on the direction to
+    /// the crystal-face origin, and degenerates to the full sphere whenever the source lies within
+    /// the detector's z-range - ~300x the histories for a far-field node beside a 3x3 NaI.  With
+    /// this on, such a source instead gets the smallest cone, with its own axis, around the outer
+    /// envelope (envelope_bounding_cone), padded like the legacy one.  Off by default, so every
+    /// existing random-number stream is unchanged.
+    void enable_general_cone_sampling(bool on) { general_cone_sampling_ = on; }
     void enable_fep_only_mode(bool on) { fep_only_mode_ = on; }
     void set_disable_fep_early_kill(bool on) { transport_config_.disable_fep_early_kill = on; }
 
@@ -1153,6 +1160,7 @@ private:
 
     // Options
     bool use_cone_sampling_ = true;
+    bool general_cone_sampling_ = false;
     bool fep_only_mode_ = false;
     bool source_electron_transport_ = false;
     AirAttenuation air_attenuation_ = AirAttenuation::None;
@@ -1214,7 +1222,7 @@ private:
     CascadePeakTally cascade_peak_thread(
         const std::vector<DecayCascade>& cascades, std::size_t primary_branch,
         std::size_t primary_index, double peak_keV, double tol_keV,
-        double cos_theta_max, bool coned,
+        double cos_theta_max, bool coned, const Eigen::Vector3d& cone_axis,
         const std::vector<CascadeVacancyDraw>& prim_vacancies,
         const std::vector<CascadeSumPairChannel>& channels,
         uint64_t num_events, uint64_t seed, bool ic_electrons,
@@ -1353,6 +1361,20 @@ private:
     Eigen::Vector3d sample_cone_direction(const Eigen::Vector3d& from_pos,
                                           double cos_theta_max,
                                           std::mt19937_64& rng) const;
+    /// sample_cone_direction about an explicit unit axis.
+    Eigen::Vector3d sample_cone_about(const Eigen::Vector3d& axis,
+                                      double cos_theta_max,
+                                      std::mt19937_64& rng) const;
+
+    /// A sampling cone from a point: unit axis, half-angle (pi means the full sphere) and cosine.
+    struct SamplingCone {
+        Eigen::Vector3d axis;
+        double half_angle = 0.0;
+        double cos_max = 1.0;
+    };
+    /// The cone compute_cone_half_angle describes (axis toward the crystal-face origin) - or, with
+    /// enable_general_cone_sampling, the outer-envelope cone wherever that one degenerates.
+    SamplingCone sampling_cone(const Eigen::Vector3d& from_pos) const;
 
     /// Sample a direction by targeting a random point on the detector's outer
     /// surface. Returns {direction, weight} where weight = A * cos_inc / (4pi * d^2).

@@ -469,7 +469,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         double inner_z;       ///< z-extent of inner cavity solid
         double center_z;      ///< World z of solid center for physvol placement
         double inner_offset;  ///< z offset of inner solid center relative to outer solid center
-        bool use_subtraction; ///< true when front endcap is present
+        bool use_subtraction; ///< true when the shell has a front or a back plate
     };
 
     std::vector<AttGDMLParams> att_gdml;
@@ -494,7 +494,11 @@ void write_gdml(const Geometry& geom, const std::string& filename,
 
             double inner_center_world = (acc_z_min + acc_z_max) / 2.0;
             p.inner_offset    = inner_center_world - p.center_z;
-            p.use_subtraction = (att.front_thickness > 0.0 && p.inner_z > 0.0
+            // A cup (outer minus inner) whenever the shell has a front OR a back plate - the back
+            //  plate being where z_end reaches past the envelope inside (RayTrace's construction).
+            //  Only a shell with neither is the plain annular tube below.
+            const bool has_back = (shell_z_max > acc_z_max + 1.0e-9);   // not rounding residue
+            p.use_subtraction = ((att.front_thickness > 0.0 || has_back) && p.inner_z > 0.0
                                  && !att.side_only);
 
             att_gdml.push_back(p);
@@ -735,7 +739,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
 
         if (p.use_subtraction) {
             // Cup: outer full cylinder minus shorter inner full cylinder.
-            // Leaves a solid front disk whose thickness = (outer_z - inner_z).
+            // Leaves solid front/back disks wherever the outer reaches past the inner.
             out << "    <tube name=\"AttOuterSolid" << i << "\""
                 << " rmin=\"0\" rmax=\"" << fmt(p.outer_r) << "\""
                 << " z=\"" << fmt(p.outer_z) << "\""
@@ -750,7 +754,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 << "      <positionref ref=\"att" << i << "_inner_offset\"/>\n"
                 << "    </subtraction>\n";
         } else {
-            // No front endcap (front_thickness == 0): simple hollow annular tube.
+            // Neither a front nor a back plate: simple hollow annular tube.
             out << "    <tube name=\"AttSolid" << i << "\""
                 << " rmin=\"" << fmt(p.inner_r) << "\""
                 << " rmax=\"" << fmt(p.outer_r) << "\""

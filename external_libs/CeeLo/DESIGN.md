@@ -260,6 +260,16 @@ not change; one used only at query time is an interpretation and can be correcte
   `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`, concentric
   (each wraps the previous) and always traversed.
 
+- **Back structure.** A layer whose `z_end` reaches past the envelope it wraps is a cup closed
+  by a back plate of that excess thickness - no extra field, so older builds trace it the same.
+  `GeometryDescriptor::set_layer_back_thickness_cm` / `layer_back_thickness_cm` work in that
+  convention (setting one moves every outer layer's back, and a collimator that reached the old
+  back, so their own plates are unchanged); `back_structure_extent_cm` is how far the described
+  structure reaches behind the crystal (vacuum gaps included; 0 = nothing described), and
+  `outer_envelope()` the detector's true outside. A vacuum layer with only a back is a gap
+  behind the crystal. The GDML export subtracts the inner envelope whenever a layer has a front
+  or a back.
+
 - **Source shielding**: spherical shells (point source) or concentric shells matching the
   source shape — `add_source_shield(material, thickness)`, `(material, t_radial, t_end)`
   (cylinders), `(material, t_x, t_y, t_z)` (boxes). Per-dimension thicknesses apply to both
@@ -436,6 +446,56 @@ without it serializes exactly as before. A host keeping only the total and on-ax
 sets `GenerationOptions::scans_stop_on_total`, so the angular and near-field nodes stop on
 total precision (6–16× fewer histories at ≥662 keV; worst total 0.84%).
 
+### Side & back incidence (`CEELO_BUILD_RESPONSE`)
+
+A source beside or behind the detector (theta > 90 deg from the crystal-face origin).
+- **Generation:** `GenerationOptions::back_coverage` {None (default), Coarse 6 angles, Fine 11,
+  93-180 deg} adds a far-field scan (stage 4, its own node ids, so front seeds are untouched) at
+  `back_precision_scale` x the node precision, sampled with the general cone
+  (`EfficiencyCalculator::enable_general_cone_sampling`: the outer envelope's bounding cone about
+  its own axis, rather than the isotropic fallback whenever the source's z lies within the
+  detector's). Its columns are prepended to `eta_fep` / `eta_tot` (cos theta < 0). FullMc
+  fixed-grid only; `closed_loop` refuses it. There is no near-field table behind the face plane:
+  the kernel carries the distance dependence there.
+- **Evaluation:** `EtaTable::eval_ln` interpolates the front and back node sets separately, so a
+  covered response's front values, uncertainties and flags equal an uncovered one's, bit for bit -
+  below the grazing node too, where both clamp to it.  Behind the face plane the gap from the last
+  back node is bridged linearly up to the plane, where that clamped grazing value holds. Behind the face plane (`common_eval`): covered -> the usual floors; uncovered and
+  not angle-flat -> `OutOfRangeClamped` + `model_sigma::behind_extrapolation`; angle-flat
+  (curve / flat transfers) -> no clamp, the transfer envelope saturates (s2 = 1); behind the
+  crystal's back plane with a described back -> + `back_structure_approx`, with none -> `NeedsMc`
+  + `behind_plane` as before. A total table without back nodes under a covered FEP table is
+  charged `behind_extrapolation` itself. The near-field gates use the distance to the nearest point
+  of the outer envelope (`d_near_cm`), not the exit along the ray from the face centre, which
+  overstates it beside a long detector. The collimator shadow gate (s = transmitted / geometric solid angle of
+  the active crystal) applies in front for a collimated response, and behind the face because a
+  removal-only kernel misses full-energy in-scatter once the direct path is mostly blocked. Against
+  MC around two HPGe and two NaI detectors (approximate backs, 40-1332 keV):
+  - without back nodes, behind the crystal's back plane the model read ~-11% at s 0.1-0.3, ~-33% at
+    s 1e-4..1e-2 and ~-100% below, within ~5% above 0.3; beside the crystal, through thin side
+    walls, within ~7% down to s 0.01 - so the gate applies behind the back plane (or a collimator);
+  - with back nodes, within ~5-8% above s 0.3 but 20-70% off below it, beside the crystal too (the
+    nodes' scatter-dominated values interpolate badly) - so the gate applies past the face plane.
+  A back node the MC could not measure (no full-energy counts, or > 50% uncertainty) is held from
+  its nearest measured neighbour with a 100% sigma.
+  With that, `behind_extrapolation` = 0.05 leaves every region's RMS pull <= 0.77 over 2332
+  points. `back_structure_approx` (0.10) is the cost of a reasonable back description only:
+  leaving 2 cm of steel out of an HPGe's back changed its efficiency directly behind 30-fold at
+  122 keV.
+- **Serialization:** a response with back nodes is stamped version 4, which older readers refuse
+  (they would interpolate across the seam); everything else keeps its version and hash.
+- **Clearance:** `geometry/ConvexSeparation.h` measures the distance between convex solids
+  (`convex_separation`: a point, sphere, cylinder about any axis, or rotated box, by alternating
+  projections) and where a ray enters one (`convex_entry_distance`).
+  `GeometryDescriptor::Envelope::solid()` is the detector's outside as such a solid; place it with
+  `ConvexSolid::transformed()`. A host uses these to keep a source and its shielding clear of the
+  detector wherever it sits, and to find where a ray from the source reaches the housing.
+- **Recorded choices:** `generate()` records `ResponseProvenance::back_coverage` (fixed grid),
+  `precision_profile` (unless the caller passed its own `node_precision` map) and
+  `n_anchor_angles` (transfer mode), so a host can offer the same run again. They are optional
+  `Provenance` attributes, written and hashed only when set: a response saved before them loads
+  with them empty and keeps its hash.
+
 ### Efficiency transfer (EFFTRAN-style, `CEELO_BUILD_RESPONSE`)
 
 `src/io/EfficiencyTransfer.h` anchors an efficiency curve at ONE reference position (from
@@ -479,6 +539,12 @@ manual knob.
 In FEP-only mode cone biasing is safe even with source material: the stochastic Rayleigh
 weighting handles source effects without changing direction. Extended sources size the
 cone per event from the sampled position.
+
+A point source whose z lies within the detector's z range (beside it) gets no cone by default
+- the cone is aimed along the detector axis, and from there it would be the whole sphere - so it
+is emitted isotropically. `EfficiencyCalculator::enable_general_cone_sampling(true)` instead
+bounds the outer envelope by a cone about the direction to it (`geometry/BoundingCone.h`), ~10x
+fewer histories beside the detector; off by default, so fixed-seed results are unchanged.
 
 The same rules apply to the GEANT4 harness (`--cone-bias` for point sources only;
 `generate_all_spectra.cpp`'s `run_config(..., use_cone_bias)` sets both sides). Isotropic

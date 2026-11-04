@@ -60,6 +60,7 @@
 /// XML: to_xml_string()/from_xml_string() -- ONE codec shared by the
 /// generator and by InterSpec (which embeds the fragment in its DRF XML).
 
+#include "geometry/ConvexSeparation.h"
 #include "geometry/Geometry.h"
 #include "io/Pchip.h"
 #include "io/ResponseKernel.h"
@@ -183,7 +184,31 @@ namespace model_sigma {
     /// missing back structure, which this measurement cannot see.
     ///
     /// The query also raises ResponseFlag::NeedsMc, so a host can decline rather than use it.
+    ///
+    /// Since back structure can be described (a layer's z_end past the envelope inside it - see
+    /// LayerSpec), this applies only where that measurement does not reach: a source behind the
+    /// crystal's BACK plane on a detector whose descriptor describes nothing there.  Beside the
+    /// detector, and behind one with a described back, the terms below apply instead.
     constexpr double behind_plane = 0.30;
+
+    /// Behind the face plane (cos_theta < 0), on a response whose angular tables stop at the
+    /// grazing node and are not angle-flat: the eta and near-field corrections are the grazing
+    /// node's, extrapolated.  ResponseFlag::OutOfRangeClamped.
+    ///
+    /// Measured (2026-11, InterSpec's test_BackIncidence BackEnvelopeMeasure) against CeeLo MC
+    /// beside and behind two HPGe and two NaI detectors (2332 points, 40-1332 keV, contact to far
+    /// field; NeedsMc points excluded): 0.05 leaves every region's RMS pull at or below 0.77, the
+    /// same coverage 0.08 gave.
+    constexpr double behind_extrapolation = 0.05;
+
+    /// Behind the crystal's back plane on a detector whose back structure IS described: the
+    /// description is approximate (a couple of layers where a real detector has a cryostat, a
+    /// PMT, electronics), and this is what that costs for a REASONABLE description.  No constant
+    /// covers a materially wrong one: in the same measurements, leaving out 2 cm of steel behind
+    /// an HPGe changed the efficiency directly behind it 30-fold at 122 keV, while a NaI PMT
+    /// described as 3 mm of steel rather than its real layers was within ~1% at median but
+    /// 60-80% off at 40-60 keV.  Hosts should say so when a source is behind the back plane.
+    constexpr double back_structure_approx = 0.10;
 
     /// A response with no NearFieldModel queried inside the near-field gate: the kernel-only
     /// near-field error, i.e. the near-field boost a ray-traced kernel cannot know.
@@ -371,8 +396,13 @@ struct MaterialSpec {
 
 /// One concentric cup-shaped layer (endcap, window, housing, wrap...).
 /// Multiple layers are supported, ordered innermost -> outermost; each maps
-/// to one Geometry::add_attenuator call. NOTE: CeeLo attenuators cover front
-/// + side; dedicated back layers are not modeled (deferred with theta > 90).
+/// to one Geometry::add_attenuator call, which builds it as a cup over the
+/// envelope inside it (the crystal, then each inner layer): front and side
+/// walls, plus a BACK PLATE wherever z_end reaches past that envelope's back.
+/// So a layer's back thickness is `z_end_cm` minus the inner envelope's z_max
+/// (see GeometryDescriptor::layer_back_thickness_cm); a vacuum layer with a
+/// back thickness is a gap behind the crystal, and lets the outer walls run on
+/// past it.  A layer ending at the crystal's back (z_end = L) has no back.
 struct LayerSpec {
     int material_index = -1;      ///< into GeometryDescriptor::materials
     double front_thickness_cm = 0.0;
@@ -509,6 +539,43 @@ struct GeometryDescriptor {
     /// where the ACTIVE volume starts, not where the crystal face is.
     double endcap_front_offset_cm() const;
 
+    /// The outer surface of the detector as described - crystal, layers and collimator - in the
+    /// crystal frame (cm): the solid a source must stay outside of.  Unlike
+    /// transverse_half_extent(), the dead layer (inside the crystal) adds nothing.
+    struct Envelope {
+        DetectorShape shape = DetectorShape::Cylinder;
+        double radius_cm = 0.0;     ///< Cylinder: outer radius
+        double half_x_cm = 0.0;     ///< Box: outer half-widths
+        double half_y_cm = 0.0;
+        double z_min_cm = 0.0;      ///< front-most outer surface (<= 0)
+        double z_max_cm = 0.0;      ///< back-most outer surface (>= crystal length)
+
+        /// Distance from the crystal-face origin, along the unit direction `u`, to where the ray
+        /// leaves this envelope (cm).  The origin is always inside it.  A source at distance d
+        /// along `u` has a CLEARANCE of d - exit_distance_cm(u) beyond the detector's outside.
+        double exit_distance_cm(const Eigen::Vector3d& u) const;
+
+        /// This envelope as a solid in the crystal frame (cm), for convex_separation() from a
+        /// source and convex_entry_distance() along a ray; place it elsewhere with
+        /// ConvexSolid::transformed().
+        ConvexSolid solid() const;
+    };
+    Envelope outer_envelope() const;
+
+    /// Back plate thickness of layer `k` (cm): how far its z_end reaches past the envelope inside
+    /// it - 0 when the layer ends at, or before, that envelope's back.
+    double layer_back_thickness_cm(size_t k) const;
+
+    /// Gives layer `k` a back plate `t_cm` thick (>= 0) by moving its z_end, and moves every outer
+    /// layer's z_end (and the collimator's, if it reached the old back) by the same amount, so
+    /// their own back plates are unchanged.
+    void set_layer_back_thickness_cm(size_t k, double t_cm);
+
+    /// How far the described structure reaches behind the crystal's back face (cm): the sum of the
+    /// layers' back thicknesses, vacuum gaps included.  0 when nothing behind the crystal is
+    /// described - the response then knows nothing of what really sits there.
+    double back_structure_extent_cm() const;
+
     /// Crystal K-edges within (e_min, e_max) keV -- the mandatory segment
     /// breaks for any ln-eta(E) interpolation (both flanks become nodes).
     std::vector<double> crystal_k_edges(double e_min_keV,
@@ -639,6 +706,10 @@ public:
     /// ln eta at (E, ct, phi); clamps and reports it via `clamped`.
     double eval_ln(double energy_keV, double cos_theta, double phi_deg,
                    bool& clamped) const;
+
+    /// True when every cos-theta column holds the same values - an angle-flat table (curve and
+    /// flat transfers), whose clamp in cos-theta loses nothing.
+    bool is_angle_flat() const;
 
     /// Interpolated fractional MC sigma at the query point (bilinear in
     /// (lnE, ct) at the nearest phi node).
@@ -860,12 +931,34 @@ enum class ProductionMethod : int {
 
 const char* to_string(ProductionMethod m);
 
+/// Per-node MC precision policy (the D0 speedup dial). Uniform reproduces the
+/// historical single-target behaviour bit-for-bit; RelaxMild installs the
+/// energy-graded map measured in the D0 policy memo (~2-2.5x cheaper high-E
+/// nodes at a bounded p95 cost).
+enum class PrecisionProfile : uint8_t {
+    Uniform,    ///< node_fep_precision everywhere (default; unchanged)
+    RelaxMild   ///< graded target precision by (stage, energy) -- see relax_mild_precision_map
+};
+
+const char* to_string(PrecisionProfile p);
+
+/// Side and back incidence scanned at generation (GenerationOptions::back_coverage).
+enum class BackCoverage : uint8_t { None, Coarse, Fine };
+
+const char* to_string(BackCoverage b);
+
 struct ResponseProvenance {
     ProductionMethod method = ProductionMethod::FullMc;
     std::string ceelo_version;        ///< library version string
     std::string created_utc;          ///< ISO-8601, informational
     ResponseProfile profile = ResponseProfile::General;
     double node_fep_precision = 0.003;///< per-node MC precision target
+    /// The remaining generation choices, so a host can offer the same run again.  Set by
+    /// ResponseGenerator::generate() (back_coverage on the full-MC grid, n_anchor_angles in
+    /// transfer mode); empty for a response made otherwise, or saved before they were recorded.
+    std::optional<PrecisionProfile> precision_profile;
+    std::optional<BackCoverage> back_coverage;
+    std::optional<int> n_anchor_angles;
     /// Half-width (keV) of the full-energy-peak window this response's FEP was
     /// scored with (physics/FepWindow.h).  A model that credits in-window
     /// Compton must use the SAME window, or it is calibrated against the wrong
