@@ -20,6 +20,8 @@
   <message id="raageo-share-corr-fcn">Share corr. fcn.</message>
   <message id="raageo-share-ext-atten">Share ext. atten.</message>
   <message id="raageo-shielded-by-other-curves">Shielded by other curves</message>
+  <!-- Label before the per-curve checkboxes, when there are three or more Physical model curves -->
+  <message id="raageo-shielded-by-label">by:</message>
 
   <!-- Equation types -->
   <message id="raageo-eqn-log-x">Log(x)</message>
@@ -39,7 +41,8 @@
   <message id="raageo-use-hoerl-corr-tt">Apply the modified Hoerl empirical correction (E<sup>b</sup>&middot;c<sup>1/E</sup>) on top of (detector efficiency &times; attenuation) for the Physical model.  Uncheck for no correction.</message>
   <message id="raageo-share-corr-fcn-tt">When checked, the Correlation Function setting will be synchronized across all Physical model curves.</message>
   <message id="raageo-share-ext-atten-tt">When checked, the external shielding configuration will be synchronized across all Physical model curves.</message>
-  <message id="raageo-shielded-by-other-curves-tt">When checked, the sources of this curve will be shielded by all other Physical model curves.</message>
+  <message id="raageo-shielded-by-other-curves-tt">When checked, the sources of this curve will be shielded by the self-attenuation and external shielding of the selected Physical model curves.<br />When there are three or more Physical model curves, you can select which curves shield this one; by default all other Physical model curves not already behind this curve are selected.</message>
+  <message id="raageo-shielded-by-curve-tt">When checked, the self-attenuation and external shielding of this Physical model curve will attenuate the sources of the current curve.<br />The curves shielding the selected curve are also selected automatically, but may be unchecked.</message>
   <message id="raageo-del-rel-eff-curve-tt">Removes this relative efficiency curve.</message>
   <message id="raageo-add-rel-eff-curve-tt">Add another relative efficiency curve.</message>
   

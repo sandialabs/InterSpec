@@ -142,7 +142,7 @@ private:
   Wt::WLabel *m_arealDensityLabel;
   NativeFloatSpinBox *m_arealDensity;
   Wt::WCheckBox *m_fitArealDensity;
-  /** Optional "Bias AD" checkbox (own row at the bottom, floated right); hidden unless
+  /** Optional "Bias AD" checkbox (top-left, beside the material/generic switch); hidden unless
    `setArealDensityBiasVisible(true)` is called (RelActCalcAuto only). */
   Wt::WCheckBox *m_biasArealDensity;
 
