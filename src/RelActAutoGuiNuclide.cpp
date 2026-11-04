@@ -590,20 +590,28 @@ public:
 
   void updateAllowedConstraints()
   {
-    int rel_eff_curve_index = -1;
-
-    try
+    // While `m_nuc` is being constructed (which constructs us), it hasnt been added to its Rel. Eff. curve yet (Wt4
+    //  constructs widgets before adding them to their parent), so we cant find its curve - but it also doesnt have a
+    //  source yet, so there are no other sources to consider; this function is called again once it has a source.
+    vector<RelActCalcAuto::NucInputInfo> nucs;
+    if( m_nuc->parent() )
     {
-      rel_eff_curve_index = m_nuc->relEffCurveIndex();
-    }catch( std::exception &e )
-    {
-      cerr << "Note from RelActAutoGuiNuclideConstraint: not updating allowed constraints"
-      << " due to not being able to determine Rel Eff curve index." << endl;
-      assert( 0 );
-      return;
-    }//try / catch
+      int rel_eff_curve_index = -1;
 
-    const vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+      try
+      {
+        rel_eff_curve_index = m_nuc->relEffCurveIndex();
+      }catch( std::exception &e )
+      {
+        cerr << "Note from RelActAutoGuiNuclideConstraint: not updating allowed constraints"
+        << " due to not being able to determine Rel Eff curve index." << endl;
+        assert( 0 );
+        return;
+      }//try / catch
+
+      nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+    }//if( m_nuc->parent() )
+
     const RelActCalcAuto::SrcVariant src_variant = m_nuc->source();
     const SandiaDecay::Nuclide * const nuc = m_nuc->nuclide();
     const SandiaDecay::Element * const el = m_nuc->element();

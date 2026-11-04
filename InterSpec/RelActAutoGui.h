@@ -25,8 +25,10 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <atomic>
 #include <memory>
+#include <vector>
 #include <utility>
 
 #include <Wt/WContainerWidget.h>
@@ -129,6 +131,9 @@ public:
   void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleShieldingCurveToggled( RelActAutoGuiRelEffOptions *rel_eff_curve_gui,
+                                    const RelActAutoGuiRelEffOptions *shielding_curve,
+                                    const bool is_shielding );
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
   void handleFwhmEstimationMethodChanged();
@@ -312,6 +317,19 @@ public:
   
   /** Update the UI to show/hide shared settings controls based on the number of physical model curves */
   void updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *changed_opts, RelActAutoGuiRelEffOptions *added_opts );
+
+  /** Which curves shield each Rel. Eff. curve in the GUI, by curve index; i.e., the
+   `RelEffCurveInput::shielded_by_other_phys_model_curve_shieldings` for each curve.
+   */
+  std::vector<std::set<size_t>> guiShieldingCurves() const;
+
+  /** Sets which curves shield each Rel. Eff. curve in the GUI, ignoring invalid entries (self-shielding, out of range,
+   or non-physical-model curves).  Call `updateMultiPhysicalModelUI(...)` first, if curves were added/removed/changed.
+   */
+  void setGuiShieldingCurves( const std::vector<std::set<size_t>> &shielded_by );
+
+  /** Gives the Rel. Eff. curve options room for the per-curve "shielded by" checkboxes, if any curve is showing them. */
+  void updateShieldingCurvesLayout();
 
 protected:
   void handleRoiDrag( double new_roi_lower_energy,

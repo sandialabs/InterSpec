@@ -1,5 +1,6 @@
 .RelEffShieldWidget {
   font-size: smaller;
+  position: relative; /* For positioning the optional "Bias AD" checkbox */
   
   border: 1px solid var(--interspec-border-color);
   padding-block-start: 0px;
@@ -44,10 +45,17 @@
   width: 65px;
 }
 
-/* Optional "Bias AD" checkbox: its own row at the bottom of the widget, floated to the right. */
+/* Optional "Bias AD" checkbox: in the otherwise empty space to the left of the material/generic switch (which is
+   scaled down and shifted to the right), so it takes neither its own row nor column.  Wt puts an inline
+   `white-space: normal` on the checkbox text, so we need `!important` to keep it from wrapping. */
 .RelEffShieldWidget .RelEffShieldBiasAD {
-  display: block;
-  float: right;
-  clear: both;
-  margin-top: 3px;
+  position: absolute;
+  top: -3px;
+  left: 5px;
+  font-size: smaller;
+}
+
+.RelEffShieldWidget .RelEffShieldBiasAD,
+.RelEffShieldWidget .RelEffShieldBiasAD > span {
+  white-space: nowrap !important;
 }

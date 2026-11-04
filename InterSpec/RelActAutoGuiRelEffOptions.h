@@ -25,8 +25,10 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <vector>
 #include <memory>
+#include <utility>
 #include <optional>
 
 #include <Wt/WString.h>
@@ -75,6 +77,10 @@ public:
   Wt::Signal<RelActAutoGuiRelEffOptions *> &sameCorrFcnOnAllCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &sameExternalShieldingChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &shieldedByOtherCurvesChanged();
+  /** Emitted when the user toggles one of the per-curve "shielded by" checkboxes (only shown with 3+ physical model
+   curves); arguments are this curve, the curve that was toggled, and if it is now checked.
+   */
+  Wt::Signal<RelActAutoGuiRelEffOptions *, const RelActAutoGuiRelEffOptions *, bool> &shieldingCurveToggled();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &optionsChanged();
 
   RelActCalc::RelEffEqnForm rel_eff_eqn_form() const;
@@ -90,6 +96,22 @@ public:
   void setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves);
   bool physModelShieldedByOtherCurves() const;
   void setPhysModelShieldedByOtherCurves( const bool shielded_by_others );
+
+  /** Sets the other physical model curves this curve may be shielded by, creating a checkbox for each; the selection
+   state of curves already present is kept, and if no selected curves remain, the "shielded by" checkbox is unchecked.
+   */
+  void setOtherPhysModelCurves( const std::vector<std::pair<const RelActAutoGuiRelEffOptions *,Wt::WString>> &curves );
+
+  /** The other curves that shield this curve; empty if the "shielded by" checkbox is unchecked, or not a physical model. */
+  std::set<const RelActAutoGuiRelEffOptions *> shieldingCurves() const;
+
+  /** Sets which curves shield this curve (checking the "shielded by" checkbox if non-empty); curves not passed to
+   `setOtherPhysModelCurves(...)` are ignored.  Does not emit any signals.
+   */
+  void setShieldingCurves( const std::set<const RelActAutoGuiRelEffOptions *> &curves );
+
+  /** If the per-curve "shielded by" checkboxes are currently shown; they take an extra row of space. */
+  bool isShowingShieldingCurves() const;
   RelActCalc::PuCorrMethod pu242_correlation_method() const;
 
   void update_self_atten_shield_widget( const std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten );
@@ -113,6 +135,8 @@ protected:
   void handleUseHoerlCheckboxChanged();
   /** Shows the "Hoerl Corr." checkbox, or the full None/Hoerl/Chebyshev drop-down when Chebyshev is selected. */
   void updateCorrFcnWidgetVisibility();
+  /** Shows the per-curve "shielded by" checkboxes only when a choice needs to be made (2+ other physical model curves). */
+  void updateShieldingCurvesVisibility();
 
 protected:
   RelActAutoGui *const m_gui;
@@ -134,7 +158,8 @@ protected:
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
   Wt::WComboBox *m_phys_model_corr_fcn;
-  /** Label for the correction-function drop-down; hidden while the default "Hoerl Corr." checkbox is shown. */
+  /** Holds the correction-function drop-down and its label; hidden while the default "Hoerl Corr." checkbox is shown. */
+  Wt::WContainerWidget *m_phys_model_corr_fcn_div;
   Wt::WLabel *m_phys_model_corr_fcn_label;
   /** Default-shown "Hoerl Corr." checkbox: a None/Hoerl skin over `m_phys_model_corr_fcn` (which stays the
    source of truth).  The full None/Hoerl/Chebyshev drop-down is only revealed when a Chebyshev correction
@@ -144,6 +169,12 @@ protected:
   Wt::WCheckBox *m_phys_model_same_corr_fcn_on_all_curves;
   Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;
   Wt::WCheckBox *m_phys_model_shielded_by_other_curves;
+  /** Holds a checkbox for each other physical model curve, to select which curves shield this one. */
+  Wt::WContainerWidget *m_shielding_curves_div;
+  /** The checkboxes in `m_shielding_curves_div`, keyed by the curve they represent; the curve pointers are only
+   used for identity (never dereferenced), so this curve does not need to track curve deletions or reordering.
+   */
+  std::vector<std::pair<const RelActAutoGuiRelEffOptions *,Wt::WCheckBox *>> m_shielding_curve_cbs;
   Wt::WText *m_eqn_txt;
   Wt::WContainerWidget *m_add_del_rel_eff_div;
   Wt::WPushButton *m_add_rel_eff_btn;
@@ -155,7 +186,7 @@ protected:
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_corr_fcn_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_ext_shield_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_shielded_by_other_curves;
-
+  Wt::Signal<RelActAutoGuiRelEffOptions *, const RelActAutoGuiRelEffOptions *, bool> m_shielding_curve_toggled;
 
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_options_changed_signal;
   
