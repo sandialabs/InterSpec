@@ -750,8 +750,8 @@ namespace DetEffG2kPar
   /** The geometry `makeDrf` models a DETECTOR.txt record as.  Field by field:
      - D1, D2: crystal radius (D1/2) and length.  D3: only classifies the record (#DetectorDef::Kind).
      - Slots 0/3/6: the front/side/back Ge dead layers (`ceelo::DeadLayerConfig`).
-     - Slots 1, 2: front shells; slots 4, 5: side shells.  Slots 7, 8 (the back) are dropped - the
-       descriptor models no back housing.
+     - Slots 1, 2: front shells; slots 4, 5: side shells; slots 7, 8: back plates, inside the side
+       shells (`ceelo::GeometryDescriptor::set_layer_back_thickness_cm`).
      - D7: the crystal face sits D7 behind the endcap's outer face, so the front vacuum shell is
        max(0, D7 - slots 1 and 2), and the endcap-front offset (the DRF's setback) is D7, or the
        front stack when that is thicker.  Measured: CeeLo near-field Monte Carlo against the grid
@@ -761,7 +761,9 @@ namespace DetEffG2kPar
        thin-window record is 9-17% off (median).
      - Side vacuum shell: max(0, D7 - D6), which is zero on every D3 = 0 record.  Unconfirmed: side-on
        Monte Carlo cannot tell candidate side gaps apart.
-     - D4, D5: not used, so the modelled can is the crystal plus its side shells - narrower than
+     - D5: the endcap length, from its outer face.  Whatever it leaves behind the crystal and the
+       back plates is vacuum, so the back of the modelled can is where the record puts it.
+     - D4: not used, so the modelled can is the crystal plus its side shells - narrower than
        the real one (71.6 vs 87.5 mm on one corpus detector), which the grid's no-data zone puts at
        D4.
      The record has no bore or bullet, so coaxial families get a conservative guessed bore - which
