@@ -76,5 +76,22 @@
   تغيير نوع الانحراف بشكل ساذج إلى {1} تسبب في أن تصبح القمة غير مهمة.<br />
   يرجى استخدام <b>محرر القمة</b> لإجراء هذا التغيير.
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">ذرى الخلفية المفقودة</message>
+  <message id="psgu-missing-back-peaks-msg">
+    طيف الخلفية لا يحتوي على ذرى مضافة عند الطاقات {1}، ولكن من المحتمل
+    وجود ذرى حقيقية في طيف الخلفية عند تلك الطاقات - هل ترغب في إضافة
+    تلك الذرى إلى طيف الخلفية؟
+  </message>
+  <message id="psgu-btn-no-dont-add">لا</message>
+  <message id="psgu-btn-add-peaks">إضافة ذرى...</message>
+  <message id="psgu-btn-add-all-detectable">إضافة جميع الذرى المُلاءمة تلقائياً</message>
+  <message id="psgu-back-peak-preview-title">معاينة ذرى الخلفية</message>
+  <message id="psgu-back-peak-preview-msg">سيتم إضافة الذرى التالية إلى طيف الخلفية:</message>
+  <message id="psgu-no-new-back-peaks">لم يتم العثور على ذرى إضافية في طيف الخلفية عند الطاقات المحددة.</message>
+  <message id="psgu-back-peaks-all-fit">تمت ملاءمة {1} ذروة مرشحة إلى الخلفية.</message>
+  <message id="psgu-back-peaks-some-fit">{1} من {2} ذروة مرشحة كانت ذات دلالة وتمت ملاءمتها إلى الخلفية.</message>
+  <message id="psgu-back-peaks-manual-hint">(يمكنك أيضاً ملاءمة ذرى الخلفية يدوياً بالضغط على مفتاح Alt (mac: مفتاح Option) مع النقر<br />
+  المزدوج على الطيف، أو بتحميل الخلفية كمقدمة)</message>
+  <message id="psgu-err-adding-back-peaks">خطأ في إضافة ذرى إلى الخلفية: {1}</message>
+  <message id="psgu-warn-no-back-spec">لا يوجد طيف خلفية محمل، لذا لا يمكن طرح مساحات ذرى الخلفية من المقدمة.</message>
 </messages>

@@ -819,6 +819,14 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                     if (lk.partner == mm) { pmate = lk.prob; break; }
                 c *= (1.0 - pmate * eff.tot(dc.members[mm].energy_keV));
             }
+            // A second photon of the primary's own line (two K vacancies both
+            // filled by it): 2 * P(a,a) / I_a of them per emitted photon.
+            const CascadeMember& pm = dc.members[m];
+            if (pm.self_pair_prob > 0.0 && pm.intensity > 0.0) {
+                const double pself =
+                    std::min(1.0, 2.0 * pm.self_pair_prob / pm.intensity);
+                c *= (1.0 - pself * eff.tot(pm.energy_keV));
+            }
         }
         return c;
     };

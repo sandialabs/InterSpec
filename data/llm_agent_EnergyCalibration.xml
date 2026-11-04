@@ -7,7 +7,7 @@
 -->
 
 <AgentDefinitions version="0">
-  <Agent name="EnergyCalibration">
+  <Agent name="EnergyCalibration" RequiresForeground="true">
     <Description>Specialized sub-agent for energy-calibrating spectra using NORM peaks (K40 1460 keV and/or Th232 2614 keV). Invoke when you suspect an energy calibration issue, or before performing nuclide ID, to help start with better peak energies. Do NOT provide peak lists -- the agent will find calibration peaks itself. Optionally specify if a particular peak or source should be used for calibration instead of NORM peaks.</Description>
     <AvailableFor><Agent>MainAgent</Agent><Agent>InSitu</Agent></AvailableFor>
     <SystemPrompt><![CDATA[## Role and Goal

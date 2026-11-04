@@ -316,9 +316,24 @@ void add_activity_info_to_not_fit_mdas( vector<BatchPeak::NotFitPeakMda> &mdas,
     peak_info.energy = static_cast<float>( energy );
     peak_info.fwhm = static_cast<float>( fwhm );
     // Per `DeconRoiInfo::PeakInfo`, air attenuation and detector efficiency are applied by the
-    //  calculation itself, so they must be divided back out of the model conversion here.
-    const double air_and_eff = supp->air_transmission * supp->det_efficiency;
-    if( air_and_eff <= 0.0 )
+    //  calculation itself (DetectionLimitCalc's decon_trial_peak), so divide out exactly what it
+    //  will multiply back in - not the fit's own efficiency and air factors, which come from the
+    //  fit's model at the true, offset-aware distance, and need not match a plain on-axis
+    //  `efficiency(energy, distance)`.  The decon peak then IS the fit's forward model.
+    double decon_eff = 0.0, decon_air = 1.0;
+    try
+    {
+      decon_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) )
+                             : drf->efficiency( static_cast<float>(energy), distance );
+      if( attenuate_air )
+        decon_air = std::exp( -GammaInteractionCalc::transmission_coefficient_air( energy,
+                                                                  distance - shield_thickness ) );
+    }catch( std::exception & )
+    {
+      continue;
+    }
+    const double air_and_eff = decon_air * decon_eff;
+    if( !(air_and_eff > 0.0) || !std::isfinite(air_and_eff) )
       continue;
     peak_info.counts_per_bq_into_4pi = mda.gammas_per_bq / air_and_eff;
     roi.peak_infos.push_back( peak_info );
@@ -1757,6 +1772,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   ShieldingSourceFitCalc::ShieldingSourceFitOptions fit_options;
   GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
   double distance = 1.0 * PhysicalUnits::meter;
+  double source_offsets[2] = { 0.0, 0.0 };
   {
     GammaInteractionCalc::ShieldSourceConfig config;
     try
@@ -1796,6 +1812,8 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     }
     
     distance = config.distance;
+    source_offsets[0] = config.source_offsets[0];
+    source_offsets[1] = config.source_offsets[1];
     fit_options = config.options;
     shield_definitions = config.shieldings;
     src_definitions = config.sources;
@@ -1938,8 +1956,20 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                                    " it was computed for; the exemplar's shieldings were not applied." );
     }
 
+    // A fixed-geometry efficiency has no source position (ShieldingSourceChi2Fcn::create refuses
+    //  offsets with one) - e.g., an exemplar fit off-axis, run with a fixed-geometry DRF override.
+    if( detector && detector->isFixedGeometry()
+        && ((source_offsets[0] != 0.0) || (source_offsets[1] != 0.0)) )
+    {
+      source_offsets[0] = source_offsets[1] = 0.0;
+      result.m_warnings.push_back( "The exemplar's source offsets were not applied, as the detector"
+                                   " response is for a fixed geometry." );
+    }
+
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
     chi_input.config.distance = distance;
+    chi_input.config.source_offsets[0] = source_offsets[0];  //an off-axis exemplar stays off-axis
+    chi_input.config.source_offsets[1] = source_offsets[1];
     chi_input.config.geometry = geometry;
     chi_input.config.shieldings = shield_definitions;
     chi_input.config.sources = src_definitions;

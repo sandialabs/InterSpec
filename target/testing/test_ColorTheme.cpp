@@ -441,6 +441,16 @@ BOOST_AUTO_TEST_CASE( FuzzCorpusParses )
 
   ColorTheme theme;
   BOOST_CHECK_NO_THROW( ColorTheme::fromJson( file_contents( SpecUtils::append_path(corpus, "default_theme.json") ), theme ) );
+
+  // Exports of the built-in "Dark" theme, as written by this version and by v1.0.14 (camelCase
+  //  `nonChartArea` keys), must import back as that theme.
+  for( const char *name : { "dark_exported.json", "dark_exported_v1.0.14.json" } )
+  {
+    ColorTheme dark;
+    BOOST_CHECK_NO_THROW( ColorTheme::fromJson( file_contents( SpecUtils::append_path(corpus, name) ), dark ) );
+    BOOST_CHECK_MESSAGE( dark.theme_name == "Dark", name << " name is '" << dark.theme_name.toUTF8() << "'" );
+    BOOST_CHECK_MESSAGE( dark.nonChartAreaTheme == "dark", name << " css theme is '" << dark.nonChartAreaTheme << "'" );
+  }
 }//BOOST_AUTO_TEST_CASE( FuzzCorpusParses )
 
 

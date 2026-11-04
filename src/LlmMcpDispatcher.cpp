@@ -621,6 +621,13 @@ json LlmMcpDispatcher::rpcError( const json &id, const int code, const std::stri
 }
 
 
+json LlmMcpDispatcher::toolErrorResult( const json &id, const std::string &message )
+{
+  const json content = json::array( { json{ {"type", "text"}, {"text", message} } } );
+  return json{ {"jsonrpc", "2.0"}, {"id", id}, {"result", { {"content", content}, {"isError", true} }} };
+}
+
+
 const std::vector<std::string> &LlmMcpDispatcher::supportedProtocolVersions()
 {
   // The revisions with an `initialize` handshake; they differ for us only in optional features.
@@ -786,7 +793,12 @@ LlmMcpDispatcher::Outcome LlmMcpDispatcher::handle( const json &message, const R
       }
 
       const json &call_params = message["params"];
-      const std::string tool_name = call_params.at( "name" );
+      if( !call_params.is_object() || !call_params.contains( "name" ) || !call_params["name"].is_string() )
+      {
+        outcome.reply = rpcError( id, -32602, "Missing or invalid 'name' for tools/call" );
+        return outcome;
+      }
+      const std::string tool_name = call_params["name"].get<std::string>();
       json arguments = call_params.value( "arguments", json::object() );
       if( !arguments.is_object() )
         arguments = json::object();
@@ -796,7 +808,16 @@ LlmMcpDispatcher::Outcome LlmMcpDispatcher::handle( const json &message, const R
           && call_params["_meta"].contains( "progressToken" ) )
         progress_token = call_params["_meta"]["progressToken"];
 
-      return handle_tool_call( id, tool_name, std::move(arguments), progress_token, context );
+      try
+      {
+        return handle_tool_call( id, tool_name, std::move(arguments), progress_token, context );
+      }catch( const std::exception &e )
+      {
+        // The call could not be started (no such session or turn, a bad argument, ...).
+        outcome = Outcome{};
+        outcome.reply = toolErrorResult( id, e.what() );
+        return outcome;
+      }
     }//if( method == "tools/call" )
 
     // --- Unknown method ---
@@ -1020,7 +1041,7 @@ LlmMcpDispatcher::Outcome LlmMcpDispatcher::handle_tool_call( const json &id, co
         return rpcResult( id, running_turn_status( *pending, turn_id,
           "The assistant is still working; call assistant_get_result with this turn_id to wait for the result." ) );
 
-      return rpcError( id, -32603, LlmTools::async_timeout_error_message( tool_name, tool_timeout_ms ) );
+      return toolErrorResult( id, LlmTools::async_timeout_error_message( tool_name, tool_timeout_ms ) );
     }//if( !pending->isDone() )
 
     std::variant<json, std::string> result_or_error = pending->getResult();
@@ -1030,7 +1051,7 @@ LlmMcpDispatcher::Outcome LlmMcpDispatcher::handle_tool_call( const json &id, co
       if( is_turn )
         return rpcResult( id, json{ {"status", pending->cancelRequested() ? "cancelled" : "error"},
                                     {"turn_id", turn_id}, {"error", *err} } );
-      return rpcError( id, -32603, *err );
+      return toolErrorResult( id, *err );
     }
 
     json result = std::get<json>( std::move(result_or_error) );
@@ -1059,7 +1080,7 @@ LlmMcpDispatcher::Outcome LlmMcpDispatcher::handle_tool_call( const json &id, co
           const std::string data = Wt::Utils::base64Decode( result["_image"].value( "base64Data", "" ) );
           if( !data.empty() )
           {
-            const std::string ext = (mime == "image/svg+xml") ? ".svg" : ((mime == "image/jpeg") ? ".jpg" : ".png");
+            const std::string ext = (mime == "image/jpeg") ? ".jpg" : ".png";
             const std::string relpath = McpAgentTools::saveOutputFile( user_session, tool_name + ext, data );
             const std::string token = manager->addDownload( user_session, relpath );
             result["image_file"] = json{ {"path", relpath},
@@ -1188,7 +1209,8 @@ void LlmMcpDispatcher::register_default_tools()
     // agent-surface description if unset.  For marker-free descriptions these are identical.
     info.description = sharedTool->mcpDescription.empty() ? sharedTool->description
                                                           : sharedTool->mcpDescription;
-    info.parameters_schema = sharedTool->parameters_schema;
+    info.parameters_schema = sharedTool->mcpParametersSchema.is_null() ? sharedTool->parameters_schema
+                                                                       : sharedTool->mcpParametersSchema;
     add_session_param( info.parameters_schema );
 
     m_tools[name] = std::move( info );

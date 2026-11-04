@@ -165,6 +165,7 @@ public:
     std::string systemPrompt; // System prompt for this agent
     std::vector<AgentType> availableForAgents; // List of agent types that can invoke this agent (empty = all agents can invoke)
     std::shared_ptr<AgentStateMachine> state_machine; // Optional state machine for workflow guidance (nullptr if not used)
+    bool requiresForeground = false; // If true, invoking this agent is refused (no LLM call) when no foreground is loaded
   };//struct AgentConfig
 
   /** Configuration for a tool with role-specific descriptions */
@@ -326,8 +327,20 @@ public:
        the `<ApiProvider>` element; purely additive, so the `LlmApi` version was not bumped. */
       std::optional<HttpBackend> httpBackend;
 
+      /** Optional short text shown above the assistant's input field while this provider is active
+       (e.g., an organization's usage notice); empty means no banner.  Read from an optional
+       `<Banner>` child element of `<ApiProvider>`; purely additive, so the `LlmApi` version was
+       not bumped. */
+      std::string banner;
+
       std::vector<ModelInfo> models;
       size_t activeModelIndex = 0;  // Index of the active model; resolved at parse time
+
+      /** Index of the model that grades LLM benchmark answers (`judge="true"` on a `<Model>`); when
+       unset, the model under test grades its own answers.  Only meaningful for the active provider,
+       since the judge uses the same endpoint and token as the model it grades.
+       */
+      std::optional<size_t> judgeModelIndex;
     };//struct ApiProvider
 
     bool enabled = false;
@@ -436,6 +449,15 @@ public:
     const std::string &apiEndpoint() const { return activeProvider().apiEndpoint; }
     const std::string &bearerToken() const { return activeProvider().bearerToken; }
     const std::string &model() const { return activeModel().name; }
+
+    /** Makes the model named `name` the active provider's active model, adding it to the provider
+     (with settings from the `LlmModelPresets`, where it has a preset for it) if it is not listed.
+     Used to grade with a different model, or to try a model for a single run, without needing it
+     in llm_config.xml.
+     @returns The index of the model in the active provider's `models`.
+     @throws std::runtime_error if `name` is empty, or there is no active provider.
+     */
+    size_t selectModel( const std::string &name );
     bool supportsImages() const { return activeModel().supportsImages; }
     const std::variant<bool, ReasoningEffort> &reasoning() const { return activeModel().reasoning; }
     int maxTokens() const { return activeModel().maxTokens; }

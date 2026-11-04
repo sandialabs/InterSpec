@@ -76,5 +76,22 @@
   歪度タイプを{1}に単純に変更するとピークが有意でなくなりました。<br />
   この変更には<b>ピークエディタ</b>を使用してください。
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">不足しているバックグラウンドピーク</message>
+  <message id="psgu-missing-back-peaks-msg">
+    バックグラウンドスペクトルにはエネルギー {1} にピークが追加されていませんが、
+    それらのエネルギーにおいてバックグラウンドスペクトルに実際のピークが存在する可能性があります -
+    それらのピークをバックグラウンドスペクトルに追加しますか？
+  </message>
+  <message id="psgu-btn-no-dont-add">いいえ</message>
+  <message id="psgu-btn-add-peaks">ピークを追加...</message>
+  <message id="psgu-btn-add-all-detectable">全自動フィットピークを追加</message>
+  <message id="psgu-back-peak-preview-title">バックグラウンドピークのプレビュー</message>
+  <message id="psgu-back-peak-preview-msg">以下のピークがバックグラウンドスペクトルに追加されます：</message>
+  <message id="psgu-no-new-back-peaks">指定されたエネルギーにおいてバックグラウンドスペクトルに追加のピークは見つかりませんでした。</message>
+  <message id="psgu-back-peaks-all-fit">{1} 個の候補ピークがバックグラウンドにフィットされました。</message>
+  <message id="psgu-back-peaks-some-fit">{2} 個の候補ピークのうち {1} 個が有意でバックグラウンドにフィットされました。</message>
+  <message id="psgu-back-peaks-manual-hint">(Altキー（mac: Optionキー）を押しながらスペクトル上でダブル<br />
+  クリックすることで、手動でバックグラウンドピークをフィットすることもできます。また、バックグラウンドをフォアグラウンドとして読み込む方法もあります)</message>
+  <message id="psgu-err-adding-back-peaks">バックグラウンドへのピーク追加エラー: {1}</message>
+  <message id="psgu-warn-no-back-spec">バックグラウンドスペクトルが読み込まれていないため、前景からバックグラウンドピーク面積を差し引くことができません。</message>
 </messages>

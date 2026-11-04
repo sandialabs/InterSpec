@@ -4,6 +4,13 @@ if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
 endif()
 
+# As the top-level CMakeLists.txt does, but that is only read after project() below, by when the
+#  default (the build machine's macOS version) is set; and an executable given to others must run
+#  on older macOS.  The dependency prefix (target/dep_build) is built for the same version.
+if( APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET )
+  set( CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "macOS deployment target" FORCE )
+endif()
+
 project( InterSpecMcpStdio )
 
 # The stdio MCP server: an MCP client (Claude Code, Claude Desktop, ...) launches it, and talks to
@@ -48,6 +55,10 @@ if( MSVC )
   # Static MSVC runtime, so the executable needs no redistributable.
   set( Boost_USE_STATIC_RUNTIME ON )
   set( CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" )
+  # quickjs-ng asks for CMake 3.10, so would otherwise ignore CMAKE_MSVC_RUNTIME_LIBRARY (that needs
+  #  policy CMP0091, from 3.15), and compile with cl's default of /MT whatever the configuration - which
+  #  matches only a Release build; a Debug one would fail to link (LNK2038, /MT vs /MTd).
+  set( CMAKE_POLICY_DEFAULT_CMP0091 NEW )
 endif()
 
 if( UNIX AND NOT APPLE )
@@ -110,6 +121,12 @@ if( UNIX AND NOT APPLE )
   target_link_options( InterSpecMcpStdio PRIVATE -static-libstdc++ -static-libgcc )
 endif()
 
+if( MSVC )
+  # Paths are UTF-8 throughout (AppUtils::getUtf8Args), but Wt and SandiaDecay open files with the
+  #  narrow-character APIs, which read them in the process code page; the manifest makes that UTF-8.
+  target_sources( InterSpecMcpStdio PRIVATE InterSpec-mcp-stdio.manifest )
+endif()
+
 # Tests of the QuickJS sandbox: `ctest` in the build directory.
 enable_testing()
 add_executable( test_quickjs_sandbox tests/test_quickjs_sandbox.cpp QuickJsSandbox.cpp QuickJsSandbox.h )
@@ -123,5 +140,49 @@ add_executable( test_native_http tests/test_native_http.cpp )
 target_link_libraries( test_native_http PRIVATE InterSpecLib )
 set_target_properties( test_native_http PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES )
 
+# `cmake --install` gives a self-contained directory to hand to others: the executable finds the
+#  data in ../share/interspec/data, and InterSpec's text next to it (so the app root is
+#  share/interspec).  Of InterSpec_resources only the text is needed, as there is no browser.
+set( INTERSPEC_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." )
+set( SHARE_DEST "share/interspec" )
+
+# The rules below are the "McpStdio" component; `cmake --install <build> --component McpStdio` gives
+#  just them.  (The libraries added above have install rules of their own - plutovg's headers and
+#  CMake package, VoigtDistribution's headers - which stay in the "Unspecified" component.)
+set( CMAKE_INSTALL_DEFAULT_COMPONENT_NAME McpStdio )
+
 install( TARGETS InterSpecMcpStdio DESTINATION bin )
-install( FILES "${dejavu_fonts_SOURCE_DIR}/LICENSE" DESTINATION share/interspec/licenses RENAME DejaVuFonts-LICENSE.txt )
+
+# Local KnowledgeBase skills (data/llm_knowledge/*, git-ignored) are the developer's own, so not
+#  distributed; sandia.decay.xml is a build-time copy, installed from SandiaDecay below.
+install( DIRECTORY "${INTERSPEC_SRC_DIR}/data" DESTINATION "${SHARE_DEST}"
+  PATTERN ".DS_Store" EXCLUDE
+  REGEX "/data/llm_knowledge/.+" EXCLUDE
+  REGEX "/data/gamma_spec_skills" EXCLUDE
+  REGEX "/data/sandia\\.decay\\.xml$" EXCLUDE
+)
+install( FILES "${INTERSPEC_SRC_DIR}/data/llm_knowledge/README.md" DESTINATION "${SHARE_DEST}/data/llm_knowledge" )
+install( FILES "${INTERSPEC_SRC_DIR}/external_libs/SandiaDecay/sandia.decay.min.xml"
+         DESTINATION "${SHARE_DEST}/data" RENAME "sandia.decay.xml" )
+install( DIRECTORY "${INTERSPEC_SRC_DIR}/InterSpec_resources/app_text" DESTINATION "${SHARE_DEST}/InterSpec_resources"
+         PATTERN ".DS_Store" EXCLUDE )
+
+install( FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" "${INTERSPEC_SRC_DIR}/LICENSE.txt" "${INTERSPEC_SRC_DIR}/NOTICE.html"
+         DESTINATION "${SHARE_DEST}" )
+
+# Licenses of the code compiled into the executable that NOTICE.html does not reproduce in full.
+set( LICENSE_DEST "${SHARE_DEST}/licenses" )
+install( FILES "${dejavu_fonts_SOURCE_DIR}/LICENSE" DESTINATION "${LICENSE_DEST}" RENAME DejaVuFonts-LICENSE.txt )
+install( FILES "${plutovg_SOURCE_DIR}/LICENSE" DESTINATION "${LICENSE_DEST}" RENAME plutovg-LICENSE.txt )
+install( FILES "${quickjs_SOURCE_DIR}/LICENSE" DESTINATION "${LICENSE_DEST}" RENAME quickjs-ng-LICENSE.txt )
+install( FILES "${INTERSPEC_SRC_DIR}/external_libs/SandiaDecay/LICENSE.txt" DESTINATION "${LICENSE_DEST}" RENAME SandiaDecay-LICENSE.txt )
+install( FILES "${INTERSPEC_SRC_DIR}/external_libs/SpecUtils/LICENSE.txt" DESTINATION "${LICENSE_DEST}" RENAME SpecUtils-LICENSE.txt )
+install( FILES "${INTERSPEC_SRC_DIR}/external_libs/CeeLo/LICENSE.txt" DESTINATION "${LICENSE_DEST}" RENAME CeeLo-LICENSE.txt )
+install( FILES "${INTERSPEC_SRC_DIR}/external_libs/CeeLo/THIRD-PARTY-NOTICES.md" DESTINATION "${LICENSE_DEST}" RENAME CeeLo-THIRD-PARTY-NOTICES.md )
+install( FILES "${INTERSPEC_SRC_DIR}/external_libs/muparserx-4.0.7/License.txt" DESTINATION "${LICENSE_DEST}" RENAME muparserx-LICENSE.txt )
+set( SPECUTILS_3RDPARTY "${INTERSPEC_SRC_DIR}/external_libs/SpecUtils/3rdparty" )
+install( FILES "${SPECUTILS_3RDPARTY}/nlohmann/LICENSE.MIT" DESTINATION "${LICENSE_DEST}" RENAME nlohmann_json-LICENSE.txt )
+install( FILES "${SPECUTILS_3RDPARTY}/inja/LICENSE.txt" DESTINATION "${LICENSE_DEST}" RENAME inja-LICENSE.txt )
+install( FILES "${SPECUTILS_3RDPARTY}/date/LICENSE.txt" DESTINATION "${LICENSE_DEST}" RENAME date-LICENSE.txt )
+install( FILES "${SPECUTILS_3RDPARTY}/rapidxml/license.txt" DESTINATION "${LICENSE_DEST}" RENAME rapidxml-LICENSE.txt )
+install( FILES "${SPECUTILS_3RDPARTY}/code_from_boost/LICENSE_1_0.txt" DESTINATION "${LICENSE_DEST}" RENAME Boost-LICENSE_1_0.txt )

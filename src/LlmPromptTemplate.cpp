@@ -125,6 +125,16 @@ nlohmann::json buildContext( const LlmConfig &config, const Surface surface, con
   // An MCP server's sessions have no user to answer `ask_user_question` (it is not registered).
   ctx["interactive_user"] = !NO_INTERACTIVE_GUI_USER;
 
+  // Which MCP server the text is for: they differ in how files are given, sessions, and so on.
+  std::string mcp_server;
+  if( isMcp )
+    mcp_server = BUILD_AS_MCP_STDIO_SERVER ? "stdio" : (BUILD_AS_MCP_HTTP_SERVER ? "multi_session" : "desktop");
+  ctx["mcp_server"] = mcp_server;
+
+  // The agent's tools, filled in by LlmInterface::agentTemplateContext() for the assistant's prompts;
+  //  empty here, so a template that tests it elsewhere (e.g., a tool description) still renders.
+  ctx["tools"] = nlohmann::json::array();
+
   return ctx;
 }//buildContext(...)
 
@@ -162,5 +172,26 @@ std::string render( const std::string &tmplt, const nlohmann::json &ctx )
   // Degrade gracefully to the raw (unrendered) template so a bad template never breaks the assistant.
   return tmplt;
 }//render(...)
+
+
+nlohmann::json renderSchemaDescriptions( nlohmann::json schema, const nlohmann::json &ctx )
+{
+  if( schema.is_object() )
+  {
+    for( auto &[key, value] : schema.items() )
+    {
+      if( (key == "description") && value.is_string() )
+        value = render( value.get<std::string>(), ctx );
+      else if( value.is_structured() )
+        value = renderSchemaDescriptions( std::move(value), ctx );
+    }
+  }else if( schema.is_array() )
+  {
+    for( nlohmann::json &value : schema )
+      value = renderSchemaDescriptions( std::move(value), ctx );
+  }
+
+  return schema;
+}//renderSchemaDescriptions(...)
 
 }//namespace LlmPromptTemplate

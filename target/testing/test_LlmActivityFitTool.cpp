@@ -2006,3 +2006,85 @@ BOOST_AUTO_TEST_CASE( test_executeCloseActivityShieldingDisplay )
 
 
 
+
+
+// Two peaks, with the activity and a Pb thickness fit, is exactly determined: the fit reproduces
+//  both peaks, so the reported per-peak comparison must too.  (It used to read 1.09 and 1.06: the
+//  report attenuated through the shield with plain mu, while the fit credits the in-window Compton
+//  scatter, which on NaI peak widths is several percent.)  From the NSDD January 2025 drill
+//  (LA-UR-24-33222): Pb-203 behind ~3 cm Pb, on a NaI RadSeeker.
+BOOST_AUTO_TEST_CASE( test_activityFitOneOff_exactly_determined_matches_observed )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  for( const auto &file_type : { std::make_pair( "NSDD_2025Jan_Q4_Pb203_NaI.CHN", SpecUtils::SpectrumType::Foreground ),
+                                 std::make_pair( "NSDD_2025Jan_Q4_Pb203_NaI_Background.CHN", SpecUtils::SpectrumType::Background ) } )
+  {
+    const string path = SpecUtils::append_path( g_test_file_dir, string("AnalystTests/") + file_type.first );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Missing test file " << path );
+    shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
+    BOOST_REQUIRE( meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+    BOOST_REQUIRE( !meas->sample_numbers().empty() );
+    interspec->setSpectrum( meas, { *meas->sample_numbers().begin() }, file_type.second, {} );
+    Wt::WApplication::instance()->processEvents();
+  }
+
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_detector_efficiency_function",
+                                                json{ {"identifier", "RadSeeker-NaI"} }, interspec ) );
+
+  json peaks_result;
+  BOOST_REQUIRE_NO_THROW( peaks_result = registry.executeTool( "add_analysis_peaks_for_source",
+                                                               json{ {"source", "Pb203"} }, interspec ) );
+  BOOST_REQUIRE( peaks_result.contains( "peaks" ) );
+
+  // The two Pb-203 lines that get through the lead
+  double e401 = -1.0, e681 = -1.0;
+  for( const json &peak : peaks_result["peaks"] )
+  {
+    const double energy = peak["energy"].get<double>();
+    if( fabs( energy - 401.3 ) < 10.0 )
+      e401 = energy;
+    if( fabs( energy - 680.5 ) < 10.0 )
+      e681 = energy;
+  }
+  BOOST_REQUIRE_MESSAGE( (e401 > 0.0) && (e681 > 0.0), "Pb203 401 and 681 keV peaks not fit: " << peaks_result.dump() );
+
+  const json fit_params = json{
+    {"distance", "50 cm"},
+    {"geometry", "Spherical"},
+    {"peak_energies", json::array( {e401, e681} )},
+    {"shielding", json::array( { json{ {"material", "Pb"}, {"fit_thickness", true} } } )}
+  };
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "activity_fit_one_off", fit_params, interspec ) );
+  BOOST_TEST_MESSAGE( "activity_fit_one_off: chi2=" << result.value( "chi2", -1.0 ) << ", dof=" << result.value( "dof", -1 ) );
+
+  BOOST_REQUIRE( result.contains( "dof" ) );
+  BOOST_CHECK_EQUAL( result["dof"].get<int>(), 0 );
+  BOOST_CHECK_LT( result["chi2"].get<double>(), 1.0E-4 );
+
+  BOOST_REQUIRE( result.contains( "solution_to_peak_comparison" ) );
+  BOOST_REQUIRE_EQUAL( result["solution_to_peak_comparison"].size(), 2 );
+  for( const json &comp : result["solution_to_peak_comparison"] )
+  {
+    BOOST_CHECK_MESSAGE( fabs( comp["observed_over_predicted"].get<double>() - 1.0 ) < 1.0E-3,
+                         "observed/predicted at " << comp["energy_kev"].get<double>() << " keV is "
+                         << comp["observed_over_predicted"].get<double>() );
+    BOOST_CHECK_SMALL( comp["num_sigma_off"].get<double>(), 0.05 );
+  }
+
+  // The per-peak entries agree, and carry the net count rate the fit used
+  BOOST_REQUIRE( result.contains( "sources" ) && !result["sources"].empty() );
+  const json &src_peaks = result["sources"][0]["peaks_this_source_contributes_to"];
+  BOOST_REQUIRE_EQUAL( src_peaks.size(), 2 );
+  for( const json &peak : src_peaks )
+  {
+    BOOST_CHECK_SMALL( peak["observed_over_predicted"].get<double>() - 1.0, 1.0E-3 );
+    BOOST_REQUIRE( peak.contains( "observed_cps" ) && peak.contains( "observed_cps_uncert" ) && peak.contains( "gross_cps" ) );
+    BOOST_CHECK_LE( peak["observed_cps"].get<double>(), peak["gross_cps"].get<double>() * 1.01 );
+  }
+}//test_activityFitOneOff_exactly_determined_matches_observed

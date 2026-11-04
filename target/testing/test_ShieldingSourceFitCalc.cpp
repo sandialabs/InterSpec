@@ -2680,6 +2680,75 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
       }
     }
   }//for( on-axis, off-axis )
+
+  // Cases I-J: a point source behind a material shield, with peak widths from an Fe-shield HPGe
+  //  and a Pb-shield NaI.  The fit credits the in-window forward Compton scatter (and charges the
+  //  Rayleigh deflection loss) through the shield; the reported values must use the same
+  //  coefficient, or an exactly-determined fit reports observed/predicted far from 1 - several
+  //  percent on NaI peak widths.
+  {
+    const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+    BOOST_REQUIRE( matdb );
+
+    struct MaterialCase
+    {
+      const char *label;
+      const char *material;
+      double thickness;
+      const char *nuclide;
+      vector<double> energies;
+      double fwhm_frac_at_662;  // peak FWHM / energy at 662 keV, scaled as sqrt(E)
+    };
+
+    const MaterialCase cases[] = {
+      { "Ba133+1cm-Fe-HPGe", "Fe (iron)", 1.0*PhysicalUnits::cm, "Ba133", { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 }, 0.003 },
+      { "Pb203+2cm-Pb-NaI", "Pb (lead)", 2.0*PhysicalUnits::cm, "Pb203", { 401.320, 680.515 }, 0.07 }
+    };
+
+    for( const MaterialCase &c : cases )
+    {
+      const std::shared_ptr<const Material> material = matdb->material( c.material );
+      BOOST_REQUIRE_MESSAGE( material, "Missing material " << c.material );
+
+      ShieldingSourceFitCalc::ShieldingInfo shield;
+      shield.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+      shield.m_isGenericMaterial = false;
+      shield.m_forFitting = true;
+      shield.m_material = material;
+      shield.m_dimensions[0] = c.thickness;
+      shield.m_dimensions[1] = shield.m_dimensions[2] = 0.0;
+      shield.m_fitDimensions[0] = shield.m_fitDimensions[1] = shield.m_fitDimensions[2] = false;
+
+      ShieldingSourceFitCalc::SourceFitDef src;
+      src.nuclide = db->nuclide( c.nuclide );
+      BOOST_REQUIRE( src.nuclide );
+      src.activity = 10.0*PhysicalUnits::microCi;
+      src.fitActivity = true;
+      src.age = PeakDef::defaultDecayTime( src.nuclide );
+      src.fitAge = false;
+      src.ageDefiningNuc = nullptr;
+      src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+      deque<shared_ptr<const PeakDef>> peaks;
+      for( const double energy : c.energies )
+      {
+        const double fwhm = c.fwhm_frac_at_662 * 661.657 * std::sqrt( energy / 661.657 );
+        peaks.push_back( make_test_peak( src.nuclide, energy, fwhm / PhysicalUnits::fwhm_nsigma, 1.0E4 ) );
+      }
+
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+      chi_input.config.distance = distance;
+      chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+      chi_input.config.shieldings = { shield };
+      chi_input.config.sources = { src };
+      chi_input.config.options = options;
+      chi_input.detector = detector;
+      chi_input.foreground = foreground;
+      chi_input.foreground_peaks = peaks;
+
+      check_expected_counts_parity( chi_input, 1.0E-9, c.label );
+    }//for( material cases )
+  }// End Cases I-J
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 
 
@@ -3576,6 +3645,75 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
     BOOST_TEST_MESSAGE( "  degenerate geometry -> " << rows.size() << " rows, warning: " << warnings[0] );
   }
 }//BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
+
+
+/** A shell reaching past the detector-face plane is refused even beside the detector, clear of it:
+ nothing there is modelled (GammaInteractionCalc::detector_face_plane_clearance).  The end-on
+ cylinder below, 2 cm across from the detector's face centre, reaches 2 cm past the face plane at
+ half-length 8 cm; at half-length 4 cm it stays in front of the plane and is accepted.
+ */
+BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  for( const double half_length : { 4.0*cm, 8.0*cm } )
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, 6.0*cm, 4.0*cm, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    input.config.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+
+    ShieldingSourceFitCalc::TraceSourceInfo trace;
+    trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+    trace.m_fitActivity = true;
+    trace.m_nuclide = db->nuclide( "Ba133" );
+    trace.m_activity = 10.0*PhysicalUnits::microCi;
+    trace.m_relaxationDistance = 0.0f;
+
+    ShieldingSourceFitCalc::ShieldingInfo shell;
+    shell.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+    shell.m_isGenericMaterial = false;
+    shell.m_forFitting = true;
+    shell.m_material = water;
+    shell.m_dimensions[0] = 2.0*cm;
+    shell.m_dimensions[1] = half_length;
+    shell.m_dimensions[2] = 0.0;
+    shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+    shell.m_traceSources.push_back( trace );
+
+    input.config.shieldings = { shell };
+    input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+
+    // Clear of the detector's face centre either way...
+    const double outer[3] = { shell.m_dimensions[0], shell.m_dimensions[1], 0.0 };
+    BOOST_REQUIRE_GT( GammaInteractionCalc::detector_face_clearance( input.config.geometry, outer,
+                                                     input.config.distance, 4.0*cm, 0.0 ), 0.0 );
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn.first );
+
+    // ...but only the shorter one is evaluated; the longer one's evaluation throws, which the
+    //  effective-shielding report turns into a warning.
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    vector<string> warnings;
+    fcn.first->computeEffectiveShielding( fcn.second.values(), cache, &warnings );
+    const bool refused = !warnings.empty();
+    BOOST_CHECK_MESSAGE( refused == (half_length > input.config.distance),
+                         "half-length " << half_length/cm << " cm at 6 cm, 4 cm off axis: "
+                         << (refused ? "refused" : "accepted") );
+  }//for( half_length )
+}//BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
 
 
 /** The fit report names the detector-efficiency model for the POINT sources even when the fit has
@@ -5818,8 +5956,8 @@ BOOST_AUTO_TEST_CASE( FixedGeomLayersAndCascade )
   fe_layer.m_dimensions[1] = fe_layer.m_dimensions[2] = 0.0;
   fe_layer.m_fitDimensions[0] = fe_layer.m_fitDimensions[1] = fe_layer.m_fitDimensions[2] = false;
 
-  // The fit's expected counts per peak.  (Not compared to energy_chi_contributions: for a material
-  //  shield the display path still uses plain mu, not the fit's FEP-window/Rayleigh coefficient.)
+  // The fit's expected counts per peak.  (For a material shield, energy_chi_contributions uses the
+  //  same FEP-window/Rayleigh coefficient - see ExpectedPeakCountsImpParity Cases I-J.)
   const auto counts = []( const ShieldingSourceChi2Fcn::ShieldSourceInput &input ) -> vector<double> {
     const auto fcn_pars = ShieldingSourceChi2Fcn::create( input );
     ShieldingSourceChi2Fcn::NucMixtureCache cache;

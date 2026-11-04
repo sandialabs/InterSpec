@@ -166,8 +166,15 @@ struct PeakContinuum
   /** The `WString::tr` key to use to render text appropriate for use as a label for the continuum type in the gui. */
   static const char *offset_type_label_tr( const OffsetType type );
   
-  /** Returns string to be used for XML or JSON identification of continuum type. */
+  /** Returns string to be used for XML or JSON identification of continuum type.
+
+   Note: for backwards compatibility of saved files, Quadratic is spelled "Quardratic"; for
+   interfaces without that constraint (e.g., LLM tools), use #offset_type_name instead.
+   */
   static const char *offset_type_str( const OffsetType type );
+
+  /** Same as #offset_type_str, except Quadratic is spelled correctly. */
+  static const char *offset_type_name( const OffsetType type );
   
   /** Returns the total number of parameters for a specified offset type.
    For the CDF step types this includes the step coefficients that are optimized by non-linear

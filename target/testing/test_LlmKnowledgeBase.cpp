@@ -24,6 +24,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -37,6 +38,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/LlmKnowledgeBase.h"
 
 using namespace std;
@@ -226,3 +228,34 @@ BOOST_AUTO_TEST_CASE( shipped_skills_well_formed )
     }
   }//for( const SkillInfo &skill : skills )
 }//BOOST_AUTO_TEST_CASE( shipped_skills_well_formed )
+
+
+BOOST_AUTO_TEST_CASE( skill_filter )
+{
+  const string datadir = find_data_dir();
+  BOOST_REQUIRE_MESSAGE( !datadir.empty(), "Could not find the static data directory; pass --datadir=..." );
+  InterSpec::setStaticDataDirectory( datadir );
+
+  BOOST_CHECK( !LlmKnowledgeBase::skillFilter().has_value() );
+  const vector<LlmKnowledgeBase::SkillInfo> all = LlmKnowledgeBase::loadSkills();
+  if( all.size() < 2 )
+  {
+    BOOST_TEST_MESSAGE( "Fewer than two skills found; not testing the skill filter." );
+    return;
+  }
+
+  // A subset: only the named skills, by canonical name.
+  const string wanted = all[1].canonical_name;
+  LlmKnowledgeBase::setSkillFilter( set<string>{ wanted, "no-such-skill" } );
+  const vector<LlmKnowledgeBase::SkillInfo> subset = LlmKnowledgeBase::loadSkills();
+  BOOST_REQUIRE_EQUAL( subset.size(), 1 );
+  BOOST_CHECK_EQUAL( subset[0].canonical_name, wanted );
+
+  // None.
+  LlmKnowledgeBase::setSkillFilter( set<string>{} );
+  BOOST_CHECK( LlmKnowledgeBase::loadSkills().empty() );
+
+  // Back to all.
+  LlmKnowledgeBase::setSkillFilter( std::nullopt );
+  BOOST_CHECK_EQUAL( LlmKnowledgeBase::loadSkills().size(), all.size() );
+}//BOOST_AUTO_TEST_CASE( skill_filter )

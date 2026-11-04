@@ -3439,7 +3439,7 @@ BOOST_AUTO_TEST_CASE( ChordPeakFractionGate, * boost::unit_test::disabled() )
         continue;
 
       double tau_before = 0.0, p_int = 0.0;
-      for( const ceelo::RaySegment &sg : r.segs )
+      for( const ceelo::RaySegment &sg : q.segs( r ) )
       {
         const ceelo::MacroscopicXS xs = sg.material->macroscopic_xs( 1.0e-3*energy_keV );
         const double mu_tot = xs.mu_total();

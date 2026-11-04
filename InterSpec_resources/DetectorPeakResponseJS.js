@@ -213,8 +213,6 @@ class DetectorPeakResponseJS {
         }
       }
     }
-    
-    console.log('DetectorPeakResponseJS: Validation completed successfully');
   }
   
   // Check if efficiency data is available
@@ -233,6 +231,15 @@ class DetectorPeakResponseJS {
       return this.data.extent;
     }
     return [50, 3000]; // Default fallback
+  }
+
+  // The part of the extent a chart opens on (the detector's valid range, at most 8 MeV); zooming
+  //  out still goes to the whole extent.
+  getInitialEnergyRange() {
+    if (this.data && this.data.initialRange) {
+      return this.data.initialRange;
+    }
+    return this.getEnergyExtent();
   }
   
   // The absolute-to-intrinsic conversion factor at an energy, or 1 when the curve is already

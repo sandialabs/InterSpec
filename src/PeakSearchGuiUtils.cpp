@@ -29,11 +29,15 @@
 #include <future>
 #include <memory>
 #include <thread>
+#include <iomanip>
+#include <sstream>
+#include <algorithm>
 #include <functional>
 
 #include <Wt/WText.h>
 #include <Wt/WTable.h>
 #include <Wt/WPanel.h>
+#include <Wt/WTimer.h>
 #include <Wt/WServer.h>
 #include <Wt/WPainter.h>
 #include <Wt/WComboBox.h>
@@ -69,6 +73,8 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/RefLineDynamic.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -145,6 +151,40 @@ class PeakSelectorWindow : public AuxWindow
   vector<WComboBox *> m_nuc_select_combos;
   vector<WCheckBox *> m_dont_change_nuc_cbs;
   vector<bool> m_peak_updated;
+
+  /** What a nuclide select item assigns to a peak; kept so the select text doesnt have to be parsed. */
+  struct SourceChoice
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    /** The decay that emits the photon (may be of a descendant of #nuclide); nullptr if unknown. */
+    const SandiaDecay::Transition *transition = nullptr;
+    const SandiaDecay::Element *element = nullptr;
+    const ReactionGamma::Reaction *reaction = nullptr;
+    PeakDef::SourceGammaType type = PeakDef::NormalGamma;
+    /** Photon energy, in keV; for S.E. and D.E. this is the full-energy gamma. */
+    double energy = 0.0;
+    /** The select item text, without the intensity; only parsed if none of the source pointers are set. */
+    std::string label;
+  };//struct SourceChoice
+
+  /** Parallel to #m_nuc_select_combos; entry [i][j] is what item j of select i assigns (item 0 is "No Source"). */
+  vector<vector<SourceChoice>> m_nuc_select_choices;
+  
+  /** A reference line a peak can be assigned to. */
+  struct RefLineChoice
+  {
+    SourceChoice choice;
+    /** The select item text; the choice label, plus the intensity. */
+    std::string text;
+    /** Where the line is in the spectrum (i.e., the escape energy for S.E. and D.E.). */
+    double energy = 0.0;
+    /** How close the peaks assigned energy must be, for this to be its current choice. */
+    double allowed_diff = 0.001;
+    bool is_background = false;
+  };//struct RefLineChoice
+  
+  /** All the reference lines peaks can be assigned to; built by #populateNuclideSelects on first use. */
+  vector<RefLineChoice> m_ref_line_choices;
   
   /** For each entry the first peak is a previously existing peak (before either
    the nuclide ID or peak search); the second peak is the new peak (either found
@@ -379,6 +419,7 @@ protected:
     
     m_keep_peak_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_nuc_select_combos.resize( m_old_to_new_peaks.size(), nullptr );
+    m_nuc_select_choices.resize( m_old_to_new_peaks.size() );
     m_dont_change_nuc_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_peak_updated.resize( m_old_to_new_peaks.size(), false );
     
@@ -636,6 +677,23 @@ protected:
     
     if( m_showAllPeaks )
       m_showAllPeaks->setHidden( all_peaks_modified );
+    
+    //If this was a peak-search operation leading to this dialog, and the old
+    //  peak did not have any source identified, then dont identify a source
+    //  for the new peak either.  If the old peak did have a source, then that
+    //  would not have been changed by the ID part of the search anyway.
+    //  (done here, and not in populateNuclideSelects(), so re-populating the
+    //  selects wont undo the users selections)
+    if( m_reason == PeakSelectorWindowReason::PeakSearch )
+    {
+      for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
+      {
+        const shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
+        const shared_ptr<PeakDef> &newpeak = m_old_to_new_peaks[i].second;
+        if( m_nuc_select_combos[i] && oldpeak && newpeak && !oldpeak->hasSourceGammaAssigned() )
+          newpeak->clearSources();
+      }
+    }//if( m_reason == PeakSelectorWindowReason::PeakSearch )
     
     populateNuclideSelects();
     
@@ -1174,15 +1232,20 @@ public:
   
   
   
-  std::string nuclideDesc( const SandiaDecay::Nuclide *nuc,
-                           const SandiaDecay::RadParticle *particle,
-                           const PeakDef::SourceGammaType type )
+  /** Returns like "Ra226 (Pb214, 53.2 keV)" when a descendant of \p nuc emits the photon, or like
+   "Co60 1332.5 keV" when \p nuc itself does, or the emitter is unknown.
+
+   \p energy is the full-energy photon (i.e., 2614.5 keV for the Th232 S.E. line).
+   */
+  static std::string nuclideLineLabel( const SandiaDecay::Nuclide *nuc,
+                                       const SandiaDecay::Transition *transition,
+                                       const double energy,
+                                       const PeakDef::SourceGammaType type )
   {
-    if( !nuc || !particle )
+    assert( nuc );
+    if( !nuc )
       return "---";
-    
-    const ReferenceLineInfo *refline = nullptr;
-    
+
     const char *gamtype = "";
     switch( type )
     {
@@ -1192,9 +1255,50 @@ public:
       case PeakDef::AnnihilationGamma: gamtype = " Annih."; break;
       case PeakDef::DoubleEscapeGamma: gamtype = " D.E.";   break;
       case PeakDef::SingleEscapeGamma: gamtype = " S.E.";   break;
-    }//switch( displayPeak->sourceGammaType() )
+    }//switch( type )
+
+    // Annihilation photons may come from several decays in the chain, so we wont name an emitter
+    const SandiaDecay::Nuclide * const emitter
+                 = (transition && (type != PeakDef::AnnihilationGamma)) ? transition->parent : nullptr;
+
+    char buffer[128] = { '\0' };
+    if( emitter && (emitter != nuc) )
+      snprintf( buffer, sizeof(buffer), "%s (%s, %.1f keV%s)",
+               nuc->symbol.c_str(), emitter->symbol.c_str(), energy, gamtype );
+    else
+      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s", nuc->symbol.c_str(), energy, gamtype );
+
+    return buffer;
+  }//std::string nuclideLineLabel(...)
+
+
+  /** Returns like ", I=0.051%", or ", I=194%"; i.e., avoids exponents for larger intensities. */
+  static std::string intensityTxt( const double fraction )
+  {
+    const double percent = 100.0*fraction;
+    char buffer[32] = { '\0' };
+    if( percent >= 10.0 )
+      snprintf( buffer, sizeof(buffer), ", I=%.0f%%", percent );
+    else
+      snprintf( buffer, sizeof(buffer), ", I=%.2g%%", percent );
+    return buffer;
+  }//std::string intensityTxt( const double fraction )
+  
+  
+  std::string nuclideDesc( const SandiaDecay::Nuclide *nuc,
+                           const SandiaDecay::Transition *transition,
+                           const SandiaDecay::RadParticle *particle,
+                           const PeakDef::SourceGammaType type )
+  {
+    // For annihilation, `particle` is the positron (if there is only one in the chain), or null
+    const bool is_annih = (type == PeakDef::AnnihilationGamma);
+    if( !nuc || (!particle && !is_annih) )
+      return "---";
     
-    
+    const double energy = is_annih ? 510.9989 : particle->energy;
+
+    const ReferenceLineInfo *refline = nullptr;
+
     for( const auto &d : m_displayed )
     {
       if( nuc == d->m_nuclide )
@@ -1217,13 +1321,12 @@ public:
         break;
     }//for( const auto &d : m_displayed )
     
-    char buffer[256] = { '\0' };
+    double intensity = 0.0;
     if( refline )
     {
-      double intensity = 0.0;
       for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
       {
-        if( fabs(line.m_energy - particle->energy) >= 0.01 )
+        if( fabs(line.m_energy - energy) >= 0.01 )
           continue;
         
         // We are only interested i ngammas and x-rays
@@ -1257,9 +1360,6 @@ public:
         
         intensity += line.m_decay_intensity;
       }//for( loop over ref line particles )
-      
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
-               nuc->symbol.c_str(), particle->energy, gamtype, 100.0*intensity );
     }else
     {
       const double activity = 1.0E-3*SandiaDecay::curie;
@@ -1268,20 +1368,15 @@ public:
       SandiaDecay::NuclideMixture mix;
       mix.addAgedNuclideByActivity( nuc, activity, age );
       const auto gammas = mix.gammas(0.0, SandiaDecay::NuclideMixture::OrderByEnergy, true );
-      double intensity = 0.0;
       for( const auto &g : gammas )
       {
-        if( fabs(g.energy - particle->energy) < 0.01 )
+        if( fabs(g.energy - energy) < 0.01 )
           intensity += g.numPerSecond;
       }
       intensity /= activity;
-      
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
-               nuc->symbol.c_str(), particle->energy, gamtype, 100.0*intensity );
     }//if( source is a reference line ) / else
     
-    
-    return buffer;
+    return nuclideLineLabel( nuc, transition, energy, type ) + intensityTxt( intensity );
   }//std::string nuclideDesc(...)
   
   
@@ -1293,14 +1388,10 @@ public:
     const SandiaDecay::EnergyIntensityPair *xrayIntensity = PeakDef::findNearestXray(el, energy);
     
     char buffer[256] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV xray", el->symbol.c_str(), energy );
+    
     if( xrayIntensity && fabs(xrayIntensity->energy - energy) < 0.1 )
-    {
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV xray, I=%.2g%%)",
-               el->symbol.c_str(), energy, 100.0*xrayIntensity->intensity );
-    }else
-    {
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV xray", el->symbol.c_str(), energy );
-    }
+      return buffer + intensityTxt( xrayIntensity->intensity );
     
     return buffer;
   }//std::string xrayDesc( const SandiaDecay::Element *el )
@@ -1330,10 +1421,9 @@ public:
       if( fabs(g.energy - energy) < 0.1 )
         intensity += g.abundance;
     
-    snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
-              rctn->name().c_str(), energy, gamtype, 100.0*intensity );
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV%s", rctn->name().c_str(), energy, gamtype );
     
-    return buffer;
+    return buffer + intensityTxt( intensity );
   }//std::string reactionDesc(...)
   
   
@@ -1343,9 +1433,10 @@ public:
     if( !p )
       return "---";
     
-    if( p->parentNuclide() && p->decayParticle() )
+    if( p->parentNuclide()
+       && (p->decayParticle() || (p->sourceGammaType() == PeakDef::AnnihilationGamma)) )
     {
-      return nuclideDesc( p->parentNuclide(), p->decayParticle(), p->sourceGammaType() );
+      return nuclideDesc( p->parentNuclide(), p->nuclearTransition(), p->decayParticle(), p->sourceGammaType() );
     }else if( p->xrayElement() )
     {
       return xrayDesc( p->xrayElement(), p->xrayEnergy() );
@@ -1356,8 +1447,167 @@ public:
     
     return "---";
   }//std::string makeSourceDesciption( const shared_ptr<PeakDef> &p )
-  
-  
+
+
+  /** Returns what assigning a peak to \p line would set; the line must be a gamma or x-ray, and not
+   a sum line, as a peak cant be assigned to those.
+   */
+  static SourceChoice sourceChoiceFromRefLine( const ReferenceLineInfo &ref,
+                                               const ReferenceLineInfo::RefLine &line )
+  {
+    const bool is_xray = (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray);
+    assert( is_xray || (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma) );
+
+    SourceChoice choice;
+    choice.energy = line.m_energy;
+
+    switch( line.m_source_type )
+    {
+      case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+        choice.type = is_xray ? PeakDef::XrayGamma : PeakDef::NormalGamma;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+        choice.type = PeakDef::AnnihilationGamma;
+        break;
+
+      // Escape lines are at the escape energy, but peaks are assigned the full-energy gamma
+      case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+        choice.type = PeakDef::SingleEscapeGamma;
+        choice.energy += 510.9989;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+        choice.type = PeakDef::DoubleEscapeGamma;
+        choice.energy += 2.0*510.9989;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+      case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+        assert( 0 );
+        break;
+    }//switch( line.m_source_type )
+
+    if( line.m_parent_nuclide )
+    {
+      choice.nuclide = line.m_parent_nuclide;
+      choice.transition = line.m_transition;
+
+      // Background lines dont record their transition, so look it up to know what emits the line
+      //  (there can be thousands of background lines, so we scan the chain directly, rather than
+      //  use the much slower PeakDef::findNearestPhotopeak).
+      if( !choice.transition && (choice.type != PeakDef::AnnihilationGamma) )
+      {
+        const SandiaDecay::ProductType wanted_type = is_xray ? SandiaDecay::XrayParticle
+                                                             : SandiaDecay::GammaParticle;
+        double best_diff = 0.1, best_energy = choice.energy; //Background line energies may be rounded a little
+        for( const SandiaDecay::Nuclide *desc : choice.nuclide->descendants() )
+        {
+          for( const SandiaDecay::Transition *trans : desc->decaysToChildren )
+          {
+            for( const SandiaDecay::RadParticle &particle : trans->products )
+            {
+              const double diff = fabs( particle.energy - choice.energy );
+              if( (particle.type == wanted_type) && (diff < best_diff) )
+              {
+                best_diff = diff;
+                best_energy = particle.energy;
+                choice.transition = trans;
+              }
+            }//for( loop over transition products )
+          }//for( loop over decays of descendant )
+        }//for( loop over descendants )
+
+        choice.energy = best_energy;
+      }//if( !choice.transition )
+
+      choice.label = nuclideLineLabel( choice.nuclide, choice.transition, choice.energy, choice.type );
+      return choice;
+    }//if( line.m_parent_nuclide )
+
+    string label = ref.m_input.m_input_txt;
+    if( line.m_element )
+    {
+      choice.element = line.m_element;
+      label = line.m_element->symbol;
+    }else if( line.m_reaction )
+    {
+      choice.reaction = line.m_reaction;
+
+      //We wont set label to reaction, because the user may have input an element, but this
+      //  particular line might be an isotope of the element.
+      if( SpecUtils::icontains(label, "background") )
+        label = line.m_reaction->name();
+    }
+
+    char buffer[128] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV", label.c_str(), line.m_energy );
+    choice.label = buffer;
+
+    return choice;
+  }//SourceChoice sourceChoiceFromRefLine(...)
+
+
+  /** Assigns \p choice as the source of \p peak, including which descendant emits the photon. */
+  static PeakModel::SetGammaSource assignSource( PeakDef &peak, const SourceChoice &choice )
+  {
+    if( choice.element )
+      return PeakModel::setXray( peak, choice.element, choice.energy );
+
+    if( choice.reaction )
+    {
+      // We set the reaction directly, as `PeakModel::setReaction` looks it up by name, which is
+      //  element-level (ex., "O(a,n)"), so could give a different isotopes reaction.
+      const bool same_rctn = ((peak.reaction() == choice.reaction)
+                              && (peak.sourceGammaType() == choice.type)
+                              && (fabs(peak.reactionEnergy() - choice.energy) < 0.1));
+      
+      // PeakDef::setReaction throws for AnnihilationGamma; reaction lines shouldnt ever be this
+      assert( choice.type != PeakDef::AnnihilationGamma );
+      const PeakDef::SourceGammaType type = (choice.type == PeakDef::AnnihilationGamma)
+                                             ? PeakDef::NormalGamma : choice.type;
+      peak.setReaction( choice.reaction, static_cast<float>(choice.energy), type );
+      
+      return same_rctn ? PeakModel::SetGammaSource::NoSourceChange : PeakModel::SetGammaSource::SourceChange;
+    }//if( choice.reaction )
+
+    if( !choice.nuclide )
+      return PeakModel::setNuclideXrayReaction( peak, choice.label, 0.0 );
+
+    const PeakModel::SetGammaSource result
+                    = PeakModel::setNuclide( peak, choice.type, choice.nuclide, choice.energy, 0.0 );
+
+    // `setNuclide` uses the chains line nearest in energy, which may be from a different
+    //  descendant than the user selected (ex., same energy x-rays), so pin the transition.
+    const SandiaDecay::Transition * const trans = choice.transition;
+    if( trans
+       && (peak.parentNuclide() == choice.nuclide)
+       && (peak.nuclearTransition() != trans)
+       && (peak.sourceGammaType() != PeakDef::AnnihilationGamma) )
+    {
+      const SandiaDecay::ProductType wanted_type = (choice.type == PeakDef::XrayGamma)
+                                                    ? SandiaDecay::XrayParticle
+                                                    : SandiaDecay::GammaParticle;
+      for( size_t index = 0; index < trans->products.size(); ++index )
+      {
+        const SandiaDecay::RadParticle &particle = trans->products[index];
+        if( (particle.type == wanted_type) && (fabs(particle.energy - choice.energy) < 0.001) )
+        {
+          // Keep S.E. or D.E., but otherwise make the type agree with the particle we pinned
+          PeakDef::SourceGammaType type = peak.sourceGammaType();
+          if( (type == PeakDef::NormalGamma) || (type == PeakDef::XrayGamma) )
+            type = (wanted_type == SandiaDecay::XrayParticle) ? PeakDef::XrayGamma : PeakDef::NormalGamma;
+          
+          peak.setNuclearTransition( choice.nuclide, trans, static_cast<int>(index), type );
+          break;
+        }
+      }//for( loop over transition products )
+    }//if( setNuclide picked a different transition than selected )
+
+    return result;
+  }//PeakModel::SetGammaSource assignSource(...)
+
+
   void nucSelectChanged( const size_t i )
   {
     assert( i < m_dont_change_nuc_cbs.size() );
@@ -1434,13 +1684,16 @@ public:
       return;
     }//if( no source )
     
-    string newnucstr = combo->currentText().toUTF8();
-    const size_t intens_pos = newnucstr.find( ", I=" );
-    if( intens_pos != string::npos )
-      newnucstr = newnucstr.substr( 0, intens_pos );
+    const vector<SourceChoice> &choices = m_nuc_select_choices[i];
+    assert( static_cast<size_t>(index) < choices.size() );
+    if( static_cast<size_t>(index) >= choices.size() ) //shouldnt ever happen
+    {
+      populateNuclideSelects();
+      return;
+    }
 
-    const auto result = PeakModel::setNuclideXrayReaction( *newpeak, newnucstr, 0.0 );
-    
+    const PeakModel::SetGammaSource result = assignSource( *newpeak, choices[index] );
+
     switch( result )
     {
       case PeakModel::SetGammaSource::NoSourceChange:
@@ -1536,19 +1789,79 @@ public:
   void populateNuclideSelects()
   {
     assert( m_old_to_new_peaks.size() == m_nuc_select_combos.size() );
+    assert( m_old_to_new_peaks.size() == m_nuc_select_choices.size() );
+    
+    // The choices dont depend on the peak, or change while the dialog is showing, and there can be
+    //  thousands of them (ex., background lines), so only build them once, and only if needed.
+    bool any_selects = false;
+    for( const WComboBox *combo : m_nuc_select_combos )
+      any_selects = (any_selects || combo);
+    
+    vector<RefLineChoice> &ref_choices = m_ref_line_choices;
+    const bool build_choices = (any_selects && ref_choices.empty());
+    for( size_t ref_index = 0; build_choices && (ref_index < m_displayed.size()); ++ref_index )
+    {
+      const shared_ptr<const ReferenceLineInfo> &ref = m_displayed[ref_index];
+      
+      // Make sure we can assign the peak to the source type.
+      switch( ref->m_source_type )
+      {
+        case ReferenceLineInfo::SourceType::Nuclide:
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+        case ReferenceLineInfo::SourceType::Reaction:
+        case ReferenceLineInfo::SourceType::Background:
+        case ReferenceLineInfo::SourceType::NuclideMixture:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+          break;
+        
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::None:
+          continue;
+          break;
+      }//switch( ref->m_source_type )
+      
+      for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+      {
+        if( (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
+            && (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )
+          continue;
+        
+        // A peak cant be assigned to a sum of gammas
+        if( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak)
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak) )
+          continue;
+        
+        RefLineChoice rc;
+        rc.choice = sourceChoiceFromRefLine( *ref, line );
+        rc.energy = line.m_energy;
+        rc.is_background = (ref->m_source_type == ReferenceLineInfo::SourceType::Background);
+        
+        // If we are assigning from a nuclide, we should be pretty close, but OneOffSrcLines energies
+        //  may not exactly match the decay data
+        rc.allowed_diff = (ref->m_source_type == ReferenceLineInfo::SourceType::OneOffSrcLines) ? 0.05 : 0.001;
+        
+        const double intensity = line.m_decay_intensity; //Before DRF and Shielding
+        rc.text = rc.choice.label + intensityTxt( intensity );
+        
+        ref_choices.push_back( std::move(rc) );
+      }//for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+    }//for( loop over m_displayed )
+    
     
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
       if( !m_nuc_select_combos[i] )
         continue;
       
+      vector<SourceChoice> &choices = m_nuc_select_choices[i];
+      choices.assign( 1, SourceChoice{} ); // "No Source"
       m_nuc_select_combos[i]->clear();
       m_nuc_select_combos[i]->addItem( WString::tr("psd-no-source") );
       
       shared_ptr<PeakDef> &p = m_old_to_new_peaks[i].second;
       if( !p )
         continue;
-      shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
       
       const double peakmean = p->mean();
       double energy = peakmean;
@@ -1558,128 +1871,89 @@ public:
         energy = p->gammaParticleEnergy();
       }else if( p->parentNuclide() )
       {
-        if( p->decayParticle() )
+        // For annihilation, the decay particle (if any) is the positron, so use the 511 keV
+        if( p->decayParticle() && (p->sourceGammaType() != PeakDef::AnnihilationGamma) )
           energy = p->decayParticle()->energy;  // Use this so the 511 or 1022 keV wont be subtracted off for S.E. or D.E.
         else
           energy = p->gammaParticleEnergy();    //Annihilation gammas make it here
       }
       
       
-      //This string will store the description of what is currently assigned to
-      //  the peak so we can make it the current selection
-      //  I'm a little un-easy about how this is determined... but seems to work
-      string currentstr;
       
-      //If this was a peak-search operation leading to this dialog, and the old
-      //  peak did not have any source identified, then dont identify a source
-      //  for the new peak either.  If the old peak did have a source, then that
-      //  would not have been changed by the ID part of the search anyway.
-      switch( m_reason )
-      {
-        case PeakSelectorWindowReason::PeakSearch:
-          if( oldpeak && !oldpeak->hasSourceGammaAssigned() )
-            p->clearSources();
-          break;
-          
-        case PeakSelectorWindowReason::NuclideId:
-          break;
-          
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
-          break;
-          
-        case PeakSelectorWindowReason::PeaksFromCsvFile:
-          break;
-      }//switch( m_reason )
-
+      
+      //This string will store the description of what is currently assigned to
+      //  the peak so we can make it the current selection.  We rank how well each
+      //  line matches the peaks source, as there can be several lines at the same
+      //  energy (ex, the S.E. and full-energy line, or from different descendants).
+      string currentstr;
+      int current_rank = 0;
       
       //We'll sort the select by distance away from current nuclide, or peak mean
       //  - will probably miss some weird edgecase, but what ever for the moment.
-      map<double,set<string>> distToDescs;
-      for( const auto &ref : m_displayed )
+      //  Maps distance to {item text, index into `ref_choices`}.
+      map<double,map<string,size_t>> distToChoices;
+      for( size_t index = 0; index < ref_choices.size(); ++index )
       {
-        // Make sure we can assign the peak to the source type.
-        switch( ref->m_source_type )
-        {
-          case ReferenceLineInfo::SourceType::Nuclide:
-          case ReferenceLineInfo::SourceType::FluorescenceXray:
-          case ReferenceLineInfo::SourceType::Reaction:
-          case ReferenceLineInfo::SourceType::Background:
-          case ReferenceLineInfo::SourceType::NuclideMixture:
-          case ReferenceLineInfo::SourceType::OneOffSrcLines:
-          case ReferenceLineInfo::SourceType::FissionRefLines:
-            break;
-          
-          case ReferenceLineInfo::SourceType::CustomEnergy:
-          case ReferenceLineInfo::SourceType::None:
-            continue;
-            break;
-        }//switch( ref->m_source_type )
+        const RefLineChoice &rc = ref_choices[index];
+        const SourceChoice &c = rc.choice;
         
-        for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+        const double diff_from_mean = fabs( rc.energy - peakmean );
+        const double diff_from_assigned = fabs( c.energy - energy );
+        
+        const bool same_source = ((c.nuclide && (c.nuclide == p->parentNuclide()))
+                                  || (c.element && (c.element == p->xrayElement()))
+                                  || (c.reaction && (c.reaction == p->reaction())));
+        
+        int rank = 0;
+        if( same_source && (diff_from_assigned < rc.allowed_diff) )
         {
-          if( (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
-              && (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )
-            continue;
-          
-          const double refenergy = line.m_energy;
-          const double intensity = line.m_decay_intensity; //Before DRF and Shielding
-          
-          string label = ref->m_input.m_input_txt;
-          if( line.m_parent_nuclide )
-          {
-            label = line.m_parent_nuclide->symbol;
-          }else if( line.m_element )
-          {
-            label = line.m_element->symbol;
-          }else if( line.m_reaction )
-          {
-            //We wont set label to reaction, because the user may have input an element, but this
-            //  particular line might be an isotope of the element.
-            if( SpecUtils::icontains(label, "background") )
-              label = line.m_reaction->name();
-          }
-          
-          char buffer[128];
-          snprintf( buffer, sizeof(buffer), "%s %.1f keV, I=%.2g%%",
-                    label.c_str(), refenergy, 100.0*intensity );
-          
-          const double diff_from_mean = fabs( refenergy - peakmean );
-          const double diff_from_assigned = fabs( refenergy - energy );
-          
-          // If we are assigning from a nuclide, we should be pretty close, but if OneOffSrcLines,
-          //  we might be off by even a
-          const double allowed_diff = (ref->m_source_type == ReferenceLineInfo::SourceType::OneOffSrcLines) ? 0.05 : 0.001;
-          
-          if( (diff_from_assigned < allowed_diff) //May need to decrease
-             && ((p->parentNuclide() && (line.m_parent_nuclide==p->parentNuclide()))
-                 || (p->xrayElement() && (line.m_element==p->xrayElement()))
-                 || (p->reaction() && (line.m_reaction ==p->reaction()))
-             ))
-          {
-#if( PERFORM_DEVELOPER_CHECKS )
-            if( currentstr.size() )  //shouldnt ever happen, right?
-              log_developer_error( __func__, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
-#endif
-            currentstr = buffer;
-          }else if( (ref->m_source_type == ReferenceLineInfo::SourceType::Background)
-                   && (diff_from_assigned < 0.1) )
-          {
-            currentstr = buffer;
-          }
-          
-          //Use the minimum of distance between the reference line and either
-          //  the peak mean, or currently assigned source, to sort select
-          //  contents by.
-          const double diff = min( diff_from_mean, diff_from_assigned );
-          
-          distToDescs[diff].insert( buffer );
-        }//for( size_t i = 0; i < ref.energies.size(); ++i )
-      }//for( const auto &ref : m_displayed )
+          rank = 2 + ((c.type == p->sourceGammaType()) ? 2 : 0)
+                   + ((c.transition && (c.transition == p->nuclearTransition())) ? 1 : 0);
+        }else if( rc.is_background && p->hasSourceGammaAssigned() && (diff_from_assigned < 0.1) )
+        {
+          rank = 1;
+        }
+        
+        if( rank > current_rank )
+        {
+          current_rank = rank;
+          currentstr = rc.text;
+        }
+        
+        //Use the minimum of distance between the reference line and either
+        //  the peak mean, or currently assigned source, to sort select
+        //  contents by.
+        const double diff = min( diff_from_mean, diff_from_assigned );
+        
+        distToChoices[diff].emplace( rc.text, index );
+      }//for( size_t index = 0; index < ref_choices.size(); ++index )
       
       int currentitem = -1;
+
+      // A peak assigned as an escape peak, when the escape lines arent displayed, would otherwise
+      //  show the full-energy line as selected (and become it, if re-selected); so we'll list the
+      //  actual assignment first.
+      const bool is_escape = ((p->sourceGammaType() == PeakDef::SingleEscapeGamma)
+                              || (p->sourceGammaType() == PeakDef::DoubleEscapeGamma));
+      if( is_escape && (current_rank < 4)
+         && ((p->parentNuclide() && p->decayParticle()) || p->reaction()) )
+      {
+        SourceChoice assigned;
+        assigned.type = p->sourceGammaType();
+        assigned.nuclide = p->parentNuclide();
+        assigned.transition = p->nuclearTransition();
+        assigned.reaction = assigned.nuclide ? nullptr : p->reaction();
+        assigned.energy = assigned.nuclide ? p->decayParticle()->energy : p->reactionEnergy();
+
+        m_nuc_select_combos[i]->addItem( makeSourceDesciption( p ) );
+        choices.push_back( assigned );
+        currentitem = m_nuc_select_combos[i]->count() - 1;
+        currentstr.clear();
+      }//if( peak is an escape peak, without a matching reference line )
+
       size_t nitems = 0;
       const double fwhm = p->fwhm();
-      for( auto iter = begin(distToDescs); iter != end(distToDescs); ++iter )
+      for( auto iter = begin(distToChoices); iter != end(distToChoices); ++iter )
       {
         const double energydiff = iter->first;
         //Put at most 30 items into the select, or if we have 15 items, keep
@@ -1691,11 +1965,14 @@ public:
         ++nitems;
         for( const auto &s : iter->second )
         {
-          m_nuc_select_combos[i]->addItem( s );
-          if( s == currentstr )
+          m_nuc_select_combos[i]->addItem( s.first );
+          choices.push_back( ref_choices[s.second].choice );
+          if( s.first == currentstr )
             currentitem = m_nuc_select_combos[i]->count() - 1;
         }
-      }//for( auto iter = begin(distToDescs); iter != end(distToDescs); ++iter )
+      }//for( auto iter = begin(distToChoices); iter != end(distToChoices); ++iter )
+      
+      assert( choices.size() == static_cast<size_t>(m_nuc_select_combos[i]->count()) );
       
       m_nuc_select_combos[i]->setCurrentIndex( std::max(0, currentitem) );
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
@@ -2405,6 +2682,437 @@ bool ensure_background_peaks_recovered(
 
   return false;
 }//ensure_background_peaks_recovered(...)
+
+
+std::vector<std::shared_ptr<const PeakDef>> missing_background_peak_candidates(
+    const std::vector<std::shared_ptr<const PeakDef>> &fore_peaks,
+    const std::deque<std::shared_ptr<const PeakDef>> &back_user_peaks,
+    const std::deque<std::shared_ptr<const PeakDef>> &back_auto_peaks )
+{
+  vector<shared_ptr<const PeakDef>> answer;
+
+  for( const shared_ptr<const PeakDef> &fg_peak : fore_peaks )
+  {
+    if( !fg_peak )
+      continue;
+
+    // The same sigma GammaInteractionCalc::overlapping_background uses to decide what to subtract
+    const double fg_mean = fg_peak->mean();
+    const double fg_sigma = fg_peak->gausPeak() ? fg_peak->sigma() : 0.25*fg_peak->roiWidth();
+    const double fg_fwhm = 2.35482*fg_sigma;
+
+    // Already covered if a background user peak would be subtracted from this peak; only Gaussian
+    //  background peaks are subtracted (see GammaInteractionCalc::scale_background_peaks).
+    bool covered = false;
+    for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+    {
+      if( bp && bp->gausPeak()
+         && (fabs(bp->mean() - fg_mean) < (GammaInteractionCalc::sm_background_peak_nsigma_near*fg_sigma)) )
+      {
+        covered = true;
+        break;
+      }
+    }//for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+
+    if( covered )
+      continue;
+
+    // The closest auto-search peak within a FWHM - auto-search means wander a little, and it is
+    //  re-fit before being added anyway.
+    shared_ptr<const PeakDef> closest_auto;
+    double closest_dist = fg_fwhm;
+    for( const shared_ptr<const PeakDef> &ap : back_auto_peaks )
+    {
+      if( !ap || !ap->gausPeak() )  //Only Gaussian peaks can be fit and subtracted (and have a FWHM)
+        continue;
+      const double dist = fabs( ap->mean() - fg_mean );
+      if( dist < closest_dist )
+      {
+        closest_dist = dist;
+        closest_auto = ap;
+      }
+    }//for( const shared_ptr<const PeakDef> &ap : back_auto_peaks )
+
+    if( !closest_auto || (std::find( begin(answer), end(answer), closest_auto ) != end(answer)) )
+      continue;
+
+    // Dont offer a peak the user has already fit (even if not quite under this foreground peak, or not
+    //  Gaussian) - the fit-and-add step skips those, so offering it would only lead to "nothing new
+    //  found", over and over.
+    bool already_fit = false;
+    for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+    {
+      if( bp && (fabs( bp->mean() - closest_auto->mean() ) <= closest_auto->fwhm()) )
+      {
+        already_fit = true;
+        break;
+      }
+    }//for( const shared_ptr<const PeakDef> &bp : back_user_peaks )
+
+    if( !already_fit )
+      answer.push_back( closest_auto );
+  }//for( const shared_ptr<const PeakDef> &fg_peak : fore_peaks )
+
+  std::sort( begin(answer), end(answer), &PeakDef::lessThanByMeanShrdPtr );
+
+  return answer;
+}//missing_background_peak_candidates(...)
+
+
+namespace
+{
+  /** Adds `new_peaks` to the displayed background's peaks, through InterSpec::setPeaks so it can be
+   undone, and reports the outcome.
+   */
+  void add_peaks_to_background( const vector<shared_ptr<const PeakDef>> &new_peaks,
+                                const std::function<void(MissingBackPeaksOutcome)> &on_done )
+  {
+    MissingBackPeaksOutcome outcome = MissingBackPeaksOutcome::Added;
+    try
+    {
+      InterSpec * const viewer = InterSpec::instance();
+      const shared_ptr<const SpecMeas> back_meas = viewer ? viewer->measurment( SpecUtils::SpectrumType::Background ) : nullptr;
+      if( !back_meas )
+        throw runtime_error( "No background spectrum loaded." );
+
+      const set<int> &back_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+      if( back_samples.empty() )
+        throw runtime_error( "No background samples displayed." );
+
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> existing = back_meas->peaks( back_samples );
+
+      auto combined = make_shared<deque<shared_ptr<const PeakDef>>>();
+      if( existing )
+        *combined = *existing;
+
+      for( const shared_ptr<const PeakDef> &p : new_peaks )
+      {
+        if( p )
+        {
+          auto pos = lower_bound( combined->begin(), combined->end(), p, &PeakDef::lessThanByMeanShrdPtr );
+          combined->insert( pos, p );
+        }
+      }//for( each new peak )
+
+      viewer->setPeaks( SpecUtils::SpectrumType::Background, combined );
+    }catch( std::exception &e )
+    {
+      outcome = MissingBackPeaksOutcome::Error;
+      passMessage( WString::tr( "psgu-err-adding-back-peaks" ).arg( e.what() ),
+                  WarningWidget::WarningMsgHigh );
+    }//try / catch
+
+    if( on_done )
+      on_done( outcome );
+  }//add_peaks_to_background(...)
+
+
+  /** Re-fits `candidates` to the displayed background, and shows the result for the user to accept
+   (adding them to the background) or reject.
+   */
+  void fit_and_preview_background_peaks( const vector<shared_ptr<const PeakDef>> &candidates,
+                                         const Wt::WObject *tracker,
+                                         const std::function<void(MissingBackPeaksOutcome)> &on_done )
+  {
+    InterSpec * const viewer = InterSpec::instance();
+    const shared_ptr<SpecMeas> back_meas = viewer ? viewer->measurment( SpecUtils::SpectrumType::Background ) : nullptr;
+    const shared_ptr<const SpecUtils::Measurement> back_hist
+              = viewer ? viewer->displayedHistogram( SpecUtils::SpectrumType::Background ) : nullptr;
+
+    if( !back_meas || !back_hist || viewer->displayedSamples( SpecUtils::SpectrumType::Background ).empty() )
+    {
+      passMessage( WString::tr( "psgu-warn-no-back-spec" ), WarningWidget::WarningMsgHigh );
+      if( on_done )
+        on_done( MissingBackPeaksOutcome::NoBackground );
+      return;
+    }//if( no background )
+
+    const set<int> &back_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> existing_back_peaks = back_meas->peaks( back_samples );
+
+    shared_ptr<const PeakFitDetPrefs> fitPrefs;
+    const shared_ptr<SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    if( fore_meas )
+      fitPrefs = fore_meas->peakFitDetPrefs();
+    if( !fitPrefs )
+      fitPrefs = back_meas->peakFitDetPrefs();
+    if( !fitPrefs && back_meas->detector() )
+      fitPrefs = back_meas->detector()->peakFitDetPrefs();
+    const PeakFitUtils::CoarseResolutionType det_type
+      = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( back_hist, nullptr );
+
+    // Shows `msg_key` as a simple acknowledgement, then reports that nothing was added.
+    const auto nothing_added = [tracker, on_done]( const char *msg_key ){
+      SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( msg_key ) );
+      dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
+      dialog->finished().connect( tracker, [on_done](){
+        if( on_done )
+          on_done( MissingBackPeaksOutcome::NoneAdded );
+      } );
+    };//nothing_added lambda
+
+    // Collect candidate peaks that dont already have a matching user peak, and
+    //  determine the overall energy range to fit
+    vector<PeakDef> candidates_to_fit;
+    double min_energy = numeric_limits<double>::max();
+    double max_energy = -numeric_limits<double>::max();
+
+    for( const shared_ptr<const PeakDef> &candidate : candidates )
+    {
+      if( !candidate || !candidate->gausPeak() )  //fwhm() and sigma() need a Gaussian peak
+        continue;
+
+      // Check if a user peak already exists near this energy
+      bool already_exists = false;
+      if( existing_back_peaks )
+      {
+        for( const shared_ptr<const PeakDef> &ep : *existing_back_peaks )
+        {
+          if( ep && (fabs( ep->mean() - candidate->mean() ) <= candidate->fwhm()) )
+          {
+            already_exists = true;
+            break;
+          }
+        }
+      }//if( existing_back_peaks )
+
+      if( already_exists )
+        continue;
+
+      candidates_to_fit.push_back( *candidate );
+
+      const double cand_sigma = candidate->sigma();
+      const double lower_x = (candidate->continuum() && (candidate->continuum()->lowerEnergy() > 10))
+                              ? candidate->continuum()->lowerEnergy()
+                              : (candidate->mean() - 4.0 * cand_sigma);
+      const double upper_x = (candidate->continuum() && (candidate->continuum()->upperEnergy() > 10))
+                              ? candidate->continuum()->upperEnergy()
+                              : (candidate->mean() + 4.0 * cand_sigma);
+
+      min_energy = std::min( min_energy, lower_x );
+      max_energy = std::max( max_energy, upper_x );
+    }//for( each candidate )
+
+    if( candidates_to_fit.empty() )
+    {
+      nothing_added( "psgu-no-new-back-peaks" );
+      return;
+    }//if( candidates_to_fit.empty() )
+
+    // Fit all candidate peaks in a single call
+    vector<PeakDef> all_fit_peaks;
+    try
+    {
+      const double ncausalitysigma = 0.0;
+      const double stat_threshold = 2.0;
+      const double hypothesis_threshold = -1.0;
+      const WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
+      all_fit_peaks = fitPeaksInRange( min_energy, max_energy,
+        ncausalitysigma, stat_threshold, hypothesis_threshold,
+        candidates_to_fit, back_hist, fit_options, det_type );
+
+      if( all_fit_peaks.empty() )
+        all_fit_peaks = candidates_to_fit;
+    }catch( std::exception & )
+    {
+      // If fitting fails entirely, show a message
+    }
+
+    if( all_fit_peaks.empty() )
+    {
+      nothing_added( "psgu-no-new-back-peaks" );
+      return;
+    }//if( all_fit_peaks.empty() )
+
+    // Compute display range from the fit results
+    min_energy = numeric_limits<double>::max();
+    max_energy = -numeric_limits<double>::max();
+    for( const PeakDef &fp : all_fit_peaks )
+    {
+      min_energy = std::min( min_energy, fp.mean() - 4.0 * fp.sigma() );
+      max_energy = std::max( max_energy, fp.mean() + 4.0 * fp.sigma() );
+    }//for( each fit peak )
+
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "psgu-back-peak-preview-title" ),
+                                               WString::tr( "psgu-back-peak-preview-msg" ) );
+
+    // Override the default SimpleDialog size constraints so the chart can be large enough
+    wApp->useStyleSheet( "InterSpec_resources/PeakSearchGuiUtils.css" );
+    dialog->addStyleClass( "BackPeakPreviewDialog" );
+    dialog->setMaxWidth( WLength(85, WLength::Unit::ViewportWidth) );
+
+    // Size the chart based on the app window size
+    const int app_w = viewer->renderedWidth();
+    const int app_h = viewer->renderedHeight();
+    const int chart_w = std::max( 350, std::min( static_cast<int>( 0.7 * app_w ), 800 ) );
+    const int chart_h = std::max( 200, std::min( static_cast<int>( 0.45 * app_h ), 450 ) );
+
+    D3SpectrumDisplayDiv *spectrum = dialog->contents()->addNew<D3SpectrumDisplayDiv>();
+    spectrum->clicked().preventPropagation();
+    spectrum->setThumbnailMode();
+    spectrum->resize( chart_w, chart_h );
+    spectrum->setData( back_hist, false );
+
+    // The dialog's spectrum chart co-owns the model (setPeakModel() takes a shared_ptr), so this local
+    //  shared_ptr can go out of scope and the chart keeps the model alive for the life of the dialog.
+    const std::shared_ptr<PeakModel> pmodel = PeakModel::create();
+    pmodel->setNoSpecMeasBacking();
+    pmodel->setForeground( back_hist );
+    spectrum->setPeakModel( pmodel );
+    pmodel->addPeaks( all_fit_peaks );
+
+    const double dx = max_energy - min_energy;
+    spectrum->setXAxisRange( min_energy - 0.5 * dx, max_energy + 0.5 * dx );
+
+    // Workaround: also set the x-axis range again after a short delay.  The dialog may be gone by
+    //  then, so hold the chart by an observing_ptr - which must only be touched on the session thread,
+    //  so a WTimer (whose callback, and its destruction, happen there) rather than WServer::schedule
+    //  (whose function object is destroyed on an io thread).
+    const double set_range_low = min_energy - 0.5 * dx;
+    const double set_range_high = max_energy + 0.5 * dx;
+    const Wt::Core::observing_ptr<D3SpectrumDisplayDiv> spectrum_ptr( spectrum );
+    WTimer::singleShot( std::chrono::milliseconds(100), [spectrum_ptr, set_range_low, set_range_high](){
+      if( spectrum_ptr )
+        spectrum_ptr->setXAxisRange( set_range_low, set_range_high );
+    } );
+
+    // Add summary text below the spectrum
+    const size_t num_fit = all_fit_peaks.size();
+    const size_t num_candidates = candidates_to_fit.size();
+
+    WString summary_msg;
+    if( num_fit == num_candidates )
+      summary_msg = WString::tr( "psgu-back-peaks-all-fit" ).arg( static_cast<int>( num_fit ) );
+    else
+      summary_msg = WString::tr( "psgu-back-peaks-some-fit" )
+                      .arg( static_cast<int>( num_fit ) ).arg( static_cast<int>( num_candidates ) );
+
+    WText *summary_txt = dialog->contents()->addNew<WText>( summary_msg );
+    summary_txt->setInline( false );
+    summary_txt->setMargin( 10, Wt::Side::Top );
+    summary_txt->setMargin( 5, Wt::Side::Bottom );
+
+    WText *manual_hint = dialog->contents()->addNew<WText>( WString::tr( "psgu-back-peaks-manual-hint" ) );
+    manual_hint->setInline( false );
+    manual_hint->addStyleClass( "BackPeakManualHint" );
+    manual_hint->setMargin( 5, Wt::Side::Bottom );
+
+    // Build the vector of peaks to add as shared_ptrs
+    vector<shared_ptr<const PeakDef>> peaks_to_add;
+    for( const PeakDef &p : all_fit_peaks )
+      peaks_to_add.push_back( make_shared<PeakDef>( p ) );
+
+    WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ), WidgetUtils::ButtonRole::Affirm );
+    WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ), WidgetUtils::ButtonRole::Dismiss );
+
+    accept_btn->clicked().connect( tracker, [peaks_to_add, on_done](){
+      add_peaks_to_background( peaks_to_add, on_done );
+    } );
+
+    cancel_btn->clicked().connect( tracker, [on_done](){
+      if( on_done )
+        on_done( MissingBackPeaksOutcome::NoneAdded );
+    } );
+  }//fit_and_preview_background_peaks(...)
+}//namespace
+
+
+bool prompt_to_add_missing_background_peaks( InterSpec *viewer,
+    const std::vector<std::shared_ptr<const PeakDef>> &fore_peaks,
+    const Wt::WObject *tracker,
+    std::function<void(MissingBackPeaksOutcome)> on_done )
+{
+  assert( tracker );
+  if( !viewer || !tracker || fore_peaks.empty() )
+    return false;
+
+  const shared_ptr<SpecMeas> back_meas = viewer->measurment( SpecUtils::SpectrumType::Background );
+  if( !back_meas )
+    return false;
+
+  const shared_ptr<const SpecUtils::Measurement> back_hist
+    = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  if( !back_hist )
+    return false;
+
+  const set<int> &back_samples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+  if( back_samples.empty() )
+    return false;
+
+  const shared_ptr<const SpecMeas> const_back_meas = back_meas;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks = const_back_meas->peaks( back_samples );
+
+  // Get or generate auto-search peaks for the background via the shared, de-duplicated accessor -
+  // launches at most one search per (SpecMeas, sample numbers) and coalesces with any concurrent
+  // search instead of running its own.  We are on the GUI thread here, so the accessor may snapshot
+  // the background user-peaks itself for the search seed.
+  // The foreground peak-fit prefs are the ones the user configures, and the background is from the
+  // same detector, so prefer them; the accessor falls back to the backgrounds own/DRF prefs.
+  shared_ptr<const PeakFitDetPrefs> fitPrefs;
+  const shared_ptr<SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  if( fore_meas )
+    fitPrefs = fore_meas->peakFitDetPrefs();
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+    = get_or_launch_automated_search_peaks( back_meas, back_samples, back_hist,
+                                            back_meas->detector(), fitPrefs ).get();
+
+  if( !auto_peaks || auto_peaks->empty() )
+    return false;
+
+  const vector<shared_ptr<const PeakDef>> missing_auto_peaks
+      = missing_background_peak_candidates( fore_peaks,
+                                            back_peaks ? *back_peaks : deque<shared_ptr<const PeakDef>>{},
+                                            *auto_peaks );
+  if( missing_auto_peaks.empty() )
+    return false;
+
+  viewer->useMessageResourceBundle( "PeakSearchGuiUtils" );
+
+  // Build comma-separated energy list string
+  stringstream energy_ss;
+  for( size_t i = 0; i < missing_auto_peaks.size(); ++i )
+  {
+    if( i > 0 )
+    {
+      if( missing_auto_peaks.size() > 2 )
+        energy_ss << ",";
+      energy_ss << " ";
+      if( i == (missing_auto_peaks.size() - 1) )
+        energy_ss << "and ";
+    }
+    energy_ss << std::fixed << std::setprecision( 1 ) << missing_auto_peaks[i]->mean() << " keV";
+  }//for( each missing energy )
+
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr( "psgu-missing-back-peaks-title" ),
+                                           WString::tr( "psgu-missing-back-peaks-msg" ).arg( energy_ss.str() ) );
+
+  // An option on the action, so it goes in its own block behind a hairline rather than floating
+  //  alongside the prose.
+  WCheckBox *add_all_cb = dialog->contents()->addNew<WCheckBox>( WString::tr( "psgu-btn-add-all-detectable" ) );
+  add_all_cb->addStyleClass( "CbNoLineBreak DialogOptions" );
+  add_all_cb->setInline( false );
+
+  WPushButton *no_btn = dialog->addButton( WString::tr( "psgu-btn-no-dont-add" ), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "psgu-btn-add-peaks" ), WidgetUtils::ButtonRole::Affirm );
+  add_btn->setFocus();
+
+  const vector<shared_ptr<const PeakDef>> all_auto( auto_peaks->begin(), auto_peaks->end() );
+
+  no_btn->clicked().connect( tracker, [on_done](){
+    if( on_done )
+      on_done( MissingBackPeaksOutcome::Declined );
+  } );
+
+  // `add_all_cb` is in the dialog, which outlives the button click that reads it.
+  add_btn->clicked().connect( tracker, [add_all_cb, all_auto, missing_auto_peaks, tracker, on_done](){
+    fit_and_preview_background_peaks( add_all_cb->isChecked() ? all_auto : missing_auto_peaks,
+                                      tracker, on_done );
+  } );
+
+  return true;
+}//prompt_to_add_missing_background_peaks(...)
 
 
 void automated_search_for_peaks( InterSpec *viewer,

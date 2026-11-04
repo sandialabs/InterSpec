@@ -7,7 +7,7 @@ Where smoke_test.py checks the main workflow, this tries to break things:
              spectrum with background, a uranium HPGe spectrum (isotopics), and a passthrough
              (time history) file; plus calls that should fail.  Each call must return a result or a
              clean error within its deadline, and the session must still respond afterwards.
-             Images (spectrum, zoomed, log/linear, background-subtracted, svg/jpeg, time chart)
+             Images (spectrum, zoomed, log/linear, background-subtracted, jpeg, time chart)
              are saved to --out for inspection.
   chaos    - failure injection: clients that disconnect mid-call, closing a session during a
              long call, killing the browser (and a single tab) while sessions are running,
@@ -88,6 +88,8 @@ class Client:
         if 'error' in reply:
             return None, [], reply['error'].get('message', str(reply['error'])), elapsed
         content = reply['result']['content']
+        if reply['result'].get('isError'):
+            return None, [], content[0]['text'], elapsed
         result = json.loads(content[0]['text'])
         images = [(c['mimeType'], base64.b64decode(c['data'])) for c in content if c.get('type') == 'image']
         return result, images, None, elapsed
@@ -289,14 +291,13 @@ def sweep(client, report, args, out_dir, mode_agent):
         ('activity_fit', 'activity_fit', {'peak_energies': [81, 302.9, 356, 383.8]}, 'any'),
         ('activity_fit_one_off', 'activity_fit_one_off', {'distance': '50 cm', 'geometry': 'Spherical', 'peak_energies': [81, 356]}, 'any'),
         ('peak_based_relative_efficiency', 'peak_based_relative_efficiency', {'sources': ['Ba133']}, 'any'),
-        ('get_rel_act_manual_state', 'get_rel_act_manual_state', {}, 'any'),
         ('save_energy_cal_checkpoint', 'save_energy_cal_checkpoint', {'name_hint': 'torture'}, 'ok'),
         ('fit_energy_calibration', 'fit_energy_calibration', {'specType': 'Foreground', 'peak_energies': [81, 302.9, 356, 383.8]}, 'any'),
         ('restore_energy_cal_checkpoint', 'restore_energy_cal_checkpoint', lambda c: {'checkpoint_name': checkpoint_name(c, 'save_energy_cal_checkpoint')}, 'ok'),
         ('get_spectrum_image', 'get_spectrum_image', {}, 'ok'),
         ('get_spectrum_image zoom linear', 'get_spectrum_image', {'energy_range': {'min_keV': 250, 'max_keV': 450}, 'y_axis_scale': 'linear'}, 'ok'),
         ('get_spectrum_image bgsub log', 'get_spectrum_image', {'background_subtract': True, 'y_axis_scale': 'log', 'energy_range': {'min_keV': 20, 'max_keV': 120}}, 'ok'),
-        ('get_spectrum_image svg', 'get_spectrum_image', {'format': 'svg'}, 'ok'),
+        ('ERR svg image', 'get_spectrum_image', {'format': 'svg'}, 'error'),
         ('get_spectrum_image jpeg small', 'get_spectrum_image', {'format': 'jpeg', 'max_size': 400}, 'ok'),
         ('get_spectrum_image after zoom', 'get_spectrum_image', {}, 'ok'),
         ('unload secondary', 'load_spectrum_file', {'specType': 'Secondary'}, 'ok'),

@@ -1191,30 +1191,13 @@ inline void line_tangent_frame( const Eigen::Vector3d &a, Eigen::Vector3d &e1, E
 }//line_tangent_frame(...)
 
 
-/** Traces one line through the DETECTOR (housing, dead layer, crystal) and fills the CeeLo ray the
- per-energy kernel is evaluated on: the material segments in traversal order, the active-crystal
- chord, and the photon direction.  `x` is the hull point and `w_out` the OUTWARD unit direction
- (toward the source; the photon travels along -w_out).  `scratch` is reused across calls.
-
- Returns false - leaving the ray with no segments and a zero chord, which
- `DetectorResponse::fep_line_probabilities` scores as zero - when the direction points behind the
- face plane or the line misses the active crystal.  Both are decisions a moving line set has to be
- able to make per evaluation, so neither is an assert.
-
- This is `ceelo::append_etendue_line` without the set: same trace, same conventions, but writing
- into a caller-owned ray so the lines can be re-traced as the source dimensions move.  Kept here
- rather than added to CeeLo so the vendored library stays untouched; it uses only its public API
- (Geometry::trace_ray and the two extent queries).  `Geometry::trace_ray` is const and the geometry
- has no mutable state, so concurrent calls with distinct `out`/`scratch` are safe. */
-inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
-                                 const Eigen::Vector3d &w_out, ceelo::KernelRay &out,
-                                 std::vector<ceelo::PathSegment> &scratch )
+/** The segment half of #trace_detector_line: traces the line and appends its segments to `q` as
+ `out`'s (or none, returning false, when it does not reach the active crystal). */
+inline bool trace_detector_line_segments( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
+                                          const Eigen::Vector3d &w_out, ceelo::ApertureQuadrature &q,
+                                          ceelo::KernelRay &out,
+                                          std::vector<ceelo::PathSegment> &scratch )
 {
-  out.segs.clear();
-  out.active_len = 0.0f;
-  out.omega_w = static_cast<float>( 1.0/(4.0*PhysicalUnits::pi) );
-  out.cos_incidence = static_cast<float>( std::fabs( w_out.z() ) );
-  out.dir = (-w_out).cast<float>();
   if( !(w_out.z() < 0.0) )
     return false;   //behind the face plane
 
@@ -1241,18 +1224,61 @@ inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vecto
     if( seg.is_scoring )
       active += len;
     if( seg.material )
-      out.segs.push_back( { seg.material, static_cast<float>(len), seg.is_scoring } );
+      q.add_segment( out, seg.material, static_cast<float>(len), seg.is_scoring );
   }
 
   out.active_len = static_cast<float>( active );
-  if( !(active > 0.0) || out.segs.empty() )
+  if( !(active > 0.0) || (out.seg_count == 0) )
   {
-    out.segs.clear();
+    q.discard_segments( out );
     out.active_len = 0.0f;
     return false;   //can never contribute
   }
   return true;
+}//trace_detector_line_segments(...)
+
+
+/** Traces one line through the DETECTOR (housing, dead layer, crystal) and fills the CeeLo ray the
+ per-energy kernel is evaluated on: the material segments in traversal order, the active-crystal
+ chord, and the photon direction.  `x` is the hull point and `w_out` the OUTWARD unit direction
+ (toward the source; the photon travels along -w_out).  `scratch` is reused across calls.
+
+ The line is appended to `q` as its next ray (its segments go in `q.segments`), so a set of lines
+ stays aligned with whatever indexes it.  Returns false - leaving that ray with no segments and a
+ zero chord, which `DetectorResponse::fep_line_probabilities` scores as zero - when the direction
+ points behind the face plane or the line misses the active crystal.  Both are decisions a moving
+ line set has to be able to make per evaluation, so neither is an assert.
+
+ This is `ceelo::append_etendue_line` without the set: same trace, same conventions, but writing
+ into a caller-owned quadrature so the lines can be re-traced as the source dimensions move.  Kept here
+ rather than added to CeeLo so the vendored library stays untouched; it uses only its public API
+ (Geometry::trace_ray and the two extent queries).  `Geometry::trace_ray` is const and the geometry
+ has no mutable state, so concurrent calls with distinct `q`/`scratch` are safe. */
+inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
+                                 const Eigen::Vector3d &w_out, ceelo::ApertureQuadrature &q,
+                                 std::vector<ceelo::PathSegment> &scratch )
+{
+  ceelo::KernelRay out = ceelo::KernelRay();
+  out.seg_begin = static_cast<uint32_t>( q.segments.size() );
+  out.active_len = 0.0f;
+  out.omega_w = static_cast<float>( 1.0/(4.0*PhysicalUnits::pi) );
+  out.cos_incidence = static_cast<float>( std::fabs( w_out.z() ) );
+  out.dir = (-w_out).cast<float>();
+
+  const bool kept = trace_detector_line_segments( geom, x, w_out, q, out, scratch );
+  q.rays.push_back( out );
+  return kept;
 }//trace_detector_line(...)
+
+
+/** Appends an empty ray to `q` - a candidate line not traced at these dimensions - so the rays stay
+ aligned with the candidates. */
+inline void append_dropped_line( ceelo::ApertureQuadrature &q )
+{
+  ceelo::KernelRay ray = ceelo::KernelRay();
+  ray.seg_begin = static_cast<uint32_t>( q.segments.size() );
+  q.rays.push_back( ray );
+}//append_dropped_line(...)
 
 
 /** Sets #sm_line_trace_hold for a scope and restores it on exit. */
@@ -2414,7 +2440,6 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
   const size_t n = cand.size();
   t->kept.assign( n, 0 );
   t->q.n_rays_total = static_cast<int>( n );
-  t->q.rays.resize( n );
 
   const ceelo::Geometry &geom = response->geometry();
   const std::array<double,3> padded = { pad*dims_outer[0], pad*dims_outer[1], pad*dims_outer[2] };
@@ -2426,20 +2451,29 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
   std::vector<double> d_min( num_chunks, 1.0e300 ), d_max( num_chunks, 0.0 );
   std::vector<double> c_min( num_chunks, 1.0 ), c_max( num_chunks, 0.0 );
 
+  // Each chunk traces into a quadrature of its own (a quadrature's segments are one contiguous
+  //  array); they are joined in chunk order below, so t->q.rays[j] is still candidate j's line.
+  std::vector<ceelo::ApertureQuadrature> parts( num_chunks );
+
   const auto do_chunk = [&]( const size_t chunk )
   {
     const size_t lo = (n*chunk)/num_chunks, hi = (n*(chunk + 1))/num_chunks;
+    ceelo::ApertureQuadrature &part = parts[chunk];
+    part.rays.reserve( hi - lo );
     std::vector<ceelo::PathSegment> scratch;
     for( size_t j = lo; j < hi; ++j )
     {
       double w[3], cos_n, w_c[3], s_endcap;
       if( !line_direction_imp<double>( *this, j, dims_outer, det_pos, w, cos_n, w_c, s_endcap ) )
+      {
+        append_dropped_line( part );
         continue;
+      }
       t->kept[j] = 1;
       const Candidate &c = cand[j];
       const Eigen::Vector3d x( c.point_c[0], c.point_c[1], c.point_c[2] );
       const Eigen::Vector3d wc( w_c[0], w_c[1], w_c[2] );
-      trace_detector_line( geom, x, wc, t->q.rays[j], scratch );
+      trace_detector_line( geom, x, wc, part, scratch );
 
       // Distance range of the padded chord from the crystal origin (for the prefactor grids).
       const double x_a[3] = { det_pos[0] + c.x_rel[0], det_pos[1] + c.x_rel[1], det_pos[2] + c.x_rel[2] };
@@ -2475,6 +2509,10 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
     do_chunk( 0 );
   }
 
+  for( const ceelo::ApertureQuadrature &part : parts )
+    t->q.append_rays( part );
+  assert( t->q.rays.size() == n );
+
   t->chord_d_lo_cm = *std::min_element( begin(d_min), end(d_min) );
   t->chord_d_hi_cm = *std::max_element( begin(d_max), end(d_max) );
   t->chord_cos_lo = *std::min_element( begin(c_min), end(c_min) );
@@ -2506,10 +2544,7 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
   const ceelo::Geometry &geom = response->geometry();
   const size_t n = cand.size();
   for( int s = 0; s < 2; ++s )
-  {
     t.q_fd[s].n_rays_total = static_cast<int>( n );
-    t.q_fd[s].rays.resize( n );
-  }
 
   const std::array<double,3> dims_o = t.key;
   const double det_pos[3] = { det_position[0], det_position[1], det_position[2] };
@@ -2517,14 +2552,22 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
   const size_t num_chunks = (multithread && (n > 4096))
                               ? static_cast<size_t>( std::max( 1, SpecUtilsAsync::num_logical_cpu_cores() ) )
                               : size_t(1);
+  // Traced per chunk and joined in chunk order, as in #traced.
+  std::vector<std::array<ceelo::ApertureQuadrature,2>> parts( num_chunks );
+
   const auto do_chunk = [&]( const size_t chunk )
   {
     const size_t lo = (n*chunk)/num_chunks, hi = (n*(chunk + 1))/num_chunks;
+    std::array<ceelo::ApertureQuadrature,2> &part = parts[chunk];
     std::vector<ceelo::PathSegment> scratch;
     for( size_t j = lo; j < hi; ++j )
     {
       if( !t.kept[j] )
+      {
+        append_dropped_line( part[0] );
+        append_dropped_line( part[1] );
         continue;
+      }
       const Candidate &c = cand[j];
       const Eigen::Vector3d x( c.point_c[0], c.point_c[1], c.point_c[2] );
       // The direction in double (the ray stores it as float, too coarse against fd_delta).
@@ -2535,8 +2578,8 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
       line_tangent_frame( wc, e1, e2 );
       const Eigen::Vector3d w1 = (wc + TracedLines::fd_delta*e1).normalized();
       const Eigen::Vector3d w2 = (wc + TracedLines::fd_delta*e2).normalized();
-      trace_detector_line( geom, x, w1, t.q_fd[0].rays[j], scratch );
-      trace_detector_line( geom, x, w2, t.q_fd[1].rays[j], scratch );
+      trace_detector_line( geom, x, w1, part[0], scratch );
+      trace_detector_line( geom, x, w2, part[1], scratch );
     }
   };
 
@@ -2550,6 +2593,13 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
   {
     do_chunk( 0 );
   }
+
+  for( const std::array<ceelo::ApertureQuadrature,2> &part : parts )
+  {
+    t.q_fd[0].append_rays( part[0] );
+    t.q_fd[1].append_rays( part[1] );
+  }
+  assert( (t.q_fd[0].rays.size() == n) && (t.q_fd[1].rays.size() == n) );
 
   t.have_fd = true;
 }//VolumetricLineCache::trace_direction_differences(...)

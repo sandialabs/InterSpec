@@ -3,6 +3,7 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <set>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -11,6 +12,8 @@
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include "rapidxml/rapidxml.hpp"
 
@@ -98,6 +101,26 @@
 
 using namespace std;
 using json = nlohmann::json;
+
+
+namespace LlmTools
+{
+json compact_rate( const double value )
+{
+  if( !std::isfinite( value ) )
+    return nullptr;
+
+  // At 10 and above, the integer has at least two significant figures, and no shorter.
+  if( (std::fabs( value ) >= 10.0) && (std::fabs( value ) < 9.0E15) )
+    return static_cast<int64_t>( std::llround( value ) );
+
+  const double rounded = std::strtod( SpecUtils::printCompact( value, 2 ).c_str(), nullptr );
+  if( (rounded == std::round( rounded )) && (std::fabs( rounded ) < 9.0E15) )
+    return static_cast<int64_t>( rounded );  // "3", rather than "3.0"
+  return rounded;
+}//compact_rate(...)
+}//namespace LlmTools
+
 
 namespace {
   /** Deadline for the chart-image tools (SharedTool::asyncTimeoutMs).
@@ -205,19 +228,6 @@ namespace {
     return strtod( buf, nullptr );
   }
 
-  /** Round CPS based on magnitude for compact JSON output.
-   Below 1 CPS: full precision; below 10: to 0.01; below 100: to 0.1; above: to integer.
-   */
-  double roundCps( const double cps )
-  {
-    if( cps < 1.0 )
-      return cps;
-    if( cps < 10.0 )
-      return std::round( cps * 100.0 ) / 100.0;
-    if( cps < 100.0 )
-      return std::round( cps * 10.0 ) / 10.0;
-    return std::round( cps );
-  }//roundCps(...)
 
   /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
 
@@ -434,9 +444,102 @@ namespace {
     }
   }
 
-  void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
+  void from_json(const json& j_in, AnalystChecks::FitPeakOptions& p) {
 
-    p.energy = get_number( j, "energy" );
+    // Some LLMs give arrays as JSON strings (e.g., "[742.8, 766.4]")
+    json j = j_in;
+    for( const char *key : { "energy", "energies", "source" } )
+    {
+      const string field = find_case_insensitive_key( key, j );
+      if( j.contains(field) && j[field].is_string() && SpecUtils::istarts_with( SpecUtils::trim_copy(j[field].get<string>()), "[" ) )
+        normalize_json_field( j, field );
+    }
+
+    // The energies requested; `energies` is accepted as an alias of `energy`
+    const string energy_key = find_case_insensitive_key( "energy", j );
+    const string energies_key = find_case_insensitive_key( "energies", j );
+    const string used_energy_key = (j.contains(energy_key) && !j[energy_key].is_null()) ? energy_key : energies_key;
+    if( !j.contains(used_energy_key) || j[used_energy_key].is_null() )
+      throw runtime_error( "'energy' parameter must be specified." );
+
+    vector<double> energies;
+    if( j[used_energy_key].is_array() )
+    {
+      for( const json &e : j[used_energy_key] )
+        energies.push_back( get_double( e ) );
+      if( energies.empty() )
+        throw runtime_error( "'energy' must contain at least one energy." );
+    }else
+    {
+      energies.push_back( get_number( j, used_energy_key ) );
+    }
+
+    // The source(s): `source`, or one of its aliases; a string, or an array with one entry per energy
+    vector<string> sources;
+    for( const char *key : { "source", "nuclide", "element", "xray", "x-ray", "reaction" } )
+    {
+      const string src_key = find_case_insensitive_key( key, j );
+      if( !j.contains(src_key) || j[src_key].is_null() )
+        continue;
+
+      const json &src_val = j[src_key];
+      if( src_val.is_array() )
+      {
+        if( src_val.size() != energies.size() )
+          throw runtime_error( "When '" + src_key + "' is an array, it must have one entry per energy (got "
+                               + std::to_string(src_val.size()) + " sources for "
+                               + std::to_string(energies.size()) + " energies); use \"\" for no source." );
+        for( const json &src : src_val )
+          sources.push_back( src.is_string() ? src.get<string>() : string() );
+      }else if( src_val.is_string() )
+      {
+        sources.assign( energies.size(), src_val.get<string>() );
+      }else
+      {
+        throw runtime_error( "'" + src_key + "' must be a string, or an array of strings." );
+      }
+      break;
+    }//for( loop over source keys )
+
+    // Multiple peaks, or a ROI range/continuum given, fit exactly the requested peaks in one ROI;
+    //  otherwise (one energy, nothing else), search for the best peak near the energy.
+    bool roi_params_given = false;
+    for( const char *key : { "roiLowerEnergy", "roiUpperEnergy", "continuumType" } )
+    {
+      const string field = find_case_insensitive_key( key, j );
+      roi_params_given |= (j.contains(field) && !j[field].is_null());
+    }
+
+    p.explicitRoi.reset();
+    p.energy = energies.front();
+    p.source = std::nullopt;
+    if( (energies.size() > 1) || roi_params_given )
+    {
+      AnalystChecks::FitPeakOptions::ExplicitRoi roi;
+      roi.energies = energies;
+      roi.sources = sources;
+
+      const string lower_key = find_case_insensitive_key( "roiLowerEnergy", j );
+      if( j.contains(lower_key) && !j[lower_key].is_null() )
+        roi.lowerEnergy = get_number( j, lower_key );
+
+      const string upper_key = find_case_insensitive_key( "roiUpperEnergy", j );
+      if( j.contains(upper_key) && !j[upper_key].is_null() )
+        roi.upperEnergy = get_number( j, upper_key );
+
+      const string cont_key = find_case_insensitive_key( "continuumType", j );
+      if( j.contains(cont_key) && !j[cont_key].is_null() )
+      {
+        if( !j[cont_key].is_string() )
+          throw runtime_error( "'continuumType' must be a string." );
+        roi.continuumType = j[cont_key].get<string>();
+      }
+
+      p.explicitRoi = std::move( roi );
+    }else if( !sources.empty() )
+    {
+      p.source = sources.front();
+    }//if( explicit ROI ) / else if( a source )
 
     p.doNotAddToAnalysisPeaks = get_boolean( j, "DoNotAddToAnalysisPeaks", false );
 
@@ -450,20 +553,6 @@ namespace {
     } else {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
-
-    p.source = std::nullopt;
-    if( j.contains("source") )
-      p.source = j["source"].get<std::string>();
-    else if( j.contains("nuclide") )
-      p.source = j["nuclide"].get<std::string>();
-    else if( j.contains("element") )
-      p.source = j["element"].get<std::string>();
-    else if( j.contains("xray") )
-      p.source = j["xray"].get<std::string>();
-    else if( j.contains("x-ray") )
-      p.source = j["x-ray"].get<std::string>();
-    else if( j.contains("reaction") )
-      p.source = j["reaction"].get<std::string>();
   }
   
   /*
@@ -501,12 +590,9 @@ namespace {
       if( meas && (meas->live_time() > 0.0) )
       {
         const double cps = peak->peakArea() / meas->live_time();
-        peak_json["cps"] = rount_to_hundredth( cps );
+        peak_json["cps"] = LlmTools::compact_rate( cps );
         if( peak->amplitudeUncert() > 0.0 )
-        {
-          const double cpsUncert = cps * peak->amplitudeUncert() / peak->peakArea();
-          peak_json["cpsUncert"] = rount_to_hundredth( cpsUncert );
-        }
+          peak_json["cpsUncert"] = LlmTools::compact_rate( peak->amplitudeUncert() / meas->live_time() );
       }
       if( peak->chi2Defined() )
         peak_json["chi2dof"] = rount_to_hundredth( peak->chi2dof() );
@@ -585,7 +671,7 @@ namespace {
     roi_json = json{
       {"lowerEnergy", rount_to_hundredth(cont->lowerEnergy())},
       {"upperEnergy", rount_to_hundredth(cont->upperEnergy())},
-      {"continuumType", PeakContinuum::offset_type_str(cont->type()) }
+      {"continuumType", PeakContinuum::offset_type_name(cont->type()) }
       //("continuumCounts", cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), dataH ) }
     };
 
@@ -654,6 +740,59 @@ namespace {
 
     j = json::object();
 
+    if( !p.significant )
+    {
+      // A probe (DoNotAddToAnalysisPeaks) where the automated thresholds accepted no peak: say why,
+      //  and give what the data show there.
+      j["status"] = "not_significant";
+      j["note"] = "No peak was accepted at this energy with the automated-search thresholds, and none was added.";
+      if( p.diagnostic.has_value() )
+      {
+        const AnalystChecks::UnfitPeakDiagnostic &d = *p.diagnostic;
+        j["reason"] = d.reason;
+        j["expectedFwhm_keV"] = round_to_sig_figs( d.expectedFwhm, 3 );
+        j["expectedFwhmSource"] = d.expectedFwhmSource;
+
+        if( d.candidate )
+        {
+          const shared_ptr<const PeakDef> &c = d.candidate;
+          json cj = json{
+            {"energy", rount_to_hundredth( c->mean() )},
+            {"fwhm", round_to_sig_figs( c->fwhm(), 3 )},
+            {"area", round_to_sig_figs( c->peakArea(), 3 )},
+            {"areaUncert", round_to_sig_figs( c->peakAreaUncert(), 2 )},
+            {"description", "The best peak with the lower thresholds of a user double-click; not added."}
+          };
+          if( c->peakAreaUncert() > 0.0 )
+            cj["numSigma"] = round_to_sig_figs( c->peakArea() / c->peakAreaUncert(), 2 );
+          if( c->chi2Defined() )
+            cj["chi2dof"] = round_to_sig_figs( c->chi2dof(), 3 );
+          j["candidatePeak"] = cj;
+        }//if( d.candidate )
+
+        if( d.fixedFitValid )
+        {
+          const double area = d.fixedFitArea, uncert = d.fixedFitAreaUncert;
+          json fj = json{
+            {"netCounts", round_to_sig_figs( area, 3 )},
+            {"netCountsUncert", round_to_sig_figs( uncert, 2 )},
+            {"approxUpperLimit95", round_to_sig_figs( std::max( area, 0.0 ) + 1.645*uncert, 3 )},
+            {"windowLower_keV", rount_to_hundredth( d.fixedFitLowerEnergy )},
+            {"windowUpper_keV", rount_to_hundredth( d.fixedFitUpperEnergy )},
+            {"description", "A Gaussian of the expected FWHM, fixed at the requested energy, fit with a quadratic"
+                            " continuum over +-2 FWHM; use currie_mda_calc for a formal detection limit."}
+          };
+          if( uncert > 0.0 )
+            fj["numSigma"] = round_to_sig_figs( area / uncert, 2 );
+          if( d.fixedFitChi2Dof >= 0.0 )
+            fj["chi2dof"] = round_to_sig_figs( d.fixedFitChi2Dof, 3 );
+          j["fixedPositionFit"] = fj;
+        }//if( d.fixedFitValid )
+      }//if( p.diagnostic.has_value() )
+
+      return;
+    }//if( !p.significant )
+
     if( fitPeak )
     {
       json roi_json;
@@ -667,6 +806,23 @@ namespace {
       j["fitPeakEnergy"] = rount_to_hundredth(fitPeak->mean());
 
       j["status"] = "success";
+
+      if( !p.removedPeaks.empty() )
+      {
+        json removed = json::array();
+        for( const shared_ptr<const PeakDef> &peak : p.removedPeaks )
+        {
+          json removed_json{ {"energy", rount_to_hundredth(peak->mean())} };
+          const string src = peak->sourceName();
+          if( !src.empty() )
+            removed_json["source"] = src;
+          removed.push_back( removed_json );
+        }
+        j["removedPeaks"] = removed;
+      }//if( !p.removedPeaks.empty() )
+
+      if( !p.warnings.empty() )
+        j["warnings"] = p.warnings;
 
       //"response":"OK"
       //"status":200
@@ -923,7 +1079,7 @@ namespace {
     const shared_ptr<const PeakContinuum> cont = peak->continuum();
     if( cont )
     {
-      peak_json["continuumType"] = PeakContinuum::offset_type_str( cont->type() );
+      peak_json["continuumType"] = PeakContinuum::offset_type_name( cont->type() );
       peak_json["roiLowerEnergy"] = rount_to_hundredth( cont->lowerEnergy() );
       peak_json["roiUpperEnergy"] = rount_to_hundredth( cont->upperEnergy() );
 
@@ -983,33 +1139,61 @@ namespace {
   void to_json( json &j, const AnalystChecks::ComptonPeakCheckStatus &p )
   {
     j["FeatureType"] = AnalystChecks::to_string(p.type);
-
-    if( (p.type == AnalystChecks::ComptonScatterType::None)
-       || (p.confidence == AnalystChecks::ComptonScatterConfidence::No) )
-    {
-      return;
-    }
-
     j["Confidence"] = AnalystChecks::to_string(p.confidence);
-
-    j["CandidateExpectedDetectorFwhm_keV"] = p.expectedDetectorFwhm;
-    j["CandidateObservedFwhm_keV"] = p.candidateFwhm;
-    j["CandidateMean_keV"] = p.candidateMean;
-
-    if( p.parentInfo.has_value() )
+    j["noCandidatePeak"] = p.noCandidatePeak;
+    j["searchWindow_keV"] = rount_to_hundredth( p.searchWindow );
+    if( p.nearestPeakEnergy.has_value() )
     {
-      const AnalystChecks::ComptonScatterParentInfo &parent = p.parentInfo.value();
+      j["nearestPeak_keV"] = rount_to_hundredth( *p.nearestPeakEnergy );
+      j["nearestPeakDistance_keV"] = rount_to_hundredth( *p.nearestPeakDistance );
+    }
+    if( !p.reason.empty() )
+      j["reason"] = p.reason;
 
-      j["ParentMean_keV"] = parent.parentEnergy;
-      j["ParentFwhm_keV"] = parent.parentFwhm;
-      if( p.type != AnalystChecks::ComptonScatterType::ComptonEdge )
-        j["ScatterAngle_degrees"] = parent.scatterAngle;
+    if( !p.noCandidatePeak && (p.confidence != AnalystChecks::ComptonScatterConfidence::No) )
+    {
+      j["CandidateExpectedDetectorFwhm_keV"] = round_to_sig_figs( p.expectedDetectorFwhm, 3 );
+      j["CandidateObservedFwhm_keV"] = round_to_sig_figs( p.candidateFwhm, 3 );
+      j["CandidateMean_keV"] = rount_to_hundredth( p.candidateMean );
 
-      j["ParentAreaDividedByCandidateArea"] = parent.areaFraction;
+      if( p.parentInfo.has_value() )
+      {
+        const AnalystChecks::ComptonScatterParentInfo &parent = p.parentInfo.value();
 
-      if( parent.userLabel.has_value() && !parent.userLabel.value().empty() )
-        j["SuggestedCandidatePeakLabel"] = parent.userLabel.value(); // e.g. "Compton scatter from Co60 1332.50 keV peak"
-    }//if( p.parentInfo.has_value() )
+        j["ParentMean_keV"] = rount_to_hundredth( parent.parentEnergy );
+        j["ParentFwhm_keV"] = round_to_sig_figs( parent.parentFwhm, 3 );
+        if( p.type != AnalystChecks::ComptonScatterType::ComptonEdge )
+          j["ScatterAngle_degrees"] = round_to_sig_figs( parent.scatterAngle, 3 );
+
+        j["CandidateAreaDividedByParentArea"] = round_to_sig_figs( parent.areaFraction, 3 );
+
+        if( parent.userLabel.has_value() && !parent.userLabel.value().empty() )
+          j["SuggestedCandidatePeakLabel"] = parent.userLabel.value(); // e.g. "Compton scatter from Co60 1332.50 keV peak"
+      }//if( p.parentInfo.has_value() )
+    }//if( a candidate peak was evaluated )
+
+    json parents = json::array();
+    for( const AnalystChecks::ComptonKinematicParent &kp : p.kinematicParents )
+    {
+      json parent = json{
+        {"parentEnergy_keV", rount_to_hundredth( kp.parentEnergy )},
+        {"backscatterPeak_keV", rount_to_hundredth( kp.backscatterEnergy )},
+        {"comptonEdge_keV", rount_to_hundredth( kp.comptonEdgeEnergy )},
+        {"feature", AnalystChecks::to_string( kp.feature )},
+        {"regionConfidence", AnalystChecks::to_string( kp.confidence )},
+        {"parentArea", round_to_sig_figs( kp.parentArea, 3 )},
+        {"prominence", round_to_sig_figs( kp.prominence, 2 )},
+        {"excessOverInterpolationSigma", round_to_sig_figs( kp.excessSigma, 2 )}
+      };
+      if( kp.parentCps >= 0.0 )
+        parent["parentCps"] = LlmTools::compact_rate( kp.parentCps );
+      if( kp.parentSource.has_value() )
+        parent["parentSource"] = *kp.parentSource;
+      if( kp.scatterAngle >= 0.0 )
+        parent["scatterAngle_degrees"] = round_to_sig_figs( kp.scatterAngle, 3 );
+      parents.push_back( std::move(parent) );
+    }//for( loop over kinematic parents )
+    j["kinematicParents"] = std::move(parents);
   }//void to_json( json &j, const AnalystChecks::ComptonPeakCheckStatus &p )
 
 
@@ -1188,18 +1372,40 @@ namespace {
     }
   }//void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
 
+  json escape_check_peak_json( const AnalystChecks::EscapeCheckPeak &p )
+  {
+    json answer = json{
+      {"energy", rount_to_hundredth( p.peak->mean() )},
+      {"area", round_to_sig_figs( p.peak->peakArea(), 3 )}
+    };
+    if( p.source.has_value() )
+      answer["source"] = *p.source;
+    return answer;
+  }//escape_check_peak_json(...)
+
+
   void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
   {
-    j = json{
-      {"potentialSingleEscapePeakEnergy", rount_to_hundredth(p.potentialSingleEscapePeakEnergy)},
-      {"potentialDoubleEscapePeakEnergy", rount_to_hundredth(p.potentialDoubleEscapePeakEnergy)},
-      {"potentialParentPeakSingleEscape", rount_to_hundredth(p.potentialParentPeakSingleEscape)},
-      {"potentialParentPeakDoubleEscape", rount_to_hundredth(p.potentialParentPeakDoubleEscape)},
-      //{"singleEscapeSearchWindow", rount_to_hundredth(p.singleEscapeSearchWindow)},
-      //{"doubleEscapeSearchWindow", rount_to_hundredth(p.doubleEscapeSearchWindow)},
-      //{"singleEscapeParentSearchWindow", rount_to_hundredth(p.singleEscapeParentSearchWindow)},
-      //{"doubleEscapeParentSearchWindow", rount_to_hundredth(p.doubleEscapeParentSearchWindow)}
-    };
+    j = json::object();
+    j["belowPairProductionThreshold"] = p.belowPairProductionThreshold;
+
+    // Where this peak's own escape peaks would be (only when physical), and whether peaks are there
+    if( p.potentialSingleEscapePeakEnergy.has_value() )
+      j["potentialSingleEscapePeakEnergy"] = rount_to_hundredth( *p.potentialSingleEscapePeakEnergy );
+    if( p.potentialDoubleEscapePeakEnergy.has_value() )
+      j["potentialDoubleEscapePeakEnergy"] = rount_to_hundredth( *p.potentialDoubleEscapePeakEnergy );
+    if( p.singleEscapePeakFound.has_value() )
+      j["singleEscapePeakFound"] = escape_check_peak_json( *p.singleEscapePeakFound );
+    if( p.doubleEscapePeakFound.has_value() )
+      j["doubleEscapePeakFound"] = escape_check_peak_json( *p.doubleEscapePeakFound );
+
+    // Where its parent would be, if this peak were an escape peak, and the peaks found there
+    j["potentialParentPeakSingleEscape"] = rount_to_hundredth( p.potentialParentPeakSingleEscape );
+    j["potentialParentPeakDoubleEscape"] = rount_to_hundredth( p.potentialParentPeakDoubleEscape );
+    if( p.peakAtPotentialSingleEscapeParent.has_value() )
+      j["peakAtPotentialSingleEscapeParent"] = escape_check_peak_json( *p.peakAtPotentialSingleEscapeParent );
+    if( p.peakAtPotentialDoubleEscapeParent.has_value() )
+      j["peakAtPotentialDoubleEscapeParent"] = escape_check_peak_json( *p.peakAtPotentialDoubleEscapeParent );
 
     if( p.parentPeak.has_value() )
     {
@@ -1216,6 +1422,30 @@ namespace {
 
       j["parentPeak"] = parent_info;
     }
+
+    if( !p.detectorMaterialAssumed.empty() )
+      j["detectorMaterialAssumed"] = p.detectorMaterialAssumed;
+
+    json xray_escapes = json::array();
+    for( const AnalystChecks::XrayEscapeInfo &x : p.xrayEscapes )
+    {
+      json xj = json{
+        {"xray", x.element + " " + x.line},
+        {"xrayEnergy_keV", rount_to_hundredth( x.xrayEnergy )},
+        {"parentEnergy_keV", rount_to_hundredth( x.parentEnergy )},
+        {"maxEscapeFraction", round_to_sig_figs( x.maxEscapeFraction, 2 )},
+        {"plausible", x.plausible}
+      };
+      if( x.parentPeak.has_value() )
+        xj["parentPeak"] = escape_check_peak_json( *x.parentPeak );
+      if( x.areaRatio.has_value() )
+        xj["areaRatio"] = round_to_sig_figs( *x.areaRatio, 2 );
+      xray_escapes.push_back( std::move(xj) );
+    }//for( loop over x-ray escapes )
+    j["xrayEscapes"] = std::move(xray_escapes);
+
+    if( !p.notes.empty() )
+      j["notes"] = p.notes;
   }//void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
 
   void from_json( const json &j, AnalystChecks::SumPeakCheckOptions &p )
@@ -1311,10 +1541,32 @@ namespace {
 
       // Add coincidence fraction for cascade sums
       if( p.sumPeakInfo->coincidenceFraction.has_value() )
-        sum_info["coincidenceFraction"] = *p.sumPeakInfo->coincidenceFraction;
+        sum_info["coincidenceFraction"] = round_to_sig_figs( *p.sumPeakInfo->coincidenceFraction, 3 );
+      if( p.sumPeakInfo->cascadeNuclide.has_value() )
+        sum_info["cascadeNuclide"] = *p.sumPeakInfo->cascadeNuclide;
+      if( p.sumPeakInfo->coincidenceType.has_value() )
+        sum_info["coincidenceType"] = *p.sumPeakInfo->coincidenceType;
+      if( p.sumPeakInfo->cascadeAlsoPossible )
+        sum_info["cascadeAlsoPossible"] = true;
+      if( p.sumPeakInfo->observedSumCps.has_value() )
+        sum_info["observedSumCps"] = LlmTools::compact_rate( *p.sumPeakInfo->observedSumCps );
+      if( p.sumPeakInfo->expectedRandomSumCps.has_value() )
+        sum_info[p.pileupTauIsUpperBound ? "expectedRandomSumCpsUpperBound" : "expectedRandomSumCps"]
+                                         = LlmTools::compact_rate( *p.sumPeakInfo->expectedRandomSumCps );
+      if( !p.sumPeakInfo->reason.empty() )
+        sum_info["reason"] = p.sumPeakInfo->reason;
 
       j["sumPeakInfo"] = sum_info;
     }
+
+    if( p.pileupTau.has_value() )
+    {
+      j[p.pileupTauIsUpperBound ? "pileupTimeConstantUpperBound_s" : "pileupTimeConstant_s"] = round_to_sig_figs( *p.pileupTau, 2 );
+      j["pileupTimeConstantSource"] = p.pileupTauSource;
+    }
+
+    if( !p.otherSourcesAtThisEnergy.empty() )
+      j["otherSourcesWithLinesAtThisEnergy"] = p.otherSourcesAtThisEnergy;
   }//void to_json( json &j, const AnalystChecks::SumPeakCheckStatus &p )
 
   /** Format a count value to appropriate precision based on magnitude.
@@ -1343,7 +1595,7 @@ namespace {
   {
     j = json{
       {"counts", c.counts},
-      {"cps", c.cps},
+      {"cps", LlmTools::compact_rate( c.cps )},
       {"numSigmaCpsRelForeground", rount_to_hundredth( c.num_sigma_rel_foreground )}
     };
 
@@ -1365,7 +1617,7 @@ namespace {
       {"lowerEnergy", rount_to_hundredth( c.lower_energy )},
       {"upperEnergy", rount_to_hundredth( c.upper_energy )},
       {"foregroundCounts", c.foreground_counts},
-      {"foregroundCps", rount_to_hundredth( c.foreground_cps )}
+      {"foregroundCps", LlmTools::compact_rate( c.foreground_cps )}
     };
 
     if( !c.channel_lower_energies.empty() )
@@ -1474,8 +1726,9 @@ namespace {
     
     if( meas && (meas->live_time() > 0.0) )
     {
-      const double cps = peak->amplitude() / meas->live_time();
-      peak_json["cps"] = rount_to_hundredth( cps );
+      peak_json["cps"] = LlmTools::compact_rate( peak->amplitude() / meas->live_time() );
+      if( peak->amplitudeUncert() > 0.0 )
+        peak_json["cpsUncert"] = LlmTools::compact_rate( peak->amplitudeUncert() / meas->live_time() );
     }
 
     if( peak->chi2Defined() )
@@ -1969,6 +2222,19 @@ namespace {
 
 namespace LlmTools
 {
+double round_to_sig_figs( const double val, const int n )
+{
+  return ::round_to_sig_figs( val, n );
+}
+
+double round_to_decimal_places( const double val, const int n )
+{
+  return ::round_to_decimal_places( val, n );
+}
+}//namespace LlmTools
+
+namespace LlmTools
+{
 
 namespace
 {
@@ -2174,7 +2440,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
 
                   json svgVis;
                   svgVis["type"] = "svg";
-                  svgVis["title"] = "Fitted Peak";
+                  svgVis["title"] = result.significant ? "Fitted Peak" : "Rejected Candidate Peak (not added)";
                   svgVis["data"] = svgStrm.str();
                   svgVis["widthPx"] = 375;
                   svgVis["heightPx"] = 150;
@@ -2716,7 +2982,12 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // The KnowledgeBase agent is only offered if it has something to work from: skills in a
   //  `llm_knowledge` directory, or a RAG endpoint.  Its description then lists the topics it covers.
   const vector<LlmKnowledgeBase::SkillInfo> knowledge_skills = LlmKnowledgeBase::loadSkills();
-  const bool have_rag_endpoint = !config.llmApi.rag_url.empty();
+
+  // A skill filter of "none" (see LlmKnowledgeBase::setSkillFilter) is for testing the assistant
+  //  with no domain knowledge, so it rules out the RAG endpoint as well.
+  const optional<set<string>> skill_filter = LlmKnowledgeBase::skillFilter();
+  const string rag_url = (skill_filter && skill_filter->empty()) ? string() : config.llmApi.rag_url;
+  const bool have_rag_endpoint = !rag_url.empty();
 
   // Register agent-specific invoke tools dynamically from config
   for( const LlmConfig::AgentConfig &agent : config.agents )
@@ -2815,6 +3086,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       for( auto &roleDesc : tool.roleDescriptions )
         roleDesc.second = LlmPromptTemplate::render( roleDesc.second, agentCtx( roleDesc.first ) );
 
+      // Parameter descriptions are templates too (e.g., file paths differ between MCP servers).
+      tool.mcpParametersSchema = LlmPromptTemplate::renderSchemaDescriptions( tool.parameters_schema, mcpCtx );
+      tool.parameters_schema = LlmPromptTemplate::renderSchemaDescriptions( tool.parameters_schema,
+                                                                            agentCtx( AgentType::MainAgent ) );
+
       registerTool(tool);
     }catch( const std::exception &e )
     {
@@ -2836,8 +3112,8 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       " response text, the tools it called, and any questions it asked (answered with a stated"
       " assumption, as there is no interactive user); with status \"running\" the turn is still"
       " going - call assistant_get_result with the turn_id to wait for it, or assistant_cancel."
-      "  Clients that accept text/event-stream, and send a progressToken, also get progress"
-      " notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
+      "  Clients that send a progressToken (and, over HTTP, accept text/event-stream) also get"
+      " progress notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
       " run in order.";
     submitTool.mcpDescription = submitTool.description;
     submitTool.parameters_schema = json::parse(R"({
@@ -2853,7 +3129,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
             "items": {
               "type": "object",
               "properties": {
-                "path": {"type": "string", "description": "Path of an image file, relative to the session directory (e.g. \"input/photo.jpg\")."},
+                "path": {"type": "string", "description": "Path of an image file: for a session from create_session, relative to the session directory (e.g. \"input/photo.jpg\"); otherwise, an absolute path."},
                 "base64Data": {"type": "string", "description": "The image, base64 encoded; instead of 'path'."},
                 "mimeType": {"type": "string", "description": "Optional; the type is detected from the content."},
                 "caption": {"type": "string", "description": "Optional label sent with the image, so the prompt can refer to it."}
@@ -3015,7 +3291,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   }//if( config.mcpServer.allowAgentInvocation && config.llmApi.isConfigured() )
 
   LlmKnowledgeBase::registerKnowledgeBaseTools( knowledge_skills,
-                                                config.llmApi.rag_url,
+                                                rag_url,
                                                 config.llmApi.rag_model,
                                                 config.llmApi.rag_corpora,
                                                 [this]( const SharedTool &tool ){ registerTool(tool); } );
@@ -3117,7 +3393,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "run_javascript"
   };
 
-  if( !config.llmApi.rag_url.empty() )
+  if( have_rag_endpoint )
     expectedTools.push_back( "query_rag_endpoint" );
 
   // Registered programmatically above, when configured; list it so the drift checks below don't
@@ -3978,8 +4254,12 @@ json ToolRegistry::executeGetSpectrumInfo( const json &params, InterSpec *inters
   {
     result["neutronCounts"] = spectrum->neutron_counts_sum();
     result["neutronLiveTime"] = spectrum->neutron_live_time();
-    result["neutronCPS"] = spectrum->neutron_counts_sum() / spectrum->neutron_live_time();
-    result["neutronCPS_uncertainty"] = sqrt( std::max( 2.0, spectrum->neutron_counts_sum() ) ) / spectrum->neutron_live_time();
+    if( spectrum->neutron_live_time() > 0.0f )
+    {
+      result["neutronCPS"] = LlmTools::compact_rate( spectrum->neutron_counts_sum() / spectrum->neutron_live_time() );
+      result["neutronCPS_uncertainty"] = LlmTools::compact_rate( sqrt( std::max( 2.0, spectrum->neutron_counts_sum() ) )
+                                                                 / spectrum->neutron_live_time() );
+    }
   }
 
   // Compute neutron CPS excess relative to background, when available
@@ -4008,7 +4288,7 @@ json ToolRegistry::executeGetSpectrumInfo( const json &params, InterSpec *inters
       {
         const double excess_sigma = (fg_cps - bg_cps) / combined_sigma;
         result["neutronCPS_excess_sigma"] = excess_sigma;
-        result["backgroundNeutronCPS"] = bg_cps;
+        result["backgroundNeutronCPS"] = LlmTools::compact_rate( bg_cps );
       }
     }//if( background has neutron data )
   }//if( foreground has neutron data )
@@ -4106,9 +4386,9 @@ json ToolRegistry::executeGetSpectrumInfo( const json &params, InterSpec *inters
           sampleJson["liveTime"] = rount_to_hundredth( maxLiveTime );
         if( maxRealTime > 0.0 )
           sampleJson["realTime"] = rount_to_hundredth( maxRealTime );
-        sampleJson["gammaCPS"] = rount_to_hundredth( gammaCPS );
+        sampleJson["gammaCPS"] = LlmTools::compact_rate( gammaCPS );
         if( hasNeutron )
-          sampleJson["neutronCPS"] = rount_to_hundredth( neutronCPS );
+          sampleJson["neutronCPS"] = LlmTools::compact_rate( neutronCPS );
 
         samplesArray.push_back( sampleJson );
       }//for( loop over sample numbers )
@@ -4411,7 +4691,7 @@ namespace
       {
         answer["neutronCounts"] = hist->neutron_counts_sum();
         if( hist->neutron_live_time() > 0.0f )
-          answer["neutronCPS"] = hist->neutron_counts_sum() / hist->neutron_live_time();
+          answer["neutronCPS"] = LlmTools::compact_rate( hist->neutron_counts_sum() / hist->neutron_live_time() );
       }
       if( !hist->title().empty() )
         answer["title"] = hist->title();
@@ -4483,11 +4763,11 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
     throw std::runtime_error( "File not found: " + client_path );
 
   // What happens to the assistant conversation when a new foreground is loaded: by default the
-  //  file's saved conversation (if any) replaces the current one, except for an MCP agent server,
-  //  which keeps the current conversation - an uploaded file may carry a made-up "conversation", so
-  //  the client must ask for it with "resume" (for files it exported itself).
+  //  file's saved conversation (if any) replaces the current one, except for the MCP servers, which
+  //  keep the current conversation - a file from someone else may carry a made-up "conversation",
+  //  so the client must ask for it with "resume" (for files it exported itself).
   const string convo_key = find_case_insensitive_key( "conversation", params );
-#if( BUILD_AS_MCP_HTTP_SERVER )
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
   string conversation_mode = "keep";
 #else
   string conversation_mode = "resume";
@@ -5067,8 +5347,8 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   if( !format_key.empty() && effectiveParams.contains( format_key ) )
   {
     format = effectiveParams.at( format_key ).get<string>();
-    if( format != "png" && format != "jpeg" && format != "svg" )
-      throw runtime_error( "Invalid format '" + format + "'. Must be 'png', 'jpeg', or 'svg'." );
+    if( format != "png" && format != "jpeg" )
+      throw runtime_error( "Invalid format '" + format + "'. Must be 'png' or 'jpeg'." );
   }
 
   const string max_size_key = find_case_insensitive_key( "max_size", effectiveParams );
@@ -5306,7 +5586,7 @@ nlohmann::json ToolRegistry::executeGetTimeHistoryCountRates( const nlohmann::js
 
     // Compute and round gamma CPS
     const double glt = (info.gammaLiveTime > 0.0) ? info.gammaLiveTime : info.duration;
-    row.push_back( (glt > 0.0) ? roundCps( info.gammaCounts / glt ) : 0.0 );
+    row.push_back( (glt > 0.0) ? LlmTools::compact_rate( info.gammaCounts / glt ) : json( 0 ) );
 
     // Include neutron CPS only if any sample has neutrons
     if( anyNeutron )
@@ -5314,7 +5594,7 @@ nlohmann::json ToolRegistry::executeGetTimeHistoryCountRates( const nlohmann::js
       if( info.hasNeutron )
       {
         const double nlt = (info.neutronLiveTime > 0.0) ? info.neutronLiveTime : info.duration;
-        row.push_back( (nlt > 0.0) ? roundCps( info.neutronCounts / nlt ) : 0.0 );
+        row.push_back( (nlt > 0.0) ? LlmTools::compact_rate( info.neutronCounts / nlt ) : json( 0 ) );
       }else
       {
         row.push_back( nullptr );
@@ -5547,8 +5827,8 @@ void ToolRegistry::executeGetTimeChartImageAsync( const nlohmann::json &params, 
   if( !format_key.empty() && params.contains( format_key ) )
   {
     format = params.at( format_key ).get<string>();
-    if( format != "png" && format != "jpeg" && format != "svg" )
-      throw runtime_error( "Invalid format '" + format + "'. Must be 'png', 'jpeg', or 'svg'." );
+    if( format != "png" && format != "jpeg" )
+      throw runtime_error( "Invalid format '" + format + "'. Must be 'png' or 'jpeg'." );
   }
 
   const string max_size_key = find_case_insensitive_key( "max_size", params );
@@ -5713,6 +5993,62 @@ nlohmann::json ToolRegistry::executeGetSourcesWithGammasNearEnergy( const nlohma
   json answer = json::object();
   answer["energy_keV"] = round_to_decimal_places( energy, 2 );
   answer["window_keV"] = round_to_decimal_places( window, 2 );
+
+  // 511 keV is annihilation radiation, which no one nuclide is characteristic of: a nuclide whose
+  //  strongest line is elsewhere (Na22's is 1274.5 keV) can still be what a 511 keV peak comes from.
+  const double annihilation_energy = 510.9989;
+  if( (annihilation_energy >= lower_energy) && (annihilation_energy <= upper_energy) )
+  {
+    char note[512] = { '\0' };
+    snprintf( note, sizeof(note), "511 keV is annihilation radiation: it comes from any positron (beta+)"
+      " emitter, from pair production by gammas above 1022 keV in or around the detector, and is often"
+      " from an instrument's Na-22 check source (so Na22 is listed first).  The positron emitters give at"
+      " least %.2g annihilation photons per decay ('annihilation_511_per_decay'); confirm one with its other"
+      " lines (e.g., Na22 1274.5 keV).  Sources without that field have a real gamma line near 511 keV.",
+      AnalystChecks::sm_min_annihilation_photons_per_decay );
+    answer["annihilation_note"] = note;
+
+    // Positron emitters first - Na22, the most common field cause, then by annihilation yield - then
+    //  sources with a real gamma near 511 keV (e.g., Rh106's 511.86 keV).
+    vector<AnalystChecks::AnnihilationSource> emitters = AnalystChecks::positron_emitters_for_annihilation( interspec );
+    std::stable_sort( begin(emitters), end(emitters), []( const AnalystChecks::AnnihilationSource &a,
+                                                          const AnalystChecks::AnnihilationSource &b ){
+      return (a.nuclide->symbol == "Na22") && (b.nuclide->symbol != "Na22");
+    } );
+
+    json ordered = json::array();
+    std::set<string> emitter_names;
+    for( const AnalystChecks::AnnihilationSource &src : emitters )
+    {
+      emitter_names.insert( src.nuclide->symbol );
+
+      // Keep any other characteristic energies the source has in the window
+      json energies = json::array( {511.0} );
+      for( const json &listed : sources )
+      {
+        if( listed["name"].get<string>() != src.nuclide->symbol )
+          continue;
+        for( const json &e : listed["energies_keV"] )
+        {
+          if( std::fabs( e.get<double>() - annihilation_energy ) > 1.0 )
+            energies.push_back( e );
+        }
+      }
+
+      ordered.push_back( json{ {"name", src.nuclide->symbol},
+                               {"energies_keV", std::move(energies)},
+                               {"annihilation_511_per_decay", round_to_sig_figs( src.photons511PerDecay, 3 )} } );
+    }//for( positron emitters )
+
+    for( json &listed : sources )
+    {
+      if( !emitter_names.count( listed["name"].get<string>() ) )
+        ordered.push_back( std::move(listed) );
+    }
+
+    sources = std::move(ordered);
+  }//if( 511 keV in the window )
+
   answer["sources"] = std::move(sources);
 
   return answer;
@@ -6323,13 +6659,182 @@ nlohmann::json ToolRegistry::executeGetExpectedFwhm(const nlohmann::json& params
 
   const double energy = get_number( params, "energy" );
 
-  const float fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+  string source;
+  const float fwhm = AnalystChecks::get_expected_fwhm( energy, interspec, &source );
   
   json result;
   result["energy"] = round_to_decimal_places( energy, 2 );
   result["fwhm"] = round_to_decimal_places( fwhm, 3 );
+  result["fwhmSource"] = source;
   return result;
 }//nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec)
+
+namespace
+{
+  /** Adds `sideChannelChi2PerDof`, `peakFitCrossCheck`, and (when there is a reason to doubt the
+   straight-line continuum) `continuumWarning` to a currie_mda_calc result.
+   */
+  void add_currie_continuum_checks( json &result_json, const DetectionLimitCalc::CurrieMdaResult &result,
+                                    const float fwhm, InterSpec *interspec )
+  {
+    const shared_ptr<const SpecUtils::Measurement> &spec = result.input.spectrum;
+    if( !spec || (result.side_channel_dof <= 0) )
+      return;
+
+    const double energy = result.input.gamma_energy;
+    vector<string> warnings;
+    char buffer[512] = { '\0' };
+
+    const double chi2 = result.side_channel_chi2;
+    const int dof = result.side_channel_dof;
+    const double chi2_per_dof = chi2 / dof;
+    result_json["sideChannelChi2PerDof"] = round_to_sig_figs( chi2_per_dof, 3 );
+
+    // A shape problem that could not change the decision - e.g., the tails of a strong peak at the
+    //  energy - still biases the net counts, so is still reported, but as being about the counts.
+    const double cont_uncert = result.estimated_peak_continuum_uncert * std::sqrt( std::max( 1.0, chi2_per_dof ) );
+    const double decision_margin = std::fabs( result.source_counts - result.decision_threshold );
+    const bool decision_robust = (decision_margin > std::max( 3.0*cont_uncert,
+                                                              0.25*result.estimated_peak_continuum_counts ));
+    const bool clearly_present = decision_robust && (result.source_counts > result.decision_threshold);
+
+    const double region_lower = spec->gamma_channel_lower( result.first_lower_continuum_channel );
+    const double region_upper = spec->gamma_channel_upper( result.last_upper_continuum_channel );
+
+    vector<shared_ptr<const PeakDef>> peaks;
+    try
+    {
+      AnalystChecks::DetectedPeaksOptions peak_opts;
+      peak_opts.specType = SpecUtils::SpectrumType::Foreground;
+      peaks = AnalystChecks::detected_peaks( peak_opts, interspec ).peaks;
+    }catch( std::exception & )
+    {
+    }
+
+    // (1) Do the side channels follow a straight line?
+    double p_value = 1.0;
+    try
+    {
+      const boost::math::chi_squared_distribution<double> dist( dof );
+      p_value = boost::math::cdf( boost::math::complement( dist, std::max( chi2, 0.0 ) ) );
+    }catch( std::exception & )
+    {
+    }
+
+    const double max_ok_chi2_per_dof = 4.0;
+    if( (chi2_per_dof > max_ok_chi2_per_dof) || ((p_value < 0.01) && !decision_robust) )
+    {
+      // The likely cause: the strongest peak whose tails reach the side channels, if it is strong
+      //  compared to the continuum there.
+      const double side_counts_per_channel = (result.lower_continuum_counts_sum + result.upper_continuum_counts_sum)
+                                    / std::max( 1.0, static_cast<double>( 2 + result.last_lower_continuum_channel
+                                                                          - result.first_lower_continuum_channel
+                                                                          + result.last_upper_continuum_channel
+                                                                          - result.first_upper_continuum_channel ) );
+      shared_ptr<const PeakDef> tail_peak;
+      for( const shared_ptr<const PeakDef> &p : peaks )
+      {
+        if( !p || !p->gausPeak() )
+          continue;
+        const bool reaches = ((p->mean() + 2.0*p->fwhm()) >= region_lower) && ((p->mean() - 2.0*p->fwhm()) <= region_upper);
+        if( reaches && (p->peakArea() > 10.0*side_counts_per_channel)
+            && (!tail_peak || (p->peakArea() > tail_peak->peakArea())) )
+          tail_peak = p;
+      }
+
+      if( tail_peak )
+      {
+        const bool at_energy = (std::fabs( tail_peak->mean() - energy ) < tail_peak->fwhm());
+        snprintf( buffer, sizeof(buffer), "the side channels do not follow a straight line (chi2/dof = %.3g), as the"
+                  " tails of the %s %.2f keV peak (%.0f counts) reach into them, so the straight-line continuum is"
+                  " biased high (and the net counts low)", chi2_per_dof, (at_energy ? "strong" : "neighbouring strong"),
+                  tail_peak->mean(), tail_peak->peakArea() );
+      }else
+      {
+        snprintf( buffer, sizeof(buffer), "the side channels do not follow a straight line (chi2/dof = %.3g, p = %.2g),"
+                  " so the continuum likely has a step or curvature there", chi2_per_dof, p_value );
+      }
+      warnings.push_back( buffer );
+    }//if( side channels are not on a line )
+
+    // (2) Is a prominent peak's backscatter peak or Compton edge in the ROI or side bands?
+    try
+    {
+      const double half_span = std::max( energy - region_lower, region_upper - energy );
+      const vector<AnalystChecks::ComptonKinematicParent> parents
+                     = AnalystChecks::compton_kinematic_parents( energy, half_span, peaks, spec );
+      for( const AnalystChecks::ComptonKinematicParent &parent : parents )
+      {
+        if( decision_robust || (parent.prominence < 0.1) )
+          continue;
+
+        const bool edge_in = (parent.comptonEdgeEnergy >= region_lower) && (parent.comptonEdgeEnergy <= region_upper);
+        snprintf( buffer, sizeof(buffer), "the %s of the %.2f keV peak (%.1f keV) %s",
+                  edge_in ? "Compton edge" : "backscatter region",
+                  parent.parentEnergy, edge_in ? parent.comptonEdgeEnergy : parent.backscatterEnergy,
+                  edge_in ? "is in the ROI or side channels, so the continuum has a step there"
+                          : "overlaps the ROI or side channels, so the continuum is not a straight line there" );
+        warnings.push_back( buffer );
+        break;
+      }//for( loop over Compton parents )
+    }catch( std::exception & )
+    {
+    }
+
+    // (3) Does a Gaussian of the expected width, fit at exactly this energy with a curved continuum,
+    //  show a peak?
+    try
+    {
+      vector<pair<double,double>> neighbours;
+      for( const shared_ptr<const PeakDef> &p : peaks )
+      {
+        if( !p || !p->gausPeak() )
+          continue;
+        const double de = fabs( p->mean() - energy );
+        if( (de >= 0.5*fwhm) && (de <= (2.0*fwhm + 1.5*p->fwhm())) )
+          neighbours.push_back( { p->mean(), p->fwhm() } );
+      }
+
+      const FitPeaksForNuclides::detail::FixedShapePeakFit fit
+                  = FitPeaksForNuclides::detail::fixed_shape_peak_fit( spec, energy, fwhm, neighbours );
+      if( fit.valid && (fit.area_uncert > 0.0) )
+      {
+        const double nsigma = fit.area / fit.area_uncert;
+        result_json["peakFitCrossCheck"] = json{
+          {"netCounts", round_to_sig_figs( fit.area, 3 )},
+          {"netCountsUncert", round_to_sig_figs( fit.area_uncert, 2 )},
+          {"numSigma", round_to_sig_figs( nsigma, 2 )},
+          {"description", "Gaussian of FWHM fwhmUsed_keV fixed at this energy, fit with a quadratic continuum"
+                          " over +-2 FWHM"}
+        };
+
+        const bool peak_present = (result.source_counts > result.decision_threshold);
+        if( peak_present && (nsigma < 2.0) )
+        {
+          snprintf( buffer, sizeof(buffer), "a Gaussian fit at this energy with a curved continuum gives only"
+                    " %.3g +- %.2g counts (%.2g sigma)", fit.area, fit.area_uncert, nsigma );
+          warnings.push_back( buffer );
+        }
+      }//if( fit.valid )
+    }catch( std::exception & )
+    {
+    }
+
+    if( !warnings.empty() )
+    {
+      string warning = clearly_present ? "The straight-line continuum estimate is biased here: "
+                                       : "The straight-line continuum estimate is unreliable here: ";
+      for( size_t i = 0; i < warnings.size(); ++i )
+        warning += (i ? "; " : "") + warnings[i];
+      warning += clearly_present
+                 ? ".  The peak is clearly present; this is about the accuracy of its net counts (a peak fit,"
+                   " e.g. add_analysis_peak, measures them better)."
+                 : ".  Treat peakPresentInData and the counts as unreliable; check the spectrum around the energy.";
+      result_json["continuumWarning"] = warning;
+    }
+  }//add_currie_continuum_checks(...)
+}//namespace
+
 
 nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
 {
@@ -6400,21 +6905,26 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       throw runtime_error( "A valid detector efficiency function is required when nuclide or distance is specified." );
   }
   
-  // Try to get FWHM using AnalystChecks::get_expected_fwhm first
+  // The FWHM of this spectrum's peaks (a DRF's resolution is used only if it agrees with them)
+  string fwhm_source;
   try
   {
-    fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+    fwhm = AnalystChecks::get_expected_fwhm( energy, interspec, &fwhm_source );
   }
   catch( std::exception & )
   {
     // Fallback FWHM estimation if AnalystChecks::get_expected_fwhm fails
     if (meas && meas->detector() && meas->detector()->hasResolutionInfo())
+    {
       fwhm = meas->detector()->peakResolutionFWHM(static_cast<float>(energy));
+      fwhm_source = "detector response function";
+    }
     
     if (fwhm <= 0.0) {
       const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
       const vector<float> pars = isHPGe ? vector<float>{1.54f, 0.264f, 0.33f} : vector<float>{-6.5f, 7.5f, 0.55f};
       fwhm = DetectorPeakResponse::peakResolutionFWHM(energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars);
+      fwhm_source = string("generic ") + (isHPGe ? "HPGe" : "NaI") + " resolution estimate";
     }
   }
 
@@ -6611,6 +7121,14 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   result_json["additionalUncertainty"] = additional_uncertainty;
   result_json["totalSystematicUncertainty"] = input.additional_uncertainty;
 
+  result_json["fwhmUsed_keV"] = round_to_sig_figs( fwhm, 3 );
+  result_json["fwhmSource"] = fwhm_source;
+
+  // The continuum under the peak region is a straight line through the side channels; say when it
+  //  likely is not one there, as then `peakPresentInData` and the counts are not reliable.
+  if( !assert_background_spectrum )
+    add_currie_continuum_checks( result_json, result, fwhm, interspec );
+
   // If nuclide and distance are provided, calculate and add activity information
   if( drf )
   {
@@ -6649,12 +7167,15 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
       if( drf )
       {
-        result_json["detectorIntrinsicEfficiency"] = round_to_sig_figs( drf->farFieldIntrinsicEfficiency(energy_float), 6 );
+        // A breakdown of `det_eff`: the intrinsic efficiency and solid angle of the crystal the
+        //  efficiency is modeled for (exact for a flat-disk DRF; far-field for a geometry-modeled one)
+        const double intrinsic_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency( energy_float )
+                                                : drf->intrinsicEfficiencyEval( energy_float ).value;
+        result_json["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
 
         if( distance >= 0.0 && !fixed_geom )
         {
-          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
-                                                                    distance + drf->detectorSetback() );
+          const double geom_eff = drf->geometricEfficiency( distance );
           result_json["solidAngleFraction"] = round_to_sig_figs( geom_eff, 6 );
           result_json["detectorAbsoluteEfficiency"] = round_to_sig_figs( det_eff, 6 );
         }
@@ -7033,7 +7554,11 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
       const vector<SandiaDecay::EnergyRatePair> energy_rate = mix.photons( 0.0 );
       result.reserve( energy_rate.size() );
       for( const SandiaDecay::EnergyRatePair &erp : energy_rate )
-        result.push_back( { erp.energy, erp.numPerSecond, "" } );
+      {
+        // SandiaDecay always lists a 511 keV annihilation entry, zero when there are no positrons
+        if( erp.numPerSecond > 0.0 )
+          result.push_back( { erp.energy, erp.numPerSecond, "" } );
+      }
     }else
     {
       // Manual iteration with parent attribution, mirroring SandiaDecay::NuclideMixture::decayParticle()
@@ -7532,7 +8057,8 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec * /*interspec*/ )
 {
   using namespace PhysicalUnits;
 
-  // To keep from overwhelming the context, we will just return a subset of possbile shieldings
+  // To keep from overwhelming the context, we will just return a subset of possbile shieldings; this
+  //  must include every material the shipped isotopics presets (data/rel_act/) use.
   nlohmann::json materials_array = nlohmann::json{ "acetone", "adipose tissue", "air", "aluminum oxide",
     "amber", "ammonia", "bakelite", "baratol high explosive",
     "benzene", "beryllium oxide", "bgo", "blood",
@@ -7546,7 +8072,7 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec * /*interspec*/ )
     "Jet fuel", "kapton", "kevlar",  "lipoly",
     "mock he", "Monocalcium phosphate", "muscle", "mylar",
     "nylon 6,6", "nylon-8062", "nylon-6-10", "paraffin", "PBX-9404 high explosive", "PBX-9501 high explosive",
-    "pine wood", "plastic_sc_vinyltoluene", "plexiglass", "Plutonium dioxide",
+    "pine wood", "plastic_sc_vinyltoluene", "plexiglass", "Plutonium dioxide", "plutonium_dioxide",
     "plywood", "polyacrylonitrile", "polycarbonate",
     "polychlorostyrene", "polyethylene", "polypropylene", "polystyrene", 
     "Polyurethane foam", "propane", "pvc - polyvinyl chloride", "pvt - polyvinyl toluene",
@@ -7554,8 +8080,8 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec * /*interspec*/ )
     "Salt water", "silver_iodide", "skin", "sodium_iodide", 
     "soft tissue", "soil", "stainless steel ss-304", "stainless-steel nist",
     "Steel - AISI 1040 Med. Carbon", "teflon",
-    "Thorium oxide", "titanium_dioxide", "Uranium hexafluoride",
-    "Uranium metal", "void", "water","wet soil"
+    "Thorium oxide", "titanium_dioxide", "UO2 Uranium Dioxide", "Uranium hexafluoride",
+    "Uranium metal", "Uranium trioxide", "void", "water","wet soil"
   };
 
   nlohmann::json result = nlohmann::json::object();
@@ -7936,17 +8462,19 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     // With a distance, the detector's absolute efficiency there - `efficiency()` is the DRF's own
     //  answer: the flat-disk model, or a geometry-modeled detector's (a Monte-Carlo response, an
     //  efficiency transfer, an imported efficiency grid), near field included.  The solid angle and
-    //  far-field intrinsic efficiency are then only a breakdown, which a geometry-modeled detector
-    //  need not multiply to.
+    //  far-field intrinsic efficiency - both of the crystal the efficiency is modeled for - are then
+    //  only a breakdown, which a geometry-modeled detector need not multiply to close in.
     if( detector && detector->isValid() )
     {
-      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+      const float flt_energy = static_cast<float>( energy );
+      const double intrinsic_eff = detector->isFixedGeometry()
+                                     ? detector->farFieldIntrinsicEfficiency( flt_energy )
+                                     : detector->intrinsicEfficiencyEval( flt_energy ).value;
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
 
       if( has_distance )
       {
-        const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector->detectorDiameter(),
-                                                                   distance + detector->detectorSetback() );
+        const double solid_angle = detector->geometricEfficiency( distance );
         result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
 
         const double abs_eff = detector->efficiency( energy, distance );
@@ -8942,6 +9470,11 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
      || (geomType == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) )
   {
     result["detectorDiameter"] = drf->detectorDiameter();
+
+    // Where the crystal sits: distances are always given from the detector face, and the crystal is
+    //  this far behind it - for a geometry-modeled detector, as its geometry places it.
+    result["crystalDiameter"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalDiameter(), 4 );
+    result["crystalSetbackBehindFace"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalSetback(), 4 );
   }
 
   // Hash and source
@@ -9006,7 +9539,12 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
 
       try
       {
-        const float eff = drf->farFieldIntrinsicEfficiency( energy );
+        // Per photon reaching the crystal described by crystalDiameter/crystalSetbackBehindFace, so
+        //  the two multiply to the efficiency - which the stated-diameter curve does not, for a
+        //  geometry-modeled detector whose stated diameter is not its crystal's.
+        const float eff = drf->isFixedGeometry()
+                            ? drf->farFieldIntrinsicEfficiency( energy )
+                            : static_cast<float>( drf->intrinsicEfficiencyEval( energy ).value );
         effData["intrinsicEfficiency"] = round_to_sig_figs( eff, 6 );
 
         // Far-field relative 1-sigma uncertainty calculations use: stated, plus any geometry-model part.
@@ -9087,6 +9625,15 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
   //  question without a spectrum, they are probably rounding to nearest keV
   const bool isHPGe = ((!foreground || !foreground_spec) ? true : PeakFitUtils::is_likely_high_res(interspec));
 
+  // The expected-FWHM function is built once, as it may fit the spectrum's peaks.
+  std::function<float(double)> fwhm_fcn;
+  try
+  {
+    fwhm_fcn = AnalystChecks::make_expected_fwhm_fcn( interspec );
+  }catch( std::exception & )
+  {
+  }
+
   for( const auto& energy_obj : energies_array )
   {
     if( !energy_obj.contains("energy") )
@@ -9106,15 +9653,11 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
     {
       // Calculate default window as (3.0/2.35482) * FWHM
       // This corresponds to about ±1.27 sigma, which is kinda within an "okay" energy calbration.
-      try
-      {
-        const double fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+      const double fwhm = fwhm_fcn ? fwhm_fcn( energy ) : -1.0;
+      if( fwhm > 0.0 )
         window = (3.0 / 2.35482) * fwhm;
-      }catch( std::exception & )
-      {
-        // Failed to get FWHM, will use detector-type-based fallback
-        window = isHPGe ? 1.5 : 10.0;
-      }
+      else
+        window = isHPGe ? 1.5 : 10.0;  // Failed to get FWHM; use a detector-type-based fallback
     }//if( window specified ) / else
 
     if( window < 0.0 )

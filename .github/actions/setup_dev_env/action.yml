@@ -19,6 +19,15 @@ inputs:
       compiles none of InterSpec's own code, so an sccache entry there is pure cache-budget burn.
     required: false
     default: 'true'
+  cache_family:
+    description: >
+      Names this job's sccache, which is kept as `sccache-<cache_family>-<timestamp>` entries; each
+      run restores the newest entry of its family.  Give every job that compiles a different set of
+      objects its own family, and never let one family be a string prefix of another (restore and
+      the prune-caches job both match by prefix).  Required whenever sccache is set up: there is no
+      default, so two jobs can not end up sharing one family by omission.
+    required: false
+    default: ''
 
 outputs:
   prefix-dir:
@@ -135,7 +144,8 @@ runs:
         }
 
         $required = @(
-          "lib\wt.lib", "lib\wthttp.lib", "lib\wtdbo.lib", "lib\wtdbosqlite3.lib",
+          # wttest is for the stdio MCP server (target/mcp_stdio), which hosts its session with it.
+          "lib\wt.lib", "lib\wthttp.lib", "lib\wttest.lib", "lib\wtdbo.lib", "lib\wtdbosqlite3.lib",
           "lib\WebView2LoaderStatic.lib", "include\Wt\WObject.h",
           # wxWidgets installs its libraries here; target/wxwidgets is configured with
           # -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib".
@@ -169,20 +179,33 @@ runs:
           Remove-Item "${{ steps.paths.outputs.build-dir }}" -Recurse -Force -ErrorAction SilentlyContinue
         }
 
-    # Note: each checkout sets each files timestamps to current time, so we will use sccache action
-    #       but after building the dependencies
-    - name: Ccache for gh actions
+    # sccache is content-addressed (it hashes the preprocessed source and the command line), so it
+    #  is immune to actions/checkout rewriting every mtime, and can never hand back a stale object.
+    #
+    # The key carries no commit SHA: ccache-action appends a timestamp when saving, and restores the
+    #  newest entry whose key starts with `sccache-<key>-` - so each run starts from the previous
+    #  run's cache.  (With the SHA in the key, as before, no run could ever hit another commit's.)
+    #  The prune-caches job in build_wt4_edge.yml deletes all but the newest entry of each family.
+    #
+    # Pinned by commit to v1.2.24 (2026-08-31); v1.2.7 used a cache-service API GitHub has since
+    #  retired, so it could neither restore nor save.  `install: binary` makes it install its own
+    #  sha256-checked sccache (0.17.0) rather than whatever a package manager has newest.
+    - name: Check the sccache family is named
+      if: inputs.install_sccache != 'false' && inputs.cache_family == ''
+      shell: bash
+      run: |
+        echo "::error::setup_dev_env needs a cache_family input (see its description) when it sets up sccache."
+        exit 1
+
+    # An optimization only: if this fails (e.g. the download), the callers configure without sccache.
+    - name: sccache for gh actions
       if: inputs.install_sccache != 'false'
-      uses: hendrikmuhs/ccache-action@v1.2.7
+      continue-on-error: true
+      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
       with:
-        # Include git SHA so cache invalidates per-commit; avoids stale object files from
-        # previous builds causing linker errors (e.g., unresolved ReferencePhotopeakDisplay symbols)
-        key: sccache-${{ github.job }}-${{ runner.os }}-${{ github.sha }}
-        # Deliberately well under the 10 GB per-repo cache budget.  The key includes github.sha,
-        # so every commit writes a brand-new entry that is never read again; at 10G a couple of
-        # pushes could evict every other cache in the repo, including the dependency prefixes
-        # this action just spent an hour building.
+        key: ${{ inputs.cache_family }}
+        # Well under the 10 GB per-repo cache budget; a full Release build is a few hundred MB.
         max-size: 2G
         variant: sccache
-        append-timestamp: false
+        install: binary
         verbose: 2

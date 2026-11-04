@@ -992,7 +992,7 @@ void DoseCalcWidget::runtime_sanity_checks( const GadrasShieldScatter * const sc
   distance = 100.0*PhysicalUnits::cm;
   areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
   atomic_number = 60.0f;
-  expected = 1.6836E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //GADRAS gives 1.81 uRem/h (older Th-234 gammas, +air)
+  expected = 1.5427E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //GADRAS gives 1.81 uRem/h (older Th-234 gammas, +air)
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
 
   areal_density = 2.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);

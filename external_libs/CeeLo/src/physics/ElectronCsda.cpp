@@ -1164,6 +1164,11 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
                 remaining_KE = exit_KE;
             }
         }
+        if (remaining_KE >= 0.01) {  // ran out of segments still moving
+            result.escaped = true;
+            result.exit_KE_keV = remaining_KE;
+            result.exit_direction = direction;
+        }
         return result;
     }
 
@@ -1194,9 +1199,10 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
     thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     int iter_guard = 20 * n_steps;  // hard cap: degenerate-geometry backstop
+    bool left_geometry = false;
     while (steps_remaining > 0 && KE > 0.01 && iter_guard-- > 0) {
         geometry.trace_ray(pos, dir, segments);
-        if (segments.empty()) break;
+        if (segments.empty()) { left_geometry = true; break; }
 
         // Find the segment we are currently in (t_start ≤ 0 < t_end)
         const PathSegment* cur = nullptr;
@@ -1208,16 +1214,19 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
         }
         if (!cur) {
             // Not inside any material — advance to the next segment start
+            bool advanced = false;
             for (const auto& seg : segments) {
                 if (seg.t_start > 1e-8) {
                     pos += dir * (seg.t_start + 1e-9);
+                    advanced = true;
                     break;
                 }
             }
+            if (!advanced) { left_geometry = true; break; }
             continue;
         }
 
-        if (!cur->material) break;
+        if (!cur->material) { left_geometry = true; break; }
 
         const Material& mat  = *cur->material;
         double density       = mat.density();
@@ -1446,6 +1455,11 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
     // electron stopped (KE → 0), otherwise the last boundary it reached before
     // leaving all geometry.  Used as the positron annihilation site by callers.
     result.stop_position = pos;
+    if (left_geometry && KE > 0.01) {
+        result.escaped = true;
+        result.exit_KE_keV = KE;
+        result.exit_direction = dir;
+    }
     return result;
 }
 

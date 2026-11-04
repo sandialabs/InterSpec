@@ -757,7 +757,38 @@ namespace detail
                                  double &lower_energy,
                                  double &upper_energy,
                                  std::string &note,
-                                 bool *scale_from_prior = nullptr );
+                                 bool *scale_from_prior = nullptr,
+                                 double *prior_scale = nullptr );
+
+  /** Evaluates a resolution curve fit by #fit_fwhm_function_robust at `energy` (clamped to
+   [lower_energy, upper_energy] when that range is valid); returns 0 if it can not be evaluated. */
+  double model_fwhm_at( const double energy, const DetectorPeakResponse::ResolutionFnctForm form,
+                        const std::vector<float> &coefficients, const double lower_energy,
+                        const double upper_energy );
+
+  /** Result of #fixed_shape_peak_fit. */
+  struct FixedShapePeakFit
+  {
+    bool valid = false;
+    double area = 0.0;            // signed net counts of the Gaussian at the fixed energy
+    double area_uncert = 0.0;
+    double chi2 = 0.0;
+    size_t num_channels = 0;      // channels fit; dof = num_channels - 3 - (1 + number of neighbours)
+    double lower_energy = 0.0;    // window fit
+    double upper_energy = 0.0;
+  };//struct FixedShapePeakFit
+
+  /** Fits a Gaussian of the given FWHM at a FIXED energy, jointly with a quadratic continuum over
+   +-2 FWHM (and free-amplitude `neighbours`, as (energy, FWHM) pairs), and returns its signed area;
+   see #fixed_shape_peak_z for why the continuum is quadratic.  `valid` is false if the fit could
+   not be made.  When a `background` and positive `background_scale` are given, the fit is to the
+   background-subtracted spectrum.
+   */
+  FixedShapePeakFit fixed_shape_peak_fit( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                          const double energy, const double fwhm,
+                                          const std::vector<std::pair<double,double>> &neighbours = {},
+                                          const std::shared_ptr<const SpecUtils::Measurement> &background = nullptr,
+                                          const double background_scale = 0.0, const double window_floor = 0.0 );
 
   SiblingAbsenceResult sibling_absence_check(
     const std::vector<SandiaDecay::EnergyRatePair> &source_lines,

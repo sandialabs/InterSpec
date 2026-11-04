@@ -46,7 +46,9 @@ test_datasets/
 .devcontainer*/
 .opencode*/
 
-data/llm_knowledge/*/
+data/llm_knowledge/*
+!data/llm_knowledge/README.md
+data/gamma_spec_skills
 
 IDB*
 

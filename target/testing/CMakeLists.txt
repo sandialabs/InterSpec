@@ -611,6 +611,14 @@ add_test( NAME TDetectionLimitState
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Needs a Wt test session: checks the Spectrum Manager keeps displayed files in its file model.
+add_executable( test_SpecMeasManager test_SpecMeasManager.cpp )
+target_link_libraries( test_SpecMeasManager PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+add_test( NAME TSpecMeasManager
+  COMMAND $<TARGET_FILE:test_SpecMeasManager> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # The deconvolution coverage study is a report, not a gate: it is opt-in, it is held to a
 #  wall-clock budget rather than a fixed trial count, and `DeconCoverageGate` inside
 #  test_DetectionLimit is what actually guards against regressions on every build.
@@ -864,6 +872,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmBenchmarkJudge test_LlmBenchmarkJudge.cpp )
+  target_link_libraries( test_LlmBenchmarkJudge PRIVATE InterSpecLib )
+  add_test( NAME TLlmBenchmarkJudge
+    COMMAND $<TARGET_FILE:test_LlmBenchmarkJudge> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_LlmModelPresets test_LlmModelPresets.cpp )
   target_link_libraries( test_LlmModelPresets PRIVATE InterSpecLib )
   add_test( NAME TLlmModelPresets
@@ -890,6 +905,14 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  # Resuming a conversation cut off when the LLM Assistant, or the session, was closed.
+  add_executable( test_LlmResume test_LlmResume.cpp )
+  target_link_libraries( test_LlmResume PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmResume
+    COMMAND $<TARGET_FILE:test_LlmResume> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_AnalystChecks test_AnalystChecks.cpp )
   target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TAnalystChecks
@@ -904,6 +927,15 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 endif( USE_LLM_INTERFACE )
+
+# The Flux Tool's per-peak math (FluxToolCalc), and the background-peak helpers it shares with the
+#  Activity/Shielding fit.
+add_executable( test_FluxTool test_FluxTool.cpp )
+target_link_libraries( test_FluxTool PRIVATE InterSpecLib )
+add_test( NAME TFluxTool
+  COMMAND $<TARGET_FILE:test_FluxTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
 
 add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
 target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
@@ -990,6 +1022,13 @@ add_executable( test_ExportSpecFile test_ExportSpecFile.cpp )
 target_link_libraries( test_ExportSpecFile PRIVATE InterSpecLib )
 add_test( NAME TExportSpecFile
   COMMAND $<TARGET_FILE:test_ExportSpecFile> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_SpecMeasN42RoundTrip test_SpecMeasN42RoundTrip.cpp )
+target_link_libraries( test_SpecMeasN42RoundTrip PRIVATE InterSpecLib )
+add_test( NAME TSpecMeasN42RoundTrip
+  COMMAND $<TARGET_FILE:test_SpecMeasN42RoundTrip> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

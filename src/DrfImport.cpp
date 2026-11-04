@@ -40,6 +40,7 @@
 
 #include "InterSpec/DrfImport.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/GadrasDetectorDat.h"
@@ -609,6 +610,11 @@ Source makeSource( shared_ptr<const ParsedFile> a, shared_ptr<const ParsedFile> 
           {
             const shared_ptr<DetectorPeakResponse> generic = CeeLoUtils::buildAngleSeedDrf( contents );
             generic->setGeometry( geometry );
+            // The crystal sits the endcap layers behind the face; record that as the setback, so a
+            //  flat-disk evaluation (the response not attached, or turned off) agrees with the
+            //  geometry, and the transfer anchor below is formed at the right crystal distance.
+            if( (generic->detectorSetback() <= 0.0) && (geometry->endcap_front_offset_cm() > 0.0) )
+              generic->setDetectorSetback( geometry->endcap_front_offset_cm() * PhysicalUnits::cm );
             CeeLoUtils::attachCurveTransferResponse( *generic );
             src.generic = generic;
           }catch( std::exception &e )

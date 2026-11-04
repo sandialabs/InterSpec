@@ -76,5 +76,22 @@
   সরলভাবে স্কিউ ধরন {1} তে পরিবর্তন করা পিকটি তুচ্ছ করে দিয়েছে।<br />
   এই পরিবর্তন করতে অনুগ্রহ করে <b>পিক এডিটর</b> ব্যবহার করুন।
   </message>
-
+  <message id="psgu-missing-back-peaks-title">অনুপস্থিত ব্যাকগ্রাউন্ড পিক</message>
+  <message id="psgu-missing-back-peaks-msg">
+    ব্যাকগ্রাউন্ড স্পেকট্রামে {1} শক্তিতে পিক যোগ করা নেই, কিন্তু
+    সেই শক্তিতে ব্যাকগ্রাউন্ড স্পেকট্রামে সম্ভবত প্রকৃত পিক রয়েছে -
+    আপনি কি সেই পিকগুলি ব্যাকগ্রাউন্ড স্পেকট্রামে যোগ করতে চান?
+  </message>
+  <message id="psgu-btn-no-dont-add">না</message>
+  <message id="psgu-btn-add-peaks">পিক যোগ করুন...</message>
+  <message id="psgu-btn-add-all-detectable">সব স্বয়ংক্রিয়-ফিট পিক যোগ করুন</message>
+  <message id="psgu-back-peak-preview-title">ব্যাকগ্রাউন্ড পিক পূর্বরূপ</message>
+  <message id="psgu-back-peak-preview-msg">নিম্নলিখিত পিকগুলি ব্যাকগ্রাউন্ড স্পেকট্রামে যোগ করা হবে:</message>
+  <message id="psgu-no-new-back-peaks">নির্দেশিত শক্তিতে ব্যাকগ্রাউন্ড স্পেকট্রামে কোনো অতিরিক্ত পিক পাওয়া যায়নি।</message>
+  <message id="psgu-back-peaks-all-fit">{1}টি প্রার্থী পিক ব্যাকগ্রাউন্ডে ফিট করা হয়েছে।</message>
+  <message id="psgu-back-peaks-some-fit">{2}টি প্রার্থী পিকের মধ্যে {1}টি তাৎপর্যপূর্ণ ছিল এবং ব্যাকগ্রাউন্ডে ফিট করা হয়েছে।</message>
+  <message id="psgu-back-peaks-manual-hint">(আপনি Alt কী (mac: Option কী) প্লাস ডাবল<br />
+  ক্লিক করে স্পেকট্রামে ম্যানুয়ালি ব্যাকগ্রাউন্ড পিক ফিট করতে পারেন, বা ব্যাকগ্রাউন্ড ফোরগ্রাউন্ড হিসাবে লোড করে)</message>
+  <message id="psgu-err-adding-back-peaks">ব্যাকগ্রাউন্ডে পিক যোগ করতে ত্রুটি: {1}</message>
+  <message id="psgu-warn-no-back-spec">কোনো ব্যাকগ্রাউন্ড স্পেকট্রাম লোড নেই, তাই ফোরগ্রাউন্ড থেকে ব্যাকগ্রাউন্ড পিক ক্ষেত্রফল বিয়োগ করা যাবে না।</message>
 </messages>

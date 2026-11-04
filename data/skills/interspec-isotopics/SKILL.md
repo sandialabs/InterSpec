@@ -28,8 +28,8 @@ Determine the analysis type:
 - **Custom**: Other isotopic ratios. Start from blank configuration.
 
 Check prerequisites:
-- `get_spectrum_info` - Verify foreground spectrum is loaded
-- `get_peaks` - Check for relevant peaks to confirm material type
+- `get_spectrum_info` - Verify a foreground spectrum is loaded, and see the detector type (to choose a preset)
+- `get_peaks` - If peaks have been fit, check which lines are present to confirm the material type; peaks do not need to be fit, as `perform_isotopics_calculation` fits its own
 
 ### Step 2: Select and Load Configuration
 
@@ -62,7 +62,7 @@ Call `get_isotopics_config` to review:
 
 ### Step 4: Check for Interferences
 
-Review with `get_peaks` (filter 'analysis') for non-target nuclides with peaks in the analysis energy ranges.
+If peaks have been fit, review them with `get_peaks` (filter 'analysis') for non-target nuclides with peaks in the analysis energy ranges.  Without fit peaks, interferences show up in the results instead: ROIs with a high `chi2_per_channel`, or peaks the solution under-predicts.
 
 **Common interferences:**
 - **Pu analysis**: I-131, Cs-137, other fission products
@@ -73,14 +73,16 @@ If significant interference is found, add the interfering nuclide to the configu
 
 ### Step 5: Execute Calculation
 
-Call `perform_isotopics_calculation` (no parameters needed - uses current configuration).
+Call `perform_isotopics_calculation` (uses the current configuration).
 
 Returns:
 - Mass fractions with covariance quality and, when needed, bounded 68%/95% profile intervals
 - Relative activities
 - Ages (if fitted)
-- Quality metrics (chi-squared per DOF)
+- Quality metrics (data chi-squared per DOF)
 - Pu-242 corrected and uncorrected fitted values, including an out-of-range correlation warning
+- Fitted relative efficiency curve parameters (`rel_eff_curves`: shield areal densities in g/cm2, Hoerl terms)
+- Each fit ROI's chi2 (`roi_info`), and the relative efficiency chart's points (`observed_efficiencies`); pass `detail: "full"` to also get each ROI's significant fit peaks and source areas when investigating a poor fit
 
 ### Step 6: Evaluate Results
 
@@ -93,7 +95,7 @@ Returns:
 | > 10.0 | Poor - solution likely not acceptable |
 
 **Per-ROI evaluation:**
-- Check `roi_info -> chi2_per_dof` for individual ROIs to find problem regions; each entry's `from_input_rois` gives the configured ROI(s) it came from - use those bounds with `modify_isotopics_rois`
+- Check each ROI's `chi2_per_channel` (`roi_info -> rois`; comparable to the overall chi2/DOF, and the ROI `chi2` values add up to the overall chi2) to find problem regions; a ROI's `from_input_rois`, when present, gives the configured ROI(s) it came from - use those bounds (or the ROI's own bounds, when absent) with `modify_isotopics_rois`
 - High chi2 in a single ROI may indicate missing source, wrong continuum type, or interference
 - For high-statistics ROIs, try changing continuum type (e.g., to stepped continuum, or `Auto` to have it chosen from the data)
 - For `LineAnchored` ROIs, adjust how far they extend past their lines with `lower_edge_sideband_fwhm`/`upper_edge_sideband_fwhm` (continuum margin, in FWHM) or `lower_edge_peak_coverage_percent`/`upper_edge_peak_coverage_percent`
@@ -104,9 +106,12 @@ Returns:
 - A `mass_fraction_local_gaussian_one_sigma_diagnostic` with weak covariance is diagnostic only; do not present it as a symmetric `±`
 
 **Observed efficiencies:**
-- Check `observed_efficiencies -> deviation_from_solution_sigma`
-- Under-prediction (negative deviation) may indicate missing source or too much shielding
-- Over-prediction (positive deviation) may indicate shielding needed, especially if low-energy peaks over-predict and high-energy under-predict
+- Check the `observed_efficiencies` `deviation_sigma` column: (freely-fit area - solution area) / uncertainty
+- Under-prediction (positive deviation) may indicate missing source or too much shielding
+- Over-prediction (negative deviation) may indicate shielding needed, especially if low-energy peaks over-predict and high-energy under-predict
+
+**Fitted shielding:**
+- Check that `rel_eff_curves` shielding (`areal_density_g_cm2`, `thickness_mm`) is physically plausible for the item
 
 **If results are poor:**
 - Try different peak skew model via `modify_isotopics_options`

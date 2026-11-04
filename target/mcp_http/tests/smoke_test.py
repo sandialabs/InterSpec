@@ -65,6 +65,8 @@ class McpClient:
         if 'http_status' in reply:
             return None, 'HTTP %d: %s' % (reply['http_status'], reply['body'])
         text = reply['result']['content'][0]['text']
+        if reply['result'].get('isError'):
+            return None, text
         return json.loads(text), None
 
 

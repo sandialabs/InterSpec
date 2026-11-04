@@ -43,8 +43,10 @@ struct ComptonScatterResult {
     double deposited_energy_keV;  ///< Recoil electron kinetic energy
     double cos_theta;             ///< Cosine of the scattering angle
     Eigen::Vector3d new_direction; ///< New photon direction (normalized)
-    double binding_deposit_keV = 0.0; ///< Subshell binding energy U_i, deposited
-                                      ///< locally (Doppler sampling only)
+    double binding_deposit_keV = 0.0; ///< Subshell binding energy U_i of the
+                                      ///< vacancy left (Doppler sampling only)
+    int shell_index = -1;             ///< Sampled subshell (Doppler only; -1 =
+                                      ///< free electron). 0 is the K shell.
 };
 
 /// Sample a Compton scatter from the Klein-Nishina distribution.
@@ -63,8 +65,9 @@ struct ComptonScatterResult {
 /// angle is additionally Doppler-broadened by the bound electron's momentum
 /// (impulse approximation with PENELOPE-style analytic one-parameter subshell
 /// profiles).  The subshell binding energy U_i is returned in
-/// binding_deposit_keV for local deposition (no Compton-vacancy relaxation),
-/// so E' + KE + U_i == E exactly.
+/// binding_deposit_keV and the subshell in shell_index, so E' + KE + U_i == E
+/// exactly; the caller deposits U_i locally or relaxes a K vacancy
+/// (TransportConfig::enable_compton_fluorescence).
 ///
 /// @param energy_keV  Incident photon energy in keV
 /// @param direction   Current photon direction (normalized)

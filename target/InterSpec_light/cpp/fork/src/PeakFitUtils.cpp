@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <cctype>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -379,8 +380,32 @@ bool is_high_res( const std::shared_ptr<const SpecUtils::Measurement> &meas )
   return (avrg_channel_width <= max_high_res_chann_width);
 }//bool is_high_res(...)
 
-  
-  
+
+bool contains_keyword( const std::string &text, const std::string &keyword )
+{
+  if( keyword.empty() || (text.size() < keyword.size()) )
+    return false;
+
+  // A keyword boundary is any non-letter, so "HPGe-1", "(NaI)", and "3x3NaI" still match; a keyword
+  //  ending in a digit is not a concern for the detector keywords used.
+  const auto is_letter = []( const char c ) -> bool { return std::isalpha( static_cast<unsigned char>(c) ) != 0; };
+
+  for( size_t pos = 0; (pos + keyword.size()) <= text.size(); ++pos )
+  {
+    if( !SpecUtils::iequals_ascii( text.substr( pos, keyword.size() ), keyword ) )
+      continue;
+
+    const size_t end = pos + keyword.size();
+    const bool starts_word = (pos == 0) || !is_letter( text[pos - 1] ) || !is_letter( keyword.front() );
+    const bool ends_word = (end == text.size()) || !is_letter( text[end] ) || !is_letter( keyword.back() );
+    if( starts_word && ends_word )
+      return true;
+  }//for( loop over positions in text )
+
+  return false;
+}//contains_keyword(...)
+
+
 CoarseResolutionType coarse_type_for_detector_type( const SpecUtils::DetectorType type )
 {
   switch( type )
@@ -507,12 +532,13 @@ CoarseResolutionType coarse_det_type(
       all_remarks += r;
     }
 
-    // Check each metadata field for detector type keywords (case-insensitive)
+    // Check each metadata field for detector type keywords (case-insensitive, whole words - so e.g.
+    //  "Original" doesn't match "Nal")
     const auto check_strings = [&]( const string &keyword ) -> bool {
-      return SpecUtils::icontains( inst_type, keyword )
-          || SpecUtils::icontains( inst_model, keyword )
-          || SpecUtils::icontains( inst_id, keyword )
-          || SpecUtils::icontains( all_remarks, keyword );
+      return contains_keyword( inst_type, keyword )
+          || contains_keyword( inst_model, keyword )
+          || contains_keyword( inst_id, keyword )
+          || contains_keyword( all_remarks, keyword );
     };
 
     // HPGe indicators

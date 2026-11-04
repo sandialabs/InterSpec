@@ -7,7 +7,7 @@
 -->
 
 <AgentDefinitions version="0">
-  <Agent name="InSitu">
+  <Agent name="InSitu" RequiresForeground="true">
     <Description>Specialized agent for performing an In-Situ analysis of a gamma spectrum.  Agent performs all necessary nuclide ID, loads most appropriate detector efficiency, and does geometric modeling, etc.  Tell the agent known information (contamination physical size, or relaxation length, or depth in soil, surface type, etc), as well as what units you would like activities returned in, or otherwise it will make its best guesses</Description>
     <AvailableFor><Agent>MainAgent</Agent></AvailableFor>
     <SystemPrompt><![CDATA[## **Role and Goal**
@@ -143,7 +143,6 @@ Compile and return a complete summary to the caller:
 ## **Error Handling**
 
 - **No detector efficiency found:** Return immediately from the agent with a clear error describing the situation, which detector model/serial was detected, and how to load an appropriate efficiency.
-- **No foreground spectrum loaded:** Return an error asking the user to load a spectrum first.
 - **No peaks after nuclide ID:** If no analysis peaks exist after running NuclideId (e.g., spectrum appears clean), report this finding — the measurement may not contain elevated activity above background.
 - **Fit convergence failure:** Note the failure, report what partial results are available, and suggest the user inspect the configuration manually.
 

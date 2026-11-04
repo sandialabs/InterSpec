@@ -161,6 +161,35 @@ std::optional<size_t> get_usage_count( const json &usage, const char *key )
 }//get_usage_count(...)
 
 
+/** Extract the provider-reported cost (USD) of a request from its usage object, if present.
+ OpenRouter reports `usage.cost` on every response.  For BYOK (bring-your-own-key) requests that is
+ only OpenRouter's fee, with the upstream provider's charge (billed to the user's own key) in
+ `cost_details.upstream_inference_cost`; we add the two so the result is the request's total spend. */
+std::optional<double> get_usage_cost( const json &usage )
+{
+  if( !usage.contains("cost") || !usage["cost"].is_number() )
+    return std::nullopt;
+
+  double cost = usage["cost"].get<double>();
+  if( !(cost >= 0.0) )
+    return std::nullopt;
+
+  const bool is_byok = usage.contains("is_byok") && usage["is_byok"].is_boolean() && usage["is_byok"].get<bool>();
+  if( is_byok && usage.contains("cost_details") && usage["cost_details"].is_object() )
+  {
+    const json &details = usage["cost_details"];
+    if( details.contains("upstream_inference_cost") && details["upstream_inference_cost"].is_number() )
+    {
+      const double upstream = details["upstream_inference_cost"].get<double>();
+      if( upstream > 0.0 )
+        cost += upstream;
+    }
+  }//if( is_byok )
+
+  return cost;
+}//get_usage_cost(...)
+
+
 /** Attach a 5-minute ephemeral cache breakpoint to the last content block of `msg`, promoting
  string content to a single text block first so it can carry the marker.  Only user turns are
  marked: that keeps the breakpoint off thinking blocks (which the API disallows cache_control on)
@@ -451,6 +480,7 @@ public:
       out.promptTokens = get_usage_count( usage, "prompt_tokens" );
       out.completionTokens = get_usage_count( usage, "completion_tokens" );
       out.totalTokens = get_usage_count( usage, "total_tokens" );
+      out.cost = get_usage_cost( usage );
 
       if( usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() )
         out.cachedTokens = get_usage_count( usage["prompt_tokens_details"], "cached_tokens" );
@@ -968,7 +998,8 @@ public:
         json toolDef;
         toolDef["name"] = t.name;
         toolDef["description"] = t.description;
-        toolDef["input_schema"] = t.parameters;
+        // Anthropic rejects oneOf/anyOf/allOf at the top level of input_schema.
+        toolDef["input_schema"] = strip_top_level_schema_combinators( t.parameters );
         toolsArr.push_back( toolDef );
       }
       request["tools"] = toolsArr;
@@ -994,6 +1025,7 @@ public:
       out.completionTokens = get_usage_count( usage, "output_tokens" );
       out.cachedTokens = get_usage_count( usage, "cache_read_input_tokens" );
       out.cacheCreationTokens = get_usage_count( usage, "cache_creation_input_tokens" );
+      out.cost = get_usage_cost( usage );  // e.g. OpenRouter's Anthropic-compatible /v1/messages
 
       // Anthropic's `input_tokens` counts only the *uncached* input; cache reads and cache writes
       // are reported separately and are additive.  Fold them in so promptTokens means the TOTAL
@@ -1340,6 +1372,7 @@ public:
       out.totalTokens = get_usage_count( usage, "total_tokens" );
       if( !out.totalTokens.has_value() && out.promptTokens.has_value() && out.completionTokens.has_value() )
         out.totalTokens = out.promptTokens.value() + out.completionTokens.value();
+      out.cost = get_usage_cost( usage );
 
       if( usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object() )
         out.cachedTokens = get_usage_count( usage["input_tokens_details"], "cached_tokens" );
@@ -1437,3 +1470,14 @@ std::unique_ptr<const LlmApiProtocol> LlmApiProtocol::create( LlmConfig::LlmApi:
   }
   throw std::logic_error( "LlmApiProtocol::create: unknown ApiFormat" );
 }//LlmApiProtocol::create(...)
+
+
+nlohmann::json strip_top_level_schema_combinators( nlohmann::json schema )
+{
+  if( schema.is_object() )
+  {
+    for( const char *key : { "oneOf", "anyOf", "allOf", "not", "if", "then", "else" } )
+      schema.erase( key );
+  }
+  return schema;
+}//strip_top_level_schema_combinators(...)

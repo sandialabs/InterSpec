@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <chrono>
 #include <sstream>
 #include <iomanip>
@@ -54,6 +55,7 @@
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/LlmInteractionDisplay.h"
 #include "InterSpec/LlmSubAgentFollowup.h"
 #include "InterSpec/LlmConversationHistory.h"
@@ -69,6 +71,83 @@ namespace
     const InterSpec * const viewer = InterSpec::instance();
     return viewer && viewer->isPhone();
   }
+
+  /** If the user wants to see the details only of use when developing the assistant (the
+   "LlmShowDebugOptions" preference); never on phones.  Only needed for things CSS can't hide by the
+   "LlmDebugOnly" class (i.e., popup menu items).
+   */
+  bool show_debug_options()
+  {
+    InterSpec * const viewer = InterSpec::instance();
+    if( !viewer || viewer->isPhone() )
+      return false;
+
+    try
+    {
+      return UserPreferences::preferenceValue<bool>( "LlmShowDebugOptions", viewer );
+    }catch( std::exception & )
+    {
+    }
+    return false;
+  }//bool show_debug_options()
+
+  /** Marks the title text of `panel` so CSS can limit it to two lines with an ellipsis - a list of tool
+   names can otherwise overflow the title bar, especially in the narrow LLM side panel.
+   WPanel gives its title text no style class; it is the first WText in the title bar (after the
+   collapse icon, and before our status text).
+   */
+  void mark_panel_title( WPanel *panel )
+  {
+    WContainerWidget * const titleBar = panel->titleBarWidget();
+    for( int i = 0; titleBar && (i < titleBar->count()); ++i )
+    {
+      WText * const text = dynamic_cast<WText *>( titleBar->widget(i) );
+      if( text && !text->hasStyleClass( "LlmTurnStatus" ) )
+      {
+        text->addStyleClass( "LlmTurnTitle" );
+        break;
+      }
+    }//for( loop over title bar widgets )
+  }//void mark_panel_title( WPanel *panel )
+
+  /** If `call` was cancelled by the user (e.g., the agent it invoked was cancelled), rather than failed;
+   see LlmInterface::markOutstandingCallsCancelled(). */
+  bool is_cancelled( const LlmToolCall &call )
+  {
+    if( call.status != LlmToolCall::CallStatus::Error )
+      return false;
+    const nlohmann::json result = nlohmann::json::parse( call.content, nullptr, false );
+    return result.is_object() && (result.value( "status", string() ) == "cancelled");
+  }//bool is_cancelled( const LlmToolCall &call )
+
+  /** If `call` failed (other than by being cancelled by the user). */
+  bool is_failed( const LlmToolCall &call )
+  {
+    return (call.status == LlmToolCall::CallStatus::Error) && !is_cancelled( call );
+  }
+
+  /** The tool name (bold) with a status marker, as XHTML; the model-derived name is escaped. */
+  string tool_name_html( const LlmToolCall &call )
+  {
+    string html = "<b>" + Wt::Utils::htmlEncode( call.toolName ) + "</b>";
+    if( is_cancelled( call ) )
+      html += " <span class='LlmToolStatusPending'>[CANCELLED]</span>";
+    else if( call.status == LlmToolCall::CallStatus::Error )
+      html += " <span class='LlmToolStatusError'>[ERROR]</span>";
+    else if( call.status == LlmToolCall::CallStatus::Pending && !call.sub_agent_conversation )
+      html += " <span class='LlmToolStatusPending'>[PENDING]</span>";
+    return html;
+  }//string tool_name_html( const LlmToolCall &call )
+
+  /** The name of a tool for a title: a sub-agent invocation ("invoke_X") is shown as "X agent". */
+  string tool_display_name( const string &toolName, bool &isAgent )
+  {
+    const string prefix = "invoke_";
+    isAgent = (toolName.size() > prefix.size()) && (toolName.compare( 0, prefix.size(), prefix ) == 0);
+    if( !isAgent )
+      return toolName;
+    return WString::tr( "lcw-round-agent" ).arg( WString::fromUTF8( toolName.substr( prefix.size() ) ) ).toUTF8();
+  }//string tool_display_name( const string &toolName, bool &isAgent )
 }//namespace
 
 namespace
@@ -161,6 +240,52 @@ WT_DECLARE_WT_MEMBER
   attempt();
 }
 );
+
+
+/** Shows a once-a-second counter in `el`, counting up from `elapsedMs`: `fmt` with its "{1}" replaced
+ by the whole seconds elapsed; see LlmElapsedText.
+ */
+WT_DECLARE_WT_MEMBER
+(LlmElapsedStart, Wt::JavaScriptFunction, "LlmElapsedStart",
+  function( el, fmt, elapsedMs )
+{
+  if( !el )
+    return;
+  if( el._llmTick )
+    clearInterval( el._llmTick );
+
+  var t0 = Date.now() - elapsedMs;
+  var update = function(){
+    // The element was removed (e.g., the conversation was cleared) - so stop.
+    if( !el.isConnected ){
+      clearInterval( el._llmTick );
+      el._llmTick = null;
+      return;
+    }
+    el.textContent = fmt.replace( "{1}", Math.floor( (Date.now() - t0) / 1000 ) );
+  };
+  el._llmTick = setInterval( update, 1000 );
+  update();
+}
+);
+
+
+/** Stops the LlmElapsedStart counter in `el`, and shows `text` - Wt sends a WText's new text before
+ the JS queued in the same response, so a start earlier in that response would otherwise overwrite it.
+ */
+WT_DECLARE_WT_MEMBER
+(LlmElapsedStop, Wt::JavaScriptFunction, "LlmElapsedStop",
+  function( el, text )
+{
+  if( !el )
+    return;
+  if( el._llmTick ){
+    clearInterval( el._llmTick );
+    el._llmTick = null;
+  }
+  el.textContent = text;
+}
+);
 }//namespace
 
 
@@ -182,26 +307,57 @@ namespace
   }//formatTime(...)
 
 
-  /** Format duration in milliseconds as human-readable string */
-  string formatDuration( const chrono::milliseconds &duration )
+  /** Formats a duration like "4 ms", "13.1 s", or "6 m 14 s". */
+  WString formatDuration( const chrono::milliseconds &duration )
   {
     const long long ms = duration.count();
-
     if( ms < 1000 )
-      return to_string(ms) + "ms";
+      return WString::tr( "lcw-time-ms" ).arg( ms );
 
-    const long long seconds = ms / 1000;
-    if( seconds < 60 )
-      return to_string(seconds) + "s";
+    if( ms < 60000 )
+    {
+      ostringstream oss;
+      oss << fixed << setprecision(1) << (0.001 * ms);
+      return WString::tr( "lcw-time-s" ).arg( oss.str() );
+    }
 
-    const long long minutes = seconds / 60;
-    const long long sec_remainder = seconds % 60;
+    return WString::tr( "lcw-time-min-s" ).arg( ms / 60000 ).arg( (ms % 60000) / 1000 );
+  }//formatDuration(...)
+
+
+  /** Formats a USD cost like "Cost: $0.00423" - three significant figures below $1 (per-request
+   costs are often fractions of a cent), and cents at $1 or more. */
+  WString formatCost( const double usd )
+  {
+    int decimals = 2;
+    if( (usd > 0.0) && (usd < 1.0) )
+      decimals = std::min( 8, std::max( 2, 2 - static_cast<int>( std::floor( std::log10( usd ) ) ) ) );
 
     ostringstream oss;
-    oss << minutes << "m " << sec_remainder << "s";
+    oss << fixed << setprecision( decimals ) << usd;
+    return WString::tr( "lcw-summary-cost" ).arg( oss.str() );
+  }//formatCost(...)
 
-    return oss.str();
-  }//formatDuration(...)
+
+  /** How long a finished conversation took: to its finishTime, or else to its latest turn. */
+  chrono::milliseconds totalDuration( const LlmInteraction &convo )
+  {
+    chrono::system_clock::time_point endTime = convo.timestamp;
+    if( convo.finishTime.has_value() )
+    {
+      endTime = convo.finishTime.value();
+    }else if( convo.interruption.has_value() )
+    {
+      endTime = std::max( endTime, convo.interruption->time );
+    }else
+    {
+      for( const shared_ptr<LlmInteractionTurn> &turn : convo.responses )
+        endTime = std::max( endTime, turn->timestamp() );
+    }
+
+    return std::max( chrono::milliseconds(0),
+                     chrono::duration_cast<chrono::milliseconds>( endTime - convo.timestamp ) );
+  }//totalDuration(...)
 
 
   /** Truncate string to max length, adding ellipsis if needed */
@@ -351,6 +507,74 @@ void LlmJsRenderedDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render(...)
 
 
+LlmElapsedText::LlmElapsedText()
+  : WText(),
+    m_counting( false ),
+    m_format(),
+    m_start()
+{
+  setTextFormat( TextFormat::Plain );
+}//LlmElapsedText constructor
+
+
+void LlmElapsedText::start( const WString &label, const chrono::milliseconds alreadyElapsed )
+{
+  m_counting = true;
+  m_start = chrono::steady_clock::now() - alreadyElapsed;
+
+  // The counter's text, with its "{1}" left for the seconds (Wt fills arguments in order, so the
+  //  "{1}" of the seconds' format survives being put in as argument 2).
+  const WString secs = WString::tr( "lcw-time-s" );
+  m_format = (label.empty() ? secs : WString::tr( "lcw-status-counting" ).arg( label ).arg( secs )).toUTF8();
+
+  // What the client shows until its first tick (and what a full render starts from).
+  setText( WString::fromUTF8( m_format ).arg( chrono::duration_cast<chrono::seconds>( alreadyElapsed ).count() ) );
+
+  // A tooltip about a previous final text (e.g., before a retry) no longer applies.
+  setToolTip( WString() );
+
+  if( isRendered() )
+    startClientCounter();
+}//start(...)
+
+
+void LlmElapsedText::setFinalText( const WString &text )
+{
+  // Run the stop JS even if no longer counting: it also sets the text, and Wt runs JavaScript after
+  //  applying the DOM changes, so a stop issued earlier in this same response (e.g., finalizing the
+  //  counter just before showing "Stopped") would otherwise overwrite this text.
+  m_counting = false;
+  if( isRendered() )
+  {
+    LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmElapsedStop );
+    doJavaScript( "Wt.WT.LlmElapsedStop(" + jsRef() + "," + text.jsStringLiteral() + ");" );
+  }
+
+  setText( text );
+}//setFinalText(...)
+
+
+void LlmElapsedText::startClientCounter()
+{
+  LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmElapsedStart );
+
+  const long long elapsedMs = chrono::duration_cast<chrono::milliseconds>(
+                                                   chrono::steady_clock::now() - m_start ).count();
+  doJavaScript( "Wt.WT.LlmElapsedStart(" + jsRef() + "," + WString::fromUTF8( m_format ).jsStringLiteral()
+                + "," + to_string(elapsedMs) + ");" );
+}//startClientCounter()
+
+
+void LlmElapsedText::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  // A full render means the DOM element is being (re-)created, without a counter running.
+  if( m_counting && flags.test( RenderFlag::Full ) )
+    startClientCounter();
+
+  WText::render( flags );
+}//render(...)
+
+
 namespace LlmMarkdown
 {
 void load_resources( WApplication *app )
@@ -418,13 +642,17 @@ void set_raw_mode( WWidget *widget, const bool raw )
 // LlmInteractionTurnDisplay implementation
 //
 
-LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionTurn> turn )
+LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionTurn> turn,
+                                                      LlmToolRoundDisplay *round )
   : WPanel(),
     m_turn( turn ),
     m_menuIcon( nullptr ),
     m_menu( nullptr ),
     m_bodyContainer( nullptr ),
     m_bodyCreated( false ),
+    m_statusText( nullptr ),
+    m_round( round ),
+    m_debugMenuItems{},
     m_phoneLayout( is_phone_layout() )
 {
   addStyleClass( "LlmInteractionTurnDisplay" );
@@ -453,6 +681,31 @@ shared_ptr<LlmInteractionTurn> LlmInteractionTurnDisplay::turn() const
 }//turn()
 
 
+LlmElapsedText *LlmInteractionTurnDisplay::statusText()
+{
+  if( m_round )
+    return m_round->statusText();
+
+  if( m_statusText )
+    return m_statusText;
+
+  WContainerWidget * const titleBar = titleBarWidget();
+  if( !titleBar )
+    return nullptr;  // e.g., the compact phone tool-results display
+
+  // Right-aligned, just before the menu icon (if there is one).
+  std::unique_ptr<LlmElapsedText> status = std::make_unique<LlmElapsedText>();
+  m_statusText = status.get();
+  m_statusText->addStyleClass( "LlmTurnStatus" );
+  if( m_menuIcon && (titleBar->indexOf( m_menuIcon ) >= 0) )
+    titleBar->insertBefore( std::move(status), m_menuIcon );
+  else
+    titleBar->addWidget( std::move(status) );
+
+  return m_statusText;
+}//statusText()
+
+
 void LlmInteractionTurnDisplay::handleExpansion( bool expanded )
 {
   // Note: This will be connected to WPanel::expanded() signal later
@@ -465,6 +718,13 @@ void LlmInteractionTurnDisplay::handleExpansion( bool expanded )
 }//handleExpansion(...)
 
 
+void LlmInteractionTurnDisplay::setTurnTitle( const WString &title )
+{
+  setTitle( title );
+  mark_panel_title( this );
+}//void setTurnTitle( const WString &title )
+
+
 void LlmInteractionTurnDisplay::createMenuIcon()
 {
   // Create menu button in title bar.  The menu itself is built lazily on first
@@ -472,9 +732,25 @@ void LlmInteractionTurnDisplay::createMenuIcon()
   // every turn during headless/benchmark runs.
   m_menuIcon = titleBarWidget()->addNew<WPushButton>();
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn" );
+  if( !menuAlwaysShown() )
+    m_menuIcon->addStyleClass( "LlmDebugOnly" );
   m_menuIcon->clicked().preventPropagation();
   m_menuIcon->clicked().connect( this, &LlmInteractionTurnDisplay::showMenu );
 }//createMenuIcon()
+
+
+bool LlmInteractionTurnDisplay::menuAlwaysShown() const
+{
+  return false;
+}//bool menuAlwaysShown() const
+
+
+void LlmInteractionTurnDisplay::updateMenuItemsShown()
+{
+  const bool showDebug = show_debug_options();
+  for( WMenuItem * const item : m_debugMenuItems )
+    item->setHidden( !showDebug );
+}//void updateMenuItemsShown()
 
 
 void LlmInteractionTurnDisplay::showMenu()
@@ -487,6 +763,9 @@ void LlmInteractionTurnDisplay::showMenu()
     m_menu = makeButtonOwnedPopupMenu( m_menuIcon );
     addMenuItems( m_menu );
   }
+
+  updateMenuItemsShown();
+
   m_menu->popup( m_menuIcon, Wt::Orientation::Vertical );
   m_menu->doJavaScript( "Wt.WT.BringAboveDialogs('" + m_menu->id() + "');" );
 }//showMenu()
@@ -522,6 +801,9 @@ void LlmInteractionTurnDisplay::addMenuItems( PopupDivMenu *menu )
     else
       showJsonDialog( "Response JSON", json, true );
   }));
+
+  m_debugMenuItems.push_back( showRequestJson );
+  m_debugMenuItems.push_back( showResponseJson );
 }//addMenuItems()
 
 
@@ -608,12 +890,13 @@ LlmInteractionFinalResponseDisplay::LlmInteractionFinalResponseDisplay(
   : LlmInteractionTurnDisplay( response ),
     m_response( response ),
     m_contentDiv( nullptr ),
-    m_showRawText( false )
+    m_showRawText( false ),
+    m_rawTextItem( nullptr )
 {
   addStyleClass( "LlmFinalResponseDisplay" );
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // NOT collapsed by default
   setCollapsible( true );
@@ -633,10 +916,17 @@ LlmInteractionFinalResponseDisplay::~LlmInteractionFinalResponseDisplay()
 }//~LlmInteractionFinalResponseDisplay()
 
 
+bool LlmInteractionFinalResponseDisplay::menuAlwaysShown() const
+{
+  return true;  // "Copy Response Text" is for everyone
+}//bool menuAlwaysShown() const
+
+
 void LlmInteractionFinalResponseDisplay::addMenuItems( PopupDivMenu *menu )
 {
   // Base items (Request/Response JSON) first, then a convenience "Copy Response Text" that puts the
-  // human-readable assistant text (not the raw JSON) on the clipboard.  Phones get only the latter.
+  // human-readable assistant text (not the raw JSON) on the clipboard.  Phones get only the latter,
+  // and only "Copy Response Text" is shown on desktop unless debug options are on.
   if( m_phoneLayout )
     menu->addPhoneBackItem( nullptr );
   else
@@ -666,7 +956,19 @@ void LlmInteractionFinalResponseDisplay::addMenuItems( PopupDivMenu *menu )
     LlmMarkdown::set_raw_mode( m_contentDiv, m_showRawText );
     rawText->setText( m_showRawText ? "Show Rendered Text" : "Show Raw Text" );
   }));
+  m_debugMenuItems.push_back( rawText );
+  m_rawTextItem = rawText;
 }//addMenuItems()
+
+
+void LlmInteractionFinalResponseDisplay::updateMenuItemsShown()
+{
+  LlmInteractionTurnDisplay::updateMenuItemsShown();
+
+  // Showing the raw text must stay undoable, even if debug options were turned off since.
+  if( m_rawTextItem && m_showRawText )
+    m_rawTextItem->setHidden( false );
+}//void updateMenuItemsShown()
 
 
 WString LlmInteractionFinalResponseDisplay::getTitleText() const
@@ -701,8 +1003,8 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
   // Duration
   if( m_response->callDuration().has_value() )
   {
-    const string durationStr = formatDuration( m_response->callDuration().value() );
-    WText *durationText = metadataDiv->addNew<WText>( " | Duration: " + durationStr );
+    const WString durationStr = formatDuration( m_response->callDuration().value() );
+    WText *durationText = metadataDiv->addNew<WText>( WString::tr( "lcw-response-duration" ).arg( durationStr ) );
     durationText->addStyleClass( "LlmDuration" );
   }
 
@@ -718,6 +1020,12 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
         tokenStr += " (" + to_string(convo->cachedTokens.value()) + " cached)";
       WText *tokenText = metadataDiv->addNew<WText>( tokenStr );
       tokenText->addStyleClass( "LlmTokenUsage" );
+    }
+
+    if( convo->cost.has_value() )
+    {
+      WText *costText = metadataDiv->addNew<WText>( " | " + formatCost( convo->cost.value() ) );
+      costText->addStyleClass( "LlmTokenUsage" );
     }
   }
 
@@ -740,14 +1048,20 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
 // LlmToolRequestDisplay implementation
 //
 
-LlmToolRequestDisplay::LlmToolRequestDisplay( shared_ptr<LlmToolRequest> request )
-  : LlmInteractionTurnDisplay( request ),
+LlmToolRequestDisplay::LlmToolRequestDisplay( shared_ptr<LlmToolRequest> request,
+                                              LlmToolRoundDisplay *round )
+  : LlmInteractionTurnDisplay( request, round ),
     m_request( request )
 {
   addStyleClass( "LlmToolRequestDisplay" );
 
+  // In a tool round, the results display shows each tools parameters (with debug options on), so
+  //  this panel is just for its menu of the raw JSON, and only shown with debug options on.
+  if( m_round )
+    addStyleClass( "LlmDebugOnly" );
+
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // Collapsed by default
   setCollapsible( true );
@@ -815,15 +1129,18 @@ void LlmToolRequestDisplay::createBodyContent()
 
     // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
     WText *idText = callDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
-    idText->addStyleClass( "LlmInvocationId" );
+    idText->addStyleClass( "LlmInvocationId LlmDebugOnly" );
 
-    // Parameters
-    if( !call.toolParameters.empty() )
+    // Parameters (in a tool round, the results display shows them, so we don't repeat them here)
+    if( !m_round && !call.toolParameters.empty() )
     {
-      WText *paramsLabel = callDiv->addNew<WText>( "Parameters:" );
+      WContainerWidget * const paramsDiv = callDiv->addNew<WContainerWidget>();
+      paramsDiv->addStyleClass( "LlmDebugOnly" );
+
+      WText *paramsLabel = paramsDiv->addNew<WText>( "Parameters:" );
       paramsLabel->addStyleClass( "LlmParamsLabel" );
 
-      WTextArea *paramsArea = callDiv->addNew<WTextArea>();
+      WTextArea *paramsArea = paramsDiv->addNew<WTextArea>();
       paramsArea->setReadOnly( true );
       paramsArea->setText( formatJson(call.toolParameters) );
       paramsArea->setRows( 5 );
@@ -840,8 +1157,9 @@ void LlmToolRequestDisplay::createBodyContent()
 LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results,
                                               std::weak_ptr<LlmInterface> llmInterface,
                                               int nestingLevel,
-                                              WContainerWidget *phoneVisuals )
-  : LlmInteractionTurnDisplay( results ),
+                                              WContainerWidget *phoneVisuals,
+                                              LlmToolRoundDisplay *round )
+  : LlmInteractionTurnDisplay( results, round ),
     m_results( results ),
     m_llmInterface( llmInterface ),
     m_nestingLevel( nestingLevel ),
@@ -860,22 +1178,20 @@ LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results
   }//if( m_phoneVisuals )
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
-  // Collapsed by default, but expand if any tool call has visual content
-  setCollapsible( true );
-
-  bool hasVisuals = false;
-  for( const LlmToolCall &call : m_results->toolCalls() )
+  if( m_round )
   {
-    if( !call.visualContent.empty() || call.imageContent.has_value() )
-    {
-      hasVisuals = true;
-      break;
-    }
-  }
-
-  setCollapsed( !hasVisuals );
+    // The round panel does the collapsing (and has the title the user sees), so our title bar is
+    //  only for the debug menu; we must not be collapsible, or our body could be hidden while the
+    //  title bar to expand it is.
+    titleBarWidget()->addStyleClass( "LlmDebugOnly" );
+  }else
+  {
+    // Collapsed by default, but expand if any tool call has visual content
+    setCollapsible( true );
+    setCollapsed( !wantsExpanded() );
+  }//if( m_round ) / else
 
   // Create title bar with menu icon (we have to do this AFTER calling setTitle, or the button will disapear)
   createMenuIcon();
@@ -889,6 +1205,17 @@ LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results
 LlmToolResultsDisplay::~LlmToolResultsDisplay()
 {
 }//~LlmToolResultsDisplay()
+
+
+bool LlmToolResultsDisplay::wantsExpanded() const
+{
+  for( const LlmToolCall &call : m_results->toolCalls() )
+  {
+    if( !call.visualContent.empty() || call.imageContent.has_value() || call.sub_agent_conversation )
+      return true;
+  }
+  return false;
+}//bool wantsExpanded() const
 
 
 WString LlmToolResultsDisplay::getTitleText() const
@@ -931,49 +1258,72 @@ WString LlmToolResultsDisplay::getTitleText() const
 void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
                                                     WContainerWidget *resultDiv )
 {
-  // Error styling
-  resultDiv->removeStyleClass( "LlmToolResultError" );
-  if( call.status == LlmToolCall::CallStatus::Error )
-    resultDiv->addStyleClass( "LlmToolResultError" );
+  // Error styling (not for a call the user cancelled)
+  resultDiv->toggleStyleClass( "LlmToolResultError", is_failed( call ) );
 
-  // Tool name with status indicator - escape the model-derived name but keep the intentional markup.
-  ostringstream nameHtml;
-  nameHtml << "<b>" << Wt::Utils::htmlEncode( call.toolName ) << "</b>";
-  if( call.status == LlmToolCall::CallStatus::Error )
-    nameHtml << " <span class='LlmToolStatusError'>[ERROR]</span>";
-  else if( call.status == LlmToolCall::CallStatus::Pending && !call.sub_agent_conversation )
-    nameHtml << " <span class='LlmToolStatusPending'>[PENDING]</span>";
+  // On desktop, a lone sub-agents conversation follows, in a panel already titled "X agent", so its
+  //  tool name and duration line is only for debugging - unless it failed (see also
+  //  handleSubAgentFinished()), or the round has other calls it must be told apart from.
+  const bool debugOnlyHeader = !m_phoneVisuals && call.sub_agent_conversation && !is_failed( call )
+                               && (m_results->toolCalls().size() == 1);
 
-  WText *nameText = resultDiv->addNew<WText>( nameHtml.str() );
+  // Tool name with status indicator
+  WText * const nameText = resultDiv->addNew<WText>( tool_name_html( call ) );
   nameText->setTextFormat( TextFormat::UnsafeXHTML );
   nameText->addStyleClass( "LlmToolName" );
+  if( debugOnlyHeader )
+    nameText->addStyleClass( "LlmDebugOnly" );
+  if( call.sub_agent_conversation )
+    m_subAgentNameTexts[call.sub_agent_conversation] = nameText;
 
   // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
   if( !m_phoneVisuals )
   {
     WText *idText = resultDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
-    idText->addStyleClass( "LlmInvocationId" );
+    idText->addStyleClass( "LlmInvocationId LlmDebugOnly" );
   }
 
   // Execution duration
   if( call.executionDuration.has_value() )
   {
-    const string durationStr = formatDuration( call.executionDuration.value() );
-    WText *durationText = resultDiv->addNew<WText>( " - took " + durationStr );
+    const WString durationStr = formatDuration( call.executionDuration.value() );
+    WText *durationText = resultDiv->addNew<WText>( WString::tr( "lcw-tool-took" ).arg( durationStr ) );
     durationText->addStyleClass( "LlmDuration" );
+    if( debugOnlyHeader )
+      durationText->addStyleClass( "LlmDebugOnly" );
   }
 
+  // Parameters - as for the raw result, only for developing the tools.  A sub-agents parameters are
+  //  the task it was given, which its conversation shows as its question.
+  if( !m_phoneVisuals && !call.sub_agent_conversation && !call.toolParameters.empty() )
+  {
+    WContainerWidget * const paramsDiv = resultDiv->addNew<WContainerWidget>();
+    paramsDiv->addStyleClass( "LlmDebugOnly" );
+
+    WText * const paramsLabel = paramsDiv->addNew<WText>( "Parameters:" );
+    paramsLabel->addStyleClass( "LlmParamsLabel" );
+
+    WTextArea * const paramsArea = paramsDiv->addNew<WTextArea>();
+    paramsArea->setReadOnly( true );
+    paramsArea->setText( formatJson( call.toolParameters ) );
+    paramsArea->setRows( 3 );
+    paramsArea->addStyleClass( "LlmToolParams" );
+  }//if( show parameters )
+
   // Result content - show if not pending, available, and (no sub-agent OR sub-agent completed).
-  //  The raw result is for developing the tools, so phones skip it.
+  //  The raw result is for developing the tools, so phones skip it, and it is debug-only otherwise.
   if( !m_phoneVisuals
       && !call.content.empty()
       && call.status != LlmToolCall::CallStatus::Pending
       && (!call.sub_agent_conversation || call.sub_agent_conversation->finishTime.has_value()) )
   {
-    WText *resultLabel = resultDiv->addNew<WText>( "Result:" );
+    WContainerWidget * const rawResultDiv = resultDiv->addNew<WContainerWidget>();
+    rawResultDiv->addStyleClass( "LlmDebugOnly" );
+
+    WText * const resultLabel = rawResultDiv->addNew<WText>( "Result:" );
     resultLabel->addStyleClass( "LlmResultLabel" );
 
-    WTextArea *resultArea = resultDiv->addNew<WTextArea>();
+    WTextArea * const resultArea = rawResultDiv->addNew<WTextArea>();
     resultArea->setReadOnly( true );
     resultArea->setText( call.content );
     resultArea->setRows( 5 );
@@ -1245,8 +1595,12 @@ void LlmToolResultsDisplay::createBodyContent()
     // Sub-agent conversation (if present)
     if( call.sub_agent_conversation )
     {
-        WText *subAgentLabel = resultDiv->addNew<WText>( "Sub-agent conversation:" );
+      // On desktop, the sub-agent is in a round panel titled "X agent", so needs no label.
+      if( m_phoneVisuals )
+      {
+        WText * const subAgentLabel = resultDiv->addNew<WText>( "Sub-agent conversation:" );
         subAgentLabel->addStyleClass( "LlmSubAgentLabel" );
+      }
 
       /*
         // Display input arguments (context and task)
@@ -1288,10 +1642,13 @@ void LlmToolResultsDisplay::createBodyContent()
         }
        */
 
-        // Create nested LlmInteractionDisplay for sub-agent
+        // Create nested LlmInteractionDisplay for sub-agent (it styles itself as nested)
         LlmInteractionDisplay *subAgentDisplay = resultDiv->addNew<LlmInteractionDisplay>(
                     call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1, m_phoneVisuals );
-        subAgentDisplay->addStyleClass( "LlmSubAgentNesting" );
+
+        // While it runs, trim the margins below it, so its newest turn isn't scrolled out of view.
+        if( !call.sub_agent_conversation->finishTime.has_value() )
+          resultDiv->addStyleClass( "LlmSubAgentRunning" );
 
         m_subAgentDisplays.push_back( subAgentDisplay );
 
@@ -1306,8 +1663,9 @@ void LlmToolResultsDisplay::createBodyContent()
             this, [this,turn,conv](){ handleSubAgentFinished( turn, conv ); } );
         }
 
-      // Make sure we expand the parent widget so we can see the sub-agent conversation going on.
-      if( isCollapsed() )
+      // Make sure we expand the parent widget so we can see the sub-agent conversation going on (a
+      //  round expands itself, once we are added to it).
+      if( !m_round && isCollapsed() )
         setCollapsed( false );
     }//if( call.sub_agent_conversation )
 
@@ -1379,21 +1737,52 @@ void LlmToolResultsDisplay::addMenuItems( PopupDivMenu *menu )
     const string jsonStr = resultsJson.dump( 2 );  // Pretty print with 2-space indent
     showJsonDialog( "Tool Results JSON", jsonStr, true );
   }));
+  m_debugMenuItems.push_back( showToolResultsJson );
 }//addMenuItems()
 
 
 void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTurn> turn,
                                                     shared_ptr<LlmInteraction> subAgent )
 {
+  // However the sub-agent ended, it is no longer running, so restore its normal spacing.
+  const auto runningDivIter = m_subAgentResultDivs.find( subAgent );
+  if( runningDivIter != m_subAgentResultDivs.end() )
+    runningDivIter->second->removeStyleClass( "LlmSubAgentRunning" );
+
+  // The sub-agent may have failed, which the rounds title shows.
+  if( m_round )
+    m_round->updateTitle();
+
+  // If it failed, mark its result item, and always show its name line, with the error marker (it
+  //  was rendered while the sub-agent was running, so may be debug-only).
+  for( const LlmToolCall &call : m_results->toolCalls() )
+  {
+    if( (call.sub_agent_conversation != subAgent) || !is_failed( call ) )
+      continue;
+
+    if( runningDivIter != m_subAgentResultDivs.end() )
+      runningDivIter->second->addStyleClass( "LlmToolResultError" );
+
+    const auto nameIter = m_subAgentNameTexts.find( subAgent );
+    if( nameIter != m_subAgentNameTexts.end() )
+    {
+      nameIter->second->setText( tool_name_html( call ) );
+      nameIter->second->removeStyleClass( "LlmDebugOnly" );
+    }
+    break;
+  }//for( loop over calls to find a failed sub-agent )
+
   // The compact phone display does not show raw tool results.
   if( m_phoneVisuals )
     return;
 
   // Sub-agent finished - create the result text area if content is available
-  // Find the corresponding tool call in m_results
+  // Find the corresponding tool call in m_results.  A sub-agent ended early (cancel, timeout) still
+  //  has its "processing" placeholder, so skip it while it is Pending.
   for( const LlmToolCall &call : m_results->toolCalls() )
   {
-    if( call.sub_agent_conversation == subAgent && !call.content.empty() )
+    if( call.sub_agent_conversation == subAgent && !call.content.empty()
+        && (call.status != LlmToolCall::CallStatus::Pending) )
     {
       // Find the result div for this sub-agent
       const auto divIter = m_subAgentResultDivs.find( subAgent );
@@ -1405,11 +1794,15 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
 
       WContainerWidget *resultDiv = divIter->second;
 
-      // Create the result label and text area
-      WText *resultLabel = resultDiv->addNew<WText>( "Result:" );
+      // Create the result label and text area; only for debugging, as the sub-agents final response
+      //  above is what it returned.
+      WContainerWidget * const rawResultDiv = resultDiv->addNew<WContainerWidget>();
+      rawResultDiv->addStyleClass( "LlmDebugOnly" );
+
+      WText * const resultLabel = rawResultDiv->addNew<WText>( "Result:" );
       resultLabel->addStyleClass( "LlmResultLabel" );
 
-      WTextArea *resultArea = resultDiv->addNew<WTextArea>();
+      WTextArea * const resultArea = rawResultDiv->addNew<WTextArea>();
       resultArea->setReadOnly( true );
       resultArea->setText( call.content );
       resultArea->setRows( 5 );
@@ -1440,14 +1833,169 @@ void LlmToolResultsDisplay::handleAsyncToolCompleted( const string &invocationId
     renderToolCallResult( call, resultDiv );
 
     // Expand the panel if the completed tool call has visual content
-    if( !call.visualContent.empty() && isCollapsed() )
+    if( m_round )
+    {
+      m_round->updateTitle();  // it may have failed
+      if( !call.visualContent.empty() )
+        m_round->expandIfWanted();
+    }else if( !call.visualContent.empty() && isCollapsed() )
+    {
       setCollapsed( false );
+    }
 
     // Remove from tracking map since it's now complete
     m_asyncToolResultDivs.erase( divIter );
     break;
   }
 }//handleAsyncToolCompleted(...)
+
+
+//
+// LlmToolRoundDisplay implementation
+//
+
+LlmToolRoundDisplay::LlmToolRoundDisplay( shared_ptr<LlmToolRequest> request )
+  : WPanel(),
+    m_request( request ),
+    m_results( nullptr ),
+    m_resultsDisplay( nullptr ),
+    m_body( nullptr ),
+    m_status( nullptr )
+{
+  // Styled as a turn panel, which it stands in for.
+  addStyleClass( "LlmInteractionTurnDisplay LlmToolRoundDisplay" );
+
+  // The title must be set before the status text is added, so it comes first in the title bar.
+  updateTitle();
+  setCollapsible( true );
+
+  m_status = titleBarWidget()->addNew<LlmElapsedText>();
+  m_status->addStyleClass( "LlmTurnStatus" );
+
+  m_body = setCentralWidget( std::make_unique<WContainerWidget>() );
+  m_body->addStyleClass( "LlmToolRoundBody" );
+
+  setCollapsed( true );  // Until results with something to see are added (see expandIfWanted())
+}//LlmToolRoundDisplay constructor
+
+
+LlmToolRoundDisplay::~LlmToolRoundDisplay()
+{
+}//~LlmToolRoundDisplay()
+
+
+LlmToolRequestDisplay *LlmToolRoundDisplay::addRequestDisplay()
+{
+  if( !m_request )
+    return nullptr;
+  return m_body->addNew<LlmToolRequestDisplay>( m_request, this );
+}//LlmToolRequestDisplay *addRequestDisplay()
+
+
+LlmToolResultsDisplay *LlmToolRoundDisplay::addResultsDisplay( shared_ptr<LlmToolResults> results,
+                                                               std::weak_ptr<LlmInterface> llmInterface,
+                                                               int nestingLevel )
+{
+  assert( !m_results && !m_resultsDisplay );
+
+  m_results = results;
+  m_resultsDisplay = m_body->addNew<LlmToolResultsDisplay>( results, llmInterface, nestingLevel,
+                                                            nullptr, this );
+  updateTitle();
+  expandIfWanted();
+
+  return m_resultsDisplay;
+}//LlmToolResultsDisplay *addResultsDisplay(...)
+
+
+LlmElapsedText *LlmToolRoundDisplay::statusText()
+{
+  return m_status;
+}//LlmElapsedText *statusText()
+
+
+bool LlmToolRoundDisplay::hasTurn( const shared_ptr<LlmInteractionTurn> &turn ) const
+{
+  return turn && ((turn == m_request) || (turn == m_results));
+}//bool hasTurn(...)
+
+
+void LlmToolRoundDisplay::showFinalDurations()
+{
+  // The tools time is the request turns, and the LLMs time (to respond to the results) the results
+  //  turns; either may be missing (e.g., the round is still going, or the LLM call failed).
+  const std::optional<chrono::milliseconds> tools = m_request ? m_request->callDuration() : std::nullopt;
+  const std::optional<chrono::milliseconds> llm = m_results ? m_results->callDuration() : std::nullopt;
+
+  WString text, tooltip;
+  if( tools.has_value() && llm.has_value() )
+  {
+    text = WString::tr( "lcw-duration-round" ).arg( formatDuration( llm.value() ) )
+                                               .arg( formatDuration( tools.value() ) );
+    tooltip = WString::tr( "lcw-duration-round-tt" );
+  }else if( llm.has_value() )
+  {
+    text = WString::tr( "lcw-duration-llm" ).arg( formatDuration( llm.value() ) );
+    tooltip = WString::tr( "lcw-duration-llm-tt" );
+  }else if( tools.has_value() )
+  {
+    text = WString::tr( "lcw-duration-tools" ).arg( formatDuration( tools.value() ) );
+    tooltip = WString::tr( "lcw-duration-tools-tt" );
+  }
+
+  m_status->setFinalText( text );
+  m_status->setToolTip( tooltip );
+}//void showFinalDurations()
+
+
+void LlmToolRoundDisplay::updateTitle()
+{
+  // The tools are listed from the request, if we have it, as that is what the LLM asked for.
+  const vector<LlmToolCall> * const calls = m_request ? &m_request->toolCalls()
+                                        : (m_results ? &m_results->toolCalls() : nullptr);
+
+  bool allAgents = true;
+  string names;
+  for( size_t i = 0; calls && (i < calls->size()); ++i )
+  {
+    bool isAgent = false;
+    names += (i ? ", " : "") + tool_display_name( (*calls)[i].toolName, isAgent );
+    allAgents = (allAgents && isAgent);
+  }
+
+  bool hasErrors = false, hasCancelled = false;
+  for( size_t i = 0; m_results && (i < m_results->toolCalls().size()); ++i )
+  {
+    hasErrors = (hasErrors || is_failed( m_results->toolCalls()[i] ));
+    hasCancelled = (hasCancelled || is_cancelled( m_results->toolCalls()[i] ));
+  }
+
+  const bool single = (calls && (calls->size() == 1));
+  const char *key = nullptr;  // null for just the agent names
+  if( names.empty() )
+    key = "lcw-round-no-tools";
+  else if( allAgents && hasErrors )
+    key = single ? "lcw-round-agent-failed" : "lcw-round-agents-errors";
+  else if( allAgents && hasCancelled )
+    key = single ? "lcw-round-agent-cancelled" : "lcw-round-agents-cancelled";
+  else if( !allAgents )
+    key = hasErrors ? "lcw-round-tools-errors" : (hasCancelled ? "lcw-round-tools-cancelled" : "lcw-round-tools");
+
+  const WString title = key ? WString::tr( key ).arg( WString::fromUTF8( names ) ) : WString::fromUTF8( names );
+
+  // Escape model-derived tool names before they reach the XHTMLText panel title.
+  const string truncated = truncateString( title.toUTF8(), 100 );
+  setTitle( WString::fromUTF8( Wt::Utils::htmlEncode( truncated ) ) );
+  mark_panel_title( this );
+  toggleStyleClass( "LlmToolRoundError", hasErrors );
+}//void updateTitle()
+
+
+void LlmToolRoundDisplay::expandIfWanted()
+{
+  if( m_resultsDisplay && m_resultsDisplay->wantsExpanded() && isCollapsed() )
+    setCollapsed( false );
+}//void expandIfWanted()
 
 
 //
@@ -1466,7 +2014,7 @@ LlmInteractionErrorDisplay::LlmInteractionErrorDisplay( shared_ptr<LlmInteractio
   addStyleClass( "LlmErrorDisplay" );
 
   // Set title
-  setTitle( getTitleText() );
+  setTurnTitle( getTitleText() );
 
   // NOT collapsed by default
   setCollapsible( true );
@@ -1534,24 +2082,78 @@ void LlmInteractionErrorDisplay::createBodyContent()
     retryInfo->addStyleClass( "LlmErrorRetryInfo" );
   }
 
-  // Add retry button (always shown for all errors)
-  m_retryBtn = m_bodyContainer->addNew<WPushButton>( "Retry" );
+  // A sub-agent's error pauses it (and the agent that invoked it), so it can be continued, or
+  //  cancelled to have the invoking agent carry on without it; for the main agent, the failed step
+  //  can be skipped.
+  const shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  const bool subAgent = convo && (convo->agent_type != AgentType::MainAgent);
+
+  m_retryBtn = m_bodyContainer->addNew<WPushButton>( WString::tr( "lcw-error-retry" ) );
   m_retryBtn->addStyleClass( "LlmRetryButton" );
   m_retryBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleRetry );
 
-  // Add "Continue Anyway" button (always shown for all errors)
-  m_continueBtn = m_bodyContainer->addNew<WPushButton>( "Continue Anyway" );
+  m_continueBtn = m_bodyContainer->addNew<WPushButton>(
+                                 WString::tr( subAgent ? "lcw-error-cancel-agent" : "lcw-error-skip" ) );
   m_continueBtn->addStyleClass( "LlmContinueButton" );
   m_continueBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleContinueAnyway );
 
-  // Add help text
-  m_helpText = m_bodyContainer->addNew<WText>( "Click Retry to attempt this request again, or Continue Anyway to start a new conversation." );
+  m_helpText = m_bodyContainer->addNew<WText>( WString::tr( subAgent ? "lcw-error-help-agent"
+                                                                     : "lcw-error-help-main" ) );
   m_helpText->addStyleClass( "LlmErrorHelpText" );
+
+  // If the sub-agent is ended before anything is chosen here (e.g., a new question is asked), say so.
+  if( subAgent )
+  {
+    convo->conversationFinished.connect( this, [this](){
+      if( m_retryBtn && m_retryBtn->isEnabled() && m_continueBtn && m_continueBtn->isEnabled() )
+        refuseIfEndedSubAgent();
+    } );
+    if( convo->finishTime.has_value() )
+      refuseIfEndedSubAgent();
+  }//if( subAgent )
 }//createBodyContent()
+
+
+bool LlmInteractionErrorDisplay::refuseIfEndedSubAgent()
+{
+  const shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  if( !convo || (convo->agent_type == AgentType::MainAgent) || !convo->finishTime.has_value() )
+    return false;
+
+  if( m_retryBtn )
+    m_retryBtn->setEnabled( false );
+  if( m_continueBtn )
+    m_continueBtn->setEnabled( false );
+  if( m_helpText )
+    m_helpText->setText( WString::tr( "lcw-subagent-ended" ) );
+
+  return true;
+}//refuseIfEndedSubAgent()
+
+
+bool LlmInteractionErrorDisplay::refuseIfSubAgentNotAwaited()
+{
+  const shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( !convo || !llm || (convo->agent_type == AgentType::MainAgent) || llm->resumeInterruptedFor( convo ) )
+    return false;
+
+  if( m_retryBtn )
+    m_retryBtn->setEnabled( false );
+  if( m_continueBtn )
+    m_continueBtn->setEnabled( false );
+  if( m_helpText )
+    m_helpText->setText( WString::tr( "lcw-subagent-ended" ) );
+
+  return true;
+}//refuseIfSubAgentNotAwaited()
 
 
 void LlmInteractionErrorDisplay::handleRetry()
 {
+  if( refuseIfEndedSubAgent() || refuseIfSubAgentNotAwaited() )
+    return;
+
   // Disable both buttons to prevent double-clicks
   if( m_retryBtn )
     m_retryBtn->setEnabled( false );
@@ -1606,11 +2208,19 @@ void LlmInteractionErrorDisplay::handleRetry()
   cout << "\n=== Retrying request for conversation: " << convo->conversationId << " ===" << endl;
   cout << "Error type: " << static_cast<int>(m_error->errorType()) << endl;
 
+  // The conversation is running again (e.g., after a watchdog timeout, which set this), so that a later
+  //  cancel or timeout ends it properly.
+  const std::optional<std::chrono::system_clock::time_point> previousFinishTime = convo->finishTime;
+
+  // For a sub-agent, the tool rounds waiting on it (stopped while it was paused) go back in flight.
+  const bool resumedRounds = llmInterface->resumeStoppedRounds( convo );
+
   try
   {
     // Remove the error from conversation history
     // This allows the conversation to continue as if the error never happened
     convo->responses.pop_back();
+    convo->finishTime.reset();
 
     // Build API request with the conversation history (which now excludes the error)
     const nlohmann::json requestJson = llmInterface->buildMessagesArray( convo );
@@ -1621,6 +2231,9 @@ void LlmInteractionErrorDisplay::handleRetry()
 
     cout << "Retry request sent with ID: " << request_id_content.first << endl;
 
+    if( m_helpText )
+      m_helpText->setText( WString::tr( "lcw-error-retried" ) );
+
     // The response will be handled by the normal LlmInterface::handleApiResponse flow
     // which will add new response turns to the conversation and emit signals
   }
@@ -1630,6 +2243,9 @@ void LlmInteractionErrorDisplay::handleRetry()
 
     // Re-add the error to the conversation since retry failed
     convo->responses.push_back( m_error );
+    convo->finishTime = previousFinishTime;
+    if( resumedRounds )
+      llmInterface->stopIdleRounds( true );
 
     // Update help text
     if( m_helpText )
@@ -1649,6 +2265,9 @@ void LlmInteractionErrorDisplay::handleRetry()
 
 void LlmInteractionErrorDisplay::handleContinueAnyway()
 {
+  if( refuseIfEndedSubAgent() || refuseIfSubAgentNotAwaited() )
+    return;
+
   // Disable both buttons to prevent double-clicks
   if( m_continueBtn )
     m_continueBtn->setEnabled( false );
@@ -1658,19 +2277,32 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
     m_retryBtn->hide();  // Hide the button that wasn't clicked
   }
 
+  // Mark the error to exclude from history sent to LLM, and that the user moved on from it (for a
+  //  sub-agent, the agent that invoked it is then told the user cancelled it - see the sub-agent
+  //  completion handler).
+  m_error->setExcludeFromHistory( true );
+  m_error->setSkippedByUser( true );
+
+  std::shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  const bool subAgent = convo && (convo->agent_type != AgentType::MainAgent);
+
   // Update help text to indicate continue action was taken
   if( m_helpText )
-    m_helpText->setText( "Continuing with new conversation. The error has been excluded from history." );
+    m_helpText->setText( WString::tr( subAgent ? "lcw-error-agent-cancelled" : "lcw-error-skipped" ) );
 
-  // Mark the error to exclude from history sent to LLM
-  m_error->setExcludeFromHistory( true );
+  // For a sub-agent, the tool rounds waiting on it (stopped while it was paused) go back in flight,
+  //  so ending it, below, lets the agent that invoked it continue.
+  if( subAgent )
+  {
+    if( const std::shared_ptr<LlmInterface> llmInterface = m_llmInterface.lock() )
+      llmInterface->resumeStoppedRounds( convo );
+  }
 
   // Find and mark the request that led to this error to also exclude from history
   // Search backwards from the error to find the closest request we sent to the LLM:
   // - InitialRequest (user/system message)
   // - AutoReply (automatic continuation)
   // - ToolResults (results from tool execution)
-  std::shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
   if( convo && !convo->responses.empty() )
   {
     // Find the error in the responses array
@@ -1713,10 +2345,13 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
       }
     }
 
-    // Mark conversation as finished
+    // Mark conversation as finished.  The completion handler (a sub-agent's resolves its parent's
+    //  tool round) is cleared before it runs, so nothing can run it a second time.
     convo->finishTime = std::chrono::system_clock::now();
-    if( convo->conversation_completion_handler )
-      convo->conversation_completion_handler();
+    std::function<void(void)> handler;
+    handler.swap( convo->conversation_completion_handler );
+    if( handler )
+      handler();
     convo->conversationFinished.emit();
   }
 
@@ -1734,8 +2369,6 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
 // LlmInteractionDisplay implementation
 //
 
-int LlmInteractionDisplay::s_nextTimerId = 0;
-
 LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interaction,
                                               std::weak_ptr<LlmInterface> llmInterface,
                                               int nestingLevel,
@@ -1750,38 +2383,57 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_menu( nullptr ),
     m_nestingLevel( nestingLevel ),
     m_isFinished( false ),
+    m_interruptedPanel( nullptr ),
+    m_isStopped( false ),
+    m_isLive( false ),
+    m_activeStatus( nullptr ),
+    m_activeStatusTurn( nullptr ),
+    m_waitingOnTools( false ),
+    m_openToolRound( nullptr ),
+    m_toolRounds{},
+    m_lastRequestTurn( nullptr ),
+    m_lastRequestDisplay( nullptr ),
     m_phoneLayout( is_phone_layout() ),
     m_phoneToolSummary( nullptr ),
     m_phoneToolList( nullptr ),
     m_phoneVisuals( m_phoneLayout ? phoneVisuals : nullptr ),
     m_phoneOpenToolRequests( 0 ),
-    m_phoneToolErrors( false )
+    m_phoneToolErrors( false ),
+    m_phoneStatus( nullptr )
 {
   assert( m_interaction );
 
   addStyleClass( "LlmInteractionDisplay" );
 
-  // Generate unique timer ID
-  m_timerId = "llmTimer_" + to_string( s_nextTimerId++ );
-
-  // Set collapsible to create title bar
-  setCollapsible( true );
-  setCollapsed( false );
+  // On desktop, a sub-agents conversation is shown in its parents tool-round panel (titled
+  //  "X agent"), which does the collapsing; so it is not shown as a panel of its own, and its title
+  //  bar (with the menu) is only shown with debug options on.  It can not be collapsed, or it could
+  //  be hidden while its title bar is.
+  const bool flatSubAgent = (m_nestingLevel > 0) && !m_phoneLayout;
+  if( flatSubAgent )
+  {
+    setTitleBar( true );
+  }else
+  {
+    // Set collapsible to create title bar
+    setCollapsible( true );
+    setCollapsed( false );
+  }//if( flatSubAgent ) / else
 
   // Wt4's WPanel only applies the themes title-bar style (".titlebar") from setTitle(), which we
   //  dont call - our title is made of our own status and timer texts - so apply it ourselves.
   scheduleThemeStyleApply( wApp->theme(), titleBarWidget(), Wt::PanelTitleBar );
+  if( flatSubAgent )
+    titleBarWidget()->addStyleClass( "LlmDebugOnly" );
 
   // Set title with status - create status text widget
   m_statusText = titleBarWidget()->addNew<WText>();
   m_statusText->setTextFormat( TextFormat::Plain );  // Plain text only
   m_statusText->addStyleClass( "LlmStatusIndicator" );
 
-  // Create separate timer widget with the timer ID
-  m_timerText = titleBarWidget()->addNew<WText>();
-  m_timerText->setId( m_timerId );
-  m_timerText->setInline( true );
-  m_timerText->setText( "0s" );
+  // Separate widget for the total-time counter
+  m_timerText = titleBarWidget()->addNew<LlmElapsedText>();
+  m_timerText->setText( WString::tr( "lcw-time-s" ).arg( 0 ) );
   m_timerText->addStyleClass( "LlmStatusIndicator" );
 
   updateStatus();
@@ -1821,6 +2473,14 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
       // TextFormat::Plain via the 3-arg ctor (format before text) so raw user text skips the XHTML parser.
       WText *questionText = questionDiv->addNew<WText>( questionContent, TextFormat::Plain );
       questionText->addStyleClass( "LlmQuestionContent" );
+
+      // A sub-agents "question" is the whole task prompt it was given, so CSS limits it to a few
+      //  lines; clicking it shows it all, or limits it again.
+      if( flatSubAgent )
+      {
+        questionText->addStyleClass( "LlmSubAgentPrompt" );
+        questionText->clicked().connect( "function(o,e){ o.classList.toggle('LlmExpanded'); }" );
+      }
     }
 
     // Show image thumbnails if the user attached images
@@ -1844,23 +2504,31 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
   // Create container for turns
   m_turnContainer = bodyContainer->addNew<WContainerWidget>();
+  m_turnContainer->addStyleClass( "LlmTurnContainer" );
 
-  // Add summary section after the turns
+  // Add summary section after the turns; it is empty, so hidden, until updateSummary() fills it - so
+  //  it doesn't add blank space below the newest turn while the conversation is running.
   m_summaryDiv = bodyContainer->addNew<WContainerWidget>();
   m_summaryDiv->addStyleClass( "LlmInteractionSummary" );
+  m_summaryDiv->setHidden( true );
 
   // Add any existing responses
   for( const shared_ptr<LlmInteractionTurn> &turn : interaction->responses )
   {
     handleResponseAdded( turn );
   }
+  m_isLive = true;
 
   // Connect to signals
   interaction->responseAdded.connect( this, &LlmInteractionDisplay::handleResponseAdded );
   interaction->subAgentFinished.connect( this, &LlmInteractionDisplay::handleSubAgentFinished );
   interaction->conversationFinished.connect( this, &LlmInteractionDisplay::handleConversationFinished );
+  interaction->llmRequestSent.connect( this, &LlmInteractionDisplay::handleRequestSent );
+  interaction->stoppedChanged.connect( this, &LlmInteractionDisplay::handleStoppedChanged );
+  interaction->interruptionChanged.connect( this, &LlmInteractionDisplay::handleInterruptionChanged );
 
-  // Check if conversation is already finished
+  // Check if conversation is already finished; a set finishTime with no final or error turn means it
+  //  was ended without one (e.g., a cancelled sub-agent, or the interface was closed mid-request).
   bool hasError = false;
   bool hasFinalResponse = false;
   for( const shared_ptr<LlmInteractionTurn> &turn : interaction->responses )
@@ -1871,18 +2539,43 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
       hasFinalResponse = true;
   }
 
-  if( hasError || hasFinalResponse )
+  if( hasError || hasFinalResponse || m_interaction->finishTime.has_value() )
   {
     m_isFinished = true;
     updateSummary();
+    updateStatus();
   }else
   {
-    // Start status timer
-    startStatusTimer();
+    // Count up the total time since the conversation started - but only if it has work in flight; a
+    //  conversation restored unfinished has nothing that would end it, so it just shows "0s".
+    const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+    if( llm && llm->isConversationActive( m_interaction ) )
+    {
+      const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
+      m_timerText->start( WString(), std::max( chrono::milliseconds(0),
+                                    chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
+
+      // The turns were replayed without live counters, so start the one for what is in flight now
+      //  (e.g., this display was rebuilt from a restored history).
+      resumeActiveStatus( *llm );
+    }else if( llm && llm->isConversationStopped( m_interaction ) )
+    {
+      handleStoppedChanged( true );
+    }else if( m_interaction->interruption.has_value() )
+    {
+      // Cut off by the assistant, or InterSpec, closing, or another spectrum being shown; show how long
+      //  it ran, and offer to resume it.
+      stopStatusTimer();
+      showInterruptedPanel();
+      updateStatus();
+    }
   }
 
   // Apply nesting indentation
-  if( m_nestingLevel > 0 )
+  if( flatSubAgent )
+  {
+    addStyleClass( "LlmSubAgentFlat" );
+  }else if( m_nestingLevel > 0 )
   {
     addStyleClass( "LlmSubAgentNesting LlmNestLevel" + to_string(m_nestingLevel) );
 
@@ -1896,8 +2589,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
 LlmInteractionDisplay::~LlmInteractionDisplay()
 {
-  stopStatusTimer();
-
+  // Nothing to do for the JS counters: they stop themselves once their element is gone.
   // See ~LlmInteractionTurnDisplay(): m_menu is owned by m_menuIcon, not by us.
 }//~LlmInteractionDisplay()
 
@@ -1917,6 +2609,11 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
   // display failure, fall back to a plain-text placeholder, and keep the finished-state bookkeeping.
   LlmInteractionTurnDisplay *turnDisplay = nullptr;
 
+  // A tool round ends with its results; anything else (e.g., an Error after the tool calls) means
+  //  the open round won't get any.
+  if( turn->type() != LlmInteractionTurn::Type::ToolResult )
+    m_openToolRound = nullptr;
+
   try
   {
   switch( turn->type() )
@@ -1932,6 +2629,8 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 
     case LlmInteractionTurn::Type::FinalLlmResponse:
     {
+      finalizeActiveStatus();  // The LLM answered
+
       shared_ptr<LlmInteractionFinalResponse> response =
         dynamic_pointer_cast<LlmInteractionFinalResponse>( turn );
       turnDisplay = m_turnContainer->addNew<LlmInteractionFinalResponseDisplay>( response );
@@ -1951,6 +2650,12 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       shared_ptr<LlmToolRequest> request =
         dynamic_pointer_cast<LlmToolRequest>( turn );
 
+      finalizeActiveStatus();  // The LLM answered
+
+      // A round whose tools have all run already has its duration set, so this only counts while
+      //  async tools or sub-agents are still running.
+      const bool countRunningTools = m_isLive && !turn->callDuration().has_value();
+
       if( m_phoneLayout )
       {
         // No request panel on phones; just note what is running in the summary row title.
@@ -1965,10 +2670,27 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
           }
         }//if( request )
         updatePhoneToolSummaryTitle();
+
+        if( countRunningTools )
+          startActiveStatus( m_phoneStatus, true, turn );
         break;
       }//if( m_phoneLayout )
 
-      turnDisplay = m_turnContainer->addNew<LlmToolRequestDisplay>( request );
+      // The request and the results that follow it are shown together, in one panel.
+      assert( request );
+      if( !request )
+        break;
+
+      LlmToolRoundDisplay * const round = m_turnContainer->addNew<LlmToolRoundDisplay>( request );
+      m_toolRounds.push_back( round );
+      m_openToolRound = round;
+
+      turnDisplay = round->addRequestDisplay();
+
+      if( countRunningTools )
+        startActiveStatus( round->statusText(), true, turn );
+      else if( turn->callDuration().has_value() )
+        showFinalDuration( round->statusText(), turn );
       break;
     }
 
@@ -1995,15 +2717,36 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
         turnDisplay = m_phoneToolList->addNew<LlmToolResultsDisplay>( results, m_llmInterface,
                                                                      m_nestingLevel, m_phoneVisuals );
         updatePhoneToolSummaryTitle();
+
+        m_lastRequestTurn = turn;
+        m_lastRequestDisplay = nullptr;  // phones use m_phoneStatus
         break;
       }//if( m_phoneLayout )
 
-      turnDisplay = m_turnContainer->addNew<LlmToolResultsDisplay>( results, m_llmInterface, m_nestingLevel );
+      // Into the round of the request these are the results of (there should always be one).
+      LlmToolRoundDisplay *round = m_openToolRound;
+      m_openToolRound = nullptr;
+      if( !round )
+      {
+        round = m_turnContainer->addNew<LlmToolRoundDisplay>( nullptr );
+        m_toolRounds.push_back( round );
+      }
+
+      turnDisplay = round->addResultsDisplay( results, m_llmInterface, m_nestingLevel );
+
+      // When the results are sent to the LLM, this panel (i.e., its round) shows the "Pending LLM
+      //  response" counter.
+      m_lastRequestTurn = turn;
+      m_lastRequestDisplay = turnDisplay;
+      if( turn->callDuration().has_value() )
+        showFinalDuration( turnDisplay->statusText(), turn );
       break;
     }
 
     case LlmInteractionTurn::Type::Error:
     {
+      finalizeActiveStatus();  // The request failed or was cancelled
+
       shared_ptr<LlmInteractionError> error =
         dynamic_pointer_cast<LlmInteractionError>( turn );
       LlmInteractionErrorDisplay *errorDisplay =
@@ -2034,6 +2777,9 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
         ensurePhoneToolSummary();
         WText *note = m_phoneToolList->addNew<WText>( WString::tr("lcw-phone-auto-reply") );
         note->addStyleClass( "LlmPhoneAutoReply" );
+
+        m_lastRequestTurn = turn;
+        m_lastRequestDisplay = nullptr;
         break;
       }//if( m_phoneLayout )
 
@@ -2046,9 +2792,18 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 
       turnDisplay = m_turnContainer->addNew<LlmInteractionFinalResponseDisplay>( tempResponse );
 
-      // AutoReply doesn't mean conversation is finished - we're waiting for LLM response
+      // AutoReply doesn't mean conversation is finished - we're waiting for LLM response.  Keyed on
+      //  `turn` (not the wrapper), as that is what the request is sent with.
+      m_lastRequestTurn = turn;
+      m_lastRequestDisplay = turnDisplay;
+      if( turn->callDuration().has_value() )
+        showFinalDuration( turnDisplay->statusText(), turn );
       break;
     }
+
+    case LlmInteractionTurn::Type::ConversationSummary:
+      // Stands in for the older conversations it summarizes, for the LLM; nothing to show.
+      break;
   }//switch( turn->type() )
   }catch( const std::exception &e )
   {
@@ -2090,6 +2845,9 @@ void LlmInteractionDisplay::ensurePhoneToolSummary()
   m_phoneToolList = m_phoneToolSummary->setCentralWidget( std::make_unique<WContainerWidget>() );
   m_phoneToolList->addStyleClass( "LlmPhoneToolList" );
 
+  m_phoneStatus = m_phoneToolSummary->titleBarWidget()->addNew<LlmElapsedText>();
+  m_phoneStatus->addStyleClass( "LlmTurnStatus" );
+
   // Visuals go right after the summary row (and so before the final response).  Sub-agents were
   //  handed their top-level interactions container instead, so their visuals are not hidden inside
   //  this (collapsed) row.
@@ -2129,13 +2887,315 @@ void LlmInteractionDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
 
 void LlmInteractionDisplay::handleConversationFinished()
 {
+  // Also emitted for a conversation ended without a final or error turn (e.g., a cancelled
+  //  sub-agent), so nothing it shows may still be counting.
+  finalizeActiveStatus();
+
   m_isFinished = true;
   stopStatusTimer();
   updateSummary();
   updateStatus();
-  
-  
 }//handleConversationFinished()
+
+
+void LlmInteractionDisplay::handleStoppedChanged( const bool stopped )
+{
+  if( stopped == m_isStopped )
+    return;
+  m_isStopped = stopped;
+
+  const chrono::milliseconds sinceStart = std::max( chrono::milliseconds(0),
+          chrono::duration_cast<chrono::milliseconds>( chrono::system_clock::now() - m_interaction->timestamp ) );
+
+  // The round that is stopped is the newest one (on phones, the tool-summary row).
+  LlmElapsedText * const roundStatus = m_phoneLayout ? m_phoneStatus
+                                     : (m_toolRounds.empty() ? nullptr : m_toolRounds.back()->statusText());
+
+  if( stopped )
+  {
+    // Nothing runs for it now: it waits on the user to Retry, or Cancel, the paused agent.
+    finalizeActiveStatus();
+    if( roundStatus )
+    {
+      roundStatus->setFinalText( WString::tr( "lcw-status-stopped" ) );
+      roundStatus->setToolTip( WString::tr( "lcw-status-stopped-tt" ) );
+    }
+    m_timerText->setFinalText( WString::tr( "lcw-total-time" ).arg( formatDuration( sinceStart ) ) );
+  }else
+  {
+    if( roundStatus )
+      roundStatus->setToolTip( WString() );
+    m_timerText->start( WString(), sinceStart );
+    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+      resumeActiveStatus( *llm );
+  }//if( stopped ) / else
+
+  updateStatus();
+}//handleStoppedChanged(...)
+
+
+void LlmInteractionDisplay::showInterruptedPanel()
+{
+  // A sub-agent is resumed along with the conversation that invoked it, so has no buttons of its own.
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( (m_nestingLevel > 0) || !llm || !llm->canResumeInterrupted( m_interaction ) )
+    return;
+
+  // One hidden when the conversation was resumed is replaced, to give this interruption's time and cause.
+  if( m_interruptedPanel )
+  {
+    if( !m_interruptedPanel->isHidden() )
+      return;
+    m_interruptedPanel->removeFromParent();
+    m_interruptedPanel = nullptr;
+  }
+
+  const LlmInteraction::Interruption &interruption = m_interaction->interruption.value();
+
+  m_interruptedPanel = m_turnContainer->addNew<WContainerWidget>();
+  m_interruptedPanel->addStyleClass( "LlmInterruptedPanel" );
+
+  const char *message_key = "lcw-interrupted-session";
+  switch( interruption.cause )
+  {
+    case LlmInteraction::Interruption::Cause::SessionEnded:    message_key = "lcw-interrupted-session";  break;
+    case LlmInteraction::Interruption::Cause::AssistantClosed: message_key = "lcw-interrupted-closed";   break;
+    case LlmInteraction::Interruption::Cause::SpectrumChanged: message_key = "lcw-interrupted-spectrum"; break;
+  }//switch( interruption.cause )
+
+  WText *message = m_interruptedPanel->addNew<WText>( WString::tr( message_key ).arg( formatTime( interruption.time ) ) );
+  message->addStyleClass( "LlmInterruptedMessage" );
+
+  WContainerWidget *buttons = m_interruptedPanel->addNew<WContainerWidget>();
+  buttons->addStyleClass( "LlmInterruptedButtons" );
+
+  // The buttons are hidden with the panel, by handleInterruptionChanged(), from within their own click.
+  WPushButton *resumeBtn = buttons->addNew<WPushButton>( WString::tr( "lcw-interrupted-resume" ) );
+  resumeBtn->addStyleClass( "LlmResumeButton" );
+  resumeBtn->clicked().connect( this, [this](){
+    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+      llm->resumeInterrupted( m_interaction );
+  } );
+
+  WPushButton *dismissBtn = buttons->addNew<WPushButton>( WString::tr( "lcw-interrupted-dismiss" ) );
+  dismissBtn->addStyleClass( "LlmContinueButton" );
+  dismissBtn->clicked().connect( this, [this](){
+    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+      llm->abandonInterrupted( m_interaction );
+  } );
+
+  WText *help = m_interruptedPanel->addNew<WText>( WString::tr( "lcw-interrupted-help" ) );
+  help->addStyleClass( "LlmErrorHelpText" );
+}//showInterruptedPanel()
+
+
+void LlmInteractionDisplay::handleInterruptionChanged()
+{
+  if( m_interaction->interruption.has_value() )
+  {
+    // Cut off while shown (e.g., the detectors summed changed): nothing runs for it now.
+    m_isStopped = false;
+    finalizeActiveStatus();
+    stopStatusTimer();
+    showInterruptedPanel();
+    updateStatus();
+    return;
+  }//if( interrupted )
+
+  if( m_interruptedPanel )
+    m_interruptedPanel->hide();
+
+  // Resumed: its total time counts again, from where it was started.
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( !m_isFinished && llm && llm->isConversationActive( m_interaction ) )
+  {
+    const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
+    m_timerText->start( WString(), std::max( chrono::milliseconds(0),
+                                  chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
+  }
+
+  updateStatus();
+}//handleInterruptionChanged()
+
+
+void LlmInteractionDisplay::handleRequestSent( shared_ptr<LlmInteractionTurn> turn )
+{
+  // A new request ends whatever was being waited on before it (e.g., a tool round).
+  finalizeActiveStatus();
+
+  // A request for a finished conversation - a Retry of its error, or a re-prompt after a response
+  //  that did not end it (an auto-reply) - means it is running again.
+  if( m_isFinished )
+  {
+    m_isFinished = false;
+    const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
+    m_timerText->start( WString(), std::max( chrono::milliseconds(0),
+                                  chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
+    updateStatus();
+    updateSummary();
+  }//if( m_isFinished )
+
+  startActiveStatus( requestStatusText( turn ), false, turn );
+}//handleRequestSent(...)
+
+
+LlmElapsedText *LlmInteractionDisplay::requestStatusText( const shared_ptr<LlmInteractionTurn> &turn )
+{
+  // The InitialRequest has no panel; the conversation title already shows that wait.
+  if( !turn || (turn != m_lastRequestTurn) )
+    return nullptr;
+
+  if( m_phoneLayout )
+    return m_phoneStatus;
+
+  return m_lastRequestDisplay ? m_lastRequestDisplay->statusText() : nullptr;
+}//requestStatusText(...)
+
+
+void LlmInteractionDisplay::resumeActiveStatus( const LlmInterface &llm )
+{
+  const std::optional<LlmInterface::InFlightWait> wait = llm.inFlightWait( m_interaction );
+  if( !wait || !wait->turn )
+    return;
+
+  LlmElapsedText *status = nullptr;
+  if( !wait->runningTools )
+  {
+    status = requestStatusText( wait->turn );
+  }else if( m_phoneLayout )
+  {
+    status = m_phoneStatus;
+  }else
+  {
+    // The running tools are of a tool-call turn, which is shown in a tool round.
+    LlmToolRoundDisplay * const round = toolRound( wait->turn );
+    status = round ? round->statusText() : nullptr;
+  }//if( request ) / else
+
+  const chrono::milliseconds elapsed = chrono::duration_cast<chrono::milliseconds>(
+                                                        chrono::steady_clock::now() - wait->since );
+  startActiveStatus( status, wait->runningTools, wait->turn, std::max( chrono::milliseconds(0), elapsed ) );
+}//resumeActiveStatus(...)
+
+
+void LlmInteractionDisplay::handleActivityIdle()
+{
+  // Nothing is in flight any more, so the turn being waited on cant still be running.  (Not the
+  //  total-time counter, which is only stopped when the conversation finishes - e.g., an error leaves
+  //  it paused, not finished.)
+  finalizeActiveStatus();
+}//handleActivityIdle()
+
+
+void LlmInteractionDisplay::updateIdleListener()
+{
+  const bool counting = (m_activeStatus != nullptr);
+  if( counting == m_idleConnection.isConnected() )
+    return;
+
+  if( !counting )
+  {
+    m_idleConnection.disconnect();
+    return;
+  }
+
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( !llm )
+    return;
+
+  m_idleConnection = llm->activityChanged().connect( this, [this]( const LlmInterface::ActivityState state ){
+    if( state == LlmInterface::ActivityState::Idle )
+      handleActivityIdle();
+  } );
+}//updateIdleListener()
+
+
+void LlmInteractionDisplay::startActiveStatus( LlmElapsedText *status, const bool runningTools,
+                                               shared_ptr<LlmInteractionTurn> turn,
+                                               const chrono::milliseconds alreadyElapsed )
+{
+  finalizeActiveStatus();
+
+  // The title says what is being waited on, even if there is no counter for it.
+  m_waitingOnTools = runningTools;
+  updateStatus();
+
+  if( !status )
+    return;
+
+  m_activeStatus = status;
+  m_activeStatusTurn = turn;
+  status->start( WString::tr( runningTools ? "lcw-status-running-tools" : "lcw-status-pending-llm" ),
+                 alreadyElapsed );
+  updateIdleListener();
+}//startActiveStatus(...)
+
+
+void LlmInteractionDisplay::finalizeActiveStatus()
+{
+  if( m_waitingOnTools )
+  {
+    m_waitingOnTools = false;
+    updateStatus();
+  }
+
+  if( !m_activeStatus )
+    return;
+
+  LlmElapsedText * const status = m_activeStatus;
+  const shared_ptr<LlmInteractionTurn> turn = m_activeStatusTurn;
+  m_activeStatus = nullptr;
+  m_activeStatusTurn.reset();
+
+  // The phone summary row is shared by all the calls, so it doesnt show any one calls duration.
+  if( status == m_phoneStatus )
+    status->setFinalText( WString() );
+  else
+    showFinalDuration( status, turn );
+
+  updateIdleListener();
+}//finalizeActiveStatus()
+
+
+LlmToolRoundDisplay *LlmInteractionDisplay::toolRound( const shared_ptr<LlmInteractionTurn> &turn ) const
+{
+  for( LlmToolRoundDisplay * const round : m_toolRounds )
+  {
+    if( round->hasTurn( turn ) )
+      return round;
+  }
+  return nullptr;
+}//LlmToolRoundDisplay *toolRound(...)
+
+
+void LlmInteractionDisplay::showFinalDuration( LlmElapsedText *status,
+                                               const shared_ptr<LlmInteractionTurn> &turn )
+{
+  if( !status )
+    return;
+
+  // A tool rounds status shows both the tools and the LLMs time.
+  LlmToolRoundDisplay * const round = toolRound( turn );
+  if( round && (status == round->statusText()) )
+  {
+    round->showFinalDurations();
+    return;
+  }
+
+  if( !turn || !turn->callDuration().has_value() )
+  {
+    status->setFinalText( WString() );
+    status->setToolTip( WString() );
+    return;
+  }
+
+  // A ToolCall turn's duration is the time to run its tools here; any other turn's is the time the
+  //  LLM took to respond to it.  They look alike, so say which.
+  const bool isTools = (turn->type() == LlmInteractionTurn::Type::ToolCall);
+  status->setFinalText( WString::tr( isTools ? "lcw-duration-tools" : "lcw-duration-llm" )
+                          .arg( formatDuration( turn->callDuration().value() ) ) );
+  status->setToolTip( WString::tr( isTools ? "lcw-duration-tools-tt" : "lcw-duration-llm-tt" ) );
+}//showFinalDuration(...)
 
 
 void LlmInteractionDisplay::updateStatus()
@@ -2156,31 +3216,8 @@ void LlmInteractionDisplay::updateStatus()
   //     << titleWithStatus.toUTF8() << "', m_isFinished=" << m_isFinished << endl;
   m_statusText->setText( titleWithStatus );
 
-  // Show/hide timer based on finished status
-  if( m_timerText )
-  {
-    m_timerText->setHidden( false ); // Make sure it's visible when running
-    
-    if( m_isFinished && m_interaction )
-    {
-      auto endTime = m_interaction->timestamp;
-      if( m_interaction->finishTime.has_value() )
-      {
-        endTime = m_interaction->finishTime.value();
-      }else
-      {
-        for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-        {
-          if( turn->timestamp() > endTime )
-            endTime = turn->timestamp();
-        }
-      }
-      
-      const auto duration = chrono::duration_cast<chrono::milliseconds>( endTime - m_interaction->timestamp );
-      const string durationStr = formatDuration( duration );
-      m_timerText->setText( "(total time: " + durationStr + ")" );
-    }//if( m_isFinished && m_interaction )
-  }
+  if( m_isFinished )
+    stopStatusTimer();
 }//updateStatus()
 
 
@@ -2191,28 +3228,19 @@ void LlmInteractionDisplay::updateSummary()
     return;
 
   m_summaryDiv->clear();
+  m_summaryDiv->setHidden( false );
 
   // Start time
   const string startTimeStr = formatTime( m_interaction->timestamp );
-  WText *startTime = m_summaryDiv->addNew<WText>( "Start Time: " + startTimeStr );
+  WText *startTime = m_summaryDiv->addNew<WText>( WString::tr( "lcw-summary-start" ).arg( startTimeStr ) );
   startTime->addStyleClass( "LlmSummaryItem" );
 
   // Total duration (if conversation is finished)
   if( m_isFinished )
   {
-    // Calculate total duration from start to last response
-    auto endTime = m_interaction->timestamp;
-    for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-    {
-      if( turn->timestamp() > endTime )
-        endTime = turn->timestamp();
-    }
-
-    const auto duration = chrono::duration_cast<chrono::milliseconds>( endTime - m_interaction->timestamp );
-    const string durationStr = formatDuration( duration );
-
-    WText *totalDuration = m_summaryDiv->addNew<WText>( " | Total Duration: " + durationStr );
-    totalDuration->addStyleClass( "LlmSummaryItem" );
+    const WString duration = WString::tr( "lcw-summary-duration" ).arg( formatDuration( totalDuration( *m_interaction ) ) );
+    WText *durationText = m_summaryDiv->addNew<WText>( " | " + duration );
+    durationText->addStyleClass( "LlmSummaryItem" );
   }
 
   // Token usage.  Note the input count is cumulative across all of this conversation's API calls
@@ -2223,37 +3251,41 @@ void LlmInteractionDisplay::updateSummary()
     const size_t promptTok = m_interaction->promptTokens.value_or(0);
     const size_t completionTok = m_interaction->completionTokens.value_or(0);
 
-    const string tokenStr = " | Tokens: " + to_string(promptTok) + " in + "
-                         + to_string(completionTok) + " out = "
-                         + to_string(m_interaction->totalTokens.value()) + " total";
-    WText *tokens = m_summaryDiv->addNew<WText>( tokenStr );
+    const WString tokenStr = WString::tr( "lcw-summary-tokens" ).arg( to_string(promptTok) )
+                         .arg( to_string(completionTok) ).arg( to_string(m_interaction->totalTokens.value()) );
+    WText *tokens = m_summaryDiv->addNew<WText>( " | " + tokenStr );
     tokens->addStyleClass( "LlmSummaryItem" );
 
     // Cache usage: how much of the (cumulative) input was served from / written to cache.
     if( m_interaction->cachedTokens.has_value() )
     {
       const size_t cachedTok = m_interaction->cachedTokens.value();
-      string cacheStr = " | Cache: " + to_string(cachedTok) + " read";
+      WString cacheStr = WString::tr( "lcw-summary-cache" ).arg( to_string(cachedTok) );
       if( promptTok > 0 )
       {
         const int pct = static_cast<int>( (100.0 * cachedTok / promptTok) + 0.5 );
-        cacheStr += " (" + to_string(pct) + "% of input)";
+        cacheStr = WString::tr( "lcw-summary-cache-pct" ).arg( to_string(cachedTok) ).arg( pct );
       }
       const size_t writtenTok = m_interaction->cacheCreationTokens.value_or(0);
       if( writtenTok > 0 )
-        cacheStr += ", " + to_string(writtenTok) + " written";
+        cacheStr = WString::tr( "lcw-summary-cache-written" ).arg( cacheStr ).arg( to_string(writtenTok) );
 
-      WText *cache = m_summaryDiv->addNew<WText>( cacheStr );
+      WText *cache = m_summaryDiv->addNew<WText>( " | " + cacheStr );
       cache->addStyleClass( "LlmSummaryItem" );
     }
+  }
+
+  // Cost - only shown when the provider reports it (e.g. OpenRouter).
+  if( m_interaction->cost.has_value() )
+  {
+    WText *cost = m_summaryDiv->addNew<WText>( " | " + formatCost( m_interaction->cost.value() ) );
+    cost->addStyleClass( "LlmSummaryItem" );
   }
 }//updateSummary()
 
 
 WString LlmInteractionDisplay::getTitleWithStatus() const
 {
-  ostringstream oss;
-
   // User question (truncated) - get from InitialRequest turn if available
   std::string questionContent;
   if( !m_interaction->responses.empty() )
@@ -2267,127 +3299,35 @@ WString LlmInteractionDisplay::getTitleWithStatus() const
     }
   }
 
-  const string question = truncateString( questionContent, 60 );
-  oss << question;
+  const WString question = WString::fromUTF8( truncateString( questionContent, 60 ) );
 
-  // Status
+  // Status: stopped while waiting on a paused agent, or ended on an error still waiting on a Retry or Skip
+  const LlmInteractionError * const lastError = m_interaction->responses.empty() ? nullptr
+                     : dynamic_cast<const LlmInteractionError *>( m_interaction->responses.back().get() );
+  const bool awaitingErrorChoice = m_isFinished && lastError && !lastError->skippedByUser();
+  if( !m_isFinished && m_interaction->interruption.has_value() )
+    return WString::tr( "lcw-title-interrupted" ).arg( question );
+
+  // Also one ended before it got an answer (e.g., an interrupted conversation that was not resumed).
+  if( m_isStopped || awaitingErrorChoice || (m_isFinished && m_interaction->isAwaitingWork()) )
+    return WString::tr( "lcw-title-stopped" ).arg( question );
+
   if( m_isFinished )
-  {
-    // Show completion status without timer
-    oss << " - Complete";
-  }else
-  {
-    // Check if performing tool calls
-    bool hasToolRequest = false;
-    for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-    {
-      if( turn->type() == LlmInteractionTurn::Type::ToolCall )
-      {
-        hasToolRequest = true;
-        break;
-      }
-    }
+    return WString::tr( "lcw-title-complete" ).arg( question );
 
-    if( hasToolRequest )
-    {
-      // Check if we have results for all tool calls
-      bool hasToolResults = false;
-      for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-      {
-        if( turn->type() == LlmInteractionTurn::Type::ToolResult )
-        {
-          hasToolResults = true;
-          break;
-        }
-      }
+  // Tools (sub-agents, async tools) still running; a round whose tools have all run has its results
+  //  sent right away, so the LLM is what is being waited on.
+  if( m_waitingOnTools )
+    return WString::tr( "lcw-title-running-tools" ).arg( question );
 
-      if( !hasToolResults )
-      {
-        oss << " - Performing tool calls...";
-      }else
-      {
-        oss << " - Pending LLM response...";
-      }
-    }else
-    {
-      oss << " - Pending LLM response...";
-    }
-  }
-
-  return WString( oss.str() );
+  return WString::tr( "lcw-title-pending-llm" ).arg( question );
 }//getTitleWithStatus()
-
-
-void LlmInteractionDisplay::startStatusTimer()
-{
-  // Start JavaScript timer to update the timer display
-  const auto now = chrono::system_clock::now();
-  const long long startMs = chrono::duration_cast<chrono::milliseconds>(
-    now.time_since_epoch() ).count();
-
-  //cerr << "LlmInteractionDisplay::startStatusTimer(): Starting timer with ID='" << m_timerId
-  //     << "', startMs=" << startMs << endl;
-
-  ostringstream js;
-  js << "console.log('Starting timer for ID: " << m_timerId << ", startMs: " << startMs << "');"
-     << "window.llmTimers = window.llmTimers || {};"
-     << "window.llmTimers['" << m_timerId << "'] = {"
-     << "  startTime: " << startMs << ","
-     << "  interval: setInterval(function() {"
-     << "    var elem = document.getElementById('" << m_timerId << "');"
-     //<< "    console.log('Timer tick for " << m_timerId << ":', elem ? 'elem found' : 'elem NOT found');"
-     << "    if (!elem) {"
-     << "      console.warn('Timer " << m_timerId << ": element not found, stopping timer');"
-     << "      clearInterval(window.llmTimers['" << m_timerId << "'].interval);"
-     << "      delete window.llmTimers['" << m_timerId << "'];"
-     << "      return;"
-     << "    }"
-     << "    var elapsed = Date.now() - " << startMs << ";"
-     << "    var seconds = Math.floor(elapsed / 1000);"
-     //<< "    console.log('Timer " << m_timerId << ": elapsed=' + elapsed + 'ms, seconds=' + seconds + 's');"
-     << "    elem.innerHTML = seconds + 's';"
-     << "  }, 1000)"
-     << "};"
-     //<< "console.log('Timer started for " << m_timerId << ":', window.llmTimers['" << m_timerId << "']);"
-  ;
-
-  doJavaScript( js.str() );
-}//startStatusTimer()
 
 
 void LlmInteractionDisplay::stopStatusTimer()
 {
-  // Calculate final duration
-  
-  //conversation->finishTime
-  std::chrono::system_clock::time_point end_time;
-  if( m_interaction->finishTime.has_value() )
-    end_time = m_interaction->finishTime.value();
-  else
-    end_time = chrono::system_clock::now();
-  
-  const auto duration = chrono::duration_cast<chrono::milliseconds>( end_time - m_interaction->timestamp );
-  const string durationStr = formatDuration( duration );
-
-  //cerr << "LlmInteractionDisplay::stopStatusTimer(): Stopping timer ID='" << m_timerId
-  //     << "', final duration=" << durationStr << endl;
-
-  // Stop JavaScript timer and set final time
-  ostringstream js;
-  js << "console.log('Stopping timer for ID: " << m_timerId << ", final duration: " << durationStr << "');"
-     << "if (window.llmTimers && window.llmTimers['" << m_timerId << "']) {"
-     << "  clearInterval(window.llmTimers['" << m_timerId << "'].interval);"
-     << "  delete window.llmTimers['" << m_timerId << "'];"
-     << "  var elem = document.getElementById('" << m_timerId << "');"
-     //<< "  console.log('Timer " << m_timerId << ": elem for final update:', elem);"
-     << "  if (elem) elem.innerHTML = '" << durationStr << ")';"  // Include closing parenthesis
-     << "}";
-
-  doJavaScript( js.str() );
-
-  // Also update the widget directly
   if( m_timerText )
-    m_timerText->setText( "(total time: " + durationStr + ")" );
+    m_timerText->setFinalText( WString::tr( "lcw-total-time" ).arg( formatDuration( totalDuration( *m_interaction ) ) ) );
 }//stopStatusTimer()
 
 
@@ -2395,8 +3335,9 @@ void LlmInteractionDisplay::createMenuIcon()
 {
   // Create menu button in title bar; the menu is built lazily on first click
   // (showMenu) so interactions whose menu is never opened cost nothing.
+  // All of its items are for developing the assistant, so it is only shown with debug options on.
   m_menuIcon = titleBarWidget()->addNew<WPushButton>();
-  m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn" );
+  m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmDebugOnly" );
   m_menuIcon->clicked().preventPropagation();
   m_menuIcon->clicked().connect( this, &LlmInteractionDisplay::showMenu );
 }//createMenuIcon()

@@ -87,16 +87,21 @@ namespace DataBaseVersionUpgrade
       {
         try
         {
+          // Only a brand new database lacks the registry; existing databases are brought up to
+          //  date by the upgrade steps below (createTables() would just throw on the first table).
+          //  Dbo requires mapping the classes before the session runs its first query.
           std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
           mapDbClasses( sqlSession.get() );
-          sqlSession->createTables();
-          
-          //If the previous statment didnt throw, then this is a brand new
-          //  database, so lets set the version to current
-          setDBVersion( DB_SCHEMA_VERSION, sqlSession );
+          if( !tableHasColumn( "InterSpecRegistry", "schema_version", sqlSession ) )
+          {
+            sqlSession->createTables();
+            setDBVersion( DB_SCHEMA_VERSION, sqlSession );
+            std::cout << "Created new database tables (schema version " << DB_SCHEMA_VERSION << ")"
+                      << std::endl;
+          }
         }catch( std::exception &e )
         {
-          std::cout << "Trying initial table mapping, got exception: " << e.what() << std::endl;
+          std::cout << "Failed to create database tables: " << e.what() << std::endl;
         }
         
         std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );

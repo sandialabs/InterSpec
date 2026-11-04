@@ -1225,31 +1225,21 @@ double model_fwhm_at( const double energy, const DetectorPeakResponse::Resolutio
 }//model_fwhm_at
 
 
-/** Significance (amplitude / its uncertainty) of a Gaussian of the given FWHM at a FIXED energy,
- fit jointly with a QUADRATIC continuum over +-2 FWHM: "does the data show a peak there?".  No
- external continuum estimate is subtracted, so a steep Compton slope cannot fake or hide the answer
- the way a sideband estimate does; and the continuum is quadratic because with a linear one the
- curvature of a scintillator's scatter hump, or the knee of the detector turn-on, is itself fit as a
- "peak" (every lead-shielded spectrum then grew a phantom Pb x-ray ROI on the hump's rising edge).
- Returns 0 if the fit cannot be made or the amplitude is not positive; `amplitude` receives the
- fitted peak area.  `neighbours` (energy, FWHM) are other lines whose peaks reach the window; they are
- fit alongside with free amplitudes, since a quadratic cannot absorb a strong neighbour's flank (I124's
- visible 722.8 keV line read z=0 beside its 602.7 keV line). */
-double fixed_shape_peak_z( const std::shared_ptr<const SpecUtils::Measurement> &data,
-                           const double energy, const double fwhm, double *amplitude = nullptr,
-                           const std::vector<std::pair<double,double>> &neighbours = {},
-                           const std::shared_ptr<const SpecUtils::Measurement> &background = nullptr,
-                           const double background_scale = 0.0, const double window_floor = 0.0 )
+/** See the declaration in FitPeaksForNuclides.h; `fixed_shape_peak_z` (below) explains the choices. */
+FixedShapePeakFit fixed_shape_peak_fit( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                        const double energy, const double fwhm,
+                                        const std::vector<std::pair<double,double>> &neighbours,
+                                        const std::shared_ptr<const SpecUtils::Measurement> &background,
+                                        const double background_scale, const double window_floor )
 {
-  if( amplitude )
-    *amplitude = 0.0;
+  FixedShapePeakFit answer;
   if( !data || !(fwhm > 0.0) || !data->channel_energies() || (data->num_gamma_channels() < 8) )
-    return 0.0;
+    return answer;
   const std::vector<float> &channel_energies = *data->channel_energies();
   const size_t first = data->find_gamma_channel( static_cast<float>( std::max( energy - 2.0*fwhm, window_floor ) ) );
   const size_t last = data->find_gamma_channel( static_cast<float>(energy + 2.0*fwhm) );
   if( (last <= (first + 4)) || ((last + 1) >= channel_energies.size()) )
-    return 0.0;
+    return answer;
 
   // On the net spectrum when a background is given: a background line in the window (NGH's Cs137
   // 662 keV beside I124's 722.8 keV) is no part of the source's peak or of its smooth continuum.
@@ -1273,32 +1263,67 @@ double fixed_shape_peak_z( const std::shared_ptr<const SpecUtils::Measurement> &
   }
 
   std::vector<double> amplitudes, continuum_coeffs, amplitude_uncerts, continuum_uncerts;
+  double chi2 = 0.0;
   try
   {
     if( net )
     {
-      PeakFit::fit_amp_and_offset_imp<PeakDef,double>( &channel_energies[first], channel_counts.data(),
+      chi2 = PeakFit::fit_amp_and_offset_imp<PeakDef,double>( &channel_energies[first], channel_counts.data(),
           variances.data(), nbin, PeakContinuum::OffsetType::Quadratic, nullptr, energy, means, sigmas,
           std::vector<PeakDef>{}, PeakDef::SkewType::NoSkew, nullptr, amplitudes, continuum_coeffs,
           amplitude_uncerts, continuum_uncerts, nullptr );
     }else
     {
-      fit_amp_and_offset( &channel_energies[first], channel_counts.data(), nbin,
+      chi2 = fit_amp_and_offset( &channel_energies[first], channel_counts.data(), nbin,
                           PeakContinuum::OffsetType::Quadratic, energy, means,
                           sigmas, {}, PeakDef::SkewType::NoSkew, nullptr,
                           amplitudes, continuum_coeffs, amplitude_uncerts, continuum_uncerts );
     }
   }catch( const std::exception & )
   {
-    return 0.0;
+    return answer;
   }
 
-  if( amplitudes.empty() || amplitude_uncerts.empty()
-      || !(amplitudes[0] > 0.0) || !(amplitude_uncerts[0] > 0.0) )
+  if( amplitudes.empty() || amplitude_uncerts.empty() || !std::isfinite( amplitudes[0] ) )
+    return answer;
+
+  answer.valid = true;
+  answer.area = amplitudes[0];
+  answer.area_uncert = amplitude_uncerts[0];
+  answer.chi2 = chi2;
+  answer.num_channels = nbin;
+  answer.lower_energy = channel_energies[first];
+  answer.upper_energy = channel_energies[last + 1];
+  return answer;
+}//fixed_shape_peak_fit
+
+
+/** Significance (amplitude / its uncertainty) of a Gaussian of the given FWHM at a FIXED energy,
+ fit jointly with a QUADRATIC continuum over +-2 FWHM: "does the data show a peak there?".  No
+ external continuum estimate is subtracted, so a steep Compton slope cannot fake or hide the answer
+ the way a sideband estimate does; and the continuum is quadratic because with a linear one the
+ curvature of a scintillator's scatter hump, or the knee of the detector turn-on, is itself fit as a
+ "peak" (every lead-shielded spectrum then grew a phantom Pb x-ray ROI on the hump's rising edge).
+ Returns 0 if the fit cannot be made or the amplitude is not positive; `amplitude` receives the
+ fitted peak area.  `neighbours` (energy, FWHM) are other lines whose peaks reach the window; they are
+ fit alongside with free amplitudes, since a quadratic cannot absorb a strong neighbour's flank (I124's
+ visible 722.8 keV line read z=0 beside its 602.7 keV line). */
+double fixed_shape_peak_z( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                           const double energy, const double fwhm, double *amplitude = nullptr,
+                           const std::vector<std::pair<double,double>> &neighbours = {},
+                           const std::shared_ptr<const SpecUtils::Measurement> &background = nullptr,
+                           const double background_scale = 0.0, const double window_floor = 0.0 )
+{
+  if( amplitude )
+    *amplitude = 0.0;
+
+  const FixedShapePeakFit fit = fixed_shape_peak_fit( data, energy, fwhm, neighbours, background,
+                                                      background_scale, window_floor );
+  if( !fit.valid || !(fit.area > 0.0) || !(fit.area_uncert > 0.0) )
     return 0.0;
   if( amplitude )
-    *amplitude = amplitudes[0];
-  return amplitudes[0] / amplitude_uncerts[0];
+    *amplitude = fit.area;
+  return fit.area / fit.area_uncert;
 }//fixed_shape_peak_z
 
 
@@ -18174,9 +18199,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       return std::fabs(lhs.mean() - rhs.mean())
           < (0.25 * solution_fwhm_at_energy(lhs.mean()));
     };
+    // `lost`, if given, receives the energy of the first requested anchor the challenger lost.
     const auto requested_anchors_preserved = [&]( const RelActCalcAuto::RelActAutoSolution &incumbent,
                                                    const RelActCalcAuto::RelActAutoSolution &challenger,
-                                                   const std::vector<double> &affected_energies ) -> bool {
+                                                   const std::vector<double> &affected_energies,
+                                                   std::vector<double> *lost = nullptr ) -> bool {
       for( const PeakDef &anchor : incumbent.m_peaks_without_back_sub )
       {
         if( !is_requested_peak(anchor)
@@ -18207,7 +18234,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           }
         }
         if( !found )
+        {
+          if( lost )
+            lost->push_back( anchor.mean() );
           return false;
+        }
       }
       return true;
     };
@@ -18269,7 +18300,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       };
     const auto observable_requested_anchors_preserved
       = [&]( const RelActCalcAuto::RelActAutoSolution &incumbent,
-             const RelActCalcAuto::RelActAutoSolution &challenger ) {
+             const RelActCalcAuto::RelActAutoSolution &challenger,
+             std::vector<double> *lost = nullptr ) {
         const std::vector<PeakDef> incumbent_observable
           = observable_requested_peaks( incumbent );
         const std::vector<PeakDef> challenger_observable
@@ -18298,14 +18330,18 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             if( should_debug_print() )
               std::cerr << "Observable-anchor guard: lost requested peak at "
                         << anchor.mean() << " keV" << std::endl;
+            if( lost )
+              lost->push_back( anchor.mean() );
             return false;
           }
         }
         return true;
       };
+    // `lost`, if given, receives the energies of the anchors the challenger lost.
     const auto requested_anchors_catastrophically_removed
       = [&]( const RelActCalcAuto::RelActAutoSolution &incumbent,
-             const RelActCalcAuto::RelActAutoSolution &challenger ) -> bool {
+             const RelActCalcAuto::RelActAutoSolution &challenger,
+             std::vector<double> *lost_energies = nullptr ) -> bool {
         // An explicit refinement_anchor_guard_min_z sets the bar for BOTH tests below - what counts
         // as an anchor at all, and what may not be lost - so setting it very high switches the guard
         // off as documented.  Left at 0, anchors keep the historical roi_significance_z bar.
@@ -18404,6 +18440,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             char lbuf[64];
             snprintf( lbuf, sizeof(lbuf), " %.1f(z%.1f)", anchor.found->mean(), anchor.z );
             lost += lbuf;
+            if( lost_energies )
+              lost_energies->push_back( anchor.found->mean() );
             if( anchor.z >= guard_z )
             {
               detail::record_roi_plan_trace( "anchor guard: the challenger lost the requested source's found peak at"
@@ -18444,6 +18482,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             char lbuf[64];
             snprintf( lbuf, sizeof(lbuf), " %.1f(z%.1f)", anchor.mean(), anchor_z );
             lost += lbuf;
+            if( lost_energies )
+              lost_energies->push_back( anchor.mean() );
           }
           if( !matched && (anchor_z >= guard_z) )
           {
@@ -19971,6 +20011,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         }
 
         const std::vector<double> &anchor_exclusions = auto_interferer_lines;
+        // Requested-source peaks each anchor check found missing, to name them if the refinement
+        //  is rejected.
+        std::vector<double> lost_recovered, lost_observable, lost_strong, lost_interferer;
         bool recovered_anchor_failure = false;
         if( !recovered_source_anchors.empty() )
         {
@@ -19986,13 +20029,14 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           const bool fitted_preserved = significant_requested_source_anchors_preserved(
               refined_solution, sources, recovered_source_anchors,
               config.roi_significance_z, solution_fwhm_at_energy );
-          if( should_debug_print() && (!predicted_preserved || !fitted_preserved) )
+          if( !predicted_preserved || !fitted_preserved )
           {
             const std::vector<PeakDef> fitted_lines
               = distinct_significant_requested_source_peaks( refined_solution, sources,
                   config.roi_significance_z, solution_fwhm_at_energy );
-            std::cerr << "Recovered source-anchor check: predicted=" << predicted_preserved
-                      << ", observed=" << fitted_preserved << std::endl;
+            if( should_debug_print() )
+              std::cerr << "Recovered source-anchor check: predicted=" << predicted_preserved
+                        << ", observed=" << fitted_preserved << std::endl;
             for( const RelActCalcManual::GenericPeakInfo &anchor : recovered_source_anchors )
             {
               const double center = std::isfinite(anchor.m_mean) ? anchor.m_mean : anchor.m_energy;
@@ -20010,9 +20054,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
                     static_cast<size_t>(sources_rel_eff_index), anchor,
                     orig_foreground->live_time() ) : 0.0;
               if( !observed || !(predicted > sm_keep_gate_min_est_counts) )
-                std::cerr << "  missing clean anchor at " << anchor.m_energy
-                          << " keV (observed mean " << center << ", predicted "
-                          << predicted << " counts, observed=" << observed << ")" << std::endl;
+              {
+                lost_recovered.push_back( anchor.m_energy );
+                if( should_debug_print() )
+                  std::cerr << "  missing clean anchor at " << anchor.m_energy
+                            << " keV (observed mean " << center << ", predicted "
+                            << predicted << " counts, observed=" << observed << ")" << std::endl;
+              }
             }
           }
           recovered_anchor_failure = !predicted_preserved || !fitted_preserved;
@@ -20021,15 +20069,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // the best candidate so far.
         const RelActCalcAuto::RelActAutoSolution &reference = best_solution ? *best_solution : solution;
         const bool refinement_observable_failure = !recovered_source_anchors.empty()
-            && !observable_requested_anchors_preserved( reference, refined_solution );
+            && !observable_requested_anchors_preserved( reference, refined_solution, &lost_observable );
         // A refinement that erases a requested-source peak the incumbent held at high significance
         // is not a refinement, however its chi2 reads.
         const bool strong_anchor_failure
-            = requested_anchors_catastrophically_removed( reference, refined_solution );
+            = requested_anchors_catastrophically_removed( reference, refined_solution, &lost_strong );
         bool anchor_failure = recovered_anchor_failure || refinement_observable_failure
           || strong_anchor_failure
           || (!auto_interferer_lines.empty()
-              && !requested_anchors_preserved(reference, refined_solution, anchor_exclusions));
+              && !requested_anchors_preserved(reference, refined_solution, anchor_exclusions, &lost_interferer));
 
         // Apply a locally selected structural change as its own transaction.  The exact parent and
         // two child ROIs are carried from the measured-data decision, in its calibration frame;
@@ -20037,6 +20085,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // original spectrum frame makes the local solve use the identical bins that won AICc.
         bool retained_component_transaction = false;
         bool attempted_component_transaction = false;
+        std::vector<std::pair<double,double>> rolled_back_partitions;  // [lower,upper] keV, for the warning
         const auto label_component_proposal
           = [&]( const double affected_lower, const double affected_upper,
                  const bool accepted, const std::string &reason ) {
@@ -20134,6 +20183,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             const auto mark_partition_rolled_back
               = [&]( const double affected_lower, const double affected_upper,
                      const std::string &reason ) {
+                rolled_back_partitions.emplace_back( affected_lower, affected_upper );
                 label_component_proposal(
                     affected_lower, affected_upper, false, reason );
               };
@@ -20307,9 +20357,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           // geometry (and unrelated re-clustering changes), defeating transactional rollback.
           mark_component_partitions_rolled_back(
               "whole-component partition rolled back because its local transaction was rejected" );
-          result.warnings.push_back( "Rejected a measured-data ROI component partition because"
-            " its component-local solve failed or removed an observable requested-source anchor;"
-            " retained the prior accepted solution." );
+          std::string ranges;
+          for( size_t i = 0; (i < rolled_back_partitions.size()) && (i < 4); ++i )
+            ranges += std::string(i ? ", " : " (") + SpecUtils::printCompact( rolled_back_partitions[i].first, 4 )
+                      + "-" + SpecUtils::printCompact( rolled_back_partitions[i].second, 4 ) + " keV";
+          if( !ranges.empty() )
+            ranges += (rolled_back_partitions.size() > 4) ? ", ...)" : ")";
+          result.warnings.push_back( "Rejected splitting an ROI" + ranges + " because the split's own fit"
+            " failed or removed an observable requested-source peak; kept the prior accepted fit, which"
+            " the returned peaks come from." );
           break;
         }
         if( anchor_failure && config.refinement_keep_best )
@@ -20330,17 +20386,31 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         {
           mark_component_partitions_rolled_back(
               "whole-component partition rolled back with rejected refinement" );
+          const auto at_energies = []( std::vector<double> energies ) -> std::string {
+            std::sort( std::begin(energies), std::end(energies) );
+            energies.erase( std::unique( std::begin(energies), std::end(energies),
+                [](double a, double b){ return std::fabs(a - b) < 0.05; } ), std::end(energies) );
+            std::string answer;
+            for( size_t i = 0; (i < energies.size()) && (i < 6); ++i )
+              answer += (i ? ", " : " at ") + SpecUtils::printCompact( energies[i], 5 );
+            if( energies.size() > 6 )
+              answer += ", ...";
+            return answer.empty() ? answer : (answer + " keV");
+          };
+          // The fitter's own search step; the returned peaks are the prior accepted fit's.
+          const char * const retained = "; kept the prior accepted fit, which the returned peaks"
+                                        " come from.";
           result.warnings.push_back( refinement_observable_failure
-            ? "Rejected ROI refinement because it removed an observable requested-source"
-              " anchor; retained the prior accepted solution."
+            ? "Rejected an ROI refinement because it removed the observable requested-source peak"
+              + at_energies( lost_observable ) + retained
             : (recovered_anchor_failure
-              ? "Rejected ROI refinement because it removed source evidence recovered by the"
-                " source-clean challenger; retained the prior accepted solution."
+              ? "Rejected an ROI refinement because it removed source peak(s)"
+                + at_energies( lost_recovered ) + " recovered by the source-clean challenger" + retained
             : (strong_anchor_failure
-              ? "Rejected ROI refinement because it removed a strong requested-source peak;"
-                " retained the prior accepted solution."
-            : "Rejected a post-interferer ROI refinement because it removed a significant"
-              " requested-source anchor; retained the prior accepted solution." ) ) );
+              ? "Rejected an ROI refinement because it removed strong requested-source peak(s)"
+                + at_energies( lost_strong ) + retained
+            : "Rejected a post-interferer ROI refinement because it removed the significant"
+              " requested-source peak" + at_energies( lost_interferer ) + retained ) ) );
           break;
         }
 
@@ -22597,11 +22667,14 @@ void fit_fwhm_function_robust( const std::vector<std::shared_ptr<const PeakDef>>
                                double &lower_energy,
                                double &upper_energy,
                                std::string &note,
-                               bool *scale_from_prior )
+                               bool *scale_from_prior,
+                               double *prior_scale )
 {
   using PeakDeque = std::deque<std::shared_ptr<const PeakDef>>;
   if( scale_from_prior )
     *scale_from_prior = false;
+  if( prior_scale )
+    *prior_scale = 0.0;
   using PeakVec = std::vector<std::shared_ptr<const PeakDef>>;
   const double nsig = PhysicalUnits::fwhm_nsigma;
 
@@ -23033,6 +23106,8 @@ void fit_fwhm_function_robust( const std::vector<std::shared_ptr<const PeakDef>>
     note += "; no search peak measures the resolution, the prior sets the scale";
   if( scale_from_prior )
     *scale_from_prior = prior_sets_scale;
+  if( prior_scale )
+    *prior_scale = k;
 }//fit_fwhm_function_robust
 
 }//namespace detail

@@ -1680,6 +1680,12 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_mcTool->geometryInput()->setCompact( true );
   m_mcTool->geometryChanged().connect( this, &MakeDrf::handleSourcesUpdates );
   m_mcTool->responseGenerated().connect( this, &MakeDrf::setGeneratedMcResponse );
+  // The tool drops its result whenever the geometry, method or an option changes; a response held
+  //  past that describes some other detector, so let it go too.
+  m_mcTool->validationChanged().connect( this, [this]( const bool valid ){
+    if( !valid )
+      m_generatedMcResponse.reset();
+  } );
   m_geomPanel->addWidget( std::move(mcToolOwned) );
   m_mcTool->hide();  //diameter mode to start
 
@@ -2905,7 +2911,7 @@ void MakeDrf::handleGeometryModeChanged()
     // Carry the diameter/setback over into the geometry form, once
     double diam = 0.0;
     try{ diam = PhysicalUnits::stringToDistance( m_detDiameter->text().toUTF8() ); }catch( std::exception & ){}
-    m_mcTool->geometryInput()->seedFromDiameter( diam, detectorSetback(), detectorTypeHint() );
+    m_mcTool->geometryInput()->seedFromDiameter( diam, enteredSetback(), detectorTypeHint() );
     m_geomSeeded = true;
   }else if( !full )
   {
@@ -2988,7 +2994,7 @@ MakeDrfCalc::GeometryChoice MakeDrf::geometryChoice() const
   }
   if( (choice.diameter <= 0.0) || IsNan(choice.diameter) || IsInf(choice.diameter) )
     throw runtime_error( WString::tr("md-err-det-diam-invalid").toUTF8() );
-  choice.setback = detectorSetback();
+  choice.setback = enteredSetback();
 
   return choice;
 }//geometryChoice()
@@ -4247,6 +4253,16 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   {
     assert( geom_type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
     
+    // The DRF's own answer at each distance - with a full geometry that includes the near field,
+    //  which the flat-disk product below (the fallback) does not.
+    shared_ptr<const DetectorPeakResponse> table_drf;
+    try
+    {
+      table_drf = assembleDrf( drfname, drfdescrip );
+    }catch( std::exception & )
+    {
+    }
+
     for( const int dist_cm : eff_dist_cm )
     {
       efftable << "\t<tr><th>" << dist_cm << " cm</th>";
@@ -4256,10 +4272,22 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
           continue;
         
         const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
-        const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
-        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm + setback );
-        
-        snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*frac_solid_angle*intrinsic_eff );
+        double abs_eff = -1.0;
+        try
+        {
+          if( table_drf && table_drf->isValid() )
+            abs_eff = table_drf->efficiency( static_cast<float>(raw_energy), dist_cm*PhysicalUnits::cm );
+        }catch( std::exception & )
+        {
+        }
+
+        if( abs_eff < 0.0 )
+        {
+          const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+          abs_eff = intrinsic_eff * DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm + setback );
+        }
+
+        snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*abs_eff );
         efftable << buffer;
       }
       efftable << "\t</tr>\n";
@@ -4276,7 +4304,28 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   {// begin make DRF chart
     MakeDrfChart chart;
     chart.resize( chart_width, chart_height );
-    const std::vector<MakeDrfChart::DataPoint> &data = m_dataPoints;
+    std::vector<MakeDrfChart::DataPoint> data = m_dataPoints;
+
+    // With a full geometry, the curve was fit to points divided by the geometry kernel's factor
+    //  (MakeDrfCalc::intrinsicFitPoints), not the flat disk; draw them the same way, or near-field
+    //  points sit off the curve they were fit to.
+    try
+    {
+      const MakeDrfCalc::GeometryChoice choice = geometryChoice();
+      if( !choice.fixedGeometry && choice.geometry )
+      {
+        CeeLoUtils::GeometryKernel kernel( *choice.geometry, 2048, choice.diameter / PhysicalUnits::cm );
+        for( MakeDrfChart::DataPoint &d : data )
+        {
+          if( (d.distance >= 0.0f) && (d.energy > 0.0f) )
+            d.geometric_factor = kernel.intrinsicFactor( d.energy, d.distance / PhysicalUnits::cm );
+        }
+      }//if( a full geometry )
+    }catch( std::exception & )
+    {
+      //Fall back to the flat disk for any point not done
+    }
+
     const float detDiam = ((geom_type != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
                            && (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute))
                           ? -1.0f : static_cast<float>( m_dataDiameter );
@@ -4390,6 +4439,24 @@ double MakeDrf::detectorDiameter() const
 
 double MakeDrf::detectorSetback() const
 {
+  // In geometry mode the entered setback is a hidden, stale field; the geometry places the crystal.
+  if( m_geomMode && m_geomMode->isChecked() )
+  {
+    try
+    {
+      return geometryChoice().setback;
+    }catch( std::exception & )
+    {
+      return 0.0;
+    }
+  }//if( geometry mode )
+
+  return enteredSetback();
+}//double detectorSetback() const
+
+
+double MakeDrf::enteredSetback() const
+{
   try
   {
     const double sb = PhysicalUnits::stringToDistance( m_detSetback->text().toUTF8() );
@@ -4399,7 +4466,7 @@ double MakeDrf::detectorSetback() const
   }
 
   return 0.0;
-}//double detectorSetback() const
+}//double enteredSetback() const
 
 
 void MakeDrf::useSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &srcs, 

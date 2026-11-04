@@ -277,6 +277,9 @@ public:
         Eigen::Vector3d position;   ///< Exit position (just past source geometry boundary)
         Eigen::Vector3d direction;  ///< Electron direction
         double energy_keV;          ///< Residual KE at exit (after CSDA through source + wall)
+        /// A pair-production positron (walked as one): it still has to
+        /// annihilate wherever it stops in the detector.
+        bool is_positron = false;
     };
 
     /// Result of full MC transport through source material + shielding.
@@ -287,8 +290,9 @@ public:
         double energy_keV;          ///< Exit energy (may have decreased from Compton)
 
         /// Secondary photons that exited the source geometry: 511 keV
-        /// annihilation gammas from PP, and bremsstrahlung from electrons
-        /// stopping in source material/shielding.
+        /// annihilation gammas from PP, K x-rays from photoelectric
+        /// absorption, and bremsstrahlung from electrons stopping in source
+        /// material/shielding.
         std::vector<SourceSecondaryPhoton> secondaries;
 
         /// Compton recoil electrons that escaped source material toward the detector.
@@ -398,6 +402,14 @@ public:
     void set_source_brems(bool enable) { source_brems_enabled_ = enable; }
     bool source_brems_enabled() const { return source_brems_enabled_; }
 
+    /// Emit the K x-ray of a photoelectric K-shell vacancy in source material
+    /// and shields (default on), transported through the remaining source
+    /// geometry like the other secondaries. It changes total efficiency and
+    /// the spectrum of high-Z sources and shields, never the FEP of the
+    /// emitted line. Off deposits the binding energy locally (A/B only).
+    void set_source_fluorescence(bool enable) { source_fluorescence_enabled_ = enable; }
+    bool source_fluorescence_enabled() const { return source_fluorescence_enabled_; }
+
     /// Enable/disable geometric pre-check (electron ray must hit detector bounding cylinder).
     void set_source_electron_geom_check(bool enable) { source_electron_geom_check_ = enable; }
 
@@ -467,6 +479,7 @@ private:
 
     // Bremsstrahlung from electrons stopping in source material/shielding
     bool source_brems_enabled_ = true;
+    bool source_fluorescence_enabled_ = true;
 
     // Source electron transport
     bool source_electron_enabled_ = false;

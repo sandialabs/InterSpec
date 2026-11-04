@@ -242,6 +242,17 @@ bool MakeFixedGeomResponse::sceneRepresentable( const Setup &setup, std::string 
     }
   }//for( shieldings )
 
+  // The assembly must stay in front of the detector-face plane - the same test the activity fit
+  //  makes.
+  double outer[3] = { 0.0, 0.0, 0.0 };
+  for( const ShieldingSourceFitCalc::ShieldingInfo &info : setup.shieldings )
+  {
+    for( int i = 0; i < 3; ++i )
+      outer[i] += std::max( 0.0, info.m_dimensions[i] );
+  }
+  if( GammaInteractionCalc::detector_face_plane_clearance( setup.geometry, outer, setup.distance ) < 0.0 )
+    return fail( "The source and shielding extend past the detector face." );
+
   return true;
 }//sceneRepresentable(...)
 

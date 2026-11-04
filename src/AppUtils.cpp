@@ -686,19 +686,19 @@ std::string file_contents( const std::string &filename )
  */
 void getUtf8Args( int &argc, char ** &argv )
 {
+  // Nothing here may write to stdout: the stdio MCP server calls this before it takes stdout over for
+  //  the protocol, and anything buffered then would reach the client.
   LPWSTR *argvw = CommandLineToArgvW( GetCommandLineW(), &argc );
   if( !argvw )
   {
-    std::cout << "CommandLineToArgvW failed - good luck" << std::endl;
+    std::cerr << "CommandLineToArgvW failed - good luck" << std::endl;
     return ;
   }
-  
+
   argv = (char **)malloc(sizeof(char *)*argc);
-    
+
   for( int i = 0; i < argc; ++i)
   {
-    printf("Argument: %d: %ws\n", i, argvw[i]);
-  
     const std::string asutf8 = SpecUtils::convert_from_utf16_to_utf8( argvw[i] );
     argv[i] = (char *)malloc( sizeof(char)*(asutf8.size()+1) );
     strcpy( argv[i], asutf8.c_str() );

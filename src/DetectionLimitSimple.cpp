@@ -417,7 +417,7 @@ void DetectionLimitSimple::init()
   auto validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
   validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_distance->setValidator( validator );
-  //HelpSystem::attachToolTipOn( m_distance, WString::tr("ftw-tt-distance"), showToolTips );
+  HelpSystem::attachToolTipOn( m_distance, WString::tr("app-tt-distance-from-face"), showToolTips );
   m_distance->changed().connect( this, &DetectionLimitSimple::handleDistanceChanged );
   m_distance->enterPressed().connect( this, &DetectionLimitSimple::handleDistanceChanged );
   
@@ -1570,7 +1570,8 @@ float DetectionLimitSimple::currentSystematicUncertainty( const double energy, W
   }//if( a distance term applies )
 
   const double u_rel = DetectionLimitCalc::combine_systematic_uncertainty( distance,
-                                    inverse_square ? dist_uncert : 0.0, eff_uncert, inverse_square );
+                                    inverse_square ? dist_uncert : 0.0, eff_uncert, inverse_square,
+                                    drf.get(), energy );
 
   // Clamping would silently change the number the user entered, so this is a hard error.  Note the
   //  *detection limit* gives out earlier than this, at u = 1/k_beta (about 61% at beta = 0.05); that
@@ -2485,7 +2486,11 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   if( drf && drf->isValid() )
   {
-    const double intrinsic_eff = drf->farFieldIntrinsicEfficiency( energy );
+    // The intrinsic against the crystal the efficiency is modeled for, so this and the solid angle
+    //  below multiply to the efficiency used (exactly for a flat-disk DRF; in the far field for a
+    //  geometry-modeled one).  For fixed geometry, the per-decay efficiency.
+    const double intrinsic_eff = drf->isFixedGeometry() ? drf->farFieldIntrinsicEfficiency( energy )
+                                                        : drf->intrinsicEfficiencyEval( energy ).value;
     
     label = WString::tr("dls-det-intrinsic-eff");
     value = SpecUtils::printCompact( intrinsic_eff, 5 );
@@ -2497,9 +2502,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     //addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
     //                " to be detected in the full-energy peak." );
     
-    if( distance >= 0.0 )
+    if( !drf->isFixedGeometry() && (distance >= 0.0) )
     {
-      const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance + drf->detectorSetback() );
+      const double geom_eff = drf->geometricEfficiency( distance );
       
       label = WString::tr("dls-solid-angle-frac");
       value = SpecUtils::printCompact( geom_eff, 5 );
@@ -2511,17 +2516,14 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
       //addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
 
       // The efficiency actually used, which a geometry-modeled detector's need not equal the above product.
-      if( !drf->isFixedGeometry() )
-      {
-        label = WString::tr("dls-det-eff-used");
-        value = SpecUtils::printCompact( drf->efficiency( energy, distance ), 5 );
+      label = WString::tr("dls-det-eff-used");
+      value = SpecUtils::printCompact( drf->efficiency( energy, distance ), 5 );
 
-        cell = table->elementAt( table->rowCount(), 0 );
-        cell->addNew<WText>( label );
-        cell = table->elementAt( table->rowCount() - 1, 1 );
-        cell->addNew<WText>( value );
-      }//if( !drf->isFixedGeometry() )
-    }//if( distance >= 0.0 )
+      cell = table->elementAt( table->rowCount(), 0 );
+      cell->addNew<WText>( label );
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      cell->addNew<WText>( value );
+    }//if( !drf->isFixedGeometry() && (distance >= 0.0) )
   }//if( drf )
   
   

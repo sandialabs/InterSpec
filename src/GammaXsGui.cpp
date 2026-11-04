@@ -453,10 +453,9 @@ void GammaXsGui::updateDetectorCalc()
     char buffer[32];
     const string energystr = m_energyEdit->text().toUTF8();
     const float energy = static_cast<float>( std::stod( energystr ) );
-    const double intrinsic_eff =  m_detector->farFieldIntrinsicEfficiency( energy );
-    
     if( m_detector->isFixedGeometry() )
     {
+      const double intrinsic_eff = m_detector->farFieldIntrinsicEfficiency( energy );
       snprintf( buffer, sizeof(buffer), "%.4g", intrinsic_eff );
       m_efficiency->setText( buffer );
       
@@ -485,14 +484,15 @@ void GammaXsGui::updateDetectorCalc()
         m_totalEfficiency->setText( "---" );
       }
       
-      // fractional solid angle
-      const float diameter = m_detector->detectorDiameter();
-      const double gfactor =  m_detector->fractionalSolidAngle( diameter, dist + m_detector->detectorSetback() );
+      // The crystal the efficiency above was modeled for, and its intrinsic efficiency against that
+      //  same crystal - so the two multiply back to the detection efficiency (exactly for a
+      //  flat-disk DRF; in the far field for a geometry-modeled one, which also accounts for where
+      //  in the crystal gammas interact).
+      const double gfactor = m_detector->geometricEfficiency( dist );
       snprintf( buffer, sizeof(buffer), "%.4g", gfactor );
       m_fractionalAngle->setText( buffer );
       
-      // absolute efficiency
-      snprintf( buffer, sizeof(buffer), "%.4g", intrinsic_eff );
+      snprintf( buffer, sizeof(buffer), "%.4g", m_detector->intrinsicEfficiencyEval( energy ).value );
       m_intrinsicEfficiency->setText( buffer );
     }//if( fixed geometry ) / else
     

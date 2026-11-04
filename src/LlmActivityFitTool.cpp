@@ -16,6 +16,7 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
@@ -574,8 +575,8 @@ nlohmann::json executeCloseActivityShieldingDisplay(
   json result;
   result["success"] = false;
 
-  // Get the ShieldingSourceDisplay from InterSpec
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
+  // Get the ShieldingSourceDisplay from InterSpec, without creating it
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( false );
 
   if( !display )
   {
@@ -2255,7 +2256,18 @@ void add_peak_info_to_json(
 
   peak_json["observed_counts"] = peak.observedCounts;
   peak_json["observed_counts_uncert"] = peak.observedUncert;
-  peak_json["observed_cps"] = peak.cps;
+
+  // The rate the fit used - background-subtracted, like observed_counts - and the gross peak rate.
+  //  The uncertainty is the counting statistics only (observedUncert may include the DRF's).
+  if( peak.liveTime > 0.0 )
+  {
+    const double live_time = peak.liveTime;
+    const double bkg_uncert = (peak.backgroundCounts > 0.0f) ? peak.backgroundCountsUncert : 0.0;
+    peak_json["observed_cps"] = LlmTools::compact_rate( peak.observedCounts / live_time );
+    peak_json["observed_cps_uncert"] = LlmTools::compact_rate(
+                    sqrt( peak.countsUncert*peak.countsUncert + bkg_uncert*bkg_uncert ) / live_time );
+    peak_json["gross_cps"] = LlmTools::compact_rate( peak.cps );
+  }//if( we know the live time )
   peak_json["predicted_counts"] = peak.expectedCounts;
   peak_json["num_sigma_off"] = peak.numSigmaOff;
   peak_json["observed_over_predicted"] = peak.observedOverExpected;
@@ -2821,14 +2833,11 @@ nlohmann::json executeActivityFit(
   json result;
   result["status"] = "failed";
 
-  // Check if GUI is already open
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
+  // Opens the tool, if not already open
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( true );
 
   if( !display )
-  {
-    throw runtime_error( "Activity/Shielding fit GUI is not currently open. "
-                       "Please open it manually from the Tools menu, or use 'activity_fit_one_off' for direct fitting without the GUI." );
-  }
+    throw runtime_error( "The Activity/Shielding fit tool could not be opened; use 'activity_fit_one_off' instead." );
 
   // The fit uses the peaks marked for it, so do not quietly fit other peaks than were asked for.
   if( params.contains( "peak_energies" ) )

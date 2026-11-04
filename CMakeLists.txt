@@ -440,6 +440,7 @@ set(sources
     src/DrfImportWidget.cpp
     src/DrfModifyCalc.cpp
     src/FluxTool.cpp
+    src/FluxToolCalc.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
     src/EnergyCalTool.cpp
@@ -497,6 +498,7 @@ set(headers
     InterSpec/PhysicalUnits.h
     InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
+    InterSpec/MassAttenuationTool_imp.hpp
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/DetectorEffG2kPar.h
@@ -504,6 +506,9 @@ set(headers
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h
+    InterSpec/GammaInteractionCalc_imp.hpp
+    InterSpec/VolumetricLineIntegration_imp.hpp
+    InterSpec/VolumetricElementAperture_imp.hpp
     InterSpec/ShieldingSourceDisplay.h
     InterSpec/SourceFitNuclideDisplay.h
     InterSpec/ShieldingSourceDiagram.h
@@ -531,6 +536,7 @@ set(headers
     InterSpec/PeakFit.h
     InterSpec/PeakFit_imp.hpp
     InterSpec/PeakFitUtils.h
+    InterSpec/CeresUtils.hpp
     InterSpec/PeakFitDetPrefs.h
     InterSpec/PeakFitDetPrefsGui.h
     InterSpec/SkewParamsGrid.h
@@ -594,6 +600,7 @@ set(headers
     InterSpec/DrfImportWidget.h
     InterSpec/DrfModifyCalc.h
     InterSpec/FluxTool.h
+    InterSpec/FluxToolCalc.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h
     InterSpec/EnergyCalTool.h
@@ -736,12 +743,18 @@ if( USE_REL_ACT_TOOL )
   
   list( APPEND headers
         InterSpec/PeakFitLM.h
+        InterSpec/PeakFitLMObjective_imp.hpp
         InterSpec/RelActCalc.h
         InterSpec/RelActCalc_imp.hpp
+        InterSpec/RelActCalc_CeresJetTraits.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
         InterSpec/RelActCalcAuto_Roi.h
         InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
+        InterSpec/RelActCalcAuto_ActiveSet.hpp
+        InterSpec/RelActCalcAuto_Conditioning.hpp
+        InterSpec/RelActCalcAuto_Search_imp.hpp
+        InterSpec/RelActCalcAuto_Profile_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
         InterSpec/RelActManualGui.h
@@ -806,7 +819,7 @@ if( USE_LLM_INTERFACE )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_model_presets.xml data/llm_tools_config.xml
     data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
     data/llm_agent_Isotopics.xml data/llm_agent_KnowledgeBase.xml data/llm_agent_EnergyCalibration.xml
-    data/llm_agent_SpectrumTimeHistory.xml data/llm_agent_InSitu.xml
+    data/llm_agent_SpectrumTimeHistory.xml data/llm_agent_InSitu.xml data/llm_judge_prompt.xml
   )
 
   # The native HTTPS transport: one platform-independent file, plus (once written) exactly one

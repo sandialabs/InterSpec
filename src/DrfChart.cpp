@@ -24,9 +24,11 @@
 #include "InterSpec_config.h"
 
 
+#include <atomic>
 #include <memory>
-#include <sstream>
 #include <string>
+#include <sstream>
+#include <iostream>
 
 #include <Wt/Utils.h>
 #include <Wt/WColor.h>
@@ -38,6 +40,7 @@
 #include <Wt/WCssStyleSheet.h>
 #include <Wt/WContainerWidget.h>
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -60,6 +63,19 @@ DrfChart::DrfChart()
   m_xRangeSet( false ),
   m_xRangeMin( 0.0 ),
   m_xRangeMax( 0.0 ),
+  m_xRangeSinceUpdate( false ),
+  m_xRangeAfterNextData( false ),
+  m_detectorSerial( 1 ),
+  m_anglesSerial( 1 ),
+  m_detectorJson( "null" ),
+  m_anglesJson( "null" ),
+  m_detectorJsonSerial( 1 ),
+  m_anglesJsonSerial( 1 ),
+  m_detectorRequestedSerial( 1 ),
+  m_anglesRequestedSerial( 1 ),
+  m_computeGeneration( 0 ),
+  m_pending( false ),
+  m_alive( std::make_shared<std::atomic<bool>>( true ) ),
   m_dataPointsJs(),
   m_showEffPoints( true ),
   m_showFwhmPoints( true ),
@@ -89,37 +105,158 @@ void DrfChart::doChartJs( const std::string &method_call )
 
 void DrfChart::updateChart( std::shared_ptr<const DetectorPeakResponse> det )
 {
+  // Always a new serial, even for the same pointer: a caller may have changed the DRF it points to.
   m_detector = det;
-
-  // Generate and send detector data using DetectorPeakResponse JSON generation
-  const string detectorData = (!det || !det->isValid()) ? string("null") : det->toJSON();
-  doChartJs( "setDetectorData(" + detectorData + ")" );
-
-  pushAngleSeries();
+  ++m_detectorSerial;
+  ++m_anglesSerial;
+  m_xRangeSinceUpdate = false;
+  m_xRangeAfterNextData = false;   //a range restored for the previous detector does not carry over
+  scheduleRender();
 } //DrfChart::updateChart()
-
-
-void DrfChart::pushAngleSeries()
-{
-  const string series = (m_showAngles && m_detector && m_detector->isValid())
-                          ? m_detector->responseAngleSeriesJSON( m_sourceDistance )
-                          : string("null");
-  doChartJs( "setResponseSeries(" + series + ")" );
-}//DrfChart::pushAngleSeries()
 
 
 void DrfChart::setShowResponseAngles( const bool show )
 {
   m_showAngles = show;
-  pushAngleSeries();
+  ++m_anglesSerial;
+  scheduleRender();
 }//DrfChart::setShowResponseAngles(...)
 
 
 void DrfChart::setSourceDistance( const double distance )
 {
   m_sourceDistance = (distance > 0.0) ? distance : m_sourceDistance;
-  pushAngleSeries();
+  ++m_anglesSerial;
+  scheduleRender();
 }//DrfChart::setSourceDistance(...)
+
+
+void DrfChart::refreshData()
+{
+  // Out of date, and not already being computed (a render while a computation runs - the
+  //  completion's own push causes one - must not start the same work again).
+  const bool need_detector = (m_detectorJsonSerial != m_detectorSerial)
+                             && (m_detectorRequestedSerial != m_detectorSerial);
+  const bool need_angles = (m_anglesJsonSerial != m_anglesSerial)
+                           && (m_anglesRequestedSerial != m_anglesSerial);
+  if( !need_detector && !need_angles )
+    return;
+
+  if( need_detector )
+    m_detectorRequestedSerial = m_detectorSerial;
+  if( need_angles )
+    m_anglesRequestedSerial = m_anglesSerial;
+
+  const shared_ptr<const DetectorPeakResponse> det = (m_detector && m_detector->isValid())
+                                                       ? m_detector : nullptr;
+  const bool show_angles = m_showAngles;
+  const double distance = m_sourceDistance;
+  const uint64_t detector_serial = m_detectorSerial, angles_serial = m_anglesSerial;
+  const uint64_t generation = ++m_computeGeneration;
+
+  struct Result
+  {
+    string detector_json = "null", angles_json = "null";
+  };
+
+  const auto compute = [show_angles, distance, need_detector, need_angles](
+                                const shared_ptr<const DetectorPeakResponse> &drf, Result &result ){
+    try
+    {
+      if( need_detector && drf )
+        result.detector_json = drf->toJSON();
+      if( need_angles && drf && show_angles )
+        result.angles_json = drf->responseAngleSeriesJSON( distance );
+    }catch( std::exception &e )
+    {
+      cerr << "DrfChart: failed to compute chart data: " << e.what() << endl;
+    }
+  };//compute lambda
+
+  // Only a Monte-Carlo / transfer response makes this expensive (it is evaluated a few hundred
+  //  times); for anything else, a worker thread would only add a round trip before the curve shows.
+  if( !det || !det->ceeloResponse() )
+  {
+    Result result;
+    compute( det, result );
+    if( need_detector )
+    {
+      m_detectorJson = std::move( result.detector_json );
+      m_detectorJsonSerial = detector_serial;
+    }
+    if( need_angles )
+    {
+      m_anglesJson = std::move( result.angles_json );
+      m_anglesJsonSerial = angles_serial;
+    }
+    pushData( need_detector, need_angles );
+    setPending( false );
+    return;
+  }//if( cheap to compute )
+
+  setPending( true );
+
+  // Only a snapshot of the DRF (a const object, whose queries are thread safe) and plain values
+  //  cross to the worker; the chart itself is touched only in the completion, on the session
+  //  thread.  A snapshot, because nothing stops a caller changing the DRF it passed to #updateChart
+  //  (it then calls #updateChart again); copies are cheap - they share the curves and the response.
+  const shared_ptr<const DetectorPeakResponse> snapshot = make_shared<const DetectorPeakResponse>( *det );
+  const shared_ptr<Result> result = make_shared<Result>();
+  const shared_ptr<std::atomic<bool>> alive = m_alive;
+  DrfChart * const self = this;
+
+  AppUtils::run_on_ioservice( [compute, snapshot, result](){ compute( snapshot, *result ); },
+    [self, alive, result, need_detector, need_angles, detector_serial, angles_serial, generation](){
+      if( !alive->load() )
+        return;
+
+      // A result is still good if what it was computed for has not changed since, even when a
+      //  later computation (for something else that did change) is on its way.
+      const bool use_detector = need_detector && (detector_serial == self->m_detectorSerial);
+      const bool use_angles = need_angles && (angles_serial == self->m_anglesSerial);
+      if( use_detector )
+      {
+        self->m_detectorJson = std::move( result->detector_json );
+        self->m_detectorJsonSerial = detector_serial;
+      }
+      if( use_angles )
+      {
+        self->m_anglesJson = std::move( result->angles_json );
+        self->m_anglesJsonSerial = angles_serial;
+      }
+      self->pushData( use_detector, use_angles );
+
+      if( generation == self->m_computeGeneration )
+        self->setPending( false );
+    } );
+}//void refreshData()
+
+
+void DrfChart::pushData( const bool detector, const bool angles )
+{
+  if( detector )
+  {
+    doChartJs( "setDetectorData(" + m_detectorJson + ")" );
+
+    // The client just reset the x-axis to the detector's range; restore one set to override it.
+    if( m_xRangeSet && (m_xRangeSinceUpdate || m_xRangeAfterNextData) )
+      doChartJs( "setXRange(" + std::to_string(m_xRangeMin) + ", " + std::to_string(m_xRangeMax) + ")" );
+    m_xRangeAfterNextData = false;
+  }//if( detector )
+
+  if( angles )
+    doChartJs( "setResponseSeries(" + m_anglesJson + ")" );
+}//void pushData( const bool detector, const bool angles )
+
+
+void DrfChart::setPending( const bool pending )
+{
+  if( pending == m_pending )
+    return;
+
+  m_pending = pending;
+  doChartJs( "setPending(" + string(pending ? "true" : "false") + ")" );
+}//void setPending( const bool pending )
 
 
 void DrfChart::setIntrinsicEfficiency( const bool intrinsic )
@@ -220,10 +357,9 @@ void DrfChart::defineJavaScript()
 
   // Re-send everything the chart is currently showing, rather than replaying a one-shot queue: this
   //  runs again whenever the client-side object is (re)built - when a stub becomes a real element,
-  //  say - and the object that is built is empty.
-  const string detectorData = (!m_detector || !m_detector->isValid())
-                                ? string("null") : m_detector->toJSON();
-  doChartJs( "setDetectorData(" + detectorData + ")" );
+  //  say - and the object that is built is empty.  The detector data and angle series are the ones
+  //  last computed; if they are out of date, #render computes new ones right after this.
+  doChartJs( "setDetectorData(" + m_detectorJson + ")" );
   doChartJs( "setShowFwhm(" + string(m_showFwhm ? "true" : "false") + ")" );
   doChartJs( "setEfficiencyMode('" + string(m_intrinsic ? "intrinsic" : "absolute") + "')" );
   doChartJs( "setShowEffPoints(" + string(m_showEffPoints ? "true" : "false") + ")" );
@@ -234,9 +370,12 @@ void DrfChart::defineJavaScript()
                                + std::to_string(m_dataRangeHigh) + ")" );
   if( !m_dataPointsJs.empty() )
     doChartJs( "setDataPoints(" + m_dataPointsJs + ")" );
-  pushAngleSeries();
+  doChartJs( "setResponseSeries(" + m_anglesJson + ")" );
   if( m_xRangeSet )
     doChartJs( "setXRange(" + std::to_string(m_xRangeMin) + ", " + std::to_string(m_xRangeMax) + ")" );
+  m_xRangeAfterNextData = (m_xRangeSet && (m_detectorJsonSerial != m_detectorSerial));
+  if( m_pending )
+    doChartJs( "setPending(true)" );
 }//void DrfChart::defineJavaScript()
 
 
@@ -250,12 +389,17 @@ void DrfChart::render( Wt::WFlags<Wt::RenderFlag> flags )
   //  m_jsDefined), and without the client-side object every queued call hits `undefined`.
   if( renderFull || !m_jsDefined )
     defineJavaScript();
+
+  // Here rather than in #updateChart and friends, so a detector pushed several times in one event
+  //  (a common pattern) is computed once.
+  refreshData();
 }//void DrfChart::render(...)
 
 
 void DrfChart::setXAxisRange( double minEnergy, double maxEnergy )
 {
   m_xRangeSet = true;
+  m_xRangeSinceUpdate = true;
   m_xRangeMin = minEnergy;
   m_xRangeMax = maxEnergy;
 
@@ -266,6 +410,8 @@ void DrfChart::setXAxisRange( double minEnergy, double maxEnergy )
 
 DrfChart::~DrfChart()
 {
+  m_alive->store( false );
+
   Wt::WApplication *app = Wt::WApplication::instance();
   if( app )
   {

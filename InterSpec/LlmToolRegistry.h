@@ -55,7 +55,8 @@ struct SharedTool {
     std::string name;
     std::string description;  // Default description (agent surface), rendered for the active model
     std::string mcpDescription;  // Default description rendered for the MCP surface (see LlmPromptTemplate)
-    nlohmann::json parameters_schema;
+    nlohmann::json parameters_schema;  // Its "description"s rendered for the agent surface
+    nlohmann::json mcpParametersSchema;  // ... and for the MCP surface; null if not built (then use parameters_schema)
     // The executor takes parameters, InterSpec instance, optionally the current LlmInteraction conversation,
     // and optionally the LlmConversationHistory (for data that persists across conversations, like peak checkpoints)
     std::function<nlohmann::json(const nlohmann::json&, InterSpec*, std::shared_ptr<LlmInteraction>, LlmConversationHistory*)> executor;
@@ -100,6 +101,22 @@ struct SharedTool {
     std::vector<AgentType> availableForAgents;  // List of agent types that can use this tool (empty = all agents)
     std::map<AgentType, std::string> roleDescriptions;  // Role-specific descriptions (AgentType -> description)
 };
+
+
+/** A count rate (or its uncertainty) for tool-result JSON: at least two significant figures, plus any
+ further digits that take no extra characters - e.g., 0.0027, 3.1, 909, 1234, 1.2e-05.  Rates of 10 or
+ more are given as integers; non-finite values become null.
+ */
+InterSpec_API nlohmann::json compact_rate( const double value );
+
+
+/** `val` rounded to `n` significant figures, as a double that serializes to JSON without spurious
+ trailing digits (e.g., "1.66", not "1.6600000000000001"); zero stays zero.
+ */
+InterSpec_API double round_to_sig_figs( const double val, const int n );
+
+/** `val` rounded to `n` decimal places; serializes cleanly, like `round_to_sig_figs(...)`. */
+InterSpec_API double round_to_decimal_places( const double val, const int n );
 
 
 /** Runs a `run_javascript` call where there is no browser sandbox; the stdio MCP server sets one,

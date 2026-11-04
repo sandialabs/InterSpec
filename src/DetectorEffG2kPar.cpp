@@ -126,8 +126,8 @@ double DetectorDef::d( int i ) const
     case 2: return d3_window_diam_mm;
     case 3: return d4_endcap_od_mm;
     case 4: return d5_endcap_len_mm;
-    case 5: return d6_front_gap_mm;
-    case 6: return d7_side_gap_mm;
+    case 5: return d6_mm;
+    case 6: return d7_mm;
   }
   return std::numeric_limits<double>::quiet_NaN();
 }//DetectorDef::d(int)
@@ -196,41 +196,24 @@ std::string serial_from_comment( const std::string &comment )
 }//serial_from_comment(...)
 
 
-/** Classifies a record from its D3 window and layer stack (port of the Python
- `classify_detector`). */
+/** Classifies a record from its D3 window, window slot and crystal shape (the role the Python
+ `classify_detector` had).  Over the 68 records seen, every D3 = 0 one with an empty window slot is a
+ standard coax with a thick (0.2-1.3 mm) Ge front contact - the p-type signature.  Every D3 > 0 one
+ has a thin window, and its crystal shape splits it cleanly: length/diameter 0.83-1.37 for the
+ thin-window coaxes (extended-range, reverse-electrode, n-type) and 0.33-0.56 for the BEGe, planar
+ and Falcon units, so 0.7 separates them with margin either side.  (D3 = 0 coaxes reach down to
+ 0.53, so the shape test is only applied to thin-window records.) */
 DetectorDef::Kind classify_detector( const DetectorDef &rec )
 {
   const double d3 = rec.d3_window_diam_mm;
-
-  const std::string slot0_mat = SpecUtils::to_lower_ascii_copy( rec.layers[0].material );
-  const double slot0_th = rec.layers[0].thickness_mm;
   const std::string slot1_mat = SpecUtils::to_lower_ascii_copy( rec.layers[1].material );
 
   if( (d3 == 0.0) || std::isnan( d3 ) )
-  {
-    if( slot1_mat.empty() && slot0_mat == "ge" && slot0_th > 0.1 )
-      return DetectorDef::Kind::NCoax;
-    if( slot1_mat.empty() && slot0_mat == "ge" )
-      return DetectorDef::Kind::NCoax;
-    return slot1_mat.empty() ? DetectorDef::Kind::NCoax : DetectorDef::Kind::Generic;
-  }
+    return slot1_mat.empty() ? DetectorDef::Kind::ThickWindowCoax : DetectorDef::Kind::Generic;
 
-  // D3 > 0: thin-window detector.
-  if( slot0_mat == "ge" && slot0_th > 0.0 && !slot1_mat.empty() )
-  {
-    const double back_al = rec.layers[8].thickness_mm;
-    if( back_al >= 4.0 )
-      return DetectorDef::Kind::Falcon;
-    return DetectorDef::Kind::PType;
-  }
-
-  if( slot0_mat.empty() && !slot1_mat.empty() )
-    return DetectorDef::Kind::PType;
-
-  if( slot0_mat == "ge" && (slot1_mat == "c" || slot1_mat == "be" || slot1_mat == "al") )
-    return DetectorDef::Kind::PType;
-
-  return DetectorDef::Kind::Generic;
+  const double length_over_diam = rec.d2_crystal_len_mm / rec.d1_crystal_diam_mm;
+  return (length_over_diam >= 0.7) ? DetectorDef::Kind::ThinWindowCoax
+                                   : DetectorDef::Kind::ThinWindowPlanar;
 }//classify_detector(...)
 }//anonymous namespace
 
@@ -321,8 +304,8 @@ std::vector<DetectorDef> parseDetectorTxt( std::istream &input )
     rec.d3_window_diam_mm  = scalar( 2 );
     rec.d4_endcap_od_mm    = scalar( 3 );
     rec.d5_endcap_len_mm   = scalar( 4 );
-    rec.d6_front_gap_mm    = scalar( 5 );
-    rec.d7_side_gap_mm     = scalar( 6 );
+    rec.d6_mm              = scalar( 5 );
+    rec.d7_mm              = scalar( 6 );
     {
       const double tc = scalar( 7 );
       rec.typeCode = std::isnan( tc ) ? 0 : static_cast<int>( tc );
@@ -612,9 +595,11 @@ namespace
  Sentinels are excluded and the remaining weight renormalized, so approaching
  the body from outside degrades toward the nearest real data instead of jumping
  to 100%.  `all_sentinel` reports the case where there is no data to fall back
- on, letting callers refuse to serve a value rather than invent one. */
+ on, letting callers refuse to serve a value rather than invent one;
+ `sentinel_weight` is the share of the bilinear weight that fell on sentinels,
+ i.e. how much of the answer is the renormalization's rather than the file's. */
 double interp_grid_V( const ParGrid &g, const double ln_d, const double theta_rad,
-                      bool *all_sentinel = nullptr )
+                      bool *all_sentinel = nullptr, double *sentinel_weight = nullptr )
 {
   const int nrows = static_cast<int>( g.nrows );
   const int ncols = static_cast<int>( g.ncols );
@@ -641,17 +626,22 @@ double interp_grid_V( const ParGrid &g, const double ln_d, const double theta_ra
   const double ws[4] = { (1.0 - fr) * (1.0 - fc), (1.0 - fr) * fc,
                          fr * (1.0 - fc), fr * fc };
 
-  double sum = 0.0, wsum = 0.0;
+  double sum = 0.0, wsum = 0.0, wsent = 0.0;
   for( size_t i = 0; i < 4; ++i )
   {
     if( vs[i] == 0.0 )     // sentinel: inside the detector body, no data
+    {
+      wsent += ws[i];
       continue;
+    }
     sum += ws[i] * vs[i];
     wsum += ws[i];
   }
 
   if( all_sentinel )
     *all_sentinel = (wsum <= 0.0);
+  if( sentinel_weight )
+    *sentinel_weight = wsent;
 
   if( wsum <= 0.0 )
     return 0.0;            // caller decides; 0 keeps the old (eff = 1) shape
@@ -682,7 +672,7 @@ double ParEfficiency::efficiency( double energy_keV, double dist_from_face_mm,
   //  domain the reference tool uses; PCHIP (vs a plain cubic spline, which
   //  overshoots the low-E efficiency knee) is our deliberate, overshoot-safe
   //  choice.  We therefore differ from the reference ".ecc" between nodes, worst
-  //  ~1.4% at 200 keV - the reference behaves like a local forward-quadratic in
+  //  1.72% at 200 keV - the reference behaves like a local forward-quadratic in
   //  (V, ln E), and an independent Monte-Carlo arbiter says PCHIP is the more
   //  physical of the two.  Matching the reference more closely would mean being
   //  less physically accurate; see the DetectorEffG2kPar.h header for the
@@ -715,6 +705,22 @@ double ParEfficiency::efficiency( double energy_keV, double dist_from_face_mm,
 
   return std::pow( 10.0, -V / 1000.0 );
 }//ParEfficiency::efficiency(...)
+
+
+bool ParEfficiency::inNoDataZone( const double dist_from_face_mm, const double theta_rad ) const
+{
+  // The zone is energy-independent (see efficiency()), so the first grid speaks for all.  The
+  //  explicit face-plane test keeps a point ON the plane out: the stored column step is a float a
+  //  few 1e-8 rad short of 2.5 deg, so at exactly 90 deg the stencil carries ~1e-6 of weight on the
+  //  92.5 deg column, sentinel or not.
+  if( !(std::fabs( theta_rad ) > 0.5 * 3.14159265358979323846) )
+    return false;
+
+  double sentinel_weight = 0.0;
+  interp_grid_V( m_par.grids.front(), std::log( std::max( dist_from_face_mm, 1.0 ) ), theta_rad,
+                 nullptr, &sentinel_weight );
+  return (sentinel_weight > 0.0);
+}//ParEfficiency::inNoDataZone(...)
 
 
 double ParEfficiency::airTransmission( double energy_keV, double dist_mm,
@@ -887,7 +893,7 @@ const size_t sm_ladder_base_rungs = 36;
  into `sm_ladder_subdiv` geometric pieces; every base rung is kept, so the ladder
  is a strict SUPERSET of the uniform one.  See `distance_ladder`. */
 const size_t sm_ladder_subdiv = 3;
-const double sm_ladder_lo_cm = 5.0;
+const double sm_ladder_lo_cm = 2.0;
 const double sm_ladder_hi_cm = 30.0;
 
 
@@ -933,7 +939,7 @@ const double sm_ladder_hi_cm = 30.0;
  geometrically into `max(m_lnE, m_tau)` pieces.
 
  The rule is FIXED, not residual-adaptive, and that is deliberate: the node set
- is serialized, `content_hash()` hashes the serialization, and DRF identity (and
+ is serialized, `content_hash()` hashes the serialized content, and DRF identity (and
  parent-hash lineage) is that hash - so a residual-vs-tolerance rule would let
  one ULP of libm difference flip a node in or out and give the same `.PAR` a
  different identity on macOS vs Windows.  This rule depends only on the file's
@@ -1050,7 +1056,7 @@ const size_t sm_near_field_energy_stride = 8;
  rms 0.00085 against the file's own stored (quantized) content - below the file's
  +-1 LSB of 0.1152%, so this axis' own RMS contribution is at the storage floor.
  Note that is an rms claim about this axis only: the WORST on-lattice error still
- sits at 2.2-8.3x the LSB over the bands >= 45 keV (15-23x at 22-45 keV) and is
+ sits at 2.4-6.7x the LSB over the bands >= 45 keV (10-30x at 22-45 keV) and is
  method-limited, by the distance ladder above ~45 keV and by the sheared angular
  feature below it.  See the header. */
 std::vector<double> near_field_energy_axis( const std::vector<double> &eta_energies,
@@ -1121,13 +1127,25 @@ std::vector<double> near_field_energy_axis( const std::vector<double> &eta_energ
  (11 below 5 cm became 5) and made that region ~8x worse to buy ~2x in the middle.
  Inserting rungs instead keeps every base node, and because Pchip's derivative at
  node j depends only on the slopes m[j-1] and m[j], nodes added above an interval
- cannot perturb the interpolant below it: the near-contact region comes out
- bit-identical to the uniform ladder, which is what the band table shows.
+ cannot perturb the interpolant below it: when the window opened at 5 cm, the
+ region below it came out bit-identical to the uniform ladder.
 
  Why the window closes at 30 cm.  Past there the response is 1/r^2 to within the
  file's own quantization, so subdividing buys nothing measurable and `ln_n` is
  `ne*nc*nd` - the dominant serialized block.  Extending the window to `d_ref`
  was measured: identical accuracy in every band, 26 more rungs.
+
+ Why it opens at 2 cm.  A few cm out at grazing angles a source passes the corner
+ of the MODELLED can (the crystal plus its side shells, narrower than the real
+ one), where the kernel changes steeply while the grid does not, so ln(eps/K)
+ carries a step there one base rung wide: on DET1381 it rises 9.4 -> 15.3 in ln
+ between the 4.1 and 4.9 cm rungs at 10 keV.  Opening the window at 5 cm left
+ those rungs at the base spacing, and the worst near-contact on-lattice error at
+ 10 keV at 185%; from 2 cm it is 83%, and most bands from 16 keV up fell 2-4x
+ (22-32 keV, whose worst is at 5 cm, did not move; one DET06 band rose, 0.026 ->
+ 0.048, inside its gate), for 10 rungs (+15% serialized, both corpus detectors).
+ Opening it at the ladder floor measured the same worst errors for +37%.  The
+ worst errors at d >= 5 cm and theta <= 75 deg were unchanged in every band.
 
  `sm_ladder_subdiv` is 3 because the achieved worst error is not monotone in it -
  the rung phase against the file's fixed 3.03%-per-row grid matters as much as the
@@ -1230,19 +1248,31 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
 
   gd.crystal_material_index = add_material( MaterialSpec::from( make_HPGe() ) );
 
-  // Dead layers are the Ge entries in slots 0 / 3 / 6 (front / side / back);
-  //  they are already folded into the grid, but shape the crystal solid.
+  // Dead layers are the Ge entries in slots 0 / 3 / 6 (front / side / back).  Like the housing
+  //  below, they are already in the grid; here they only shape the crystal solid.
   const double dead_front_cm = 0.1 * def.layers[0].thickness_mm;
   const double dead_side_cm  = 0.1 * def.layers[3].thickness_mm;
   const double dead_back_cm  = 0.1 * def.layers[6].thickness_mm;
   if( dead_front_cm > 0.0 || dead_side_cm > 0.0 || dead_back_cm > 0.0 )
     gd.dead_layer = DeadLayerConfig{ dead_front_cm, dead_side_cm, dead_back_cm };
 
-  // Front vacuum gap (D6), widening to the side gap (D7) - matches the
-  //  prototype's spacer and sets the endcap-front offset.
-  const double front_gap_cm = 0.1 * def.d6_front_gap_mm;
-  const double side_gap_cm = 0.1 * def.d7_side_gap_mm;
-  if( front_gap_cm > 0.0 )
+  // The crystal face sits D7 behind the endcap's outer face, window and endcap (slots 1, 2)
+  //  included, so only the remainder is vacuum; this is what the grids' near field says (see the
+  //  header).  A front layer add_housing cannot model is left out, so its thickness is vacuum too,
+  //  keeping the crystal at D7.  The side gap, D7 - D6, is the prototype's and is zero whenever
+  //  D6 == D7, as on every standard coax; its meaning is unknown.
+  double front_stack_mm = 0.0;
+  for( const int slot : { 1, 2 } )
+  {
+    const LayerEntry &le = def.layers[slot];
+    MaterialSpec spec;
+    if( !le.material.empty() && (le.thickness_mm > 0.0)
+        && material_for_token( le.material, le.density, spec ) )
+      front_stack_mm += le.thickness_mm;
+  }
+  const double front_gap_cm = 0.1 * std::max( 0.0, def.d7_mm - front_stack_mm );
+  const double side_gap_cm = 0.1 * std::max( 0.0, def.d7_mm - def.d6_mm );
+  if( (front_gap_cm > 0.0) || (side_gap_cm > 0.0) )
   {
     MaterialSpec vac;
     vac.name = "Vacuum";
@@ -1253,7 +1283,7 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
     LayerSpec gap;
     gap.material_index = vac_idx;
     gap.front_thickness_cm = front_gap_cm;
-    gap.side_thickness_cm = (side_gap_cm > front_gap_cm) ? (side_gap_cm - front_gap_cm) : 0.0;
+    gap.side_thickness_cm = side_gap_cm;
     gap.z_start_cm = 0.0;
     gap.z_end_cm = length_cm;
     gd.layers.push_back( gap );
@@ -1261,7 +1291,8 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
 
   // Housing layers: front path uses slots 1,2 (front thickness); side path
   //  uses slots 4,5 (side thickness).  Back path (slots 7,8) is not modeled by
-  //  CeeLo (theta>90 is handled from the grid directly).
+  //  CeeLo (theta>90 is handled from the grid directly).  The grid already
+  //  contains all of them; they enter only the kernel and the geometry.
   auto add_housing = [&]( int slot, bool is_front )
   {
     const LayerEntry &le = def.layers[slot];
@@ -1295,8 +1326,9 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
 
   // Bore hole + fillet: not in DETECTOR.txt.  Add a conservative coaxial bore
   //  for the coaxial families only; sanitize_geometry drops it if it doesn't
-  //  fit (safe - the node identity cancels the kernel).
-  if( (def.kind == DetectorDef::Kind::NCoax || def.kind == DetectorDef::Kind::PType)
+  //  fit (safe - the node identity cancels the kernel).  BEGe and planar
+  //  crystals have no bore.
+  if( (def.kind == DetectorDef::Kind::ThickWindowCoax || def.kind == DetectorDef::Kind::ThinWindowCoax)
       && length_cm > 1.5 )
   {
     const double bore_depth_cm = std::max( 0.5, length_cm - 0.8 );
@@ -1500,7 +1532,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //      |v|^2 = d^2 - 2*d*cos(theta)*off + off^2   ->   |v| = |d - off| at theta=0,
   //  so a ladder node with d < off sits BEHIND the face plane: the radial range
   //  collapses toward zero (clamping onto the grid's 1 mm bottom row) and
-  //  `theta_face` flips past 90 deg - on-axis at d=0.5 cm with off=0.57 cm it
+  //  `theta_face` flips past 90 deg - on-axis at d=0.3 cm with off=0.37 cm it
   //  reaches 180 deg.  Such nodes are not merely inaccurate, they are anchors of
   //  the PCHIP ladder, so they corrupt legitimate neighbouring queries too:
   //  measured before this floor existed, dispatch disagreed with the raw grid by
@@ -1517,9 +1549,9 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  the value at each node is read from the grid in face-frame coords.  The map
   //  between the frames is a translation by `off`, which is near-identity in the
   //  far field but strongly nonlinear once d ~ off: grazing ladder columns reach
-  //  theta_face of ~126 deg (still real grid data - `interp_grid_V` interpolates
-  //  the full column span, it does not clamp at 90 deg).  So ln_n, expressed on
-  //  the crystal-frame axes it is interpolated over, has curvature near contact
+  //  theta_face of ~123 deg (real grid data beside the can - `interp_grid_V` does
+  //  not clamp at 90 deg - and inside it, see the fill below).  So ln_n, expressed
+  //  on the crystal-frame axes it is interpolated over, has curvature near contact
   //  that this lattice resolves only as well as its rung spacing allows.
   //
   // Why the ladder is dense, and denser over the near field.  The grid stores 440
@@ -1529,7 +1561,8 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  measured 0.0107 worst against the file's own stored content; 36 uniform gives
   //  0.0100, and 36 + a subdivided [5,30] cm window gives 0.0060 for the bands
   //  where the file carries real signal.  `distance_ladder` documents why the
-  //  window is where the rungs go, and why adding rather than moving them.
+  //  window is where the rungs go, why adding rather than moving them, and why it
+  //  has since been opened at 2 cm.
   const double d_face_margin_cm = 0.2;   // >= 2 mm of face-frame standoff
   const double d_min_cm = -face.z() + d_face_margin_cm;   // face is (0,0,-offset)
   const std::vector<double> dists_cm = distance_ladder( d_min_cm, d_ref_cm );
@@ -1569,44 +1602,47 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
     }
   }
 
-  // Each angular column's ladder is TRUNCATED at its first valid rung: rungs
-  //  whose face-frame position falls in the grid's no-data zone are not filled
-  //  from the file, because there is nothing there to reproduce (the grid stores
-  //  V = 0, which decodes to eff = 1.0 - 100%, impossible).  Filling them with
-  //  that literal value anchors the PCHIP ladder on an impossible number and
-  //  corrupts legitimate neighbouring queries; that is how off-axis dispatch
-  //  came to disagree with the raw grid by thousands of percent.
+  // Rungs inside the endcap are read at the endcap face in front of them.
   //
-  // `NearFieldModel` has ONE shared distance axis (index(e,c,d) is rectangular,
-  //  and is serialized that way), so a literally ragged ladder is not
-  //  representable.  It does not need to be: `Pchip::operator()` clamps flat
-  //  below its first node (`xq <= x_.front() -> y_.front()`), so truncating a
-  //  column is EXACTLY equivalent to filling its inner rungs with the first
-  //  valid value.  We therefore write that hold, which yields a truncated
-  //  interpolant without touching CeeLo's structure or file format.
-  //
-  // The no-data zone is the ENDCAP VOLUME itself - source positions inside the
-  //  housing, which are physically unreachable, so the reference tool stores a
-  //  sentinel instead of a number.  Converting the zone's boundary from the
-  //  grid's (radial, theta) into cylindrical coords recovers the can: lateral
+  // The grid's V == 0 no-data zone is the ENDCAP VOLUME itself - source positions
+  //  inside the housing, which are physically unreachable, so the reference tool
+  //  stores a sentinel instead of a number.  Converting the zone's boundary from
+  //  the grid's (radial, theta) into cylindrical coords recovers the can: lateral
   //  extent 42.5 mm vs the 43.8 mm endcap radius, depth 81.0 mm vs the 83.8 mm
   //  endcap length (DET06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
   //  therefore only exists behind the face plane - zero such cells at
   //  theta <= 90 deg, onset at 92.5 deg.
   //
-  // So this costs near-field reach only in the grazing columns, where the
-  //  crystal-frame ladder position translates to a face-frame point inside that
-  //  can: on the corpus 18/37 columns lose nothing at all, the on-axis ladder
-  //  still reaches 2 mm from the endcap face, and only the last four columns
-  //  (82.5-90 deg) are held back to ~4.5 cm.  48 of 666 rungs on one detector,
-  //  39 of 666 on the other.
-  size_t n_truncated = 0;
+  // The crystal-frame ladder reaches into it: a grazing column's rungs map up to
+  //  `off` behind the face plane, and where their grid stencil touches the zone
+  //  (ParEfficiency::inNoDataZone) neither factor of ln(eps/K) describes them.
+  //  Their eps is no data at all or, where the stencil only partly touches it,
+  //  `interp_grid_V`'s blend renormalized onto the face-plane column; their K is
+  //  for a source embedded in the modelled front window.  Yet these rungs anchor
+  //  the interpolation of real queries on and near the face plane, so each is
+  //  filled from the nearest position the file does characterize - the face-plane
+  //  point at the same lateral offset, eps and K both taken there - which carries
+  //  ln(eps/K) across the plane.  Its sigma stays inflated, since the file says
+  //  nothing about the rung's own position.
+  //
+  // Measured on DET1381 at its worst near-contact locus - on the face plane,
+  //  3.5 cm out, where 32 keV read 21% low.  That was the former rule, which filled
+  //  partly-touching rungs as data.  Holding them radially instead, as the
+  //  all-sentinel rungs were, made the near-contact band worsts 2-8x WORSE: they
+  //  are anchors, not dead weight.  The projection gives -9% there, and -0.4% with
+  //  the ladder window opened at 2 cm.  Holding the all-sentinel rungs moved no
+  //  probe, but it was not the exact truncation it was described as: Pchip zeroes
+  //  its derivative at a node beside a flat run, which reshapes the interval above
+  //  the first valid rung too.  One rule now covers both.
+  //
+  // Only the grazing columns are affected - the on-axis ladder still reaches 2 mm
+  //  from the endcap face: 119 of 2516 rungs on one corpus detector, 151 of 2590
+  //  on the other.
+  size_t n_in_endcap = 0;
   for( size_t c = 0; c < nc; ++c )
   {
-    bool have_valid = false;
-    for( size_t k = 0; k < nd; ++k )
+    for( size_t di = 0; di < nd; ++di )
     {
-      const size_t di = nd - 1 - k;   // far -> near, so the hold source exists
       const Eigen::Vector3d src = source_position( dists_cm[di], cos_thetas[c], 0.0 );
 
       double d_face_mm = 0.0, theta_face = 0.0;
@@ -1615,49 +1651,42 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
       // Every rung must clear the endcap face by the margin; the d_min_cm floor
       //  above guarantees it.  theta_face is deliberately NOT bounded by 90 deg:
       //  translating a grazing near-contact point into the face frame
-      //  legitimately swings it behind the face plane, and the grid does carry
-      //  real columns out there (its span is the full 180 deg).
+      //  legitimately swings it behind the face plane, and beside the can the
+      //  grid carries real columns out there (its span is the full 180 deg).
       assert( d_face_mm >= 10.0 * 0.5 * d_face_margin_cm );
 
-      bool no_data = false;
-      parEff.efficiency( energies[0], d_face_mm, theta_face, &no_data );
-
-      if( no_data )
+      // Inside the endcap: sample the face-plane point in front of the rung, built exactly as a
+      //  90 deg query is, so the rung and the queries it anchors see the same kernel there.
+      const bool in_endcap = parEff.inNoDataZone( d_face_mm, theta_face );
+      const Eigen::Vector3d at = in_endcap
+          ? CeeLoUtils::sourcePositionFromFace( gd, half_pi, 0.0,
+                                                std::hypot( src.x() - face.x(), src.y() - face.y() ) )
+          : src;
+      if( in_endcap )
       {
-        // Below this column's first valid rung: hold it (== truncation, see
-        //  above).  Keep the held rung's sigma inflated - the position is
-        //  uncharacterized by the file, not modelled by us, so a query landing
-        //  here should be honestly uncertain rather than confidently wrong.
-        ++n_truncated;
-        for( size_t e = 0; e < nf_ne; ++e )
-        {
-          const size_t idx = nf.index( e, c, di );
-          nf.ln_n[idx] = have_valid ? nf.ln_n[nf.index( e, c, di + 1 )] : 0.0;
-          nf.frac_sigma[idx] = 1.0;   // 100%: no data underlies this rung
-        }
-        continue;
+        ++n_in_endcap;
+        face_sample( at, d_face_mm, theta_face );
       }
 
-      const ApertureQuadrature q = resp->make_quadrature( src );
+      const ApertureQuadrature q = resp->make_quadrature( at );
       for( size_t e = 0; e < nf_ne; ++e )
       {
         const double E = nf_energies[e];
         const double K = resp->kernel_K( E, q, MuChoice::Total );
         const double eps = parEff.efficiency( E, d_face_mm, theta_face );
         const double ln_ratio = std::log( std::max( eps, 1e-300 ) / std::max( K, 1e-300 ) );
-        nf.ln_n[nf.index( e, c, di )] = ln_ratio - nf_ln_eta_far[e * nc + c];
+        const size_t idx = nf.index( e, c, di );
+        nf.ln_n[idx] = ln_ratio - nf_ln_eta_far[e * nc + c];
+        nf.frac_sigma[idx] = in_endcap ? 1.0 : 0.0;   // 100%: the rung's own position is uncharacterized
       }
-      have_valid = true;
-    }//for( each distance, far -> near )
+    }//for( each distance )
   }//for( each cos-theta )
 
-  if( n_truncated )
-    geom_warnings.push_back( "near-field ladder truncated at "
-                             + std::to_string(n_truncated) + " of "
-                             + std::to_string(nc * nd) + " rungs, where the"
-                             " face-frame position lies behind the endcap in the"
-                             " region the file does not characterize (grazing"
-                             " angles at close range only)" );
+  if( n_in_endcap )
+    geom_warnings.push_back( std::to_string(n_in_endcap) + " of " + std::to_string(nc * nd)
+                             + " near-field rungs lie inside the endcap, where the file does"
+                             " not characterize the efficiency (grazing angles at close range"
+                             " only), and are read at the endcap face in front of them" );
 
   // Near gate covers the whole filled region (break at the far reference), so
   //  every query inside d_ref_cm picks up the near-field term.
@@ -1690,7 +1719,9 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  no-data (endcap-volume) note in the ladder fill above.
   //
   // Also note d_min_cm is a floor on the ON-AXIS reach only, not a validity
-  //  radius: it is measured along the axis from the endcap FACE, whereas the
+  //  radius: it is measured along the axis from the CRYSTAL-face origin (CeeLo's
+  //  frame, as every provenance distance is - CeeLoUtils::faceDistanceFromCrystalOrigin
+  //  converts it for display), whereas the
   //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on DET1381).
   //  A point further than d_min_cm from the face centre can therefore still be
   //  inside the housing once it is past 90 deg - validity off-axis is bounded by
@@ -1702,10 +1733,11 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   // ---- 8) Total efficiency: NOT characterized by these files ---------------
   // The grid is full-energy-peak only, so there is nothing to build a total
   //  efficiency from.  Say so explicitly: the default `KernelExact` tier would
-  //  serve a BARE-CRYSTAL kernel - no housing, no peak-to-total - and callers
-  //  cannot distinguish that from a verified total.  It is not a small error
-  //  either; at low energy the bare kernel falls below this response's own FEP
-  //  efficiency, which is impossible.  `NotCharacterized` makes eps_total
+  //  serve the KERNEL's total - the first-interaction probability through the
+  //  descriptor (housing included), with no scatter, escape or peak-to-total
+  //  physics - and callers cannot distinguish that from a verified total.  It is
+  //  not a small error either; at low energy the kernel falls below this
+  //  response's own FEP efficiency, which is impossible.  `NotCharacterized` makes eps_total
   //  refuse, which in turn makes `hasAnyTotalEfficiencyInfo()` false, so
   //  cascade summing correctly declines to run on this DRF.
   resp->tot_eff.tier = TotEffTier::NotCharacterized;
@@ -1730,9 +1762,9 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   drf->setDescription( descrip );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::CharacterizationParFile );
 
-  // The crystal sits the endcap-front offset behind the face - the GADRAS setback convention.  Only
+  // The crystal sits the endcap-front offset (D7) behind the face - the GADRAS setback convention.  Only
   //  flat-disk paths read it (the response places the crystal itself); without it they put the
-  //  crystal AT the endcap face.  setLegacyEfficiencyFromResponse carries it across.
+  //  crystal AT the endcap face.  (setLegacyEfficiencyFromResponse sets the same value.)
   drf->setDetectorSetback( gd.endcap_front_offset_cm() * PhysicalUnits::cm );
 
   // Sample an on-axis far-field legacy curve so the DRF is valid/serializable
@@ -1831,7 +1863,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     throw std::runtime_error( "attachTotalEfficiency: the donor response has no total efficiency." );
 
   // The grounding k(E) multiplies the FEP as well, so a grid - whose FEP must stay the file's -
-  //  never carries one; the donor's own k(E) reaches the total through its eps_total_at below.
+  //  never carries one.
   if( !grid.grounding.empty() )
     throw std::runtime_error( "attachTotalEfficiency: the grid response carries a grounding." );
 
@@ -1846,10 +1878,65 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     return resp;
   }
 
+  // The total is the grid's FEP times the donor's own total/FEP at the same physical point: the
+  //  donor - a Monte Carlo of the user's, possibly edited, geometry - supplies only its total-to-peak
+  //  ratio, in which whatever its geometry gets wrong largely cancels, and the grid stays the
+  //  authority for the FEP.  (Carrying the donor's total itself, rescaled by an on-axis
+  //  k(E) = grid / MC from grounding, failed wherever the two geometries differ by more than k's
+  //  interpolation between energies can follow: a lead layer put totals above 1 between them.)  Any
+  //  grounding the donor carries is dropped: k cancels in an EtaTotTable ratio, but scales only the
+  //  FEP of the compact tiers.
+  const std::shared_ptr<DetectorResponse> mc = DetectorResponse::from_xml_string( donor->to_xml_string() );
+  mc->grounding = GroundingBlock{};
+
+  // The data-derived part of a fractional sigma; the model floors are re-applied at eval time from
+  //  `floors`, copied below.
+  const auto data_frac = []( const EffResult &r ) -> double {
+    return std::sqrt( std::max( 0.0, r.sigma*r.sigma - r.sigma_model*r.sigma_model ) ) / r.value;
+  };
+
+  // ln( total / FEP ) of the donor at `pos`, and its fractional sigma; false where it refuses the
+  //  point (behind its face plane).  From its efficiencies where they are nonzero - exact for every
+  //  total tier, each with its own kernel.  Else, where nothing reaches its crystal (a kernel
+  //  underflowing to 0, e.g. ~1 cm of lead at 15 keV), from its kernel-free prefactors: exact for an
+  //  EtaTotTable, coarser for the compact tiers, whose total prefactor (1, or b(E)) leaves out how
+  //  their No-Rayleigh kernel differs from the FEP's.
+  const auto donor_ln_ratio = [&mc,&data_frac]( const double energy, const Eigen::Vector3d &pos,
+                                                const ApertureQuadrature &q, double &ln_r, double &frac ) -> bool {
+    EffResult tot = mc->eps_total_at( energy, pos, q );
+    EffResult fep = mc->eps_fep_at( energy, pos, q );
+    if( (tot.flag == ResponseFlag::NeedsMc) || (fep.flag == ResponseFlag::NeedsMc) )
+      return false;
+
+    if( !(tot.value > 0.0) || !(fep.value > 0.0) )
+    {
+      tot = mc->total_prefactor( energy, pos, q );
+      fep = mc->fep_prefactor( energy, pos, q );
+      if( !(tot.value > 0.0) || !(fep.value > 0.0) )
+        return false;
+    }
+
+    ln_r = std::log( tot.value ) - std::log( fep.value );
+    frac = std::max( data_frac( tot ), data_frac( fep ) );  //one Monte Carlo: correlated, not added
+    return std::isfinite( ln_r ) && std::isfinite( frac );
+  };//donor_ln_ratio
+
+  // ln of the grid's FEP at `pos` without its kernel - so defined even where that underflows - and
+  //  its fractional sigma.
+  const auto grid_ln_fep = [&resp,&data_frac]( const double energy, const Eigen::Vector3d &pos,
+                                               const ApertureQuadrature &q, double &ln_f, double &frac ) -> bool {
+    const EffResult f = resp->fep_prefactor( energy, pos, q );
+    if( (f.flag == ResponseFlag::NeedsMc) || !(f.value > 0.0) )
+      return false;
+    ln_f = std::log( f.value );
+    frac = data_frac( f );
+    return std::isfinite( ln_f ) && std::isfinite( frac );
+  };//grid_ln_fep
+
   // eps_tot = exp(eta_tot) * K_grid (the EtaTotTable form, with no grounding), on the grid's own
-  //  eta_fep nodes - known-valid for this crystal, K-edge flanks included.  Pinned to the donor in
-  //  the true far field, where any two geometries' kernels agree in shape; everywhere closer, the
-  //  distance table below reproduces the donor.
+  //  eta_fep nodes - known-valid for this crystal, K-edge flanks included - at the far-field pin;
+  //  everywhere closer, the distance table below.  The grid's FEP there is its prefactor * K_grid,
+  //  so eta_tot is the log of prefactor * ratio.
   const EtaTable &fep = resp->eta_fep;
   EtaTable &eta = resp->tot_eff.eta_tot;
   resp->tot_eff.tier = TotEffTier::EtaTotTable;
@@ -1867,7 +1954,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   //  crystal-face origin; the donor is asked about the same physical point - the same place relative
   //  to the endcap face, whatever its own crystal offset.
   const double off_grid = resp->descriptor.endcap_front_offset_cm();
-  const double off_donor = donor->descriptor.endcap_front_offset_cm();
+  const double off_donor = mc->descriptor.endcap_front_offset_cm();
   const double a_cm = resp->descriptor.transverse_half_extent();
   const double d_ref_cm = std::max( 1000.0 * a_cm, 100.0 );
 
@@ -1887,23 +1974,19 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     Eigen::Vector3d grid_pos, donor_pos;
     node_positions( c, grid_pos, donor_pos );
     const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
-    const ApertureQuadrature q_donor = donor->make_quadrature( donor_pos );
+    const ApertureQuadrature q_donor = mc->make_quadrature( donor_pos );
 
     for( size_t e = 0; e < ne; ++e )
     {
       const double energy = eta.energies_keV[e];
-      const double K = resp->kernel_K( energy, q_grid, MuChoice::Total );
-      const EffResult tot = donor->eps_total_at( energy, donor_pos, q_donor );
-      if( (tot.flag == ResponseFlag::NeedsMc) || !(tot.value > 0.0) || !std::isfinite( tot.value )
-          || !(K > 0.0) || !std::isfinite( K ) )
+      double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
+      if( !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )
+          || !donor_ln_ratio( energy, donor_pos, q_donor, ln_r, r_frac ) )
         continue;
 
       const size_t idx = eta.index( e, c, 0 );
-      eta.ln_eta[idx] = std::log( tot.value / K );
-      // Only the data-derived part (MC node statistics, grounding covariance): the model floors are
-      //  re-applied at eval time from `floors`, copied below.
-      const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
-      eta.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
+      eta.ln_eta[idx] = ln_f + ln_r;
+      eta.frac_sigma[idx] = std::sqrt( f_frac*f_frac + r_frac*r_frac );
       valid[idx] = true;
     }//for( size_t e = 0; e < ne; ++e )
   }//for( size_t c = 0; c < nc; ++c )
@@ -1935,15 +2018,14 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     }//for( size_t c = 0; c < nc; ++c )
   }//for( size_t e = 0; e < ne; ++e )
 
-  resp->floors.tot_far = donor->floors.tot_far;
-  resp->floors.tot_near = donor->floors.tot_near;
+  resp->floors.tot_far = mc->floors.tot_far;
+  resp->floors.tot_near = mc->floors.tot_near;
   resp->tot_eff.finalize();
 
-  // Inside the pin, CeeLo's near-field total table (ceelo::TotEffPayload::near_field) holds the
-  //  donor's total at the same physical points, ln N = ln(donor / the pinned far-field total above).
-  //  Without it the GRID's kernel - the imported geometry's - would carry the total inward, which
-  //  after a geometry edit is wrong by up to ~10% a few cm out at grazing angles (and still ~1.5% at
-  //  1-3 m when pinned at 30 cm), and a donor's own measured near-field total would be lost.  The
+  // Inside the pin, CeeLo's near-field total table (ceelo::TotEffPayload::near_field) carries the
+  //  same product close in, ln N = ln(grid FEP * donor total/FEP / the pinned far-field total above),
+  //  all kernel-free.  So the grid's own close-in FEP - the file's - and the donor's measured
+  //  close-in total/FEP both carry over, and neither geometry's kernel decides the total.  The
   //  close-in lattice is like CeeLo's own, but measured from the endcap face, so all but the grazing
   //  nodes are places a source can be; it continues geometrically out to the pin.  The far-field
   //  values are taken before the table is installed - an unfinalized table would otherwise apply.
@@ -1989,15 +2071,17 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[d], tn.cos_thetas[c], 0.0 );
         const Eigen::Vector3d donor_pos = donor_position( grid_pos );
         const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
-        const ApertureQuadrature q_donor = donor->make_quadrature( donor_pos );
+        const ApertureQuadrature q_donor = mc->make_quadrature( donor_pos );
 
         for( size_t e = 0; e < tne; ++e )
         {
           const size_t idx = tn.index( e, c, d );
-          const double far = resp->eps_total_at( tn.energies_keV[e], grid_pos, q_grid ).value;
-          const EffResult tot = donor->eps_total_at( tn.energies_keV[e], donor_pos, q_donor );
-          if( (tot.flag == ResponseFlag::NeedsMc) || !(tot.value > 0.0) || !std::isfinite( tot.value )
-              || !(far > 0.0) || !std::isfinite( far ) )
+          const double energy = tn.energies_keV[e];
+          const double far = resp->total_prefactor( energy, grid_pos, q_grid ).value;
+          double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
+          if( !(far > 0.0) || !std::isfinite( far )
+              || !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )
+              || !donor_ln_ratio( energy, donor_pos, q_donor, ln_r, r_frac ) )
           {
             // As CeeLo's own tables do: hold the closer node rather than kink the interpolation.
             tn.ln_n[idx] = (d > 0) ? tn.ln_n[tn.index( e, c, d - 1 )] : 0.0;
@@ -2005,9 +2089,8 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
             continue;
           }
 
-          tn.ln_n[idx] = std::log( tot.value / far );
-          const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
-          tn.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
+          tn.ln_n[idx] = ln_f + ln_r - std::log( far );
+          tn.frac_sigma[idx] = std::sqrt( f_frac*f_frac + r_frac*r_frac );
         }//for( each energy )
       }//for( each distance, but the anchor )
     }//for( each cos-theta )
@@ -2017,8 +2100,24 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   }
 
 #if( PERFORM_DEVELOPER_CHECKS )
-  // At the lattice nodes the copy must answer exactly the donor's total, and the FEP must be the
-  //  grid's to the bit.
+  // At the lattice nodes the copy must answer exactly the grid's FEP times the donor's total/FEP,
+  //  and the FEP must be the grid's to the bit.
+  const auto check_node = [&]( const double energy, const Eigen::Vector3d &grid_pos, const char *where ){
+    const Eigen::Vector3d donor_pos = donor_position( grid_pos );
+    double ln_r = 0.0, r_frac = 0.0;
+    if( !donor_ln_ratio( energy, donor_pos, mc->make_quadrature( donor_pos ), ln_r, r_frac ) )
+      return;
+    const double ours = resp->eps_total_at( energy, grid_pos ).value;
+    const double theirs = grid.eps_fep_at( energy, grid_pos ).value * std::exp( ln_r );
+    if( !(std::fabs( ours - theirs ) <= 1.0e-6 * theirs) )
+    {
+      log_developer_error( __func__, ("attachTotalEfficiency: " + std::string(where) + " total at "
+                           + std::to_string(energy) + " keV is " + std::to_string(ours)
+                           + " vs grid FEP x donor total/FEP " + std::to_string(theirs)).c_str() );
+      assert( 0 );
+    }
+  };//check_node
+
   for( const size_t c : { size_t(0), nc / 2, nc - 1 } )
   {
     Eigen::Vector3d grid_pos, donor_pos;
@@ -2029,15 +2128,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         continue;
 
       const double energy = eta.energies_keV[e];
-      const double ours = resp->eps_total_at( energy, grid_pos ).value;
-      const double theirs = donor->eps_total_at( energy, donor_pos ).value;
-      if( std::fabs( ours - theirs ) > 1.0e-6 * theirs )
-      {
-        log_developer_error( __func__, ("attachTotalEfficiency: total at " + std::to_string(energy)
-                             + " keV, cos " + std::to_string(eta.cos_thetas[c]) + " is "
-                             + std::to_string(ours) + " vs the donor's " + std::to_string(theirs)).c_str() );
-        assert( 0 );
-      }
+      check_node( energy, grid_pos, "far-field" );
 
       if( resp->eps_fep_at( energy, grid_pos ).value != grid.eps_fep_at( energy, grid_pos ).value )
       {
@@ -2047,25 +2138,16 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     }//for( three energies )
   }//for( three angles )
 
-  // And at near-field nodes, where the table must reproduce the donor too.
+  // And at near-field nodes, where the table must reproduce it too.
   {
     const NearFieldModel &tn = resp->tot_eff.near_field;
+    const size_t e = tn.energies_keV.size() / 2;
     for( const size_t c : { size_t(1), tn.cos_thetas.size() - 1 } )
     {
-      const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[2], tn.cos_thetas[c], 0.0 );
-      const double energy = tn.energies_keV[tn.energies_keV.size() / 2];
-      if( tn.frac_sigma[tn.index( tn.energies_keV.size() / 2, c, 2 )] >= 1.0 )
-        continue;   //a held node: the donor had nothing there
-      const double ours = resp->eps_total_at( energy, grid_pos ).value;
-      const double theirs = donor->eps_total_at( energy, donor_position( grid_pos ) ).value;
-      if( std::fabs( ours - theirs ) > 1.0e-6 * theirs )
-      {
-        log_developer_error( __func__, ("attachTotalEfficiency: near-field total at " + std::to_string(energy)
-                             + " keV, cos " + std::to_string(tn.cos_thetas[c]) + " is " + std::to_string(ours)
-                             + " vs the donor's " + std::to_string(theirs)).c_str() );
-        assert( 0 );
-      }
-    }//for( two angles )
+      if( tn.frac_sigma[tn.index( e, c, 2 )] >= 1.0 )
+        continue;   //a held node: nothing to compare with
+      check_node( tn.energies_keV[e], source_position( tn.dists_cm[2], tn.cos_thetas[c], 0.0 ), "near-field" );
+    }
   }
 #endif
 

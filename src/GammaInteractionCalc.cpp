@@ -29,6 +29,7 @@
 #include <vector>
 #include <memory>
 #include <cctype>
+#include <limits>
 #include <istream>
 #include <fstream>
 #include <sstream>
@@ -519,6 +520,55 @@ double transmission_coefficient_air( const double energy, const double length )
 }
 
 
+double background_peak_scale( const double user_scale_factor, const double fore_live_time,
+                              const double back_live_time )
+{
+  return ((user_scale_factor <= 0.0) || IsInf(user_scale_factor) || IsNan(user_scale_factor))
+           ? (fore_live_time / back_live_time)
+           : user_scale_factor;
+}//background_peak_scale(...)
+
+
+vector<PeakDef> scale_background_peaks( const vector<PeakDef> &peaks, const double scale,
+                                        vector<double> *skipped_non_gaus_energies )
+{
+  vector<PeakDef> answer;
+  for( PeakDef p : peaks )
+  {
+    if( p.gausPeak() )
+    {
+      p.setPeakArea( scale * p.peakArea() );
+      p.setPeakAreaUncert( scale * p.peakAreaUncert() );
+      answer.push_back( p );
+    }else if( skipped_non_gaus_energies )
+    {
+      skipped_non_gaus_energies->push_back( p.mean() );
+    }
+  }//for( PeakDef p : peaks )
+
+  return answer;
+}//scale_background_peaks(...)
+
+
+BackgroundOverlap overlapping_background( const PeakDef &fore, const vector<PeakDef> &scaled_back_peaks )
+{
+  BackgroundOverlap answer;
+
+  //XXX - this linear search is bad, and should be fixed
+  for( const PeakDef &backPeak : scaled_back_peaks )
+  {
+    const double sigma = fore.gausPeak() ? fore.sigma() : 0.25*fore.roiWidth();
+    if( fabs(backPeak.mean() - fore.mean()) < (sm_background_peak_nsigma_near*sigma) )
+    {
+      answer.counts += backPeak.peakArea();
+      answer.uncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
+    }
+  }//for( const PeakDef &backPeak : scaled_back_peaks )
+
+  return answer;
+}//overlapping_background(...)
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
@@ -732,6 +782,76 @@ double distance( const double a[3], const double b[3] )
 {
   return distance_imp<double>( a, b );
 }//double distance( const double a[3], b[3] )
+
+
+double detector_face_clearance( const GeometryType geometry, const double outer_dims[3],
+                                const double distance, const double offset_x, const double offset_y )
+{
+  // The face centre in assembly coordinates - the same placement every integrand uses.
+  const DetectorGeomT<double> det = detector_geom_from_config<double>( geometry, distance, 0.0, 0.0,
+                                                                       offset_x, offset_y );
+  const double * const p = det.position;
+
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+      return sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] ) - outer_dims[0];
+
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      // Both orientations keep the cylinder axis along z; only the detector moves (to +x side-on).
+      const double over_r = sqrt( p[0]*p[0] + p[1]*p[1] ) - outer_dims[0];
+      const double over_z = fabs( p[2] ) - outer_dims[1];
+      if( (over_r <= 0.0) && (over_z <= 0.0) )
+        return std::max( over_r, over_z );
+      const double out_r = std::max( over_r, 0.0 ), out_z = std::max( over_z, 0.0 );
+      return sqrt( out_r*out_r + out_z*out_z );
+    }
+
+    case GeometryType::Rectangular:
+    {
+      double outside2 = 0.0, inside = -std::numeric_limits<double>::infinity();
+      for( int i = 0; i < 3; ++i )
+      {
+        const double over = fabs( p[i] ) - outer_dims[i];
+        inside = std::max( inside, over );
+        outside2 += std::max( over, 0.0 ) * std::max( over, 0.0 );
+      }
+      return (inside <= 0.0) ? inside : sqrt( outside2 );
+    }
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( geometry )
+
+  throw std::runtime_error( "detector_face_clearance: invalid geometry" );
+}//detector_face_clearance(...)
+
+
+double detector_face_plane_clearance( const GeometryType geometry, const double outer_dims[3],
+                                      const double distance )
+{
+  // The extent along the detector axis: sphere and side-on cylinder radius, end-on cylinder
+  //  half-length, box half-depth (detector_geom_from_config's axis for each geometry).
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+    case GeometryType::CylinderSideOn:
+      return distance - outer_dims[0];
+
+    case GeometryType::CylinderEndOn:
+      return distance - outer_dims[1];
+
+    case GeometryType::Rectangular:
+      return distance - outer_dims[2];
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( geometry )
+
+  throw std::runtime_error( "detector_face_plane_clearance: invalid geometry" );
+}//detector_face_plane_clearance(...)
   
 
 
@@ -1282,7 +1402,8 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
   //  thickness at the distance minus the fixed (non-fit) thicknesses of the other shells on that axis.
   //  This is a per-layer box bound: it does not exactly express the cumulative constraint when several
   //  axis layers are fit at once (a future manifold would), but it keeps the optimizer out of the
-  //  invalid region.  Uses the on-axis distance (off-axis is left for that future manifold).
+  //  invalid region.  The limit is the detector-face plane (detector_face_plane_clearance), so the
+  //  on-axis distance is right whatever the source offsets.
   const int det_dim = (geom == GeometryType::CylinderEndOn) ? 1
                       : ((geom == GeometryType::Rectangular) ? 2 : 0);
   double fixed_axis_extent = 0.0;
@@ -3862,6 +3983,24 @@ double ShieldingSourceChi2Fcn::sourceOffsetY() const
 }
 
 
+void ShieldingSourceChi2Fcn::modelCrystalPlacement( double &diameter, double &setback ) const
+{
+  diameter = setback = 0.0;
+  if( !m_detector || m_detector->isFixedGeometry() )
+    return;
+
+  if( (pointSourceEffModel() == ShieldingSourceFitCalc::PointEffModel::Response) && m_volEffResponse )
+  {
+    diameter = 2.0 * CeeLoUtils::crystalHalfExtent( m_volEffResponse->descriptor ) * PhysicalUnits::cm;
+    setback = m_volEffResponse->descriptor.endcap_front_offset_cm() * PhysicalUnits::cm;
+    return;
+  }
+
+  diameter = m_detector->detectorDiameter();
+  setback = m_detector->detectorSetback();
+}//modelCrystalPlacement(...)
+
+
 double ShieldingSourceChi2Fcn::trueSourceToDetectorDistance() const
 {
   return sqrt( m_distance*m_distance + m_sourceOffsets[0]*m_sourceOffsets[0]
@@ -4823,21 +4962,9 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     
     double observed_counts = peak.peakArea();
     double observed_uncertainty = peak.peakAreaUncert();
-    double backCounts = 0.0, backUncert2 = 0.0;
-    const double nsigmaNear = 1.0;
-    
-    //XXX - this linear search is bad, and should be fixed
-    for( const PeakDef &backPeak : backPeaks )
-    {
-      const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
-      if( fabs(backPeak.mean()-peak.mean()) < (nsigmaNear*sigma) )
-      {
-        backCounts += backPeak.peakArea();
-        backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
-      }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
-    }//for( const PeakDef &peak : backPeaks )
-    
-    
+    const BackgroundOverlap back_overlap = overlapping_background( peak, backPeaks );
+    const double backCounts = back_overlap.counts, backUncert2 = back_overlap.uncert2;
+
     if( energy_count_map.count(energy) == 0 )
     {
       stringstream msg;
@@ -5015,28 +5142,20 @@ void ShieldingSourceChi2Fcn::setBackgroundPeaks( const std::vector<PeakDef> &pea
                                                 const double liveTime,
                                                 const double scale_factor )
 {
-  m_backgroundPeaks.clear();
-  const double scale = ((scale_factor <= 0.0) || IsInf(scale_factor) || IsNan(scale_factor))
-                          ? (m_liveTime / liveTime)
-                          : scale_factor;
+  const double scale = background_peak_scale( scale_factor, m_liveTime, liveTime );
   m_backgroundPeakScale = scale;
-  
-  for( PeakDef p : peaks )
+
+  vector<double> skipped_energies;
+  m_backgroundPeaks = scale_background_peaks( peaks, scale, &skipped_energies );
+
+  for( const double energy : skipped_energies )
   {
-    if( p.gausPeak() )
-    {
-      p.setPeakArea( scale * p.peakArea() );
-      p.setPeakAreaUncert( scale * p.peakAreaUncert() );
-      m_backgroundPeaks.push_back( p );
-    }else
-    {
-      stringstream msg;
-      msg << "The non-gaussian background peak at " << p.mean() << " keV "
-          << " will not be used for background peak area subtraction;"
-          << " non-gaussian peaks may be supported for this in the future";
-      passMessage( msg.str(), WarningWidget::WarningMsgHigh );
-    }//if( p.gausPeak() ) / else
-  }//for( PeakDef &p : m_backgroundPeaks )
+    stringstream msg;
+    msg << "The non-gaussian background peak at " << energy << " keV "
+        << " will not be used for background peak area subtraction;"
+        << " non-gaussian peaks may be supported for this in the future";
+    passMessage( msg.str(), WarningWidget::WarningMsgHigh );
+  }//for( const double energy : skipped_energies )
 }//void setBackgroundPeaks(...)
   
   
@@ -5084,6 +5203,7 @@ vector<PeakResultPlotInfo>
         log_peak.counts = peak.peakArea();
         log_peak.countsUncert = peak.peakAreaUncert();
         
+        log_peak.liveTime = m_liveTime / PhysicalUnits::second;
         log_peak.cps = log_peak.counts / m_liveTime;
         log_peak.cpsUncert = log_peak.countsUncert / m_liveTime;
         
@@ -5287,8 +5407,10 @@ vector<PeakResultPlotInfo>
       const double thickness = exit_dist - shield_outer_rad;  //chord through this layer
       shield_outer_rad = exit_dist;
 
-      att_coef_fcn = [mat = material.get(), thickness]( const double energy ){
-        return transmition_coefficient_material( mat, energy, thickness );
+      // The fit's coefficient (see pointLayerOpticalDepth), not plain mu, so the reported expected
+      //  counts and per-shield factors are what the fit minimised.
+      att_coef_fcn = [this, mat = material.get(), thickness, &energie_widths]( const double energy ){
+        return pointLayerOpticalDepth( mat, energy, thickness, energie_widths );
       };
     }//if( generic material ) / else
 
@@ -5389,10 +5511,15 @@ vector<PeakResultPlotInfo>
         
         if( pos != end(*log_info) )
         {
-          const double deteff = m_detector->farFieldIntrinsicEfficiency( energy_count.first );
+          // The solid angle of the crystal the model placed, and the intrinsic efficiency that
+          //  leaves - so the two multiply to `eff` (for the flat-disk model, the curve exactly).
+          double crys_diam = 0.0, crys_setback = 0.0;
+          modelCrystalPlacement( crys_diam, crys_setback );
+          const double solid_angle = m_detector->isFixedGeometry() ? 1.0
+                         : DetectorPeakResponse::fractionalSolidAngle( crys_diam, trueDist + crys_setback );
           pos->detEff = eff;
-          pos->detIntrinsicEff = deteff;
-          pos->detSolidAngle = eff / deteff;
+          pos->detSolidAngle = solid_angle;
+          pos->detIntrinsicEff = (solid_angle > 0.0) ? (eff / solid_angle) : 0.0;
         }
       }//if( log_info )
       
@@ -5597,23 +5724,37 @@ vector<PeakResultPlotInfo>
           //  only (intrinsic folded in afterwards).  Dividing the integral by its own model's
           //  efficiency is what leaves a pure attenuation factor either way - dividing an absolute
           //  integral by a bare solid angle used to leave an intrinsic-efficiency factor behind.
-          double det_intrinsic = 1.0, det_total_eff = 1.0;
+          //  Both at the true (offset-aware) distance from the assembly centre, as the point sources
+          //  are evaluated.
+          double det_intrinsic = 1.0, det_total_eff = 1.0, det_solid_angle = 1.0;
           if( m_detector && m_detector->isValid() )
           {
+            const double true_dist = trueSourceToDetectorDistance();
             det_intrinsic = m_detector->farFieldIntrinsicEfficiency( peak.energy );
             if( calculator->m_effResponse )
+            {
               det_total_eff = pointSourceFepEff( peak.energy ).value;
-            else
+
+              // The response's own crystal, so `detSolidAngle` is a solid angle and the intrinsic
+              //  is what is left of the response's efficiency at this distance.
+              double crys_diam = 0.0, crys_setback = 0.0;
+              modelCrystalPlacement( crys_diam, crys_setback );
+              det_solid_angle = DetectorPeakResponse::fractionalSolidAngle( crys_diam, true_dist + crys_setback );
+              det_intrinsic = (det_solid_angle > 0.0) ? (det_total_eff / det_solid_angle) : 0.0;
+            }else
+            {
               // `flatDiskEfficiency`, not `efficiency`: `detSolidAngle` below is this divided by
               //  the intrinsic efficiency, so it is only a solid angle while both come from the
               //  flat-disk model - which is the model this branch's integrand used.
               det_total_eff = m_detector->isFixedGeometry() ? det_intrinsic
-                                                            : m_detector->flatDiskEfficiency( peak.energy, m_distance );
-          }
-          const double model_eff = calculator->m_effResponse ? det_total_eff : (det_total_eff / det_intrinsic);
+                                                            : m_detector->flatDiskEfficiency( peak.energy, true_dist );
+              det_solid_angle = det_total_eff / det_intrinsic;
+            }
+          }//if( m_detector && m_detector->isValid() )
+          const double model_eff = calculator->m_effResponse ? det_total_eff : det_solid_angle;
           peak.detIntrinsicEff = det_intrinsic;
           peak.detEff = det_total_eff;
-          peak.detSolidAngle = det_total_eff / det_intrinsic;
+          peak.detSolidAngle = det_solid_angle;
           peak.m_totalAttenFactor = src.averageEfficiencyPerSourceGamma / model_eff;
           peak.m_totalShieldAttenFactor = peak.m_totalAttenFactor / peak.m_airAttenFactor;
           

@@ -37,6 +37,7 @@
 ///   - Boundary crossing between scoring/non-scoring regions
 
 #include <Eigen/Core>
+#include <array>
 #include <random>
 #include <cstdint>
 #include <vector>
@@ -46,6 +47,7 @@ namespace ceelo {
 class Material;
 class Geometry;
 struct PathSegment;
+struct ElectronDepositResult;
 
 /// Configuration for the transport simulation.
 struct TransportConfig {
@@ -70,6 +72,15 @@ struct TransportConfig {
     /// gating: FEP-only runs full physics inside the crystal and local-U_i
     /// deposition keeps the FEP indicator intact.
     bool enable_doppler_broadening = true;
+
+    /// Relax the K-shell vacancy a Doppler-sampled Compton collision leaves:
+    /// emit and transport the K x-ray (omega_K, line by intensity) instead of
+    /// depositing the binding energy locally, as photoelectric K vacancies
+    /// do. Shapes the K x-ray escape peaks of Compton-first histories (high-Z
+    /// crystals above ~300 keV); FEP and total move by well under 0.1%, so it
+    /// is a spectrum-fidelity option (off by default). Needs Doppler
+    /// broadening (the subshell is only sampled there) and enable_fluorescence.
+    bool enable_compton_fluorescence = false;
 
     /// Half-width (keV) of the full-energy-peak window the CALLER will score
     /// with.  Used only by the fep_only_mode early kill, which abandons a
@@ -152,7 +163,8 @@ struct InteractionRecord {
     int compton_scatter_index;  ///< 0-based index of Compton scatters (or # prior Comptons for PE)
 };
 
-/// Record of a fluorescence event during PE absorption.
+/// Record of a K-vacancy fluorescence event (PE absorption, or a Compton
+/// collision with enable_compton_fluorescence).
 /// Only populated when config.record_interactions == true.
 struct FluorescenceRecord {
     int element_Z = 0;              ///< Element where PE occurred
@@ -161,6 +173,7 @@ struct FluorescenceRecord {
     double fluorescence_energy_keV = 0.0; ///< Energy of emitted X-ray (0 if Auger)
     bool fluorescence_escaped = false;    ///< Did the X-ray escape the scoring volume?
     double fluorescence_deposit_in_scoring = 0.0; ///< Energy deposited by X-ray in scoring (keV)
+    bool from_compton = false;      ///< K vacancy left by a Compton collision, not PE
 };
 
 /// Result of transporting a single photon through the detector.
@@ -233,5 +246,31 @@ TransportResult transport_photon(
     const Geometry& geometry,
     const TransportConfig& config,
     std::mt19937_64& rng);
+
+/// Walk an electron (or positron) from `position` through the detector
+/// geometry (ElectronCsda::deposited_in_scoring, with `config`'s
+/// disable_moliere and disable_brems).
+ElectronDepositResult walk_electron(const Eigen::Vector3d& position,
+                                    const Eigen::Vector3d& direction,
+                                    double KE_keV,
+                                    const Geometry& geometry,
+                                    const TransportConfig& config,
+                                    std::mt19937_64& rng,
+                                    bool is_positron = false);
+
+/// The two photons a positron annihilates into.
+struct AnnihilationPair {
+    std::array<double, 2> energy_keV{0.0, 0.0};
+    std::array<Eigen::Vector3d, 2> direction{};
+};
+
+/// Sample the annihilation photons of a positron that came to the end of its
+/// walk inside the geometry (a positron that escaped makes none).
+///  - At rest: two back-to-back 511 keV photons on an isotropic axis.
+///  - In flight with `residual_KE_keV` left: 2·mₑc² + residual_KE_keV split by
+///    a sampled fraction, in two independent isotropic directions (continuum,
+///    not a clean 511 pair; proper two-body boost kinematics are not modelled).
+AnnihilationPair sample_annihilation_pair(bool in_flight, double residual_KE_keV,
+                                          std::mt19937_64& rng);
 
 } // namespace ceelo

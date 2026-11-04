@@ -346,7 +346,12 @@ UserPreferences::UserPreferences( InterSpec *parent )
       
       if( !isphone && (name.find("_phone") != string::npos) )
         continue;
-      
+
+      // A device-specific default (e.g., "Foo_phone") takes precedence over the generic one ("Foo"),
+      //  which, as the map is sorted, comes first - so skip the generic one when it applies.
+      if( (isphone && defopts.count(name + "_phone")) || (istablet && defopts.count(name + "_tablet")) )
+        continue;
+
       if( m_options.count(opt->m_name) )
         continue;
       

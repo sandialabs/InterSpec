@@ -242,10 +242,12 @@ for exactly rather than approximated.
 <p>
 The two uncertainty fields cover everything that scales the expected counts and
 is not counting statistics.  <b>Dist. uncert.</b> is the 1&sigma; uncertainty of
-the source-to-detector distance, written like the distance itself
-(&quot;1 cm&quot;); because a point source's efficiency goes as 1/r&sup2; it
-reaches the counts with a factor of two, so a 5% distance uncertainty is a 10%
-counts uncertainty.  It is not applied for a fixed-geometry detector response,
+the source-to-detector-face distance, written like the distance itself
+(&quot;1 cm&quot;); it reaches the counts through how much the detector
+efficiency changes over that distance.  Far from the detector a point source's
+efficiency goes as 1/r&sup2;, so a 5% distance uncertainty is a 10% counts
+uncertainty; close in, where the crystal's setback behind the face matters, the
+detector response gives a smaller number.  It is not applied for a fixed-geometry detector response,
 whose efficiency does not depend on distance; the tool says so when that happens.
 <b>Eff. uncert.</b> is a percentage for anything else that scales the expected
 counts, such as the gamma branching ratio, or the efficiency of a detector response

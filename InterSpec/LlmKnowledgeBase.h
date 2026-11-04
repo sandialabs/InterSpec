@@ -25,9 +25,11 @@
 
 #include "InterSpec_config.h"
 
-#include <functional>
+#include <set>
 #include <string>
 #include <vector>
+#include <optional>
+#include <functional>
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
@@ -81,8 +83,20 @@ std::vector<std::string> knowledgeDirectories();
 
 /** Loads skills from all of #knowledgeDirectories; a skill in a later directory overrides a same-named
  skill (by canonical name) from an earlier one - e.g., a writable-directory skill overrides a shipped one.
+ Only the skills the #setSkillFilter filter allows are returned.
  */
 std::vector<SkillInfo> loadSkills();
+
+/** Restricts which skills #loadSkills returns, for the whole process: only those whose canonical name
+ is in `canonical_names` (an empty set means none - and then the KnowledgeBase agent is not offered at
+ all, even with a RAG endpoint configured), or every skill for an empty optional (the default).
+ Used to compare how an assistant does with and without skills; set it before creating the
+ sessions (tool registries) it should apply to.
+ */
+void setSkillFilter( std::optional<std::set<std::string>> canonical_names );
+
+/** The current #setSkillFilter filter. */
+std::optional<std::set<std::string>> skillFilter();
 
 /** Text appended to the KnowledgeBase agent's `invoke_KnowledgeBase` tool description, so the calling agent
  knows what topics it can answer: a comma-separated list of the available skill names (kept brief, since

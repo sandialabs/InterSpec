@@ -76,6 +76,23 @@
   Secara naif mengubah tipe miring menjadi {1} menyebabkan puncak menjadi tidak signifikan.<br />
   Harap gunakan <b>Editor Puncak</b> untuk membuat perubahan ini.
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">Puncak Latar Belakang Hilang</message>
+  <message id="psgu-missing-back-peaks-msg">
+    Spektrum latar belakang tidak memiliki puncak yang ditambahkan pada energi {1}, tetapi
+    kemungkinan ada puncak nyata di spektrum latar belakang pada energi tersebut -
+    apakah Anda ingin menambahkan puncak tersebut ke spektrum latar belakang?
+  </message>
+  <message id="psgu-btn-no-dont-add">Tidak</message>
+  <message id="psgu-btn-add-peaks">Tambah Puncak...</message>
+  <message id="psgu-btn-add-all-detectable">Tambah semua puncak auto-fit</message>
+  <message id="psgu-back-peak-preview-title">Pratinjau Puncak Latar Belakang</message>
+  <message id="psgu-back-peak-preview-msg">Puncak berikut akan ditambahkan ke spektrum latar belakang:</message>
+  <message id="psgu-no-new-back-peaks">Tidak ditemukan puncak tambahan di spektrum latar belakang pada energi yang ditunjukkan.</message>
+  <message id="psgu-back-peaks-all-fit">{1} puncak kandidat telah disesuaikan ke latar belakang.</message>
+  <message id="psgu-back-peaks-some-fit">{1} dari {2} puncak kandidat signifikan dan disesuaikan ke latar belakang.</message>
+  <message id="psgu-back-peaks-manual-hint">(Anda juga dapat menyesuaikan puncak latar belakang secara manual dengan tombol Alt (mac: tombol Option) plus klik<br />
+  ganda pada spektrum, atau dengan memuat latar belakang sebagai latar depan)</message>
+  <message id="psgu-err-adding-back-peaks">Kesalahan menambahkan puncak ke latar belakang: {1}</message>
+  <message id="psgu-warn-no-back-spec">Tidak ada spektrum latar belakang yang dimuat, jadi tidak dapat mengurangi area puncak latar belakang dari latar depan.</message>
 </messages>
 

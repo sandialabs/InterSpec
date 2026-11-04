@@ -87,7 +87,9 @@ public:
   /** Seeds the form from a DRF: its own geometry (DetectorPeakResponse::monteCarloGeometry) when it
    has one - returned, so an owner can tell an unedited form from the descriptor it stands for -
    else a cylinder with diameter = `drf->detectorDiameter()` and (estimated) length = diameter, with
-   a note that the length is a guess (returns nullptr).  Does nothing for null/invalid DRFs.
+   a note that the length is a guess, and the DRF's setback as a front vacuum-gap layer exactly as
+   #seedFromDiameter does, so a response built from the form puts the crystal where the DRF did
+   (returns nullptr).  Does nothing for null/invalid DRFs.
    */
   std::shared_ptr<const ceelo::GeometryDescriptor> seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
 
@@ -190,6 +192,12 @@ protected:
    dereference the deleted edit (WSuggestionPopup::doActivate).  The only way a layer row is removed.
    */
   void popLayerRow();
+
+  /** Replaces every layer row with the one a flat-disk setback (PhysicalUnits) stands for: a front
+   vacuum-gap layer of that thickness, or no layer at all for a zero setback.  The one place both
+   #seedFromDrf and #seedFromDiameter turn a setback into layers.
+   */
+  void setLayersFromSetback( const double setback );
 
   /** One concentric endcap/housing layer input row. */
   struct LayerRow

@@ -778,6 +778,7 @@ inline McRefResult reference_random( const DistributedSrcCalcT<double> &calc, co
     {
       const size_t nb = std::min( batch, n_hi - done );
       q.rays.assign( nb, ceelo::KernelRay() );
+      q.segments.clear();   //the rays below append theirs, in ray order
       q.n_rays_total = static_cast<int>( nb );
 
       for( size_t i = 0; i < nb; ++i )
@@ -901,7 +902,7 @@ inline McRefResult reference_random( const DistributedSrcCalcT<double> &calc, co
             if( s.is_scoring )
               active += len;
             if( s.material )
-              kr.segs.push_back( { s.material, static_cast<float>(len), s.is_scoring } );
+              q.add_segment( kr, s.material, static_cast<float>(len), s.is_scoring );
           }
           kr.active_len = static_cast<float>( active );
         }

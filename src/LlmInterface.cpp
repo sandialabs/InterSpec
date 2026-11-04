@@ -31,6 +31,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 #include <stdexcept>
 #include <functional>
 
@@ -200,6 +201,10 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
     m_history(std::make_shared<LlmConversationHistory>()),
     m_debug_stream( nullptr ),
     m_debug_file( nullptr ),
+    m_lastActivityState( ActivityState::Idle ),
+    m_activityBatchDepth( 0 ),
+    m_unattended( false ),
+    m_terminalSignalCount( 0 ),
     m_instanceId( std::to_string( []{ static std::atomic<int> s_instance_count{0}; return s_instance_count.fetch_add(1); }() ) ),
     m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse_" + m_instanceId)),
     m_nextRequestId(1)
@@ -289,9 +294,12 @@ namespace
    missed).  Sets finishTime so an abandoned conversation does not display "Pending LLM response..."
    forever; only the directly-cancelled top conversation gets a visible error turn (when requested),
    nested sub-agents are just marked finished.  The finishTime guard also de-duplicates and leaves
-   already-completed conversations untouched. */
+   already-completed conversations untouched.  `notify` emits each finalized conversation's
+   conversationFinished signal (not its completion handler), so its display stops showing it as
+   running; pass false when the GUI is being torn down or replaced. */
   void finalize_convo_tree( const shared_ptr<LlmInteraction> &convo, const std::string &reason,
-                            const bool recordErrorTurn, LlmConversationHistory * const history )
+                            const bool recordErrorTurn, const bool notify,
+                            LlmConversationHistory * const history )
   {
     if( !convo || convo->finishTime.has_value() )
       return;
@@ -309,9 +317,156 @@ namespace
       if( !calls )
         continue;
       for( const LlmToolCall &tc : *calls )
-        finalize_convo_tree( tc.sub_agent_conversation, reason, /*recordErrorTurn=*/false, history );
+        finalize_convo_tree( tc.sub_agent_conversation, reason, /*recordErrorTurn=*/false, notify, history );
     }
+
+    if( notify )
+      convo->conversationFinished.emit();
   }//finalize_convo_tree(...)
+
+
+  /** Marks `convo` finished, runs its completion handler, and emits its conversationFinished.  The
+   handler is cleared before it runs, so it runs at most once: a sub-agent's resolves its parent's
+   tool round, which must not happen twice.
+   */
+  void finish_conversation( const shared_ptr<LlmInteraction> &convo )
+  {
+    convo->finishTime = std::chrono::system_clock::now();
+
+    std::function<void(void)> handler;
+    handler.swap( convo->conversation_completion_handler );
+    if( handler )
+      handler();
+
+    convo->conversationFinished.emit();
+  }//finish_conversation(...)
+
+
+  /** The start of the question shown for a context compaction's conversation (see
+   sendCompactionRequest()); how one is recognized once read back from a file.
+   */
+  const char * const sm_compaction_display_prefix = "[Context Compaction]";
+
+
+  /** If `convo` is a context compaction's conversation, whose request (the summarization prompt) is not
+   kept, so can not be sent again.
+   */
+  bool is_compaction_conversation( const LlmInteraction &convo )
+  {
+    if( (convo.type != LlmInteraction::Type::System) || convo.responses.empty() )
+      return false;
+
+    const LlmInteractionInitialRequest * const request
+                   = dynamic_cast<const LlmInteractionInitialRequest *>( convo.responses.front().get() );
+    return request && SpecUtils::starts_with( request->content(), sm_compaction_display_prefix );
+  }//is_compaction_conversation(...)
+
+
+  /** Marks `convo`, and each sub-agent its tool rounds still wait on, as interrupted - but not
+   finished, so it can be continued.  One not waiting on anything (e.g., a sub-agent paused on an error,
+   which keeps its Retry) is left as is.  Those marked are added to `marked`.
+   */
+  void mark_interrupted_tree( const shared_ptr<LlmInteraction> &convo,
+                              const LlmInteraction::Interruption &interruption,
+                              vector<shared_ptr<LlmInteraction>> &marked )
+  {
+    if( !convo || convo->finishTime.has_value() )
+      return;
+
+    if( convo->isAwaitingWork() )
+    {
+      convo->interruption = interruption;
+      marked.push_back( convo );
+    }
+
+    for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+    {
+      const LlmToolResults * const results = dynamic_cast<const LlmToolResults *>( turn.get() );
+      for( size_t i = 0; results && (i < results->toolCalls().size()); ++i )
+      {
+        const LlmToolCall &call = results->toolCalls()[i];
+        if( call.sub_agent_conversation && (call.status == LlmToolCall::CallStatus::Pending) )
+          mark_interrupted_tree( call.sub_agent_conversation, interruption, marked );
+      }
+    }//for( loop over turns )
+  }//mark_interrupted_tree(...)
+
+
+  /** Whether `convo` is waiting on `subAgent`, as a sub-agent of its own or of one it is waiting on. */
+  bool awaits_sub_agent( const LlmInteraction &convo, const shared_ptr<const LlmInteraction> &subAgent )
+  {
+    for( const shared_ptr<LlmInteractionTurn> &turn : convo.responses )
+    {
+      const LlmToolResults * const results = dynamic_cast<const LlmToolResults *>( turn.get() );
+      for( size_t i = 0; results && (i < results->toolCalls().size()); ++i )
+      {
+        const LlmToolCall &call = results->toolCalls()[i];
+        if( call.sub_agent_conversation && (call.status == LlmToolCall::CallStatus::Pending)
+            && ((call.sub_agent_conversation == subAgent) || awaits_sub_agent( *call.sub_agent_conversation, subAgent )) )
+          return true;
+      }
+    }//for( loop over turns )
+
+    return false;
+  }//awaits_sub_agent(...)
+
+
+  /** Clears the interruption of `convo` and of each sub-agent its tool rounds still wait on, and sets
+   the result of each of their outstanding calls to `content` (an error), so their placeholders are
+   never sent to the LLM.  Emits the interruptionChanged of each conversation that was interrupted, and
+   the asyncToolCompleted of each async call, if `notify`.
+   */
+  void cancel_interrupted_tree( const shared_ptr<LlmInteraction> &convo, const std::string &content,
+                                const bool notify )
+  {
+    if( !convo )
+      return;
+
+    const bool wasInterrupted = convo->interruption.has_value();
+    convo->interruption.reset();
+
+    for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+    {
+      LlmToolResults * const results = dynamic_cast<LlmToolResults *>( turn.get() );
+      if( !results )
+        continue;
+
+      for( LlmToolCall &call : results->toolCalls() )
+      {
+        if( call.status != LlmToolCall::CallStatus::Pending )
+          continue;
+
+        if( call.sub_agent_conversation )
+          cancel_interrupted_tree( call.sub_agent_conversation, content, notify );
+
+        call.status = LlmToolCall::CallStatus::Error;
+        call.content = content;
+        if( notify && !call.sub_agent_conversation )
+          results->asyncToolCompleted().emit( call.invocationId );
+      }//for( loop over tool calls )
+    }//for( loop over turns )
+
+    if( notify && wasInterrupted )
+      convo->interruptionChanged.emit();
+  }//cancel_interrupted_tree(...)
+
+
+  /** Accumulates a parsed API response's token usage and cost (whichever the provider reported)
+   onto `convo`. */
+  void add_parsed_usage( LlmConversationHistory &history, const shared_ptr<LlmInteraction> &convo,
+                         const ParsedLlmResponse &parsed )
+  {
+    const auto to_int = []( const std::optional<size_t> &v ) -> std::optional<int> {
+      return v.has_value() ? std::optional<int>( static_cast<int>( v.value() ) ) : std::nullopt;
+    };
+
+    if( parsed.promptTokens.has_value() || parsed.completionTokens.has_value()
+       || parsed.totalTokens.has_value() || parsed.cachedTokens.has_value()
+       || parsed.cacheCreationTokens.has_value() || parsed.cost.has_value() )
+      history.addTokenUsage( convo, to_int( parsed.promptTokens ), to_int( parsed.completionTokens ),
+                             to_int( parsed.totalTokens ), to_int( parsed.cachedTokens ),
+                             to_int( parsed.cacheCreationTokens ), parsed.cost );
+  }//add_parsed_usage(...)
 }//namespace
 
 
@@ -326,9 +481,10 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
 
   // Finalize a conversation (and its nested sub-agents) exactly once.  The finishTime check both
   // skips already-finished conversations and de-duplicates a conversation that appears in more than
-  // one of the maps below.
+  // one of the maps below.  The callers that dont want an error turn are those tearing down or
+  // replacing the GUI's history, so they dont want the finished signals either.
   const auto finalize = [this, &reason, recordErrorTurn]( const shared_ptr<LlmInteraction> &convo ){
-    finalize_convo_tree( convo, reason, recordErrorTurn, m_history.get() );
+    finalize_convo_tree( convo, reason, recordErrorTurn, /*notify=*/recordErrorTurn, m_history.get() );
   };
 
   for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
@@ -342,7 +498,11 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
   if( m_history )
   {
     for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+    {
+      // So a Retry of the conversation never sends their placeholder results to the LLM.
+      markOutstandingCallsCancelled( dr.second, reason, true );
       finalize( conversationForRound( dr.second ) );
+    }
   }
 
   // User messages queued behind an in-flight summarization were never sent - finalize them as well.
@@ -369,6 +529,36 @@ bool LlmInterface::hasActiveRequests() const
 }//hasActiveRequests()
 
 
+bool LlmInterface::isConversationActive( const std::shared_ptr<const LlmInteraction> &convo ) const
+{
+  if( !convo )
+    return false;
+
+  for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
+  {
+    if( pr.second.conversation.lock() == convo )
+      return true;
+  }
+
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    if( conversationForRound( dr.second ) == convo )
+      return true;
+  }
+
+  for( const std::weak_ptr<LlmInteraction> &wk : m_summarizationPendingConvos )
+  {
+    if( wk.lock() == convo )
+      return true;
+  }
+
+  // Its tools are running right now - between the response that asked for them and the request
+  //  sending their results, when neither map has it (e.g., a tool restoring this history, which
+  //  rebuilds its display).
+  return (m_currentConversation.lock() == convo);
+}//isConversationActive(...)
+
+
 void LlmInterface::cancelAll()
 {
   if( !hasActiveRequests() )
@@ -386,15 +576,677 @@ void LlmInterface::cancelAll()
   cancelNativeRequests();
 #endif
 
-  // Finalize the affected conversations (adds a display-only "cancelled" error turn, clears the
-  // pending/deferred/summarization-queue maps).  This covers conversations awaiting an async tool
-  // result as well as those with an in-flight HTTP request.  Any late abort response or async tool
-  // completion is ignored since the request id / deferred entry is no longer present.
-  failInFlightConversations( "Request cancelled by user." );
+  const std::string reason = "Request cancelled by user.";
+
+  // With a user there to answer it, a stopped sub-agent is paused rather than ended: it gets the one
+  //  "cancelled" error turn, and the rounds waiting on it are stopped, not failed - so the user can
+  //  Retry it, or Cancel Agent to have the agent that invoked it carry on without it.
+  if( !m_unattended && m_history )
+  {
+    std::vector<std::shared_ptr<LlmInteraction>> paused;
+
+    // Sub-agents waiting on the LLM.
+    for( std::map<int, PendingRequest>::iterator it = begin(m_pendingRequests); it != end(m_pendingRequests); )
+    {
+      const std::shared_ptr<LlmInteraction> convo = it->second.conversation.lock();
+      if( convo && (convo->agent_type != AgentType::MainAgent) && !it->second.isSummarizationRequest
+          && !convo->finishTime.has_value() )
+      {
+        paused.push_back( convo );
+        it = m_pendingRequests.erase( it );
+      }else
+      {
+        ++it;
+      }
+    }//for( loop over pending requests )
+
+    // Agents running async tools: those can't be paused, so are reported as cancelled; a round left
+    //  waiting on nothing is dropped, and its agent paused like those above (the main agent too).
+    for( std::map<int, DeferredToolResult>::iterator it = begin(m_deferredToolResults); it != end(m_deferredToolResults); )
+    {
+      const std::shared_ptr<LlmInteraction> convo = conversationForRound( it->second );
+      if( !convo || convo->finishTime.has_value() || it->second.pendingAsyncCalls.empty() )
+      {
+        ++it;
+        continue;
+      }
+
+      markOutstandingCallsCancelled( it->second, reason, false );
+      it->second.pendingAsyncCalls.clear();
+
+      if( it->second.subAgentToolCallIds.empty() )
+      {
+        paused.push_back( convo );
+        it = m_deferredToolResults.erase( it );
+      }else
+      {
+        ++it;
+      }
+    }//for( loop over deferred tool rounds )
+
+    for( const std::shared_ptr<LlmInteraction> &convo : paused )
+      m_history->addErrorMessage( reason, "", convo, LlmInteractionError::ErrorType::Unknown );
+
+    stopIdleRounds();
+  }//if( a user is there to answer the errors )
+
+  // Finalize the rest (adds a display-only "cancelled" error turn, clears the pending/deferred/
+  // summarization-queue maps); e.g., the main agent waiting on the LLM.  Any late abort response or
+  // async tool completion is ignored since the request id / deferred entry is no longer present.
+  failInFlightConversations( reason );
 
   // Re-enable GUI input.
   emitConversationFinished();
 }//cancelAll()
+
+
+std::vector<std::shared_ptr<LlmInteraction>>
+LlmInterface::outstandingSubAgents( const DeferredToolResult &round ) const
+{
+  std::vector<std::shared_ptr<LlmInteraction>> answer;
+  const std::shared_ptr<LlmInteraction> convo = conversationForRound( round );
+  if( !convo )
+    return answer;
+
+  for( const std::shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    const LlmToolResults * const results = dynamic_cast<const LlmToolResults *>( turn.get() );
+    for( size_t i = 0; results && (i < results->toolCalls().size()); ++i )
+    {
+      const LlmToolCall &call = results->toolCalls()[i];
+      if( call.sub_agent_conversation && (call.status == LlmToolCall::CallStatus::Pending)
+          && !call.sub_agent_conversation->finishTime.has_value() )
+        answer.push_back( call.sub_agent_conversation );
+    }
+  }//for( loop over turns )
+
+  return answer;
+}//outstandingSubAgents(...)
+
+
+void LlmInterface::markOutstandingCallsCancelled( const DeferredToolResult &round,
+                                                  const std::string &reason,
+                                                  const bool includeSubAgents )
+{
+  const std::shared_ptr<LlmInteraction> convo = conversationForRound( round );
+  if( !convo )
+    return;
+
+  nlohmann::json result;
+  result["status"] = "cancelled";
+  result["error"] = reason;
+  result["success"] = false;
+  const std::string content = result.dump();
+
+  for( const std::shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    LlmToolResults * const results = dynamic_cast<LlmToolResults *>( turn.get() );
+    if( !results )
+      continue;
+
+    for( LlmToolCall &call : results->toolCalls() )
+    {
+      if( call.status != LlmToolCall::CallStatus::Pending )
+        continue;
+
+      const bool async = (round.pendingAsyncCalls.count( call.invocationId ) > 0);
+      const bool subAgent = includeSubAgents && call.sub_agent_conversation
+                            && !call.sub_agent_conversation->finishTime.has_value();
+      if( !async && !subAgent )
+        continue;
+
+      call.status = LlmToolCall::CallStatus::Error;
+      call.content = content;
+      if( async )
+        results->asyncToolCompleted().emit( call.invocationId );
+    }//for( loop over tool calls )
+  }//for( loop over turns )
+}//markOutstandingCallsCancelled(...)
+
+
+bool LlmInterface::stopIdleRounds( const bool endTurnIfIdle )
+{
+  // Only when a user is there to Retry, or Cancel Agent on, the paused sub-agent.
+  if( m_unattended )
+    return false;
+
+  const auto is_paused = [this]( const std::shared_ptr<LlmInteraction> &agent ) -> bool {
+    return agent && (agent->agent_type != AgentType::MainAgent) && !agent->finishTime.has_value()
+           && !isConversationActive( agent );
+  };
+
+  // Stopping a round can pause the agent it belongs to, and so stop the round waiting on that agent,
+  //  so repeat until nothing changes.
+  std::vector<std::shared_ptr<LlmInteraction>> stopped;
+  for( bool changed = true; changed; )
+  {
+    changed = false;
+    for( std::map<int, DeferredToolResult>::iterator it = begin(m_deferredToolResults);
+         it != end(m_deferredToolResults); ++it )
+    {
+      if( !it->second.pendingAsyncCalls.empty() || it->second.subAgentToolCallIds.empty() )
+        continue;
+
+      const std::vector<std::shared_ptr<LlmInteraction>> agents = outstandingSubAgents( it->second );
+      if( agents.empty() || !std::all_of( begin(agents), end(agents), is_paused ) )
+        continue;
+
+      it->second.stoppedAt = std::chrono::steady_clock::now();
+      if( const std::shared_ptr<LlmInteraction> convo = conversationForRound( it->second ) )
+        stopped.push_back( convo );
+      m_stoppedToolRounds[it->first] = it->second;
+      m_deferredToolResults.erase( it );
+      changed = true;
+      break;  // `it` is invalid; start over
+    }//for( loop over deferred tool rounds )
+  }//for( until no more rounds are stopped )
+
+  if( stopped.empty() )
+    return false;
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Stopped " << stopped.size() << " tool round(s) waiting on paused sub-agent(s)" << endl;
+
+  updateDeferredSweepTimer();
+  assertDeferredInvariants();
+  updateActivityState();
+
+  for( const std::shared_ptr<LlmInteraction> &convo : stopped )
+    convo->stoppedChanged.emit( true );
+
+  if( endTurnIfIdle )
+    maybeEmitTerminalSignal();
+
+  return true;
+}//stopIdleRounds(...)
+
+
+bool LlmInterface::resumeStoppedRounds( const std::shared_ptr<LlmInteraction> &subAgent )
+{
+  // The round waiting on `subAgent`, then the round waiting on the agent that round belongs to, ...
+  std::vector<std::shared_ptr<LlmInteraction>> resumed;
+  for( std::shared_ptr<LlmInteraction> waitingOn = subAgent; waitingOn; )
+  {
+    std::map<int, DeferredToolResult>::iterator pos = begin(m_stoppedToolRounds);
+    for( ; pos != end(m_stoppedToolRounds); ++pos )
+    {
+      const std::vector<std::shared_ptr<LlmInteraction>> agents = outstandingSubAgents( pos->second );
+      if( std::find( begin(agents), end(agents), waitingOn ) != end(agents) )
+        break;
+    }
+
+    if( pos == end(m_stoppedToolRounds) )
+      break;
+
+    DeferredToolResult round = pos->second;
+    round.roundStart += (std::chrono::steady_clock::now() - round.stoppedAt);
+    const int key = pos->first;
+    m_stoppedToolRounds.erase( pos );
+    m_deferredToolResults[key] = round;
+
+    const std::shared_ptr<LlmInteraction> convo = conversationForRound( round );
+    if( convo )
+      resumed.push_back( convo );
+    waitingOn = (convo && (convo->agent_type != AgentType::MainAgent)) ? convo : nullptr;
+  }//for( walk up the agents waiting on `subAgent` )
+
+  if( resumed.empty() )
+    return false;
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Resumed " << resumed.size() << " stopped tool round(s)" << endl;
+
+  armWatchdog();
+  updateDeferredSweepTimer();
+  assertDeferredInvariants();
+  updateActivityState();
+
+  for( const std::shared_ptr<LlmInteraction> &convo : resumed )
+    convo->stoppedChanged.emit( false );
+
+  return true;
+}//resumeStoppedRounds(...)
+
+
+bool LlmInterface::isConversationStopped( const std::shared_ptr<const LlmInteraction> &convo ) const
+{
+  for( const std::pair<const int, DeferredToolResult> &round : m_stoppedToolRounds )
+  {
+    if( convo && (conversationForRound( round.second ) == convo) )
+      return true;
+  }
+  return false;
+}//isConversationStopped(...)
+
+
+void LlmInterface::abandonStoppedRounds( const bool notify )
+{
+  if( m_stoppedToolRounds.empty() )
+    return;
+
+  // Take them first, as finalizing the conversations emits signals.
+  std::map<int, DeferredToolResult> rounds;
+  rounds.swap( m_stoppedToolRounds );
+
+  const std::string reason = "Cancelled: the user moved on before this agent finished, so no summary "
+                             "of its work is available.";
+  for( const std::pair<const int, DeferredToolResult> &round : rounds )
+  {
+    markOutstandingCallsCancelled( round.second, reason, true );
+    finalize_convo_tree( conversationForRound( round.second ), reason, /*recordErrorTurn=*/false,
+                         notify, m_history.get() );
+  }
+}//abandonStoppedRounds(...)
+
+
+void LlmInterface::interruptInFlight( const LlmInteraction::Interruption::Cause cause, const bool notify )
+{
+  if( m_pendingRequests.empty() && m_deferredToolResults.empty() && m_stoppedToolRounds.empty()
+      && m_summarizationPendingConvos.empty() )
+    return;
+
+  // Stop the requests in flight; resuming sends them again.
+  if( Wt::WApplication *app = Wt::WApplication::instance() )
+    app->doJavaScript( "if(window.llmAbortAllRequests) window.llmAbortAllRequests('" + m_instanceId + "');" );
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  cancelNativeRequests();
+#endif
+
+  LlmInteraction::Interruption interruption;
+  interruption.time = std::chrono::system_clock::now();
+  interruption.cause = cause;
+
+  // A conversation can be in more than one of these; marking it again is harmless.
+  vector<shared_ptr<LlmInteraction>> marked;
+  for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
+  {
+    const shared_ptr<LlmInteraction> convo = pr.second.conversation.lock();
+    if( pr.second.isSummarizationRequest )
+      finalize_convo_tree( convo, "", /*recordErrorTurn=*/false, notify, m_history.get() );
+    else
+      mark_interrupted_tree( convo, interruption, marked );
+  }
+
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+    mark_interrupted_tree( conversationForRound( dr.second ), interruption, marked );
+
+  for( const std::pair<const int, DeferredToolResult> &sr : m_stoppedToolRounds )
+    mark_interrupted_tree( conversationForRound( sr.second ), interruption, marked );
+
+  for( const std::weak_ptr<LlmInteraction> &wk : m_summarizationPendingConvos )
+    mark_interrupted_tree( wk.lock(), interruption, marked );
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Interrupted " << m_pendingRequests.size() << " request(s), "
+      << m_deferredToolResults.size() << " tool round(s), and " << m_stoppedToolRounds.size()
+      << " stopped round(s); cause=" << static_cast<int>(cause) << endl;
+
+  // As failInFlightConversations(), which then has nothing left to do.
+  m_pendingRequests.clear();
+  m_deferredToolResults.clear();
+  m_stoppedToolRounds.clear();
+  m_summarizationPendingConvos.clear();
+
+  disarmWatchdog();
+  updateDeferredSweepTimer();
+
+  if( !notify )
+    return;
+
+  std::sort( begin(marked), end(marked) );
+  marked.erase( std::unique( begin(marked), end(marked) ), end(marked) );
+  for( const shared_ptr<LlmInteraction> &convo : marked )
+    convo->interruptionChanged.emit();
+
+  updateActivityState();
+}//interruptInFlight(...)
+
+
+bool LlmInterface::isRunningToolCalls() const
+{
+  // Set by executeToolCallsAndSendResults() while it runs them.
+  return !m_currentConversation.expired();
+}//isRunningToolCalls()
+
+
+bool LlmInterface::canResumeInterrupted( const std::shared_ptr<const LlmInteraction> &convo ) const
+{
+  // A ToolCall last means its tools never ran, so there are no results to send.
+  return convo && convo->interruption.has_value() && !convo->finishTime.has_value()
+         && convo->isAwaitingWork()
+         && (convo->responses.back()->type() != LlmInteractionTurn::Type::ToolCall)
+         && !is_compaction_conversation( *convo )
+         && isConfigured()
+         && !isConversationActive( convo ) && !isConversationStopped( convo );
+}//canResumeInterrupted(...)
+
+
+bool LlmInterface::resumeInterrupted( const std::shared_ptr<LlmInteraction> &convo )
+{
+  if( !canResumeInterrupted( convo ) )
+  {
+    abandonInterrupted( convo );
+    return false;
+  }
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Resuming interrupted conversation " << convo->conversationId << endl;
+
+  const ActivityBatch batch( *this );
+
+  // Whoever was waiting on it when it was cut off (e.g., an MCP client's prompt) has gone.
+  convo->conversation_completion_handler = nullptr;
+
+  try
+  {
+    resumeConversationWork( convo );
+  }catch( const std::exception &e )
+  {
+    cerr << "Failed to resume interrupted conversation: " << e.what() << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Failed to resume interrupted conversation: " << e.what() << endl;
+
+    // As for any request that could not be sent: the user can Retry it.
+    const size_t terminalSignals = m_terminalSignalCount;
+    if( m_history )
+      m_history->addErrorMessage( string("Failed to resume the request: ") + e.what(), "", convo,
+                                  LlmInteractionError::ErrorType::Unknown );
+    emitResponseErrorIfDone( terminalSignals );
+  }//try / catch
+
+  return true;
+}//resumeInterrupted(...)
+
+
+bool LlmInterface::isAwaitingSubAgent( const std::shared_ptr<const LlmInteraction> &subAgent ) const
+{
+  for( const std::map<int, DeferredToolResult> *rounds : { &m_deferredToolResults, &m_stoppedToolRounds } )
+  {
+    for( const std::pair<const int, DeferredToolResult> &round : *rounds )
+    {
+      const std::vector<std::shared_ptr<LlmInteraction>> agents = outstandingSubAgents( round.second );
+      if( std::find( begin(agents), end(agents), subAgent ) != end(agents) )
+        return true;
+    }
+  }//for( deferred, then stopped, rounds )
+
+  return false;
+}//isAwaitingSubAgent(...)
+
+
+bool LlmInterface::resumeInterruptedFor( const std::shared_ptr<LlmInteraction> &subAgent )
+{
+  if( !subAgent || !m_history )
+    return false;
+
+  if( isAwaitingSubAgent( subAgent ) )
+    return true;
+
+  for( const shared_ptr<LlmInteraction> &convo : m_history->getConversations() )
+  {
+    if( convo && convo->interruption.has_value() && awaits_sub_agent( *convo, subAgent ) )
+    {
+      resumeInterrupted( convo );
+      break;
+    }
+  }//for( loop over top-level conversations )
+
+  return isAwaitingSubAgent( subAgent );
+}//resumeInterruptedFor(...)
+
+
+void LlmInterface::resumeConversationWork( const std::shared_ptr<LlmInteraction> &convo )
+{
+  assert( convo && !convo->responses.empty() );
+
+  const bool wasInterrupted = convo->interruption.has_value();
+  convo->interruption.reset();
+
+  try
+  {
+    // Its state machine is runtime-only, so is lost when the history is read back from a file.
+    if( (convo->agent_type != AgentType::MainAgent) && !convo->state_machine )
+      restoreStateMachine( convo );
+
+    const shared_ptr<LlmInteractionTurn> last = convo->responses.back();
+    switch( last->type() )
+    {
+      case LlmInteractionTurn::Type::InitialRequest:
+      case LlmInteractionTurn::Type::AutoReply:
+      {
+        convo->finishTime.reset();
+        std::pair<int,std::string> request_id_content = makeTrackedApiCall( buildMessagesArray( convo ), convo );
+
+        // As sendUserMessage() and invokeSubAgent() do, keep what was sent with the question.
+        if( convo->responses.size() == 1 )
+          last->setRawContent( std::move( request_id_content.second ) );
+        break;
+      }//case InitialRequest / AutoReply
+
+      case LlmInteractionTurn::Type::ToolResult:
+      {
+        LlmToolResults * const results = dynamic_cast<LlmToolResults *>( last.get() );
+        if( !results )
+          throw std::logic_error( "ToolResult turn is not an LlmToolResults" );
+
+        convo->finishTime.reset();
+        resumeToolRound( convo, *results );
+        break;
+      }//case ToolResult
+
+      case LlmInteractionTurn::Type::FinalLlmResponse:
+        // A sub-agent that finished, but whose summary never reached the agent that invoked it.
+        if( convo->agent_type != AgentType::MainAgent )
+          finish_conversation( convo );
+        break;
+
+      case LlmInteractionTurn::Type::Error:
+        // A sub-agent paused on its error stays paused - the round waiting on it is then stopped, for
+        //  the user to Retry or Cancel Agent - but one that was ended reports its failure.
+        if( (convo->agent_type != AgentType::MainAgent) && convo->finishTime.has_value() )
+          finish_conversation( convo );
+        break;
+
+      case LlmInteractionTurn::Type::ToolCall:
+      case LlmInteractionTurn::Type::ConversationSummary:
+        throw std::runtime_error( "the conversation can not be continued from its last step" );
+    }//switch( last->type() )
+  }catch( ... )
+  {
+    if( wasInterrupted )
+      convo->interruptionChanged.emit();
+    throw;
+  }//try / catch
+
+  if( wasInterrupted )
+    convo->interruptionChanged.emit();
+}//resumeConversationWork(...)
+
+
+void LlmInterface::resumeToolRound( const std::shared_ptr<LlmInteraction> &convo, LlmToolResults &results )
+{
+  // An async tool's result was lost along with the session that ran it; the LLM is told, so it can call
+  //  it again.  The tool may have taken effect just before (e.g., added its peaks), so it checks first.
+  json interrupted;
+  interrupted["status"] = "interrupted";
+  interrupted["error"] = "InterSpec was closed before this tool's result was received, so it may or may"
+                         " not have taken effect; check the current state (e.g., the peaks) before calling"
+                         " it again.";
+  interrupted["success"] = false;
+  const string interruptedContent = interrupted.dump();
+
+  std::vector<std::pair<std::string,shared_ptr<LlmInteraction>>> subAgents;  // (tool-call id, sub-agent)
+  std::map<std::string,DeferredToolResult::PendingAsyncCall> runningCalls;   // Started in this session
+  for( LlmToolCall &call : results.toolCalls() )
+  {
+    if( call.status != LlmToolCall::CallStatus::Pending )
+      continue;
+
+    if( call.sub_agent_conversation )
+    {
+      subAgents.emplace_back( call.invocationId, call.sub_agent_conversation );
+      continue;
+    }
+
+    // Still running (e.g., the user showed another spectrum and then came back): wait for its result,
+    //  which its callback hands to this round (see resolveResumedAsyncCall()).
+    if( call.asyncRunning )
+    {
+      const LlmTools::SharedTool * const tool = m_tool_registry ? m_tool_registry->getTool( call.toolName ) : nullptr;
+      DeferredToolResult::PendingAsyncCall pending;
+      pending.toolName = call.toolName;
+      pending.timeoutMs = tool ? LlmTools::effective_async_timeout_ms( *tool ) : LlmTools::sm_default_async_timeout_ms;
+      pending.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds( pending.timeoutMs );
+      runningCalls[call.invocationId] = pending;
+      continue;
+    }//if( call.asyncRunning )
+
+    call.status = LlmToolCall::CallStatus::Error;
+    call.content = interruptedContent;
+    results.asyncToolCompleted().emit( call.invocationId );
+  }//for( loop over the round's calls )
+
+  if( subAgents.empty() && runningCalls.empty() )
+  {
+    sendToolResultsToLLM( convo );
+    return;
+  }
+
+  // Those that send a request go first, so they are in flight before any that already finished hands
+  //  back its summary - which would otherwise see the rest as paused, and stop the round.
+  std::stable_partition( begin(subAgents), end(subAgents),
+    []( const std::pair<std::string,shared_ptr<LlmInteraction>> &agent ){
+      return agent.second->isAwaitingWork();
+  } );
+
+  // Wait on the sub-agents and tools again, as executeToolCallsAndSendResults() does when it starts them;
+  //  the round, and each sub-agent in it, just need ids no other round or request uses.
+  const int roundKey = m_nextRequestId++;
+  assert( m_deferredToolResults.find( roundKey ) == end(m_deferredToolResults) );
+
+  DeferredToolResult round;
+  round.conversationId = convo->conversationId;
+  round.conversation = convo;
+  round.roundStart = std::chrono::steady_clock::now();
+  round.pendingAsyncCalls = std::move( runningCalls );
+  for( size_t i = convo->responses.size(); i > 0; --i )
+  {
+    const shared_ptr<LlmToolRequest> request = std::dynamic_pointer_cast<LlmToolRequest>( convo->responses[i-1] );
+    if( request )
+    {
+      round.toolRequest = request;
+      break;
+    }
+  }//for( find the round's tool-call turn )
+
+  for( size_t i = 0; i < subAgents.size(); ++i )
+    round.subAgentToolCallIds.push_back( m_nextRequestId++ );
+
+  m_deferredToolResults[roundKey] = round;
+  updateDeferredSweepTimer();
+  updateActivityState();
+
+  for( size_t i = 0; i < subAgents.size(); ++i )
+    attachSubAgentCompletion( convo, roundKey, round.subAgentToolCallIds[i], subAgents[i].second,
+                              subAgents[i].first );
+
+  std::vector<shared_ptr<LlmInteraction>> failed;
+  for( const std::pair<std::string,shared_ptr<LlmInteraction>> &agent : subAgents )
+  {
+    try
+    {
+      resumeConversationWork( agent.second );
+    }catch( const std::exception &e )
+    {
+      cerr << "Failed to resume sub-agent " << agent.second->conversationId << ": " << e.what() << endl;
+      if( m_history )
+        m_history->addErrorMessage( string("Failed to resume this agent: ") + e.what(), "", agent.second,
+                                    LlmInteractionError::ErrorType::Unknown );
+      failed.push_back( agent.second );
+    }//try / catch
+  }//for( loop over sub-agents )
+
+  // Now that all are back at work, those that failed are paused on their error, as for a failed request;
+  //  and a round left waiting only on paused sub-agents is stopped, for the user to Retry or Cancel Agent.
+  for( const shared_ptr<LlmInteraction> &agent : failed )
+    handleSubAgentError( agent );
+  stopIdleRounds();
+  assertDeferredInvariants();
+}//resumeToolRound(...)
+
+
+void LlmInterface::restoreStateMachine( const std::shared_ptr<LlmInteraction> &convo ) const
+{
+  if( !m_config )
+    return;
+
+  const std::vector<LlmConfig::AgentConfig>::const_iterator agent
+    = std::find_if( begin(m_config->agents), end(m_config->agents),
+                    [&convo]( const LlmConfig::AgentConfig &a ){ return a.type == convo->agent_type; } );
+  if( (agent == end(m_config->agents)) || !agent->state_machine )
+    return;
+
+  const shared_ptr<AgentStateMachine> machine = agent->state_machine->copy();
+
+  // Replay the workflow transitions it made.
+  for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    const LlmToolResults * const results = dynamic_cast<const LlmToolResults *>( turn.get() );
+    for( size_t i = 0; results && (i < results->toolCalls().size()); ++i )
+    {
+      const LlmToolCall &call = results->toolCalls()[i];
+      if( (call.toolName != "set_workflow_state") || (call.status != LlmToolCall::CallStatus::Success) )
+        continue;
+
+      try
+      {
+        const json result = json::parse( call.content );
+        if( result.value( "success", false ) && result.contains( "new_state" ) && result["new_state"].is_string() )
+        {
+          const string state = result["new_state"].get<string>();
+          if( machine->hasState( state ) )
+            machine->transitionTo( state );
+        }
+      }catch( std::exception & )
+      {
+        // Not a result we can read; it made no transition we know of.
+      }
+    }//for( loop over tool calls )
+  }//for( loop over turns )
+
+  convo->state_machine = machine;
+}//restoreStateMachine(...)
+
+
+void LlmInterface::abandonInterrupted( const std::shared_ptr<LlmInteraction> &convo, const bool notify )
+{
+  if( !convo || !convo->interruption.has_value() )
+    return;
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Abandoning interrupted conversation " << convo->conversationId << endl;
+
+  json result;
+  result["status"] = "cancelled";
+  result["error"] = "Interrupted before it finished (InterSpec or the LLM Assistant was closed), and not resumed.";
+  result["success"] = false;
+
+  cancel_interrupted_tree( convo, result.dump(), notify );
+  finalize_convo_tree( convo, "", /*recordErrorTurn=*/false, notify, m_history.get() );
+}//abandonInterrupted(...)
+
+
+void LlmInterface::abandonInterruptedConversations()
+{
+  if( !m_history )
+    return;
+
+  // A copy, as abandoning emits signals.
+  const std::vector<shared_ptr<LlmInteraction>> convos = m_history->getConversations();
+  for( const shared_ptr<LlmInteraction> &convo : convos )
+    abandonInterrupted( convo );
+}//abandonInterruptedConversations()
 
 
 void LlmInterface::armWatchdog()
@@ -539,6 +1391,19 @@ bool LlmInterface::isAsyncCallOutstanding( const int parentRequestId, const std:
 }//isAsyncCallOutstanding(...)
 
 
+void LlmInterface::resolveResumedAsyncCall( const std::shared_ptr<LlmInteraction> &convo, const std::string &callId )
+{
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    if( (dr.second.pendingAsyncCalls.count( callId ) > 0) && (conversationForRound( dr.second ) == convo) )
+    {
+      resolveAsyncToolCall( dr.first, callId );  // Can erase the round
+      return;
+    }
+  }//for( loop over deferred rounds )
+}//resolveResumedAsyncCall(...)
+
+
 std::shared_ptr<LlmInteraction> LlmInterface::conversationForRound( const DeferredToolResult &round ) const
 {
   // Prefer the held weak_ptr: a sub-agent conversation is only reachable through the parent's tool
@@ -565,6 +1430,8 @@ void LlmInterface::maybeEmitTerminalSignal()
 
 void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::iterator pos )
 {
+  const ActivityBatch batch( *this );  // Ending the round and sending its results is one change
+
   assert( pos != end(m_deferredToolResults) );
   if( pos == end(m_deferredToolResults) )
     return;
@@ -572,16 +1439,27 @@ void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::i
   if( !pos->second.pendingAsyncCalls.empty() || !pos->second.subAgentToolCallIds.empty() )
   {
     assertDeferredInvariants();
-    return;  // still waiting on something from this round
+
+    // Still waiting on something from this round - if only on sub-agents paused on an error (e.g.,
+    //  another of its sub-agents was resumed, and has finished), it is stopped.
+    stopIdleRounds( true );
+    return;
   }
 
   // Take what we need before erasing, so a resolution arriving from any driver (async callback,
   // sub-agent completion, sweep) works the same.
   const std::string conversationId = pos->second.conversationId;
   const std::shared_ptr<LlmInteraction> convo = conversationForRound( pos->second );
+
+  // The round's tools are all done; record how long they took before the display sees the next request.
+  if( const std::shared_ptr<LlmToolRequest> toolRequest = pos->second.toolRequest.lock() )
+    toolRequest->setCallDuration( std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - pos->second.roundStart ) );
+
   m_deferredToolResults.erase( pos );
   updateDeferredSweepTimer();
   assertDeferredInvariants();
+  updateActivityState();
 
   if( !convo )
   {
@@ -613,13 +1491,42 @@ void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::i
     if( m_history )
       m_history->addErrorMessage( string("Failed to send tool results: ") + e.what(), "", convo,
                                   LlmInteractionError::ErrorType::Unknown );
-    emitResponseError();
+
+    // As for a failed request: a sub-agent's parent round waits on it, unless unattended.
+    const size_t terminalSignals = m_terminalSignalCount;
+    handleSubAgentError( convo );
+    emitResponseErrorIfDone( terminalSignals );
   }//try / catch
 }//finalizeDeferredIfReady(...)
 
 
+void LlmInterface::handleSubAgentError( const std::shared_ptr<LlmInteraction> &convo )
+{
+  if( !convo || (convo->agent_type == AgentType::MainAgent) || convo->finishTime.has_value() )
+    return;
+
+  // With a user to pick Retry or Cancel Agent on its error, the sub-agent is paused, and the rounds
+  //  waiting on it stopped, so the turn is no longer in flight.
+  if( !m_unattended )
+  {
+    stopIdleRounds();
+    return;
+  }
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Unattended: ending failed sub-agent " << convo->conversationId
+                      << ", and reporting the failure to the agent that invoked it" << endl;
+
+  // Its completion handler reports the Error turn to the parent as a failed tool call, which can
+  //  then finalize the parent's round and send its results.
+  finish_conversation( convo );
+}//handleSubAgentError(...)
+
+
 void LlmInterface::resolveAsyncToolCall( const int parentRequestId, const std::string &callId )
 {
+  const ActivityBatch batch( *this );
+
   const std::map<int, DeferredToolResult>::iterator pos = m_deferredToolResults.find( parentRequestId );
   if( pos == end(m_deferredToolResults) )
   {
@@ -765,6 +1672,8 @@ LlmToolCall *LlmInterface::findPendingToolResult( const std::shared_ptr<LlmInter
 void LlmInterface::emitConversationFinished()
 {
   disarmWatchdog();
+  updateActivityState();  // e.g., after cancelAll() or a teardown cleared the maps
+  m_terminalSignalCount += 1;
   m_conversationFinished.emit();
 }//emitConversationFinished()
 
@@ -772,17 +1681,39 @@ void LlmInterface::emitConversationFinished()
 void LlmInterface::emitResponseError()
 {
   disarmWatchdog();
+  updateActivityState();
+  m_terminalSignalCount += 1;
   m_responseError.emit();
 }//emitResponseError()
 
 
-void LlmInterface::flushSummarizationQueue()
+void LlmInterface::emitResponseErrorIfDone( const size_t terminalSignalsBefore )
+{
+  if( m_terminalSignalCount != terminalSignalsBefore )
+    return;  // The turn already ended
+
+  if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
+  {
+    if( m_debug_stream )
+      (*m_debug_stream) << "Error - nothing pending, emitting error signal" << endl;
+    emitResponseError();
+  }else if( m_debug_stream )
+  {
+    // e.g., the tool round of a sub-agent's parent, which waits on the sub-agent being retried
+    (*m_debug_stream) << "Error - still have " << m_pendingRequests.size() << " pending requests and "
+      << m_deferredToolResults.size() << " deferred tool rounds, not emitting signal yet" << endl;
+  }
+}//emitResponseErrorIfDone(...)
+
+
+bool LlmInterface::flushSummarizationQueue()
 {
   // Swap out first so makeTrackedApiCall (which does not touch the queue) cannot re-enter into a
   // half-drained queue.
   std::vector<std::weak_ptr<LlmInteraction>> queued;
   queued.swap( m_summarizationPendingConvos );
 
+  bool allSent = true;
   for( const std::weak_ptr<LlmInteraction> &wk : queued )
   {
     shared_ptr<LlmInteraction> pendingUserConvo = wk.lock();
@@ -792,22 +1723,48 @@ void LlmInterface::flushSummarizationQueue()
     if( m_debug_stream )
       (*m_debug_stream) << "=== Sending queued user message after summarization ===" << endl;
 
-    json requestJson = buildMessagesArray( pendingUserConvo );
-    std::pair<int,string> request_id_content = makeTrackedApiCall( requestJson, pendingUserConvo );
-
-    if( !pendingUserConvo->responses.empty() )
+    try
     {
-      std::shared_ptr<LlmInteractionTurn> firstTurn = pendingUserConvo->responses.front();
-      if( firstTurn && (firstTurn->type() == LlmInteractionTurn::Type::InitialRequest) )
-        firstTurn->setRawContent( std::move(request_id_content.second) );
-    }
+      json requestJson = buildMessagesArray( pendingUserConvo );
+      std::pair<int,string> request_id_content = makeTrackedApiCall( requestJson, pendingUserConvo );
+
+      if( !pendingUserConvo->responses.empty() )
+      {
+        std::shared_ptr<LlmInteractionTurn> firstTurn = pendingUserConvo->responses.front();
+        if( firstTurn && (firstTurn->type() == LlmInteractionTurn::Type::InitialRequest) )
+          firstTurn->setRawContent( std::move(request_id_content.second) );
+      }
+    }catch( const std::exception &e )
+    {
+      // Give it an error turn (which can be retried), rather than leave it waiting on a request that
+      //  was never sent - and still send the rest.
+      cerr << "Failed to send queued message after summarization: " << e.what() << endl;
+      if( m_history )
+        m_history->addErrorMessage( string("Failed to send the message: ") + e.what(), "", pendingUserConvo,
+                                    LlmInteractionError::ErrorType::Unknown );
+      allSent = false;
+    }//try / catch
   }//for( queued conversations )
+
+  return allSent;
 }//flushSummarizationQueue()
 
 
 void LlmInterface::setBlockToolCalls( bool block )
 {
   m_block_tool_calls = block;
+}
+
+
+void LlmInterface::setUnattended( bool unattended )
+{
+  m_unattended = unattended;
+}
+
+
+void LlmInterface::setPlainCompletion( std::optional<std::string> system_prompt )
+{
+  m_plainSystemPrompt = std::move( system_prompt );
 }
 
 
@@ -822,6 +1779,10 @@ shared_ptr<LlmInteraction> LlmInterface::triggerManualCompaction()
   if( numNonSummary < 2 )
     return nullptr;
 
+  // A stopped or interrupted turn can't be resumed once the history it is part of has been summarized.
+  abandonStoppedRounds();
+  abandonInterruptedConversations();
+
   const string summarizationPrompt = m_history->buildSummarizationPrompt();
   if( summarizationPrompt.empty() )
     return nullptr;
@@ -830,7 +1791,7 @@ shared_ptr<LlmInteraction> LlmInterface::triggerManualCompaction()
     (*m_debug_stream) << "=== Manual context compaction triggered ===" << endl;
 
   return sendCompactionRequest( summarizationPrompt,
-    "[Context Compaction] Summarizing conversation history..." );
+    string(sm_compaction_display_prefix) + " Summarizing conversation history..." );
 }
 
 
@@ -924,6 +1885,7 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   // left perpetually in-progress.  (This also clears m_pendingRequests / m_deferredToolResults.)
   // recordErrorTurn=false: the history is about to be replaced, so don't bother emitting turns.
   failInFlightConversations( "Conversation ended: the LLM configuration was reset.", false );
+  abandonStoppedRounds( false );
 
   m_config = config;
   m_tool_registry = tool_registry;
@@ -936,11 +1898,14 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   m_currentConversation.reset();
   m_summarizationPendingConvos.clear();
   m_block_tool_calls = false;  // "clears all conversation state" per the contract
+  m_plainSystemPrompt.reset();
   // Deliberately do NOT reset m_nextRequestId: keeping it monotonic across resets prevents a
   // late/stale in-flight response from colliding with a brand-new request's id and being routed
   // into the wrong conversation.
 
   initDebugLoggingFromConfig();
+
+  updateActivityState();  // failInFlightConversations() cleared the in-flight maps
 }
 
 
@@ -988,11 +1953,14 @@ void LlmInterface::applyConfigPreservingHistory( const std::shared_ptr<const Llm
   // Deliberately KEEP m_history and m_currentConversation so the user can continue the conversation.
   m_summarizationPendingConvos.clear();  // any pending summarization used the old config
   m_block_tool_calls = false;
+  m_plainSystemPrompt.reset();
 
   if( stripReasoning )
     stripReasoningFromHistory();
 
   initDebugLoggingFromConfig();
+
+  updateActivityState();  // failInFlightConversations() cleared the in-flight maps
 }//applyConfigPreservingHistory(...)
 
 
@@ -1068,6 +2036,10 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
       (*m_debug_stream) << "  (with " << images.size() << " attached image(s))" << endl;
   }
 
+  // Moving on to a new question ends any turn stopped on a paused sub-agent, or interrupted.
+  abandonStoppedRounds();
+  abandonInterruptedConversations();
+
   // Add to history FIRST to ensure it's there before any async responses
   shared_ptr<LlmInteraction> convo = images.empty()
     ? m_history->addUserMessageToMainConversation( message )
@@ -1125,8 +2097,18 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
       m_summarizationPendingConvos.push_back( convo );
 
       if( !alreadyCompacting )
-        sendCompactionRequest( summarizationPrompt,
-          "[Context Compaction] Summarizing older conversation history to manage context length..." );
+      {
+        try
+        {
+          sendCompactionRequest( summarizationPrompt, string(sm_compaction_display_prefix)
+                                 + " Summarizing older conversation history to manage context length..." );
+        }catch( ... )
+        {
+          // Nothing is in flight to send it after, so dont leave it queued; see activityState().
+          m_summarizationPendingConvos.pop_back();
+          throw;
+        }
+      }//if( !alreadyCompacting )
 
       return convo;
     }
@@ -1159,6 +2141,9 @@ void LlmInterface::sendSystemMessage( const std::string &message )
   
   if( m_debug_stream )
     (*m_debug_stream) << "System message: " << message << endl;
+
+  abandonStoppedRounds();  // As for sendUserMessage()
+  abandonInterruptedConversations();
 
   std::shared_ptr<LlmInteraction> convo = m_history->addSystemMessageToMainConversation( message );
 
@@ -1209,6 +2194,97 @@ Wt::Signal<>& LlmInterface::conversationFinished() {
 Wt::Signal<>& LlmInterface::responseError() {
   return m_responseError;
 }
+
+
+LlmInterface::ActivityState LlmInterface::activityState() const
+{
+  if( !m_pendingRequests.empty() )
+    return ActivityState::AwaitingLlm;
+  if( !m_deferredToolResults.empty() )
+    return ActivityState::RunningTools;
+  return ActivityState::Idle;
+}//activityState()
+
+
+Wt::Signal<LlmInterface::ActivityState> &LlmInterface::activityChanged()
+{
+  return m_activityChanged;
+}
+
+
+void LlmInterface::updateActivityState()
+{
+  if( m_activityBatchDepth > 0 )
+    return;  // The outermost ActivityBatch calls us again when it ends
+
+  const ActivityState state = activityState();
+  if( state == m_lastActivityState )
+    return;
+
+  m_lastActivityState = state;
+  m_activityChanged.emit( state );
+}//updateActivityState()
+
+
+LlmInterface::ActivityBatch::ActivityBatch( LlmInterface &llm )
+  : m_llm( llm )
+{
+  m_llm.m_activityBatchDepth += 1;
+}
+
+
+LlmInterface::ActivityBatch::~ActivityBatch()
+{
+  m_llm.m_activityBatchDepth -= 1;
+  assert( m_llm.m_activityBatchDepth >= 0 );
+  if( m_llm.m_activityBatchDepth > 0 )
+    return;
+
+  // In a destructor, so dont let a listener's exception escape.
+  try
+  {
+    m_llm.updateActivityState();
+  }catch( const std::exception &e )
+  {
+    cerr << "LlmInterface::ActivityBatch: activityChanged listener threw: " << e.what() << endl;
+  }catch( ... )
+  {
+    cerr << "LlmInterface::ActivityBatch: activityChanged listener threw" << endl;
+  }
+}//~ActivityBatch()
+
+
+std::optional<LlmInterface::InFlightWait>
+LlmInterface::inFlightWait( const std::shared_ptr<const LlmInteraction> &convo ) const
+{
+  if( !convo )
+    return std::nullopt;
+
+  for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
+  {
+    if( pr.second.conversation.lock() == convo )
+    {
+      InFlightWait wait;
+      wait.turn = pr.second.requestTurn.lock();
+      wait.since = pr.second.sendTime;
+      return wait;
+    }
+  }//for( pending requests )
+
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    if( conversationForRound( dr.second ) == convo )
+    {
+      InFlightWait wait;
+      wait.runningTools = true;
+      wait.turn = dr.second.toolRequest.lock();
+      wait.since = dr.second.roundStart;
+      return wait;
+    }
+  }//for( deferred tool rounds )
+
+  return std::nullopt;
+}//inFlightWait(...)
 
 bool LlmInterface::isRequestPending(int requestId) const {
   return m_pendingRequests.find(requestId) != m_pendingRequests.end();
@@ -2195,33 +3271,19 @@ void LlmInterface::handleApiResponse( const std::string &response,
     assert( m_protocol );
     const ParsedLlmResponse parsed = m_protocol->parseResponse( responseJson );
 
-    // Accumulate token usage (and log it when debugging).
+    // Accumulate token usage and cost (and log them when debugging).
     std::optional<size_t> promptTokens = parsed.promptTokens;
     std::optional<size_t> completionTokens = parsed.completionTokens;
     {
-      std::optional<int> promptTokensInt, completionTokensInt, totalTokens, cachedTokensInt, cacheCreationInt;
-      if( parsed.promptTokens.has_value() )
-        promptTokensInt = static_cast<int>( parsed.promptTokens.value() );
-      if( parsed.completionTokens.has_value() )
-        completionTokensInt = static_cast<int>( parsed.completionTokens.value() );
-      if( parsed.totalTokens.has_value() )
-        totalTokens = static_cast<int>( parsed.totalTokens.value() );
-      if( parsed.cachedTokens.has_value() )
-        cachedTokensInt = static_cast<int>( parsed.cachedTokens.value() );
-      if( parsed.cacheCreationTokens.has_value() )
-        cacheCreationInt = static_cast<int>( parsed.cacheCreationTokens.value() );
-
-      if( promptTokensInt.has_value() || completionTokensInt.has_value() || totalTokens.has_value()
-         || cachedTokensInt.has_value() || cacheCreationInt.has_value() )
-        m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens,
-                                  cachedTokensInt, cacheCreationInt );
+      add_parsed_usage( *m_history, conversation, parsed );
 
       if( m_debug_stream )
       {
         const bool has_completion = completionTokens.has_value();
         const bool has_cache = parsed.cachedTokens.has_value();
+        const bool has_cost = parsed.cost.has_value();
 
-        if( has_completion || has_cache )
+        if( has_completion || has_cache || has_cost )
           (*m_debug_stream) << "=== Token Usage This Call ===" << endl;
 
         if( has_completion )
@@ -2242,7 +3304,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
           (*m_debug_stream) << endl;
         }
 
-        if( has_completion || has_cache )
+        if( has_cost )
+          (*m_debug_stream) << "Cost: $" << parsed.cost.value() << endl;
+
+        if( has_completion || has_cache || has_cost )
           (*m_debug_stream) << "=============================" << endl;
       }//if( m_debug_stream )
     }
@@ -2503,18 +3568,20 @@ void LlmInterface::handleApiResponse( const std::string &response,
                                   response, conversation, LlmInteractionError::ErrorType::JsonParse );
   }
 
+  // A sub-agent's completion handler may end the turn itself (e.g., if sending its parent's results
+  //  fails), and then it must not be ended again below.
+  const size_t terminalSignals = m_terminalSignalCount;
   if( !number_tool_calls )
-  {
-    conversation->finishTime = std::chrono::system_clock::now();
-    if( conversation->conversation_completion_handler )
-      conversation->conversation_completion_handler();
-    conversation->conversationFinished.emit();
-  }
+    finish_conversation( conversation );
 
   // Only emit an interface-level signal once there are no pending requests AND no deferred async
   // tools still running.  A parse failure emits m_responseError (the error path); otherwise this is
   // the success path and emits m_conversationFinished.
-  if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
+  if( m_terminalSignalCount != terminalSignals )
+  {
+    if( m_debug_stream )
+      (*m_debug_stream) << "The turn already ended (sub-agent completion), not emitting signal" << endl;
+  }else if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
   {
     if( m_debug_stream )
       (*m_debug_stream) << (parseFailed ? "Unparseable response - emitting error signal"
@@ -2566,6 +3633,302 @@ namespace
 }//namespace
 
 
+void LlmInterface::attachSubAgentCompletion( const std::shared_ptr<LlmInteraction> &parent, const int roundKey,
+                                             const int token, const std::shared_ptr<LlmInteraction> &subAgent,
+                                             const std::string &callId )
+{
+  // Capture a weak_ptr to this interface so the handler safely bails if the interface (and thus its
+  //  owning GUI/session) has been destroyed before the sub-agent finished - see use-after-free notes.
+  //  The weak_ptr lock replaces the previous fragile "walk the GUI to re-find the interface" liveness
+  //  check, and (because all LlmInterface instances are now shared-owned) also works for the private
+  //  interfaces used by LlmSubAgentFollowup / LlmBenchmarkRunner.
+  const std::weak_ptr<LlmInterface> weakSelf = weak_from_this();
+  const std::weak_ptr<LlmInteraction> parent_wk = parent;
+  const std::weak_ptr<LlmInteraction> subAgent_wk = subAgent;
+
+  subAgent->conversation_completion_handler = [weakSelf, parent_wk, subAgent_wk, roundKey, token, callId](){
+    const shared_ptr<LlmInterface> self = weakSelf.lock();
+    if( !self )
+    {
+      cerr << "Sub-agent completed but its LlmInterface is no longer alive - ignoring results." << endl;
+      return;
+    }
+
+    self->handleSubAgentCompleted( parent_wk.lock(), roundKey, token, subAgent_wk.lock(), callId );
+  };
+}//attachSubAgentCompletion(...)
+
+
+void LlmInterface::handleSubAgentCompleted( const std::shared_ptr<LlmInteraction> &parent, const int roundKey,
+                                            const int token, const std::shared_ptr<LlmInteraction> &subAgent,
+                                            const std::string &callId )
+{
+  assert( parent );
+  if( !parent )
+  {
+    cerr << "Sub-agent completed with parent conversation no longer alive - ignoring results." << endl;
+    return;
+  }
+
+  assert( subAgent );
+  if( !subAgent )
+  {
+    cerr << "Sub-agent cconversation no longer alive - ignoring results." << endl;
+    return;
+  }
+
+  // Here is where we fill in `parent` with the result, and send back to the LLM
+  if( m_debug_stream )
+    (*m_debug_stream) << "Sub-agent complete (no tool calls left) - will extracting summary and continue main conversation." << endl;
+
+  assert( !parent->responses.empty() );
+  std::shared_ptr<LlmInteractionTurn> response = nullptr;
+  LlmToolCall *toolResult = nullptr;
+
+  // Find the ToolResult response containing this tool call
+  for( size_t rspns_index = 0; !toolResult && (rspns_index < parent->responses.size()); ++rspns_index )
+  {
+    if( parent->responses[rspns_index]->type() == LlmInteractionTurn::Type::ToolResult )
+    {
+      response = parent->responses[rspns_index];
+      // Search within the toolCalls vector for the matching invocationId - need to cast to access toolCalls
+      LlmToolResults *toolResResp = dynamic_cast<LlmToolResults*>(response.get());
+      if( toolResResp )
+      {
+        for( LlmToolCall &tc : toolResResp->toolCalls() )
+        {
+          if( tc.invocationId == callId )
+          {
+            toolResult = &tc;
+            assert( tc.content.find( "(will update when complete)" ) != string::npos );
+            break;
+          }
+        }
+      }
+    }
+  }//for( loop over responses )
+
+  assert( toolResult );
+
+  if( toolResult )
+  {
+    assert( !subAgent->responses.empty() );
+    
+    json updatedResult;
+    
+    string subAgentSummary, subAgentThinkingContent;
+    const LlmInteractionError * const subAgentError = subAgent->responses.empty()
+        ? nullptr
+        : dynamic_cast<const LlmInteractionError *>( subAgent->responses.back().get() );
+    const bool failed = (subAgent->responses.empty() || subAgentError);
+
+    if( subAgent->responses.empty() )
+    {
+      updatedResult["status"] = "failed";
+      updatedResult["summary"] = "Failed to get agent summary - because of internal logic error.";
+      updatedResult["agentName"] = agentTypeToString( subAgent->agent_type );
+    }else if( subAgentError && subAgentError->skippedByUser() )
+    {
+      // The user chose Cancel Agent on its error (e.g., after stopping it).
+      updatedResult["status"] = "cancelled";
+      updatedResult["summary"] = "The user cancelled this agent before it finished.  It may "
+        "have made changes (for example, to the fitted peaks), but no summary of its work is "
+        "available; please continue without it.";
+      updatedResult["agentName"] = agentTypeToString( subAgent->agent_type );
+    }else if( subAgentError )
+    {
+      // Its request failed, and no one was there to retry it; tell the invoking agent, so it
+      //  can try again or carry on without it.
+      updatedResult["status"] = "failed";
+      updatedResult["error"] = sanitizeUtf8( subAgentError->errorMessage() );
+      updatedResult["agentName"] = agentTypeToString( subAgent->agent_type );
+    }else
+    {
+      string last_response;
+      // Extract content from the last response (should be an Assistant response)
+      const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(subAgent->responses.back().get());
+      if( llmResp )
+        last_response = llmResp->content();
+      if( m_debug_stream )
+        (*m_debug_stream) << "--- about to parse subAgent->responses='" << last_response << "'" << endl;
+
+      nlohmann::json responseJson = nlohmann::json::object();
+      try
+      {
+        if( !last_response.empty() )
+          responseJson = parseLenientJson( last_response );
+        if( m_debug_stream )
+          (*m_debug_stream) << "--- Done parsing subAgent->responses" << endl;
+        
+        if( responseJson.contains("choices") && !responseJson["choices"].empty() )
+        {
+          const json &choice = responseJson["choices"][0];
+          if( choice.contains("message") && choice["message"].contains("content") )
+          {
+            const string content = choice["message"]["content"].get<string>();
+            // Extract clean content (strip thinking tags if present)
+            auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
+            subAgentSummary = cleanContent;
+            subAgentThinkingContent = thinkingContent;
+          }
+        }
+        
+        if( m_debug_stream )
+          (*m_debug_stream) << "--- Done extracting JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
+      }catch( std::exception &e )
+      {
+        // `LlmConversationResponse::content` may not / likely is not, JSON
+        auto [cleanContent, thinkingContent] = extractThinkingAndContent(last_response);
+        subAgentSummary = cleanContent;
+        subAgentThinkingContent = thinkingContent;
+        if( m_debug_stream )
+          (*m_debug_stream) << "--- Done extracting non-JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
+      }
+      
+      
+      // Sanitize UTF-8 before adding to JSON (nlohmann::json requires valid UTF-8)
+      subAgentSummary = sanitizeUtf8( subAgentSummary );
+      subAgentThinkingContent = sanitizeUtf8( subAgentThinkingContent );
+
+      if( subAgent->agent_type == AgentType::KnowledgeBase )
+      {
+        std::string trimmed_summary = subAgentSummary;
+        SpecUtils::trim( trimmed_summary );
+        if( trimmed_summary.empty() )
+          subAgentSummary = "no further information found";
+      }
+
+      if( m_debug_stream )
+      {
+        (*m_debug_stream) << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
+        (*m_debug_stream) << "subAgentThinkingContent='" << subAgentThinkingContent << "'" << endl;
+      }
+      
+      updatedResult["status"] = "completed";
+      updatedResult["summary"] = subAgentSummary;
+      updatedResult["agentName"] = agentTypeToString( subAgent->agent_type );
+    }//if( subAgent->responses.empty() )
+
+    toolResult->status = failed ? LlmToolCall::CallStatus::Error : LlmToolCall::CallStatus::Success;
+    
+    // Update the tool result content
+    toolResult->content = updatedResult.dump();
+
+    // Store sub-agent conversation reference in the tool call request
+    toolResult->sub_agent_conversation = subAgent;
+
+    // Store thinking content in the parent response
+    if( response )
+      response->setThinkingContent( subAgentThinkingContent );
+
+    // Aggregate sub-agent token usage to parent conversation
+    if( subAgent->promptTokens.has_value() ||
+        subAgent->completionTokens.has_value() ||
+        subAgent->totalTokens.has_value() ||
+        subAgent->cachedTokens.has_value() ||
+        subAgent->cacheCreationTokens.has_value() ||
+        subAgent->cost.has_value() )
+    {
+      if( m_debug_stream )
+      {
+        (*m_debug_stream) << "=== Aggregating sub-agent token usage to parent ===" << endl;
+        (*m_debug_stream) << "Sub-agent prompt tokens: " << (subAgent->promptTokens.has_value() ? std::to_string(subAgent->promptTokens.value()) : "N/A") << endl;
+        (*m_debug_stream) << "Sub-agent completion tokens: " << (subAgent->completionTokens.has_value() ? std::to_string(subAgent->completionTokens.value()) : "N/A") << endl;
+        (*m_debug_stream) << "Sub-agent total tokens: " << (subAgent->totalTokens.has_value() ? std::to_string(subAgent->totalTokens.value()) : "N/A") << endl;
+      }
+
+      // Add sub-agent's tokens to parent conversation
+      if( subAgent->promptTokens.has_value() )
+      {
+        if( parent->promptTokens.has_value() )
+          parent->promptTokens = parent->promptTokens.value() + subAgent->promptTokens.value();
+        else
+          parent->promptTokens = subAgent->promptTokens.value();
+      }
+
+      if( subAgent->completionTokens.has_value() )
+      {
+        if( parent->completionTokens.has_value() )
+          parent->completionTokens = parent->completionTokens.value() + subAgent->completionTokens.value();
+        else
+          parent->completionTokens = subAgent->completionTokens.value();
+      }
+
+      if( subAgent->totalTokens.has_value() )
+      {
+        if( parent->totalTokens.has_value() )
+          parent->totalTokens = parent->totalTokens.value() + subAgent->totalTokens.value();
+        else
+          parent->totalTokens = subAgent->totalTokens.value();
+      }
+
+      // The cache counters must ride along with promptTokens: the displayed cache rate is
+      // cachedTokens/promptTokens, so folding in a sub-agent's input without its cache reads
+      // would inflate the denominator only, and understate the true rate for every
+      // conversation that invoked a sub-agent.
+      if( subAgent->cachedTokens.has_value() )
+        parent->cachedTokens = parent->cachedTokens.value_or(0)
+                                    + subAgent->cachedTokens.value();
+
+      if( subAgent->cacheCreationTokens.has_value() )
+        parent->cacheCreationTokens = parent->cacheCreationTokens.value_or(0)
+                                    + subAgent->cacheCreationTokens.value();
+
+      if( subAgent->cost.has_value() )
+        parent->cost = parent->cost.value_or(0.0) + subAgent->cost.value();
+
+      if( m_debug_stream )
+      {
+        (*m_debug_stream) << "Parent conversation now has:" << endl;
+        (*m_debug_stream) << "  Prompt tokens: " << (parent->promptTokens.has_value() ? std::to_string(parent->promptTokens.value()) : "N/A") << endl;
+        (*m_debug_stream) << "  Completion tokens: " << (parent->completionTokens.has_value() ? std::to_string(parent->completionTokens.value()) : "N/A") << endl;
+        (*m_debug_stream) << "  Total tokens: " << (parent->totalTokens.has_value() ? std::to_string(parent->totalTokens.value()) : "N/A") << endl;
+        (*m_debug_stream) << "  Cache read tokens: " << (parent->cachedTokens.has_value() ? std::to_string(parent->cachedTokens.value()) : "N/A") << endl;
+        (*m_debug_stream) << "  Cache write tokens: " << (parent->cacheCreationTokens.has_value() ? std::to_string(parent->cacheCreationTokens.value()) : "N/A") << endl;
+        if( parent->cost.has_value() )
+          (*m_debug_stream) << "  Cost: $" << parent->cost.value() << endl;
+        (*m_debug_stream) << "===================================================" << endl;
+      }
+    }
+
+    // Emit signal that this sub-agent has finished
+    parent->subAgentFinished.emit( response, subAgent );
+  }else
+  {
+    cerr << "Failed to find tool-call result - shouldnt happen!!!" << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Failed to find tool-call result - shouldnt happen!!!" << endl;
+  }//if( toolResult )
+
+
+  // No assert here: the deferred entry can legitimately be gone (e.g. an unrelated error
+  // response or resetWithConfig() cleared the map) by the time a sub-agent finishes.
+  const std::map<int, DeferredToolResult>::iterator defered_pos
+                               = m_deferredToolResults.find( roundKey );
+  if( defered_pos == end(m_deferredToolResults) )
+  {
+    if( m_debug_stream )
+      (*m_debug_stream) << "Sub-agent completed with no defered request being found..." << endl;
+    return;
+  }
+  
+  
+  DeferredToolResult &deffered_result = defered_pos->second;
+  vector<int> &subAgentToolCallIds = deffered_result.subAgentToolCallIds;
+  const std::vector<int>::iterator pos
+    = std::find( begin(subAgentToolCallIds), end(subAgentToolCallIds), token );
+  assert( pos != end(subAgentToolCallIds) );
+  if( pos == end(subAgentToolCallIds) )
+    return;  // already resolved; resolving again would double-send the round's results
+
+  subAgentToolCallIds.erase( pos );
+
+  // Shared with the async-tool and deadline-sweep drivers, so whichever of them finishes last
+  // finalizes the round.
+  finalizeDeferredIfReady( defered_pos );
+}//handleSubAgentCompleted(...)
+
+
 std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
 LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                                     const std::shared_ptr<LlmInteraction> &convo,
@@ -2587,8 +3950,18 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     return {nullptr, nullptr};
   }
 
-  // Set current conversation for tool execution context
+  // Set current conversation for tool execution context, until this returns or throws - then restore the
+  //  one before, should a tool have run another round (as can happen when tools run synchronously).
+  struct RestoreCurrentConversation
+  {
+    std::weak_ptr<LlmInteraction> &current;
+    const std::weak_ptr<LlmInteraction> previous;
+    ~RestoreCurrentConversation(){ current = previous; }
+  } restoreCurrentConversation{ m_currentConversation, m_currentConversation };
   m_currentConversation = convo;
+
+  // For the tool-call turn's callDuration: the time to run all of this round's tools.
+  const std::chrono::steady_clock::time_point roundStart = std::chrono::steady_clock::now();
 
   if( m_debug_stream )
     (*m_debug_stream) << "Executing " << toolCalls.size() << " tool calls" << endl;
@@ -2723,6 +4096,28 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         if( agent_type == AgentType::MainAgent )
           throw runtime_error( "Can not invoke a agent of type AgentType::MainAgent" );
 
+        // Refuse up front (no sub-agent conversation, no LLM call) when the agent's prerequisites
+        //  aren't met; the error result goes back to the calling agent with the rest of this round.
+        const std::optional<std::string> prereq_error = subAgentPrerequisiteError( agent_type );
+        if( prereq_error )
+        {
+          if( m_debug_stream )
+            (*m_debug_stream) << "Refusing sub-agent invocation of " << agentName << ": " << *prereq_error << endl;
+
+          json result;
+          result["error"] = *prereq_error;
+          result["success"] = false;
+
+          // The request was already pushed above, so requests/results stay in sync
+          LlmToolCall toolResult( toolName, callId, arguments );
+          toolResult.status = LlmToolCall::CallStatus::Error;
+          toolResult.content = result.dump();
+          toolCallResults.push_back( std::move(toolResult) );
+
+          executedToolCallIds.push_back( callId );  // As at the bottom of this loop, which `continue` skips
+          continue;
+        }//if( prereq_error )
+
         if( m_debug_stream )
         {
           (*m_debug_stream) << "Detected sub-agent invocation: " << agentName << " (context: " << context.substr(0,50)
@@ -2739,8 +4134,6 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         const auto current_ticks = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
         sub_agent_convo->conversationId = "subagent_" + agentName + "_" + std::to_string( current_ticks );
         
-        const std::weak_ptr<LlmInteraction> &parent_convo_wk = convo;
-        const std::weak_ptr<LlmInteraction> sub_agent_convo_wk = sub_agent_convo;
         
         const int subAgentRequestId = invokeSubAgent( sub_agent_convo );
         subAgentRequestIds.push_back( subAgentRequestId );
@@ -2760,263 +4153,9 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           toolCallResults.push_back( std::move(toolResult) );
         }// End placeholder result that will be updated when sub-agent completes
         
-        // We will define a completion handler that will get called when the sub-agent conversation is complete.
-        // Capture a weak_ptr to this interface so the handler safely bails if the interface (and thus its
-        // owning GUI/session) has been destroyed before the sub-agent finished - see use-after-free notes.
-        const std::weak_ptr<LlmInterface> weakSelf = weak_from_this();
-        sub_agent_convo->conversation_completion_handler = [parent_convo_wk, parentRequestId, subAgentRequestId, weakSelf, sub_agent_convo_wk, callId](){
-          shared_ptr<LlmInteraction> parent_conv = parent_convo_wk.lock();
-          assert( parent_conv );
-          if( !parent_conv )
-          {
-            cerr << "Sub-agent completed with parent conversation no longer alive - ignoring results." << endl;
-            return;
-          }
-          
-          shared_ptr<LlmInteraction> sub_agent_convo = sub_agent_convo_wk.lock();
-          assert( sub_agent_convo );
-          if( !sub_agent_convo )
-          {
-            cerr << "Sub-agent cconversation no longer alive - ignoring results." << endl;
-            return;
-          }
-          
-          // Bail if this interface (and thus its owning GUI/session) has been destroyed.  The weak_ptr
-          // lock replaces the previous fragile "walk the GUI to re-find the interface" liveness check,
-          // and (because all LlmInterface instances are now shared-owned) also works for the private
-          // interfaces used by LlmSubAgentFollowup / LlmBenchmarkRunner.
-          shared_ptr<LlmInterface> selfPtr = weakSelf.lock();
-          if( !selfPtr )
-          {
-            cerr << "Sub-agent completed but its LlmInterface is no longer alive - ignoring results." << endl;
-            return;
-          }
-          LlmInterface * const interface = selfPtr.get();
-
-          // Here is where we fill in `parent_conv` with the result, and send back to the LLM
-          if( interface->m_debug_stream )
-            (*interface->m_debug_stream) << "Sub-agent complete (no tool calls left) - will extracting summary and continue main conversation." << endl;
-
-          assert( !parent_conv->responses.empty() );
-          std::shared_ptr<LlmInteractionTurn> response = nullptr;
-          LlmToolCall *toolResult = nullptr;
-
-          // Find the ToolResult response containing this tool call
-          for( size_t rspns_index = 0; !toolResult && (rspns_index < parent_conv->responses.size()); ++rspns_index )
-          {
-            if( parent_conv->responses[rspns_index]->type() == LlmInteractionTurn::Type::ToolResult )
-            {
-              response = parent_conv->responses[rspns_index];
-              // Search within the toolCalls vector for the matching invocationId - need to cast to access toolCalls
-              LlmToolResults *toolResResp = dynamic_cast<LlmToolResults*>(response.get());
-              if( toolResResp )
-              {
-                for( LlmToolCall &tc : toolResResp->toolCalls() )
-                {
-                  if( tc.invocationId == callId )
-                  {
-                    toolResult = &tc;
-                    assert( tc.content.find( "(will update when complete)" ) != string::npos );
-                    break;
-                  }
-                }
-              }
-            }
-          }//for( loop over responses )
-
-          assert( toolResult );
-
-          if( toolResult )
-          {
-            assert( !sub_agent_convo->responses.empty() );
-            
-            json updatedResult;
-            
-            string subAgentSummary, subAgentThinkingContent;
-            if( sub_agent_convo->responses.empty() )
-            {
-              updatedResult["status"] = "failed";
-              updatedResult["summary"] = "Failed to get agent summary - because of internal logic error.";
-              updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
-            }else
-            {
-              string last_response;
-              // Extract content from the last response (should be an Assistant response)
-              const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(sub_agent_convo->responses.back().get());
-              if( llmResp )
-                last_response = llmResp->content();
-              if( interface->m_debug_stream )
-                (*interface->m_debug_stream) << "--- about to parse sub_agent_convo->responses='" << last_response << "'" << endl;
-
-              nlohmann::json responseJson = nlohmann::json::object();
-              try
-              {
-                if( !last_response.empty() )
-                  responseJson = parseLenientJson( last_response );
-                if( interface->m_debug_stream )
-                  (*interface->m_debug_stream) << "--- Done parsing sub_agent_convo->responses" << endl;
-                
-                if( responseJson.contains("choices") && !responseJson["choices"].empty() )
-                {
-                  const json &choice = responseJson["choices"][0];
-                  if( choice.contains("message") && choice["message"].contains("content") )
-                  {
-                    const string content = choice["message"]["content"].get<string>();
-                    // Extract clean content (strip thinking tags if present)
-                    auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
-                    subAgentSummary = cleanContent;
-                    subAgentThinkingContent = thinkingContent;
-                  }
-                }
-                
-                if( interface->m_debug_stream )
-                  (*interface->m_debug_stream) << "--- Done extracting JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
-              }catch( std::exception &e )
-              {
-                // `LlmConversationResponse::content` may not / likely is not, JSON
-                auto [cleanContent, thinkingContent] = extractThinkingAndContent(last_response);
-                subAgentSummary = cleanContent;
-                subAgentThinkingContent = thinkingContent;
-                if( interface->m_debug_stream )
-                  (*interface->m_debug_stream) << "--- Done extracting non-JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
-              }
-              
-              
-              // Sanitize UTF-8 before adding to JSON (nlohmann::json requires valid UTF-8)
-              subAgentSummary = sanitizeUtf8( subAgentSummary );
-              subAgentThinkingContent = sanitizeUtf8( subAgentThinkingContent );
-
-              if( sub_agent_convo->agent_type == AgentType::KnowledgeBase )
-              {
-                std::string trimmed_summary = subAgentSummary;
-                SpecUtils::trim( trimmed_summary );
-                if( trimmed_summary.empty() )
-                  subAgentSummary = "no further information found";
-              }
-
-              if( interface->m_debug_stream )
-              {
-                (*interface->m_debug_stream) << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
-                (*interface->m_debug_stream) << "subAgentThinkingContent='" << subAgentThinkingContent << "'" << endl;
-              }
-              
-              updatedResult["status"] = "completed";
-              updatedResult["summary"] = subAgentSummary;
-              updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
-            }//if( sub_agent_convo->responses.empty() )
-
-            toolResult->status = LlmToolCall::CallStatus::Success;
-            
-            // Update the tool result content
-            toolResult->content = updatedResult.dump();
-
-            // Store sub-agent conversation reference in the tool call request
-            toolResult->sub_agent_conversation = sub_agent_convo;
-
-            // Store thinking content in the parent response
-            if( response )
-              response->setThinkingContent( subAgentThinkingContent );
-
-            // Aggregate sub-agent token usage to parent conversation
-            if( sub_agent_convo->promptTokens.has_value() ||
-                sub_agent_convo->completionTokens.has_value() ||
-                sub_agent_convo->totalTokens.has_value() ||
-                sub_agent_convo->cachedTokens.has_value() ||
-                sub_agent_convo->cacheCreationTokens.has_value() )
-            {
-              if( interface->m_debug_stream )
-              {
-                (*interface->m_debug_stream) << "=== Aggregating sub-agent token usage to parent ===" << endl;
-                (*interface->m_debug_stream) << "Sub-agent prompt tokens: " << (sub_agent_convo->promptTokens.has_value() ? std::to_string(sub_agent_convo->promptTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "Sub-agent completion tokens: " << (sub_agent_convo->completionTokens.has_value() ? std::to_string(sub_agent_convo->completionTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "Sub-agent total tokens: " << (sub_agent_convo->totalTokens.has_value() ? std::to_string(sub_agent_convo->totalTokens.value()) : "N/A") << endl;
-              }
-
-              // Add sub-agent's tokens to parent conversation
-              if( sub_agent_convo->promptTokens.has_value() )
-              {
-                if( parent_conv->promptTokens.has_value() )
-                  parent_conv->promptTokens = parent_conv->promptTokens.value() + sub_agent_convo->promptTokens.value();
-                else
-                  parent_conv->promptTokens = sub_agent_convo->promptTokens.value();
-              }
-
-              if( sub_agent_convo->completionTokens.has_value() )
-              {
-                if( parent_conv->completionTokens.has_value() )
-                  parent_conv->completionTokens = parent_conv->completionTokens.value() + sub_agent_convo->completionTokens.value();
-                else
-                  parent_conv->completionTokens = sub_agent_convo->completionTokens.value();
-              }
-
-              if( sub_agent_convo->totalTokens.has_value() )
-              {
-                if( parent_conv->totalTokens.has_value() )
-                  parent_conv->totalTokens = parent_conv->totalTokens.value() + sub_agent_convo->totalTokens.value();
-                else
-                  parent_conv->totalTokens = sub_agent_convo->totalTokens.value();
-              }
-
-              // The cache counters must ride along with promptTokens: the displayed cache rate is
-              // cachedTokens/promptTokens, so folding in a sub-agent's input without its cache reads
-              // would inflate the denominator only, and understate the true rate for every
-              // conversation that invoked a sub-agent.
-              if( sub_agent_convo->cachedTokens.has_value() )
-                parent_conv->cachedTokens = parent_conv->cachedTokens.value_or(0)
-                                            + sub_agent_convo->cachedTokens.value();
-
-              if( sub_agent_convo->cacheCreationTokens.has_value() )
-                parent_conv->cacheCreationTokens = parent_conv->cacheCreationTokens.value_or(0)
-                                            + sub_agent_convo->cacheCreationTokens.value();
-
-              if( interface->m_debug_stream )
-              {
-                (*interface->m_debug_stream) << "Parent conversation now has:" << endl;
-                (*interface->m_debug_stream) << "  Prompt tokens: " << (parent_conv->promptTokens.has_value() ? std::to_string(parent_conv->promptTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "  Completion tokens: " << (parent_conv->completionTokens.has_value() ? std::to_string(parent_conv->completionTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "  Total tokens: " << (parent_conv->totalTokens.has_value() ? std::to_string(parent_conv->totalTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "  Cache read tokens: " << (parent_conv->cachedTokens.has_value() ? std::to_string(parent_conv->cachedTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "  Cache write tokens: " << (parent_conv->cacheCreationTokens.has_value() ? std::to_string(parent_conv->cacheCreationTokens.value()) : "N/A") << endl;
-                (*interface->m_debug_stream) << "===================================================" << endl;
-              }
-            }
-
-            // Emit signal that this sub-agent has finished
-            parent_conv->subAgentFinished.emit( response, sub_agent_convo );
-          }else
-          {
-            cerr << "Failed to find tool-call result - shouldnt happen!!!" << endl;
-            if( interface->m_debug_stream )
-              (*interface->m_debug_stream) << "Failed to find tool-call result - shouldnt happen!!!" << endl;
-          }//if( toolResult )
-
-
-          // No assert here: the deferred entry can legitimately be gone (e.g. an unrelated error
-          // response or resetWithConfig() cleared the map) by the time a sub-agent finishes.
-          const std::map<int, DeferredToolResult>::iterator defered_pos
-                                       = interface->m_deferredToolResults.find( parentRequestId );
-          if( defered_pos == end(interface->m_deferredToolResults) )
-          {
-            if( interface->m_debug_stream )
-              (*interface->m_debug_stream) << "Sub-agent completed with no defered request being found..." << endl;
-            return;
-          }
-          
-          
-          DeferredToolResult &deffered_result = defered_pos->second;
-          vector<int> &subAgentToolCallIds = deffered_result.subAgentToolCallIds;
-          const std::vector<int>::iterator pos
-            = std::find( begin(subAgentToolCallIds), end(subAgentToolCallIds), subAgentRequestId );
-          assert( pos != end(subAgentToolCallIds) );
-          if( pos == end(subAgentToolCallIds) )
-            return;  // already resolved; resolving again would double-send the round's results
-
-          subAgentToolCallIds.erase( pos );
-
-          // Shared with the async-tool and deadline-sweep drivers, so whichever of them finishes last
-          // finalizes the round.
-          interface->finalizeDeferredIfReady( defered_pos );
-        };//sub_agent_convo->conversation_completion_handler
+        // Its summary is handed back, and this round finalized once nothing else is outstanding, by
+        //  its completion handler.
+        attachSubAgentCompletion( convo, parentRequestId, subAgentRequestId, sub_agent_convo, callId );
 
         if( m_debug_stream )
           (*m_debug_stream) << "Sub-agent invocation deferred - will resume main agent when complete" << endl;
@@ -3064,6 +4203,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             // Tool runs expensive computation in background; callback fires on GUI thread.
             toolResult.status = LlmToolCall::CallStatus::Pending;
             toolResult.content = R"({"status": "pending"})";
+            toolResult.asyncRunning = true;
             toolCallResults.push_back( std::move(toolResult) );
 
             // Remember this call by id so the round can be resolved exactly-once, and give it a deadline
@@ -3103,21 +4243,22 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               {
                 // Runs on the GUI thread, on a later event-loop iteration than dispatch, so the
                 // deferred-result entry and placeholder tool-result are guaranteed to be in place.
+                //  With this interface gone (the LLM Assistant was closed) the result is still recorded,
+                //  as the tool may have changed things (e.g., added peaks): if the conversation is
+                //  resumed, the LLM is sent the result, rather than told to call the tool again.
                 const shared_ptr<LlmInterface> self = weakSelf.lock();
-                if( !self )
-                  return;
 
                 const auto exec_end = std::chrono::steady_clock::now();
                 const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>( exec_end - exec_start );
 
-                if( self->m_debug_stream )
+                if( self && self->m_debug_stream )
                   (*self->m_debug_stream) << "Async tool callback for: " << capturedToolName
                     << " (callId=" << capturedCallId << ", duration=" << exec_duration.count() << "ms)" << endl;
 
                 // Whether this call still counts towards its round.  If not, the round was either
                 // already finalized, force-failed by the deadline sweep, or cleared by the error path.
-                const bool outstanding = self->isAsyncCallOutstanding( capturedParentRequestId,
-                                                                       capturedCallId );
+                const bool outstanding = self && self->isAsyncCallOutstanding( capturedParentRequestId,
+                                                                               capturedCallId );
 
                 // Apply the result to the placeholder if we still can.  Everything from here to the
                 // resolveAsyncToolCall() below is best-effort: the bookkeeping MUST be resolved even
@@ -3127,6 +4268,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 LlmToolCall * const pendingResult = (convo && wApp && InterSpec::instance())
                             ? findPendingToolResult( convo, capturedCallId, &owningToolResults )
                             : nullptr;
+                if( pendingResult )
+                  pendingResult->asyncRunning = false;
 
                 // A placeholder that is no longer Pending has already had its outcome decided AND sent
                 // to the model - normally, or as an error by the deadline sweep.  Rewriting it would
@@ -3140,7 +4283,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
                 if( !applyResult )
                 {
-                  if( self->m_debug_stream )
+                  if( self && self->m_debug_stream )
                     (*self->m_debug_stream) << "Async callback: not applying result for callId="
                       << capturedCallId << " (" << (pendingResult ? "outcome already reported"
                                                                   : "no placeholder found") << ")" << endl;
@@ -3259,9 +4402,19 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 // Resolve the round's bookkeeping (exactly-once) and send the results if this was the
                 // last outstanding sub-agent/async call.  Skipped when the call no longer counts
                 // towards a round (its round was cleared), where the result above was still worth
-                // recording but there is nothing left to finalize.
+                // recording but there is nothing left to finalize - unless the conversation was
+                // interrupted and then resumed while the tool ran (see resumeToolRound()), here or in
+                // the interface made when the LLM Assistant was re-opened.
                 if( outstanding )
+                {
                   self->resolveAsyncToolCall( capturedParentRequestId, capturedCallId );
+                }else
+                {
+                  LlmToolGui * const llmTool = self ? nullptr : InterSpec::instance()->currentLlmTool();
+                  LlmInterface * const resumer = self ? self.get() : (llmTool ? llmTool->llmInterface() : nullptr);
+                  if( resumer )
+                    resumer->resolveResumedAsyncCall( convo, capturedCallId );
+                }//if( outstanding ) / else
               };//rawCallback
 
             // Marshal the completion body onto a later iteration of THIS session's GUI event loop,
@@ -3569,11 +4722,20 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     executedToolCallIds.push_back(callId);
   }
 
+  // A round with nothing left running (no sub-agents or async tools) is done, so its duration is
+  //  known now - before its turns are added and their panels built, which is not tool time.
+  const bool roundDeferred = (!subAgentRequestIds.empty() || !asyncCalls.empty());
+  std::optional<std::chrono::milliseconds> roundDuration;
+  if( !roundDeferred )
+    roundDuration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                    std::chrono::steady_clock::now() - roundStart );
+
   // Add all tool calls to history as a single batched entry
   shared_ptr<LlmToolRequest> tool_request;
   if( !toolCallRequests.empty() )
   {
-    tool_request = m_history->addToolCalls( std::move(toolCallRequests), rawResponseContent, convo );
+    tool_request = m_history->addToolCalls( std::move(toolCallRequests), rawResponseContent, convo,
+                                            roundDuration );
 
     // Set reasoning details on the tool request BEFORE sendToolResultsToLLM is called
     // These must be set now so they can be included when building the messages array
@@ -3597,7 +4759,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   }
 
   // If we have sub-agent invocations or async tool calls, defer sending results
-  if( !subAgentRequestIds.empty() || !asyncCalls.empty() )
+  if( roundDeferred )
   {
     if( m_debug_stream )
     {
@@ -3615,6 +4777,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     deferred.conversation = convo;
     deferred.subAgentToolCallIds = subAgentRequestIds;
     deferred.pendingAsyncCalls = std::move( asyncCalls );
+    deferred.toolRequest = tool_request;
+    deferred.roundStart = roundStart;
 
     // Re-stamp the deadlines now, at registration.  They were set when each tool was dispatched, but
     // nothing can observe a call until this entry exists and the sweep starts - and the rest of this
@@ -3627,6 +4791,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     m_deferredToolResults[parentRequestId] = std::move( deferred );
     updateDeferredSweepTimer();
     assertDeferredInvariants();
+    updateActivityState();
 
     // Don't send results yet - wait for sub-agent and/or async tools
   }else
@@ -3638,9 +4803,6 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       sendToolResultsToLLM( convo );
     }
   }
-
-  // Clear current conversation after tool execution
-  m_currentConversation.reset();
 
   return { tool_request, tool_result };
 }
@@ -4145,14 +5307,13 @@ void LlmInterface::prepareModelInstructions()
   // The compaction prompt is a single top-level instruction; render it with the MainAgent context.
   if( !m_config->llmApi.compactionSystemPrompt.empty() )
     m_renderedCompaction = LlmPromptTemplate::render( m_config->llmApi.compactionSystemPrompt,
-      LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, AgentType::MainAgent ) );
+                                                      agentTemplateContext( AgentType::MainAgent ) );
 
-  // Per-agent: the base system prompt plus any per-state PromptGuidance / ephemeral text.  buildContext()
+  // Per-agent: the base system prompt plus any per-state PromptGuidance / ephemeral text.  agentTemplateContext()
   // is cheap and this runs only on model change, so we simply (re)render everything here.
   for( const LlmConfig::AgentConfig &agent : m_config->agents )
   {
-    const nlohmann::json ctx = LlmPromptTemplate::buildContext( *m_config,
-                                                    LlmPromptTemplate::Surface::Agent, agent.type );
+    const nlohmann::json ctx = agentTemplateContext( agent.type );
 
     m_renderedSystemPrompt[agent.type] = LlmPromptTemplate::render( agent.systemPrompt, ctx );
 
@@ -4170,6 +5331,23 @@ void LlmInterface::prepareModelInstructions()
 }//prepareModelInstructions()
 
 
+nlohmann::json LlmInterface::agentTemplateContext( const AgentType agentType ) const
+{
+  assert( m_config );
+  nlohmann::json ctx = LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, agentType );
+
+  nlohmann::json tools = nlohmann::json::array();
+  if( m_tool_registry )
+  {
+    for( const auto &name_tool : m_tool_registry->getToolsForAgent( agentType ) )
+      tools.push_back( name_tool.first );
+  }
+  ctx["tools"] = std::move( tools );
+
+  return ctx;
+}//agentTemplateContext(...)
+
+
 std::string LlmInterface::getSystemPromptForAgent( const AgentType agentType ) const
 {
   if( !m_config || !m_config->llmApi.enabled )
@@ -4184,8 +5362,7 @@ std::string LlmInterface::getSystemPromptForAgent( const AgentType agentType ) c
   for( const LlmConfig::AgentConfig &agent : m_config->agents )
   {
     if( agent.type == agentType )
-      return LlmPromptTemplate::render( agent.systemPrompt,
-               LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, agentType ) );
+      return LlmPromptTemplate::render( agent.systemPrompt, agentTemplateContext( agentType ) );
   }
 
   assert( 0 );
@@ -4240,6 +5417,9 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   assert( sub_agent_convo->agent_type != AgentType::MainAgent );
 
+  // Callers must check (and report) prerequisites before creating the sub-agent conversation
+  assert( !subAgentPrerequisiteError( sub_agent_convo->agent_type ) );
+
   // Initialize state machine if the agent has one
   //initializeStateMachineForConversation( sub_agent_convo );
 
@@ -4262,30 +5442,16 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   // Build API request for this specific agent - since the combined message is already in the
   const json requestJson = buildMessagesArray( sub_agent_convo );
-  
-  // Make tracked API call
-  const int requestId = m_nextRequestId++;
-
-  // Create pending request with sub-agent info
-  PendingRequest pending;
-  pending.requestId = requestId;
-  pending.conversation = sub_agent_convo;
-  pending.isSubAgentRequest = true;
-
-#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
-  pending.requestJson = requestJson;
-#endif
-
-  m_pendingRequests[requestId] = pending;
-  armWatchdog();  // a sub-agent request is now in flight
 
   if( m_debug_stream )
   {
     (*m_debug_stream) << "Main agent will pause until sub-agent completes" << endl;
   }
 
-  // Make the actual API call
-  std::string msg_content = makeApiCallWithId(requestJson, requestId);
+  // Make tracked API call (registered as a sub-agent request, since this is not the MainAgent)
+  std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, sub_agent_convo );
+  const int requestId = request_id_content.first;
+  std::string &msg_content = request_id_content.second;
 
   // Store raw JSON request in the InitialRequest turn's rawContent field
   if( !sub_agent_convo->responses.empty() )
@@ -4297,6 +5463,28 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   return requestId;
 }//invokeSubAgent(...)
+
+
+std::optional<std::string> LlmInterface::subAgentPrerequisiteError( const AgentType agentType ) const
+{
+  assert( m_interspec ); // Constructor throws if null
+  if( !m_config || !m_interspec )
+    return std::nullopt;
+
+  for( const LlmConfig::AgentConfig &agent : m_config->agents )
+  {
+    if( agent.type != agentType )
+      continue;
+
+    if( agent.requiresForeground && !m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) )
+      return "No foreground spectrum is loaded; the " + agent.name
+             + " agent requires one. The user is likely asking a general question, not about a specific spectrum.";
+
+    return std::nullopt;
+  }//for( const LlmConfig::AgentConfig &agent : m_config->agents )
+
+  return std::nullopt;
+}//subAgentPrerequisiteError(...)
 
 
 nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo )
@@ -4311,9 +5499,10 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   assert( m_protocol );
 
   // Build system prompt with optional state machine overview
-  string systemPrompt = getSystemPromptForAgent( convo->agent_type );
+  string systemPrompt = m_plainSystemPrompt.has_value() ? m_plainSystemPrompt.value()
+                                                        : getSystemPromptForAgent( convo->agent_type );
 
-  if( convo->state_machine )
+  if( convo->state_machine && !m_plainSystemPrompt.has_value() )
   {
     systemPrompt += "\n\n## Workflow State Machine\n\n";
     systemPrompt += "You will follow a structured workflow through these states:\n\n";
@@ -4421,9 +5610,11 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     }
   }//if( state machine ephemeral reminder )
 
-  // Build the normalized tool list for the active agent.
+  // Build the normalized tool list for the active agent (none for a plain completion).
   std::vector<NormalizedTool> tools;
-  const map<string, const LlmTools::SharedTool*> agentTools = m_tool_registry->getToolsForAgent( convo->agent_type );
+  const map<string, const LlmTools::SharedTool*> agentTools = m_plainSystemPrompt.has_value()
+                                    ? map<string, const LlmTools::SharedTool*>{}
+                                    : m_tool_registry->getToolsForAgent( convo->agent_type );
   for( const auto &[name, tool] : agentTools )
   {
     // Functions used to include a "userSession" argument for the MCP server (now added by the MCP
@@ -4440,7 +5631,7 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     tools.push_back( std::move(nt) );
   }//for( const auto &[name, tool] : agentTools )
 
-  assert( !tools.empty() );
+  assert( m_plainSystemPrompt.has_value() || !tools.empty() );
 
   // Use "required" tool choice when configured and in a non-final state machine state, to force the
   // model to make a tool call rather than just producing text.
@@ -5276,6 +6467,10 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     (*m_debug_stream) << "Response: " << response << endl;
   }
 
+  // Ending this request and sending whatever it leads to (tool results, a sub-agent, a follow-up) is
+  //  one activity change, not a pass through Idle.
+  const ActivityBatch batch( *this );
+
   std::shared_ptr<LlmInteraction> convo;
 
   try
@@ -5286,6 +6481,12 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     {
       pendingRequest = std::move(m_pendingRequests[requestId]);
       m_pendingRequests.erase(requestId);
+
+      // Set before any response turn is added, so the display can show the round-trip time.
+      if( const shared_ptr<LlmInteractionTurn> requestTurn = pendingRequest.requestTurn.lock() )
+        requestTurn->setCallDuration( chrono::duration_cast<chrono::milliseconds>(
+                                        chrono::steady_clock::now() - pendingRequest.sendTime ) );
+      updateActivityState();
     }else
     {
       // A response for an unknown request id is a legitimate race (a late/timed-out browser fetch
@@ -5434,7 +6635,9 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       }
 
       // IMPORTANT: Do NOT set finishTime for any errors - all errors pause the conversation
-      // The user can either retry or continue anyway via UI buttons
+      // The user can either retry or continue anyway via UI buttons.  That includes a sub-agent: its
+      // parent's tool round stays in flight until the user picks one (or presses Stop), unless no one
+      // is there to - see setUnattended() and the handleSubAgentError() call below.
       cerr << "Conversation PAUSED due to error (type: "
            << static_cast<int>(errorType) << ")" << endl;
       if( m_debug_stream )
@@ -5461,6 +6664,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         {
           updateDeferredSweepTimer();
           assertDeferredInvariants();
+          updateActivityState();
           if( m_debug_stream )
             (*m_debug_stream) << "Error response - cleared " << cleared
               << " orphaned deferred tool result(s) for this conversation" << endl;
@@ -5478,21 +6682,12 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         flushSummarizationQueue();
       }//if( pendingRequest.isSummarizationRequest )
 
-      // Signal that an error response was received
-      if( m_pendingRequests.empty() )
-      {
-        cerr << "Error response - no pending requests, emitting error signal" << endl;
-        if( m_debug_stream )
-          (*m_debug_stream) << "Error response - no pending requests, emitting error signal" << endl;
-        emitResponseError();
-      }else
-      {
-        cerr << "Error response - still have " << m_pendingRequests.size()
-             << " pending requests, not emitting signal yet" << endl;
-        if( m_debug_stream )
-          (*m_debug_stream) << "Error response - still have " << m_pendingRequests.size()
-            << " pending requests, not emitting signal yet" << endl;
-      }
+      const size_t terminalSignals = m_terminalSignalCount;
+      handleSubAgentError( convo );
+
+      // Signal that an error response was received - unless something is still in flight, such as
+      //  the tool round of a sub-agent's parent, which waits on this sub-agent being retried.
+      emitResponseErrorIfDone( terminalSignals );
       return;
     }
     
@@ -5503,15 +6698,23 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         (*m_debug_stream) << "=== Processing summarization response ===" << endl;
 
       // Extract the summary text from the LLM response (format-agnostic, via the active protocol).
-      string summaryText;
+      ParsedLlmResponse parsed;
       try
       {
         assert( m_protocol );
-        summaryText = m_protocol->parseResponse( responseJson ).content;
+        parsed = m_protocol->parseResponse( responseJson );
       }catch( const std::exception &e )
       {
         cerr << "Error extracting summary from LLM response: " << e.what() << endl;
       }
+      const string &summaryText = parsed.content;
+
+      // Count the compaction call's tokens/cost on its own (visible) conversation - before any turn
+      //  is added, so the display picks them up.  But its prompt carried the whole pre-compaction
+      //  history, and this is the newest conversation, so leave lastCallPromptTokens unset or
+      //  shouldSummarize() would read it as the context still being nearly full.
+      add_parsed_usage( *m_history, convo, parsed );
+      convo->lastCallPromptTokens.reset();
 
       if( summaryText.empty() )
       {
@@ -5530,9 +6733,18 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         m_history->applySummary( summaryText );
       }
 
+      // The compaction conversation is done - mark it so, as with an empty summary it got no final
+      //  turn, and its display would otherwise keep counting.
+      if( convo && !convo->finishTime.has_value() )
+      {
+        convo->finishTime = std::chrono::system_clock::now();
+        convo->conversationFinished.emit();
+      }
+
       // Now send any queued user message(s)
       const bool hadQueued = !m_summarizationPendingConvos.empty();
-      flushSummarizationQueue();
+      const size_t terminalSignals = m_terminalSignalCount;
+      const bool allSent = flushSummarizationQueue();
 
       if( !hadQueued )
       {
@@ -5543,6 +6755,10 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
 
         if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
           emitConversationFinished();
+      }else if( !allSent )
+      {
+        // A queued message could not be sent (it has an error turn); end the turn if nothing else is.
+        emitResponseErrorIfDone( terminalSignals );
       }
 
       return;
@@ -5563,8 +6779,9 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     if( m_history && convo )
       m_history->addErrorMessage( errorMsg, response, convo, LlmInteractionError::ErrorType::JsonParse );
 
-    if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
-      emitResponseError();
+    const size_t terminalSignals = m_terminalSignalCount;
+    handleSubAgentError( convo );
+    emitResponseErrorIfDone( terminalSignals );
   }catch( const std::exception &e )
   {
     string errorMsg = "Error processing LLM response: " + string(e.what());
@@ -5576,8 +6793,9 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     if( m_history && convo )
       m_history->addErrorMessage( errorMsg, response, convo, LlmInteractionError::ErrorType::Unknown );
 
-    if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
-      emitResponseError();
+    const size_t terminalSignals = m_terminalSignalCount;
+    handleSubAgentError( convo );
+    emitResponseErrorIfDone( terminalSignals );
   }
 }
 
@@ -5588,11 +6806,27 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
   
   const int requestId = m_nextRequestId++;  
 
+  // The turn the LLM will be responding to - the last turn, if it is one we send (not, e.g., the
+  //  ToolCall a retry after a failed tool round leaves last, whose callDuration is the tools' time);
+  //  its callDuration is set when the response arrives.
+  std::shared_ptr<LlmInteractionTurn> requestTurn;
+  if( !convo->responses.empty() )
+  {
+    const std::shared_ptr<LlmInteractionTurn> &lastTurn = convo->responses.back();
+    const LlmInteractionTurn::Type lastType = lastTurn->type();
+    if( (lastType == LlmInteractionTurn::Type::InitialRequest)
+        || (lastType == LlmInteractionTurn::Type::ToolResult)
+        || (lastType == LlmInteractionTurn::Type::AutoReply) )
+      requestTurn = lastTurn;
+  }//if( !convo->responses.empty() )
+
   // Store the pending request
   PendingRequest pending;
   pending.requestId = requestId;
   pending.conversation = convo;
   pending.isSubAgentRequest = (convo->agent_type != AgentType::MainAgent);
+  pending.sendTime = std::chrono::steady_clock::now();
+  pending.requestTurn = requestTurn;
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   pending.requestJson = requestJson;
 #endif
@@ -5601,8 +6835,24 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
   armWatchdog();  // a request is now in flight
 
   // Make the call with request ID tracking
-  std::string request_content = makeApiCallWithId(requestJson, requestId);
-  
+  std::string request_content;
+  try
+  {
+    request_content = makeApiCallWithId( requestJson, requestId );
+  }catch( ... )
+  {
+    // Nothing went out, so dont leave a request behind that no response will ever end; the caller
+    //  reports the failure.
+    m_pendingRequests.erase( requestId );
+    if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
+      disarmWatchdog();
+    updateActivityState();
+    throw;
+  }//try / catch
+
+  updateActivityState();
+  convo->llmRequestSent.emit( requestTurn );
+
   return make_pair(requestId,std::move(request_content));
 }
 

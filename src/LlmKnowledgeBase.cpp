@@ -4,6 +4,7 @@
 #if( USE_LLM_INTERFACE )
 
 #include <map>
+#include <mutex>
 #include <cctype>
 #include <limits>
 #include <fstream>
@@ -505,8 +506,33 @@ std::vector<std::string> knowledgeDirectories()
 }//std::vector<std::string> knowledgeDirectories()
 
 
+namespace
+{
+  std::mutex ns_skill_filter_mutex;
+  std::optional<std::set<std::string>> ns_skill_filter;
+}//namespace
+
+
+void setSkillFilter( std::optional<std::set<std::string>> canonical_names )
+{
+  std::lock_guard<std::mutex> lock( ns_skill_filter_mutex );
+  ns_skill_filter = std::move( canonical_names );
+}
+
+
+std::optional<std::set<std::string>> skillFilter()
+{
+  std::lock_guard<std::mutex> lock( ns_skill_filter_mutex );
+  return ns_skill_filter;
+}
+
+
 std::vector<SkillInfo> loadSkills()
 {
+  const std::optional<std::set<std::string>> filter = skillFilter();
+  if( filter && filter->empty() )
+    return {};
+
   std::map<std::string, SkillInfo> skills_by_name;
 
   // Directories are in increasing precedence, so a later skill with the same name replaces an earlier one.
@@ -525,7 +551,10 @@ std::vector<SkillInfo> loadSkills()
   std::vector<SkillInfo> loaded_skills;
   loaded_skills.reserve( skills_by_name.size() );
   for( const auto &entry : skills_by_name )
-    loaded_skills.push_back( entry.second );
+  {
+    if( !filter || filter->count( entry.first ) )
+      loaded_skills.push_back( entry.second );
+  }
 
   return loaded_skills;
 }//std::vector<SkillInfo> loadSkills()

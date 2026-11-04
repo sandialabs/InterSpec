@@ -172,12 +172,12 @@
     honestly inflated uncertainty.</message>
   <message id="mmr-status-stale">Geometry changed - generate again to update the response.</message>
   <message id="mmr-status-grid">Using the efficiency grid imported from the .par file.</message>
-  <message id="mmr-status-grid-total-done">Total efficiency generated, and grounded to the imported grid.</message>
+  <message id="mmr-status-grid-total-done">Total efficiency generated: the imported grid&apos;s full-energy-peak efficiency times the Monte Carlo&apos;s total-to-peak ratio.</message>
   <message id="mmr-grid-total-none">No total efficiency, so cascade-summing corrections are unavailable.
     &quot;Generate Total Efficiency&quot; computes one by Monte Carlo of the geometry above; the
     grid&apos;s full-energy-peak efficiencies are kept as they are.</message>
-  <message id="mmr-grid-total-current">Total efficiency from a Monte Carlo of the geometry above,
-    grounded to the grid&apos;s full-energy-peak efficiencies.</message>
+  <message id="mmr-grid-total-current">Total efficiency from a Monte Carlo of the geometry above:
+    its total-to-peak ratio, applied to the grid&apos;s full-energy-peak efficiencies.</message>
   <message id="mmr-grid-total-stale">The geometry changed since the total efficiency was generated,
     so it will not be used; generate it again for this geometry.</message>
   <message id="mmr-grid-geom-edited">This geometry differs from the one imported with the efficiency

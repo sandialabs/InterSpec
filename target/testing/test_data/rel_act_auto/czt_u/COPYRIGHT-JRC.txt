@@ -1,0 +1,14 @@
+
+ Copyright notice
+------------------
+
+(c) European Union, 1995-2026
+
+The Commission's reuse policy is implemented by the Commission Decision of 12 December 2011 
+on the reuse of Commission documents [1]. Any copyright and/or sui generis right on the dataset 
+is licensed under the Creative Commons Attribution 4.0 International (CC BY 4.0) licence [2]. 
+Reuse is allowed provided appropriate credit is given and any changes are indicated.
+
+[1] https://eur-lex.europa.eu/eli/dec/2011/833/oj
+[2] https://creativecommons.org/licenses/by/4.0
+
