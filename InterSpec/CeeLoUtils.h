@@ -361,8 +361,9 @@ namespace CeeLoUtils
    with a chemical-formula fallback; anything still unresolved becomes a
    near-transparent spacer that preserves the layer's physical extent but not
    its attenuation, and a human-readable note is appended to `warnings`.  A thin
-   implanted contact is folded into the dead layer; `contactPin` and any piece
-   behind the crystal are dropped with a warning.  The crystal's front-edge bulletization and
+   implanted contact is folded into the dead layer; `contactPin` is dropped with a
+   warning, plates behind the crystal (optical coupling, PMT window) become back
+   plates directly behind it, and the PMT wall is dropped, each with a warning.  The crystal's front-edge bulletization and
    the core's rounded tip are carried through (`bullet_radius_cm` /
    `BoreHoleConfig::rounded_tip`), and dropped with a warning only when they
    violate a CeeLo geometry precondition (see #relaxGeometryFeatures).  The

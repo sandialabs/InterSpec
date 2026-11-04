@@ -397,10 +397,12 @@ shared_ptr<const ceelo::DetectorResponse> centre_anchored_response( const AngleD
 
 /** Attaches a detector-side line set (the LINE integration path) to a calculator built by
  #build_scenario_calc, from the calculator's own scalar source dims and detector placement - the
- same construction ShieldingSourceChi2Fcn::volumetricLineCache does inside a fit.
+ same construction ShieldingSourceChi2Fcn::volumetricLineCache does inside a fit.  `extended` builds
+ the set for a source beside or behind the detector.
  */
 void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc, const int num_lines,
-                        const GammaInteractionCalc::LineSampleParams &sample = GammaInteractionCalc::LineSampleParams() )
+                        const GammaInteractionCalc::LineSampleParams &sample = GammaInteractionCalc::LineSampleParams(),
+                        const bool extended = false )
 {
   using namespace GammaInteractionCalc;
   BOOST_REQUIRE( calc.m_effResponse );
@@ -412,7 +414,8 @@ void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
   calc.m_lineCache = build_volumetric_line_cache( calc.m_effResponse, calc.m_geometry,
                                                   calc.m_materialIndex, src, det_pos, det_axis, 0.0,
                                                   num_lines, ShieldingSourceChi2Fcn::sm_default_volumetric_line_pad,
-                                                  sm_default_volumetric_line_surface_frac, sample );
+                                                  sm_default_volumetric_line_surface_frac, sample,
+                                                  sm_volumetric_line_hemi_frac, extended );
 }//attach_line_cache(...)
 
 
@@ -442,11 +445,12 @@ GammaInteractionCalc::LineSampleParams sobol_replica( const int k )
 void integrate_on_path( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
                         const GammaInteractionCalc::VolumetricIntegrator path,
                         const int num_lines = -1,
-                        const GammaInteractionCalc::LineSampleParams &sample = GammaInteractionCalc::LineSampleParams() )
+                        const GammaInteractionCalc::LineSampleParams &sample = GammaInteractionCalc::LineSampleParams(),
+                        const bool extended = false )
 {
   using namespace GammaInteractionCalc;
   if( path == VolumetricIntegrator::Line )
-    attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536, sample );
+    attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536, sample, extended );
   std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calcs;
   calcs.push_back( std::make_unique<DistributedSrcCalcT<double>>( calc ) );
   {

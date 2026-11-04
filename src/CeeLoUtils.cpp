@@ -1194,9 +1194,12 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
   //  the crystal - while contributing ~zero attenuation.
   //
   //  Pieces behind the crystal (a NaI detector's optical coupling and
-  //  photomultiplier tube) have nowhere to go: CeeLo attenuators cover the front
-  //  and sides only.  They are dropped with a warning; they affect backscatter,
-  //  not the full-energy peak.
+  //  photomultiplier tube) are approximated: a plate's axial thickness (coupling,
+  //  PMT window) becomes a back plate directly behind the crystal, inside the
+  //  housing; the PMT wall, a tube of unstated length, is dropped.  Either way a
+  //  warning says so.  They matter for sources behind the detector, and for
+  //  backscatter.
+  vector<pair<ceelo::LayerSpec,double>> behind_plates;  //(layer, back thickness), crystal outward
   for( const AngleOutxContents::Layer &layer : contents.layers )
   {
     const double front = layer.front / PhysicalUnits::cm;
@@ -1204,13 +1207,14 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
     if( (front <= 0.0) && (side <= 0.0) )
       continue;
 
-    if( layer.behindCrystal )
+    if( layer.behindCrystal && ((front <= 0.0) || (side > 0.0)) )
     {
       warnings.push_back( "The detector's " + string(to_string(layer.role)) + " sits behind the"
-                          " crystal, which is not modeled; it affects backscatter, not the"
-                          " full-energy peak." );
+                          " crystal, which is not modeled; it affects sources behind the"
+                          " detector and backscatter, not the full-energy peak of sources in"
+                          " front." );
       continue;
-    }//if( layer.behindCrystal )
+    }//if( a piece behind the crystal that is not a plate )
 
     const bool is_vacuum = (layer.role == AngleLayerRole::VacuumInner)
                            || (layer.role == AngleLayerRole::VacuumOuter);
@@ -1236,12 +1240,29 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
     ceelo::LayerSpec spec;
     spec.material_index = static_cast<int>( gd.materials.size() );
     gd.materials.push_back( mspec );
-    spec.front_thickness_cm = front;
-    spec.side_thickness_cm = side;
     spec.z_start_cm = 0.0;
     spec.z_end_cm = length_cm;
+
+    if( layer.behindCrystal )
+    {
+      // `front` is the plate's thickness along the axis.
+      warnings.push_back( "The detector's " + string(to_string(layer.role)) + " sits behind the"
+                          " crystal; it is approximated as a plate directly behind it." );
+      behind_plates.emplace_back( spec, front );
+      continue;
+    }//if( layer.behindCrystal )
+
+    spec.front_thickness_cm = front;
+    spec.side_thickness_cm = side;
     gd.layers.push_back( spec );
   }//for( const AngleOutxContents::Layer &layer : contents.layers )
+
+  // The plates go innermost, so the housing's side walls run on past them; giving each its back
+  //  thickness moves everything outside it back by as much.
+  for( size_t i = 0; i < behind_plates.size(); ++i )
+    gd.layers.insert( gd.layers.begin() + i, behind_plates[i].first );
+  for( size_t i = 0; i < behind_plates.size(); ++i )
+    gd.set_layer_back_thickness_cm( i, behind_plates[i].second );
 
   // The fillet and the rounded bore tip are refinements on top of a plain
   //  cylinder; if this file's values can't be represented, drop them and keep

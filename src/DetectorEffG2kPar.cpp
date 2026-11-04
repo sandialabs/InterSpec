@@ -1239,19 +1239,19 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
     gd.dead_layer = DeadLayerConfig{ dead_front_cm, dead_side_cm, dead_back_cm };
 
   // Front vacuum gap (D6), widening to the side gap (D7) - matches the
-  //  prototype's spacer and sets the endcap-front offset.
+  //  prototype's spacer and sets the endcap-front offset.  It is also the gap
+  //  behind the crystal, out to where the endcap length (D5) puts the back of the
+  //  can - given its back thickness once every layer is in place, below.
   const double front_gap_cm = 0.1 * def.d6_front_gap_mm;
   const double side_gap_cm = 0.1 * def.d7_side_gap_mm;
+  MaterialSpec vac;
+  vac.name = "Vacuum";
+  vac.density_g_per_cm3 = 1.0e-25;
+  vac.composition.push_back( MaterialComponent{ 1, 1.0 } );
   if( front_gap_cm > 0.0 )
   {
-    MaterialSpec vac;
-    vac.name = "Vacuum";
-    vac.density_g_per_cm3 = 1.0e-25;
-    vac.composition.push_back( MaterialComponent{ 1, 1.0 } );
-    const int vac_idx = add_material( vac );
-
     LayerSpec gap;
-    gap.material_index = vac_idx;
+    gap.material_index = add_material( vac );
     gap.front_thickness_cm = front_gap_cm;
     gap.side_thickness_cm = (side_gap_cm > front_gap_cm) ? (side_gap_cm - front_gap_cm) : 0.0;
     gap.z_start_cm = 0.0;
@@ -1259,10 +1259,12 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
     gd.layers.push_back( gap );
   }
 
-  // Housing layers: front path uses slots 1,2 (front thickness); side path
-  //  uses slots 4,5 (side thickness).  Back path (slots 7,8) is not modeled by
-  //  CeeLo (theta>90 is handled from the grid directly).
-  auto add_housing = [&]( int slot, bool is_front )
+  // Housing layers: front path uses slots 1,2 (front thickness); back path slots
+  //  7,8 (back plates, inside the side walls); side path slots 4,5 (side
+  //  thickness).
+  enum class Path { Front, Back, Side };
+  std::vector<std::pair<size_t,double>> back_plates;   //(layer index, back thickness cm)
+  auto add_housing = [&]( int slot, const Path path )
   {
     const LayerEntry &le = def.layers[slot];
     if( le.material.empty() || !(le.thickness_mm > 0.0) )
@@ -1282,16 +1284,45 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
     const int idx = add_material( spec );
     LayerSpec ls;
     ls.material_index = idx;
-    ls.front_thickness_cm = is_front ? (0.1 * le.thickness_mm) : 0.0;
-    ls.side_thickness_cm  = is_front ? 0.0 : (0.1 * le.thickness_mm);
+    ls.front_thickness_cm = (path == Path::Front) ? (0.1 * le.thickness_mm) : 0.0;
+    ls.side_thickness_cm  = (path == Path::Side) ? (0.1 * le.thickness_mm) : 0.0;
     ls.z_start_cm = 0.0;
     ls.z_end_cm = length_cm;
+    if( path == Path::Back )
+      back_plates.emplace_back( gd.layers.size(), 0.1 * le.thickness_mm );
     gd.layers.push_back( ls );
   };
-  add_housing( 1, true );    // front window
-  add_housing( 2, true );    // front endcap
-  add_housing( 4, false );   // side absorber / liner
-  add_housing( 5, false );   // side casing
+  add_housing( 1, Path::Front );   // front window
+  add_housing( 2, Path::Front );   // front endcap
+  add_housing( 7, Path::Back );    // back absorber / liner
+  add_housing( 8, Path::Back );    // back of the can
+  add_housing( 4, Path::Side );    // side absorber / liner
+  add_housing( 5, Path::Side );    // side casing
+
+  // The endcap length (D5, from the face) puts the back of the can, so whatever it leaves
+  //  behind the crystal and the back plates is vacuum - the gap layer's back, or a gap of its
+  //  own when there is no front gap.  Innermost first: each back moves everything outside it.
+  double back_plates_cm = 0.0;
+  for( const std::pair<size_t,double> &bp : back_plates )
+    back_plates_cm += bp.second;
+  const double gap_back_cm = 0.1 * def.d5_endcap_len_mm - gd.endcap_front_offset_cm()
+                             - length_cm - back_plates_cm;
+  if( gap_back_cm > 0.0 )
+  {
+    if( front_gap_cm <= 0.0 )
+    {
+      LayerSpec gap;
+      gap.material_index = add_material( vac );
+      gap.z_start_cm = 0.0;
+      gap.z_end_cm = length_cm;
+      gd.layers.insert( gd.layers.begin(), gap );
+      for( std::pair<size_t,double> &bp : back_plates )
+        bp.first += 1;
+    }
+    gd.set_layer_back_thickness_cm( 0, gap_back_cm );
+  }//if( the can reaches past the crystal and its back plates )
+  for( const std::pair<size_t,double> &bp : back_plates )
+    gd.set_layer_back_thickness_cm( bp.first, bp.second );
 
   // Bore hole + fillet: not in DETECTOR.txt.  Add a conservative coaxial bore
   //  for the coaxial families only; sanitize_geometry drops it if it doesn't
@@ -1462,18 +1493,35 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
     theta_face = (n > 0.0) ? std::acos( std::max( -1.0, std::min( 1.0, -v.z() / n ) ) ) : 0.0;
   };
 
+  // The grid's columns past 90 deg - beside and behind the detector - become the eta table's side &
+  //  back nodes (cos theta < 0, ascending: 180 deg first).  EtaTable interpolates them apart from
+  //  the front nodes, so the front evaluates exactly as it would without them; there is no
+  //  near-field table behind the face plane, where the kernel carries the distance dependence.  A
+  //  180 deg column is snapped to exactly -1 for the same reason the 90 deg one is snapped to 0.
+  std::vector<double> back_cos_thetas;
+  for( size_t j = par.grids.front().ncols; j > nhalf; --j )
+  {
+    const double angle = static_cast<double>( j - 1 ) * theta_step;
+    if( angle > 2.0*half_pi + 1.0e-4*theta_step )
+      continue;
+    back_cos_thetas.push_back( (std::fabs( angle - 2.0*half_pi ) < 1.0e-4*theta_step) ? -1.0
+                                                                                      : std::cos( angle ) );
+  }
+  const size_t nb = back_cos_thetas.size();
+
   // ---- 6) eta_fep at the far reference; cache ln_eta for the near term ------
   EtaTable &eta = resp->eta_fep;
   eta.energies_keV = energies;
-  eta.cos_thetas = cos_thetas;
+  eta.cos_thetas = back_cos_thetas;
+  eta.cos_thetas.insert( eta.cos_thetas.end(), cos_thetas.begin(), cos_thetas.end() );
   eta.phis_deg.clear();
   eta.edges_keV = edges;
-  eta.ln_eta.assign( ne * nc, 0.0 );
-  eta.frac_sigma.assign( ne * nc, 0.0 );
+  eta.ln_eta.assign( ne * (nb + nc), 0.0 );
+  eta.frac_sigma.assign( ne * (nb + nc), 0.0 );
 
-  for( size_t c = 0; c < nc; ++c )
+  for( size_t c = 0; c < (nb + nc); ++c )
   {
-    const Eigen::Vector3d src = source_position( d_ref_cm, cos_thetas[c], 0.0 );
+    const Eigen::Vector3d src = source_position( d_ref_cm, eta.cos_thetas[c], 0.0 );
     const ApertureQuadrature q = resp->make_quadrature( src );   // energy-independent
 
     double d_face_mm = 0.0, theta_face = 0.0;
@@ -1852,11 +1900,21 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   //  eta_fep nodes - known-valid for this crystal, K-edge flanks included.  Pinned to the donor in
   //  the true far field, where any two geometries' kernels agree in shape; everywhere closer, the
   //  distance table below reproduces the donor.
+  //  The grid's side & back nodes (cos theta < 0) are kept only when the donor's total is
+  //  characterized there too; otherwise its extrapolation would be stored as if it were data.
   const EtaTable &fep = resp->eta_fep;
   EtaTable &eta = resp->tot_eff.eta_tot;
   resp->tot_eff.tier = TotEffTier::EtaTotTable;
+  const EtaTable &donor_tot = donor->tot_eff.eta_tot;
+  const bool donor_covers_back = (donor->tot_eff.tier != TotEffTier::EtaTotTable)
+                                 || donor_tot.is_angle_flat()
+                                 || (!donor_tot.cos_thetas.empty() && (donor_tot.cos_thetas.front() < 0.0));
   eta.energies_keV = fep.energies_keV;
-  eta.cos_thetas = fep.cos_thetas;
+  for( const double ct : fep.cos_thetas )
+  {
+    if( donor_covers_back || !(ct < 0.0) )
+      eta.cos_thetas.push_back( ct );
+  }
   eta.phis_deg.clear();
   eta.edges_keV = fep.edges_keV;
 

@@ -144,6 +144,7 @@ rapidxml::xml_node<char> *ShieldSourceConfig::serialize( rapidxml::xml_node<char
 
   options.serialize( base_node );
 
+  // The distance can be negative - a source centre behind the detector-face plane, beside it.
   std::string dist_value = PhysicalUnits::printToBestLengthUnits( distance, 6 );
   char *dist_cstr = doc->allocate_string( dist_value.c_str() );
   rapidxml::xml_node<char> *dist_node = doc->allocate_node( rapidxml::node_element, "Distance", dist_cstr );
@@ -210,7 +211,7 @@ void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node 
   if( !dist_node || !dist_node->value() )
     throw runtime_error( "ShieldSourceConfig::deSerialize: missing Distance node" );
   const std::string dist_str( dist_node->value(), dist_node->value() + dist_node->value_size() );
-  distance = PhysicalUnits::stringToDistance( dist_str );
+  distance = PhysicalUnits::stringToSignedDistance( dist_str );
 
   source_offsets[0] = source_offsets[1] = 0.0;
   const rapidxml::xml_node<char> *offsets_node = base_node->first_node( "SourceOffsets", 13 );
@@ -852,6 +853,68 @@ double detector_face_plane_clearance( const GeometryType geometry, const double 
 
   throw std::runtime_error( "detector_face_plane_clearance: invalid geometry" );
 }//detector_face_plane_clearance(...)
+
+
+ceelo::ConvexSolid assembly_outer_solid( const GeometryType geometry, const double outer_dims[3] )
+{
+  const double cm = PhysicalUnits::cm;
+  const Eigen::Vector3d origin = Eigen::Vector3d::Zero();
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+      return ceelo::ConvexSolid::sphere( origin, outer_dims[0]/cm );
+
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+      return ceelo::ConvexSolid::cylinder( origin, Eigen::Vector3d::UnitZ(), outer_dims[0]/cm,
+                                           outer_dims[1]/cm );
+
+    case GeometryType::Rectangular:
+      return ceelo::ConvexSolid::box( origin, Eigen::Vector3d( outer_dims[0]/cm, outer_dims[1]/cm,
+                                                               outer_dims[2]/cm ) );
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( geometry )
+
+  throw std::runtime_error( "assembly_outer_solid: invalid geometry" );
+}//assembly_outer_solid(...)
+
+
+ceelo::ConvexSolid detector_enclosure_solid( const ceelo::GeometryDescriptor &gd,
+                                             const GeometryType geometry, const double distance,
+                                             const double offset_x, const double offset_y )
+{
+  const double cm = PhysicalUnits::cm;
+  const DetectorGeomT<double> det = detector_geom_from_config<double>( geometry, distance, 0.0, 0.0,
+                                                                       offset_x, offset_y );
+  double M[3][3];
+  detector_frame_rotation( det.axis, 0.0, M );
+  Eigen::Matrix3d rot;
+  for( int i = 0; i < 3; ++i )
+    for( int j = 0; j < 3; ++j )
+      rot(i,j) = M[i][j];
+
+  // Crystal frame: the crystal face at z = 0, +z into the detector, the endcap front - the point
+  //  the fit's distance is measured to - at z = -endcap_front_offset_cm.  Move the envelope so
+  //  that point lands on the fit's detector-face position.
+  const Eigen::Vector3d face_c( 0.0, 0.0, -gd.endcap_front_offset_cm() );
+  const Eigen::Vector3d face_a( det.position[0]/cm, det.position[1]/cm, det.position[2]/cm );
+  return gd.outer_envelope().solid().transformed( rot, face_a - rot * face_c );
+}//detector_enclosure_solid(...)
+
+
+double detector_enclosure_clearance( const ceelo::GeometryDescriptor &gd, const GeometryType geometry,
+                                     const double *outer_dims, const double distance,
+                                     const double offset_x, const double offset_y )
+{
+  const ceelo::ConvexSolid source = outer_dims
+                        ? assembly_outer_solid( geometry, outer_dims )
+                        : ceelo::ConvexSolid::point( Eigen::Vector3d::Zero() );
+  const ceelo::ConvexSolid detector = detector_enclosure_solid( gd, geometry, distance,
+                                                                offset_x, offset_y );
+  return ceelo::convex_separation( source, detector ) * PhysicalUnits::cm;
+}//detector_enclosure_clearance(...)
   
 
 
@@ -1373,7 +1436,43 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
   // Resolve the volumetric-source efficiency method (Auto -> a concrete method) and build the
   //  transfer response if needed - once here, single-threaded, before any integration.
   answer->resolveVolumetricEffMethod();
+
+  // Does the scene reach beside or behind the detector?  The old rule - every shell in front of
+  //  the detector-face plane, and a bare point source in front of it - is the only thing a
+  //  flat-disk model can integrate; anything past it needs the response's geometry, and must stay
+  //  clear of the detector itself.
+  double outer_start[3] = { 0.0, 0.0, 0.0 };
+  bool have_material_shell = false;
+  for( const ShieldingSourceFitCalc::ShieldingInfo &s : shieldings )
+  {
+    if( s.m_isGenericMaterial || !s.m_material )
+      continue;
+    have_material_shell = true;
+    for( int i = 0; i < 3; ++i )
+      outer_start[i] += std::max( 0.0, s.m_dimensions[i] );
+  }
+  const bool in_front = (distance > 0.0)
+              && (!have_material_shell || (detector_face_plane_clearance( geom, outer_start, distance ) >= 0.0));
+  answer->m_extendedScene = !in_front && !(detector && detector->isFixedGeometry());
+  if( answer->m_extendedScene )
+  {
+    if( !answer->m_volEffResponse )
+      throw runtime_error( "The source reaches beside or behind the detector face.  Only a detector"
+                           " response with a modelled detector geometry can be used there - the"
+                           " flat-disk efficiency describes the detector face-on only." );
+
+    const double clearance = detector_enclosure_clearance( answer->m_volEffResponse->descriptor, geom,
+                                    (have_material_shell ? outer_start : nullptr), distance,
+                                    config.source_offsets[0], config.source_offsets[1] );
+    if( !(clearance > 0.0) )
+      throw runtime_error( "The source or its shielding overlaps the detector." );
+
+  }//if( answer->m_extendedScene )
+
+  // Drops to the flat-disk model if the response's rays cannot be built - a quiet fallback in front
+  //  of the face; beside the detector, where there is no flat-disk answer, it throws instead.
   answer->buildDetectorSideRays();
+  assert( !answer->m_extendedScene || answer->m_volEffResponse );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Synthetic peaks stand in for peaks that werent actually observed, so they must not be fit to.
@@ -1416,6 +1515,48 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
   if( !(dim_fit_upper > 0.0) )     // fixed shells already reach the detector: keep the loose sanity bound
     dim_fit_upper = 1000.0*PhysicalUnits::m;
   dim_fit_upper = std::min( dim_fit_upper, 1000.0*PhysicalUnits::m );
+
+  // An extended scene is limited by the detector's outside, which a shell can run into growing in
+  //  any direction - so EVERY fitted dimension gets a cap: the largest value that stays clear of
+  //  the detector, with the other fitted dimensions at their lower bound and the fixed ones as they
+  //  are.  The clear region shrinks monotonically as any dimension grows, so bisection finds it.
+  const auto fit_upper = [&]( const size_t shell_index, const int dim, const double front_upper ) -> double {
+    if( !answer->m_extendedScene )
+      return front_upper;
+
+    const ceelo::GeometryDescriptor &gd = answer->m_volEffResponse->descriptor;
+    const auto clearance_with = [&]( const double value ) -> double {
+      double outer[3] = { 0.0, 0.0, 0.0 };
+      for( size_t k = 0; k < shieldings.size(); ++k )
+      {
+        const ShieldingSourceFitCalc::ShieldingInfo &s = shieldings[k];
+        if( s.m_isGenericMaterial || !s.m_material )
+          continue;
+        for( int d = 0; d < 3; ++d )
+        {
+          double v = s.m_fitDimensions[d] ? 0.0 : std::max( 0.0, s.m_dimensions[d] );
+          if( (k == shell_index) && (d == dim) )
+            v = value;
+          outer[d] += v;
+        }
+      }
+      return detector_enclosure_clearance( gd, geom, outer, distance,
+                                           config.source_offsets[0], config.source_offsets[1] );
+    };//clearance_with
+
+    double lo = 0.0, hi = 1000.0*PhysicalUnits::m;
+    if( clearance_with( hi ) > 0.0 )
+      return hi;
+    for( int iter = 0; (iter < 200) && ((hi - lo) > 1.0E-4*PhysicalUnits::mm); ++iter )
+    {
+      const double mid = 0.5*(lo + hi);
+      if( clearance_with( mid ) > 0.0 )
+        lo = mid;
+      else
+        hi = mid;
+    }
+    return lo;
+  };//fit_upper
 
 
   //setup the parameters for the shieldings
@@ -1485,7 +1626,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
           num_fit_params += fitThickness;
           
           if( fitThickness )
-            inputPrams.add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, dim_fit_upper );
+            inputPrams.add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, fit_upper( i, 0, dim_fit_upper ) );
           else
             inputPrams.add( name + "_thickness", thickness );
           
@@ -1508,12 +1649,12 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
           num_fit_params += fitLen;
           
           if( fitRad )
-            inputPrams.add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
+            inputPrams.add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, fit_upper( i, 0, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) ) );
           else
             inputPrams.add( name + "_dr", rad );
           
           if( fitLen )
-            inputPrams.add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
+            inputPrams.add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, fit_upper( i, 1, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) ) );
           else
             inputPrams.add( name + "_dz", len );
           
@@ -1538,17 +1679,17 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
           num_fit_params += fitDepth;
           
           if( fitWidth )
-            inputPrams.add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, fit_upper( i, 0, 1000.0*PhysicalUnits::m ) );
           else
             inputPrams.add( name + "_dx", width );
           
           if( fitHeight )
-            inputPrams.add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, fit_upper( i, 1, 1000.0*PhysicalUnits::m ) );
           else
             inputPrams.add( name + "_dy", height );
           
           if( fitDepth )
-            inputPrams.add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, dim_fit_upper );
+            inputPrams.add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, fit_upper( i, 2, dim_fit_upper ) );
           else
             inputPrams.add( name + "_dz", depth );
           
@@ -3714,14 +3855,6 @@ std::vector<double> ShieldingSourceChi2Fcn::includedPeakEnergies() const
 }//includedPeakEnergies()
 
 
-/** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
-struct PointSourceRays
-{
-  std::shared_ptr<const ceelo::DetectorResponse> response;   //the resolved response the fan was traced for
-  double theta = 0.0, phi = 0.0, dist_from_face_cm = 0.0;    //query geometry, fixed for the life of the fit
-  Eigen::Vector3d position_cm = Eigen::Vector3d::Zero();     //crystal-face frame (CeeLoUtils::sourcePositionFromFace)
-  ceelo::ApertureQuadrature quadrature;                      //response->make_quadrature( position_cm ), traced once
-};//struct PointSourceRays
 
 
 std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance( std::vector<double> *model_part ) const
@@ -3971,6 +4104,86 @@ ShieldingSourceChi2Fcn::CalcStatus ShieldingSourceChi2Fcn::currentCancelStatus()
 }
 
 
+bool ShieldingSourceChi2Fcn::extendedScene() const
+{
+  return m_extendedScene;
+}
+
+
+bool ShieldingSourceChi2Fcn::usePointFan() const
+{
+  return m_extendedScene && m_volEffResponse && m_pointRays && !m_pointRays->dirs_assembly.empty();
+}
+
+
+bool ShieldingSourceChi2Fcn::outerShellDims( const std::vector<double> &params, double outer[3] ) const
+{
+  outer[0] = outer[1] = outer[2] = 0.0;
+  bool have_material_shell = false;
+  for( size_t i = 0; i < m_initial_shieldings.size(); ++i )
+  {
+    const ShieldingSourceFitCalc::ShieldingInfo &s = m_initial_shieldings[i];
+    if( s.m_isGenericMaterial || !s.m_material )
+      continue;
+    have_material_shell = true;
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        outer[0] += sphericalThickness_imp( i, params );
+        break;
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        outer[0] += cylindricalRadiusThickness_imp( i, params );
+        outer[1] += cylindricalLengthThickness_imp( i, params );
+        break;
+      case GeometryType::Rectangular:
+        outer[0] += rectangularWidthThickness_imp( i, params );
+        outer[1] += rectangularHeightThickness_imp( i, params );
+        outer[2] += rectangularDepthThickness_imp( i, params );
+        break;
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }
+  }//for( shells )
+
+  return have_material_shell;
+}//outerShellDims(...)
+
+
+void ShieldingSourceChi2Fcn::checkExtendedSceneClearance( const std::vector<double> &params ) const
+{
+  if( !m_extendedScene || !m_volEffResponse )
+    return;
+
+  double outer[3];
+  const bool have_material_shell = outerShellDims( params, outer );
+  const double clearance = detector_enclosure_clearance( m_volEffResponse->descriptor, m_geometry,
+                                          (have_material_shell ? outer : nullptr), m_distance,
+                                          m_sourceOffsets[0], m_sourceOffsets[1] );
+  if( !(clearance > 0.0) )
+    throw std::runtime_error( "The source or its shielding overlaps the detector." );
+}//checkExtendedSceneClearance(...)
+
+
+bool ShieldingSourceChi2Fcn::reachesBehindCrystal( const std::vector<double> &params ) const
+{
+  if( !m_extendedScene || !m_volEffResponse || m_volEffResponse->descriptor.dimensions_cm.empty() )
+    return false;
+
+  // Past the plane of the crystal's back face: the face plane, plus the crystal's recess behind it
+  //  and its length.
+  const ceelo::GeometryDescriptor &gd = m_volEffResponse->descriptor;
+  const double back_plane = m_distance
+                            + (gd.endcap_front_offset_cm() + gd.dimensions_cm.back()) * PhysicalUnits::cm;
+  double outer[3];
+  const bool have_material_shell = outerShellDims( params, outer );
+  if( !have_material_shell )
+    return (back_plane < 0.0);
+  return (detector_face_plane_clearance( m_geometry, outer, back_plane ) < 0.0);
+}//reachesBehindCrystal(...)
+
+
 double ShieldingSourceChi2Fcn::sourceOffsetX() const
 {
   return m_sourceOffsets[0];
@@ -4077,7 +4290,7 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
                                det_pos, det_axis, azimuth, m_volumetricNumLines,
                                sm_default_volumetric_line_pad,
                                sm_default_volumetric_line_surface_frac, m_volumetricLineSample,
-                               sm_volumetric_line_hemi_frac ) )
+                               sm_volumetric_line_hemi_frac, m_extendedScene ) )
     return pos->second;
 
   // The dims are a build-time hint only: the set's aim points follow the fitted dimensions at
@@ -4088,7 +4301,7 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
                                        det_pos, det_axis, azimuth, m_volumetricNumLines,
                                        sm_default_volumetric_line_pad,
                                        sm_default_volumetric_line_surface_frac, m_volumetricLineSample,
-                                       sm_volumetric_line_hemi_frac );
+                                       sm_volumetric_line_hemi_frac, m_extendedScene );
   m_lineCaches[material_index] = cache;
   return cache;
 }//volumetricLineCache(...)
@@ -4359,9 +4572,47 @@ void ShieldingSourceChi2Fcn::buildDetectorSideRays( const std::vector<double> *p
     rays->quadrature = m_volEffResponse->make_quadrature( rays->position_cm );
     if( rays->quadrature.rays.empty() )
       throw std::runtime_error( "no ray from the source position reaches the active crystal" );
+
+    // A source beside or behind the detector is attenuated ray by ray (pointFanFepEfficiencies):
+    //  each ray's direction in the assembly frame - where the source is the origin - and how far
+    //  along it the detector's outside is.
+    if( m_extendedScene )
+    {
+      const DetectorGeomT<double> det = detector_geom_from_config<double>( m_geometry, m_distance,
+                                                    0.0, 0.0, m_sourceOffsets[0], m_sourceOffsets[1] );
+      double M[3][3];
+      detector_frame_rotation( det.axis, 0.0, M );
+      const ceelo::ConvexSolid enclosure = detector_enclosure_solid( m_volEffResponse->descriptor,
+                                      m_geometry, m_distance, m_sourceOffsets[0], m_sourceOffsets[1] );
+      Eigen::Vector3d mean_dir = Eigen::Vector3d::Zero();
+      for( const ceelo::KernelRay &kr : rays->quadrature.rays )
+      {
+        const Eigen::Vector3d dc = kr.dir.cast<double>();
+        Eigen::Vector3d da;
+        for( int i = 0; i < 3; ++i )
+          da[i] = M[i][0]*dc[0] + M[i][1]*dc[1] + M[i][2]*dc[2];
+        da.normalize();
+        rays->dirs_assembly.push_back( da );
+        rays->entry_cm.push_back( ceelo::convex_entry_distance( enclosure, Eigen::Vector3d::Zero(), da ) );
+        mean_dir += kr.omega_w * da;
+      }
+      if( mean_dir.norm() > 0.0 )
+        rays->mean_dir_assembly = mean_dir.normalized();
+      for( int i = 0; i < 3; ++i )
+        for( int j = 0; j < 3; ++j )
+          rays->rotation(i,j) = M[i][j];
+      rays->enclosure = enclosure;
+    }//if( m_extendedScene )
+
     m_pointRays = rays;
   }catch( std::exception &e )
   {
+    // Beside or behind the detector there is no flat-disk answer to fall back to - not at create(),
+    //  and not on a later rebuild (the post-fit polish, a new line sample) either.
+    if( m_extendedScene )
+      throw std::runtime_error( std::string("The detector response could not be traced for a source"
+                                            " beside or behind the detector: ") + e.what() );
+
     // One model per fit: an unbuildable ray set takes BOTH source kinds to flat-disk.
     const bool explicit_request
         = (m_options.volumetric_eff_method != ShieldingSourceFitCalc::VolumetricEffMethod::Auto);
@@ -4392,7 +4643,8 @@ void ShieldingSourceChi2Fcn::pointSourceEvalGeometry( double &theta, double &phi
 {
   const double offset_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
                                      + m_sourceOffsets[1]*m_sourceOffsets[1] );
-  theta = (offset_r > 0.0) ? std::atan2( offset_r, m_distance ) : 0.0;
+  // On the axis this is 0 in front of the face and pi behind it (exactly +0 for D > 0).
+  theta = std::atan2( offset_r, m_distance );
   phi = (offset_r > 0.0) ? std::atan2( m_sourceOffsets[1], m_sourceOffsets[0] ) : 0.0;
   true_dist = trueSourceToDetectorDistance();
 }//pointSourceEvalGeometry(...)
@@ -5337,6 +5589,7 @@ vector<PeakResultPlotInfo>
 
   std::array<double,3> cumulative_dims_pt = { 0.0, 0.0, 0.0 };
   double shield_outer_rad = 0.0;  //distance along the ray to the outer shielding surface
+  const bool use_point_fan = usePointFan();
   const size_t nMaterials = m_initial_shieldings.size();
   
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
@@ -5455,18 +5708,23 @@ vector<PeakResultPlotInfo>
       }//for( EnergyCountMap::value_type &energy_count : energy_count_map )
     }//if( log_info )
     
-    // Note: only non-volumetric sources are included in `energy_count_map`
-    for( EnergyCountMap::value_type &energy_count : energy_count_map )
+    // Note: only non-volumetric sources are included in `energy_count_map`.  A source beside or
+    //  behind the detector is attenuated ray by ray instead (pointFanFepEfficiencies, below); the
+    //  central-ray factors logged above then only describe the shells.
+    if( !use_point_fan )
     {
-      const double energy = energy_count.first;
-      const double frac = exp( -1.0 * att_coef_fcn( energy ) );
-      
-      energy_count.second *= frac;
+      for( EnergyCountMap::value_type &energy_count : energy_count_map )
+      {
+        const double energy = energy_count.first;
+        const double frac = exp( -1.0 * att_coef_fcn( energy ) );
+
+        energy_count.second *= frac;
+      }
     }
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
   const double air_dist = std::max( 0.0, trueDist - shield_outer_rad );
-  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
+  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) && !use_point_fan )
   {
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {
@@ -5492,7 +5750,40 @@ vector<PeakResultPlotInfo>
   
   
   //Fold in the detector response
-  if( m_detector && m_detector->isValid() )
+  if( use_point_fan )
+  {
+    // Beside or behind the detector: shields, air and detector together, ray by ray - the same
+    //  function the fit uses.  The logged detector efficiency is the unshielded one at the source
+    //  position, and the total attenuation what the shields and air take off it.
+    vector<double> energies;
+    for( const EnergyCountMap::value_type &energy_count : energy_count_map )
+      energies.push_back( energy_count.first );
+    const vector<double> effs = pointFanFepEfficiencies( x, energies, energie_widths );
+    size_t index = 0;
+    for( EnergyCountMap::value_type &energy_count : energy_count_map )
+    {
+      const double eff = effs[index++];
+      if( log_info )
+      {
+        const double energy = energy_count.first;
+        auto pos = std::find_if( begin(*log_info), end(*log_info), [energy]( const GammaInteractionCalc::PeakDetail &val ) {
+          return energy == val.decayParticleEnergy;
+        });
+        assert( pos != end(*log_info) );
+        if( pos != end(*log_info) )
+        {
+          const double bare = pointSourceFepEff( energy ).value;
+          pos->detEff = bare;
+          pos->detSolidAngle = 1.0;
+          pos->detIntrinsicEff = bare;
+          pos->m_airAttenFactor = 1.0;
+          pos->m_totalShieldAttenFactor = (bare > 0.0) ? (eff / bare) : 0.0;
+          pos->m_totalAttenFactor = pos->m_totalShieldAttenFactor;
+        }
+      }//if( log_info )
+      energy_count.second *= eff;
+    }
+  }else if( m_detector && m_detector->isValid() )
   {
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {

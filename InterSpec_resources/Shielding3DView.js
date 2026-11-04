@@ -606,8 +606,9 @@ Shielding3DView = function(id, data, detector) {
           if (mm === 0) return "0.00 mm";
           var cm = mm / 10;
           var m = mm / 1000;
-          if (mm < 10) return mm.toFixed(2) + " mm";
-          if (cm < 100) return cm.toFixed(2) + " cm";
+          // By magnitude: a source beside or behind the detector face has a negative distance.
+          if (Math.abs(mm) < 10) return mm.toFixed(2) + " mm";
+          if (Math.abs(cm) < 100) return cm.toFixed(2) + " cm";
           return m.toFixed(2) + " m";
         }
 

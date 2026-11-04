@@ -143,7 +143,7 @@ public:
 
     struct Layer
     {
-      std::string material, frontThickness, sideThickness;
+      std::string material, frontThickness, sideThickness, backThickness;
       /** See LayerRow::seeded - carried so a descriptor-supplied composition survives undo. */
       std::shared_ptr<const ceelo::MaterialSpec> seeded;
       std::string seededName;
@@ -183,7 +183,7 @@ protected:
    material through `MaterialDB`. */
   void updateFromForm();
   void addLayerRow( const Wt::WString &material, const Wt::WString &frontThick,
-                    const Wt::WString &sideThick,
+                    const Wt::WString &sideThick, const Wt::WString &backThick,
                     const std::shared_ptr<const ceelo::MaterialSpec> &seeded = nullptr );
   void removeLayerRow();
 
@@ -205,6 +205,9 @@ protected:
     Wt::WLineEdit *material;
     Wt::WLineEdit *frontThickness;
     Wt::WLineEdit *sideThickness;
+    /** The plate closing the layer behind whatever it encloses (ceelo::GeometryDescriptor::
+     set_layer_back_thickness_cm); blank = an open back. */
+    Wt::WLineEdit *backThickness;
 
     /** The material this row was seeded with by #setFromDescriptor, kept so a
      descriptor that carries a full composition InterSpec's `MaterialDB` has no
