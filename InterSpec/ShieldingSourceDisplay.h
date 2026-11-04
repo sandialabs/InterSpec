@@ -759,7 +759,8 @@ public:
 
   /** Checks if background spectrum is missing peaks at energies where
    foreground fit-peaks exist but auto-search suggests real background peaks.
-   Shows a dialog if missing peaks are found.
+   Shows a dialog if missing peaks are found - see
+   PeakSearchGuiUtils::prompt_to_add_missing_background_peaks.
 
    @param triggeredFromFit If true, the model fit should proceed after dialog
           interaction completes.
@@ -767,23 +768,6 @@ public:
             if no missing peaks found (caller can continue).
    */
   bool checkForMissingBackgroundPeaks( const bool triggeredFromFit );
-
-  /** Fits peaks at candidate locations on background spectrum and shows a
-   preview dialog with the results.
-
-   @param candidates The auto-search peak candidates to fit.
-   @param triggeredFromFit If true, resume doModelFit after dialog completes.
-   */
-  void fitAndPreviewBackgroundPeaks(
-    const std::vector<std::shared_ptr<const PeakDef>> &candidates,
-    const bool triggeredFromFit );
-
-  /** Adds the given peaks to the background spectrum and optionally continues
-   the model fit.
-   */
-  void addPeaksToBackgroundAndContinue(
-    const std::vector<std::shared_ptr<const PeakDef>> new_peaks,
-    const bool triggeredFromFit );
   
   void setSkipBackgroundPeakCheckAndOrDoFit( const std::optional<bool> setSkip, const std::optional<bool> diFit );
 

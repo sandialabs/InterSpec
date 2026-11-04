@@ -64,7 +64,73 @@ double sample_pair_lepton_cos_theta(double E_total_keV, std::mt19937_64& rng) {
     } while (u > uMax);
     return std::cos(u * mc2 / E_total_keV);
 }
+
+// Summarize one annihilation photon's sub-history for the opt-in pair
+// diagnostics. Reads only values the sub-transport already produced, so it is
+// pure bookkeeping: no random draws, no effect on any transport result.
+void record_annihilation_photon(
+    TransportResult::PairHistory::AnnihilationPhoton& record,
+    double emitted_energy_keV,
+    const TransportResult& sub)
+{
+    record.emitted_energy_keV = emitted_energy_keV;
+    record.deposited_in_scoring_keV = sub.energy_deposited_scoring;
+    record.escaped = sub.escaped;
+    record.exit_energy_keV = sub.escaped ? sub.exit_energy_keV : 0.0;
+    // "Scattered before escape" counts only Compton vertices inside the
+    // scoring volume, matching the convention the detector-response campaign
+    // uses for post-pair Compton counting.
+    if (sub.escaped) {
+        for (const auto& interaction : sub.interactions) {
+            if (interaction.in_scoring
+                && interaction.type == InteractionType::Compton) {
+                record.scattered_before_escape = true;
+                break;
+            }
+        }
+    }
+}
 } // anonymous namespace
+
+
+ElectronDepositResult walk_electron(const Eigen::Vector3d& position,
+                                    const Eigen::Vector3d& direction,
+                                    double KE_keV,
+                                    const Geometry& geometry,
+                                    const TransportConfig& config,
+                                    std::mt19937_64& rng,
+                                    bool is_positron)
+{
+    const auto& csda = ElectronCsda::instance();
+    if (config.electron_transport == ElectronTransport::Detailed && !config.disable_moliere)
+        return csda.deposited_in_scoring_detailed(
+            position, direction, KE_keV, geometry, rng, config.disable_brems, is_positron,
+            config.enable_impact_ionization ? ElectronCsda::impact_ionization_max_keV() : 0.0);
+    return csda.deposited_in_scoring(position, direction, KE_keV, geometry, rng,
+                                     config.disable_moliere, config.disable_brems,
+                                     is_positron);
+}
+
+
+AnnihilationPair sample_annihilation_pair(bool in_flight, double residual_KE_keV,
+                                          std::mt19937_64& rng)
+{
+    constexpr double kElectronMassKeV = 510.998950;
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    AnnihilationPair pair;
+    if (in_flight) {
+        const double Etot = 2.0 * kElectronMassKeV + residual_KE_keV;
+        const double x    = 0.5 + (uniform(rng) - 0.5) * (residual_KE_keV / Etot);
+        pair.energy_keV   = {x * Etot, Etot - x * Etot};
+        pair.direction[0] = sample_isotropic_direction(rng);
+        pair.direction[1] = sample_isotropic_direction(rng);
+    } else {
+        pair.energy_keV   = {kElectronMassKeV, kElectronMassKeV};
+        pair.direction[0] = sample_isotropic_direction(rng);
+        pair.direction[1] = -pair.direction[0];
+    }
+    return pair;
+}
 
 
 TransportResult transport_photon(
@@ -105,6 +171,45 @@ TransportResult transport_photon(
         return config.fep_only_mode && !config.disable_fep_early_kill &&
                (initial_energy_keV - result.energy_deposited_scoring - max_remaining_keV)
                     > config.fep_window_keV;
+    };
+
+    // An electron-impact K x-ray among an electron's brems photons is
+    // recorded like a fluorescence x-ray, so its escape is labelled.
+    auto record_impact_xray = [&](const BremsPhoton& bp, const TransportResult& br) {
+        if (bp.impact_Z == 0 || !config.record_interactions) return;
+        FluorescenceRecord record{
+            bp.impact_Z, true, true, bp.energy_keV,
+            br.energy_deposited_scoring < bp.energy_keV * 0.99,
+            br.energy_deposited_scoring};
+        record.filling_subshell = bp.impact_filling_subshell;
+        record.from_impact = true;
+        result.fluorescence_records.push_back(record);
+    };
+
+    // Transport one relaxation x-ray (K or L line) isotropically from `from`
+    // and fold its deposits and escapes into this history. Fluorescence may
+    // cascade (e.g. Te Ka -> Cd K-shell PE -> Cd Ka) to max_fluorescence_depth.
+    auto transport_relaxation_xray = [&](const Eigen::Vector3d& from,
+                                         double x_keV) -> TransportResult {
+        Eigen::Vector3d x_dir = sample_isotropic_direction(rng);
+        TransportConfig fl_config = config;
+        fl_config.fluorescence_depth = config.fluorescence_depth + 1;
+        if (fl_config.fluorescence_depth >= config.max_fluorescence_depth)
+            fl_config.enable_fluorescence = false;
+        auto fl_res = transport_photon(from, x_dir, x_keV, geometry, fl_config, rng);
+        result.energy_deposited_scoring += fl_res.energy_deposited_scoring;
+        result.energy_deposited_total   += fl_res.energy_deposited_total;
+        if (fl_res.any_interaction_in_scoring)
+            result.any_interaction_in_scoring = true;
+        if (fl_res.escaped && fl_res.exit_energy_keV > 1.0)
+            result.escaped_secondaries.push_back({
+                fl_res.exit_position, fl_res.exit_direction,
+                fl_res.exit_energy_keV});
+        result.escaped_secondaries.insert(
+            result.escaped_secondaries.end(),
+            fl_res.escaped_secondaries.begin(),
+            fl_res.escaped_secondaries.end());
+        return fl_res;
     };
 
     double energy_MeV = energy_keV * 1e-3;
@@ -340,21 +445,46 @@ TransportResult transport_photon(
                 // Use the material's per-element PE XS weights.
                 int Z_pe = current_seg->material->select_element(energy_MeV, 0 /*PE*/, uniform(rng));
                 const FluorescenceData* fl = CrossSectionData::instance().fluorescence(Z_pe);
+                const LFluorescenceData* fl_L = CrossSectionData::instance().l_fluorescence(Z_pe);
+                // Only elements with retained (>= 10 keV) L lines take the L
+                // draws; for the rest an L vacancy stays local as before.
+                const bool l_lines = has_l_lines(fl_L);
+
+                // Photoabsorption outside the K shell: an L-subshell vacancy
+                // (by the tabulated shares) radiates its retained L x-ray, the
+                // photoelectron carries E - E_L. Returns true if the FEP early
+                // kill fires.
+                auto outer_shell_absorption = [&](double f_K) -> bool {
+                    if (!l_lines) return false;
+                    const int s_l = sample_l_photoelectric_subshell(*fl_L, energy_keV, f_K, rng);
+                    if (s_l < 0 || energy_keV <= fl_L->sub[s_l].edge_keV) return false;
+                    pe_kinetic_energy = energy_keV - fl_L->sub[s_l].edge_keV;
+                    const LRelaxation l_relax = sample_l_relaxation(*fl_L, s_l, rng);
+                    auger_local = l_relax.local_keV;
+                    deposited = pe_kinetic_energy + auger_local;
+                    if (l_relax.line_keV <= 0.0) return false;
+                    transport_relaxation_xray(position, l_relax.line_keV);
+                    return fep_killed(pe_kinetic_energy + auger_local);
+                };
 
                 if (fl && energy_keV > fl->k_edge_keV) {
                     // Probabilistic K-shell vs outer-shell PE selection.
-                    // f_K = σ_K / σ_PE_total; outer shells deposit full energy locally.
+                    // f_K = σ_K / σ_PE_total.
                     const auto& xs_data = CrossSectionData::instance();
                     double sigma_K = xs_data.sigma_K_photoelectric(Z_pe, energy_MeV);
                     double sigma_tot = xs_data.sigma_photoelectric(Z_pe, energy_MeV);
                     double f_K = (sigma_tot > 0.0) ? std::min(sigma_K / sigma_tot, 1.0) : 1.0;
 
                     if (uniform(rng) >= f_K) {
-                        // Outer-shell PE: full energy deposited locally (no K X-ray escape).
-                        // deposited and pe_kinetic_energy remain = energy_keV (the defaults).
+                        // Outer-shell PE: full energy deposited locally unless an
+                        // L x-ray carries some of it away.
                         if (config.record_interactions) {
                             result.fluorescence_records.push_back({
                                 Z_pe, false, false, 0.0, false, 0.0});
+                        }
+                        if (outer_shell_absorption(f_K)) {
+                            energy_keV = 0.0;
+                            goto done;
                         }
                         goto pe_deposit;
                     }
@@ -364,93 +494,75 @@ TransportResult transport_photon(
                     pe_kinetic_energy = energy_keV - fl->k_edge_keV;
                     deposited = pe_kinetic_energy;
 
-                    if (uniform(rng) < fl->fluorescence_yield) {
+                    // K x-ray (Kα1, Kα2, Kβ, ... by intensity) or Auger electrons.
+                    // The binding energy the x-ray does not carry goes to Auger
+                    // electrons with sub-mm range: deposited locally. A K-alpha
+                    // leaves an L vacancy, which may radiate a retained L line.
+                    const KRelaxation relax = sample_k_relaxation(*fl, rng);
+                    auger_local = relax.local_keV;
+                    LRelaxation l_relax;
+                    if (l_lines && relax.filling_subshell >= kEadlL1
+                        && relax.filling_subshell <= kEadlL3) {
+                        l_relax = sample_l_relaxation(
+                            *fl_L, relax.filling_subshell - kEadlL1, rng);
+                        auger_local -= l_relax.line_keV;
+                    }
+                    deposited += auger_local;
+                    if (relax.line_keV > 0.0) {
                         // --- K-shell fluorescence X-ray ---
-                        // Select the transition line (Kα1, Kα2, Kβ, ...) by probability
-                        double xi_line = uniform(rng), cum = 0.0;
-                        float fl_energy = fl->line_energy_keV[0];
-                        for (int li = 0; li < fl->num_lines; ++li) {
-                            cum += fl->line_probability[li];
-                            if (xi_line <= cum) {
-                                fl_energy = fl->line_energy_keV[li];
-                                break;
-                            }
-                        }
-
-                        // L-shell Auger electrons from the K-vacancy fill:
-                        // The transition (E_K → E_Kline) releases (E_K - E_Kline) as
-                        // Auger electrons with sub-mm range → deposit locally.
-                        auger_local = fl->k_edge_keV - static_cast<double>(fl_energy);
-                        deposited += auger_local;
-
-                        // Emit K-X-ray in an isotropic random direction
-                        Eigen::Vector3d fl_dir = sample_isotropic_direction(rng);
-
-                        // Allow secondary fluorescence cascade (e.g. Te Ka → Cd K-shell PE → Cd Ka)
-                        // but cap recursion depth to prevent infinite loops.
-                        TransportConfig fl_config = config;
-                        fl_config.fluorescence_depth = config.fluorescence_depth + 1;
-                        if (fl_config.fluorescence_depth >= config.max_fluorescence_depth)
-                            fl_config.enable_fluorescence = false;
-
-                        auto fl_res = transport_photon(
-                            position, fl_dir, static_cast<double>(fl_energy),
-                            geometry, fl_config, rng);
-
-                        result.energy_deposited_scoring += fl_res.energy_deposited_scoring;
-                        result.energy_deposited_total   += fl_res.energy_deposited_total;
-                        if (fl_res.any_interaction_in_scoring)
-                            result.any_interaction_in_scoring = true;
-
-                        // Collect escaped fluorescence for environmental bounce
-                        if (fl_res.escaped && fl_res.exit_energy_keV > 1.0)
-                            result.escaped_secondaries.push_back({
-                                fl_res.exit_position, fl_res.exit_direction,
-                                fl_res.exit_energy_keV});
-                        result.escaped_secondaries.insert(
-                            result.escaped_secondaries.end(),
-                            fl_res.escaped_secondaries.begin(),
-                            fl_res.escaped_secondaries.end());
+                        const double fl_energy = relax.line_keV;
+                        auto fl_res = transport_relaxation_xray(position, fl_energy);
 
                         // Record fluorescence fate
                         if (config.record_interactions) {
                             bool escaped = (fl_res.energy_deposited_scoring <
                                             static_cast<double>(fl_energy) * 0.99);
-                            result.fluorescence_records.push_back({
+                            FluorescenceRecord record{
                                 Z_pe, true, true,
                                 static_cast<double>(fl_energy),
-                                escaped, fl_res.energy_deposited_scoring});
+                                escaped, fl_res.energy_deposited_scoring};
+                            record.filling_subshell = relax.filling_subshell;
+                            result.fluorescence_records.push_back(record);
                         }
 
                         // FEP early kill: fluorescence X-ray escaped scoring.
-                        // Best case remaining = photoelectron KE + Auger (not yet deposited).
-                        if (fep_killed(pe_kinetic_energy + auger_local)) {
+                        // Best case remaining = photoelectron KE + Auger (+ the
+                        // L x-ray still to come), none deposited yet.
+                        if (fep_killed(pe_kinetic_energy + auger_local + l_relax.line_keV)) {
                             energy_keV = 0.0;
                             goto done;
+                        }
+                        if (l_relax.line_keV > 0.0) {
+                            transport_relaxation_xray(position, l_relax.line_keV);
+                            if (fep_killed(pe_kinetic_energy + auger_local)) {
+                                energy_keV = 0.0;
+                                goto done;
+                            }
                         }
 
                     } else {
                         // --- Auger electrons ---
-                        // Binding energy released locally via Auger electrons.
-                        // Total deposited = (E_γ − E_K) + E_K = E_γ
-                        auger_local = fl->k_edge_keV;
-                        deposited += auger_local;
-
+                        // Binding energy released locally via Auger electrons
+                        // (auger_local = E_K above): total deposited = E_γ.
                         if (config.record_interactions) {
                             result.fluorescence_records.push_back({
                                 Z_pe, true, false, 0.0, false, 0.0});
                         }
                     }
                 } else {
-                    // Below K-edge or no fluorescence data
+                    // Below the K edge or no K fluorescence data.
                     if (config.record_interactions && fl) {
                         result.fluorescence_records.push_back({
                             Z_pe, false, false, 0.0, false, 0.0});
                     }
+                    if (outer_shell_absorption(0.0)) {
+                        energy_keV = 0.0;
+                        goto done;
+                    }
                 }
-                // If energy_keV <= k_edge_keV: only L-shell (or lower) absorption
-                // possible — L X-rays have very short MFP, deposited locally.
-                // deposited stays = energy_keV, pe_kinetic_energy = energy_keV (no change).
+                // Outer-shell absorption in an element without retained L lines
+                // (and M and beyond everywhere) leaves deposited = energy_keV and
+                // pe_kinetic_energy = energy_keV.
             }
 
             pe_deposit:
@@ -458,9 +570,8 @@ TransportResult transport_photon(
             if (config.enable_electron_csda && pe_kinetic_energy > 0.0) {
                 Eigen::Vector3d pe_dir = sample_photoelectron_direction(
                     direction, pe_kinetic_energy, rng);
-                auto e_result = ElectronCsda::instance()
-                    .deposited_in_scoring(position, pe_dir, pe_kinetic_energy, geometry, rng,
-                                         config.disable_moliere, config.disable_brems);
+                auto e_result = walk_electron(position, pe_dir, pe_kinetic_energy,
+                                              geometry, config, rng);
                 result.energy_deposited_scoring += e_result.deposited_scoring_keV;
                 if (e_result.deposited_scoring_keV > 0.0) result.any_interaction_in_scoring = true;
 
@@ -480,6 +591,7 @@ TransportResult transport_photon(
                 for (const auto& bp : e_result.brems_photons) {
                     auto br = transport_photon(bp.position, bp.direction, bp.energy_keV,
                                                geometry, config, rng);
+                    record_impact_xray(bp, br);
                     result.energy_deposited_scoring += br.energy_deposited_scoring;
                     result.energy_deposited_total   += br.energy_deposited_total;
                     if (br.any_interaction_in_scoring) result.any_interaction_in_scoring = true;
@@ -549,10 +661,8 @@ TransportResult transport_photon(
             if (config.enable_electron_csda && scatter.deposited_energy_keV > 0.0) {
                 Eigen::Vector3d e_dir = compton_recoil_direction(
                     dir_in, scatter.new_direction, energy_in, scatter.scattered_energy_keV);
-                auto e_result = ElectronCsda::instance()
-                    .deposited_in_scoring(position, e_dir,
-                                         scatter.deposited_energy_keV, geometry, rng,
-                                         config.disable_moliere, config.disable_brems);
+                auto e_result = walk_electron(position, e_dir, scatter.deposited_energy_keV,
+                                              geometry, config, rng);
                 result.energy_deposited_scoring += e_result.deposited_scoring_keV;
                 if (in_scoring || e_result.deposited_scoring_keV > 0.0)
                     result.any_interaction_in_scoring = true;
@@ -567,6 +677,7 @@ TransportResult transport_photon(
                 for (const auto& bp : e_result.brems_photons) {
                     auto br = transport_photon(bp.position, bp.direction, bp.energy_keV,
                                                geometry, config, rng);
+                    record_impact_xray(bp, br);
                     result.energy_deposited_scoring += br.energy_deposited_scoring;
                     result.energy_deposited_total   += br.energy_deposited_total;
                     if (br.any_interaction_in_scoring) result.any_interaction_in_scoring = true;
@@ -585,14 +696,64 @@ TransportResult transport_photon(
             }
             result.energy_deposited_total += scatter.deposited_energy_keV;
 
-            // Doppler: subshell binding energy is deposited locally (no
-            // Compton-vacancy relaxation), keeping total deposit = E_in.
+            // Doppler: the struck subshell's binding energy U_i.  A K vacancy
+            // relaxes like a photoelectric one when enable_compton_fluorescence
+            // is set: its K x-ray is transported and only U_i - E_line stays
+            // local.  Otherwise (and for outer shells, whose L/M lines are
+            // deposited locally anyway) all of U_i is deposited on the spot.
             if (scatter.binding_deposit_keV > 0.0) {
+                double local = scatter.binding_deposit_keV;
+                const bool relax_vacancy =
+                    config.enable_compton_fluorescence && config.enable_fluorescence;
+                const FluorescenceData* fl = (relax_vacancy && scatter.shell_index == 0)
+                    ? CrossSectionData::instance().fluorescence(Z_cs) : nullptr;
+                const LFluorescenceData* fl_L = relax_vacancy
+                    ? CrossSectionData::instance().l_fluorescence(Z_cs) : nullptr;
+                const bool l_lines = has_l_lines(fl_L);
+                if (fl && std::abs(scatter.binding_deposit_keV - fl->k_edge_keV)
+                              < 0.05 * fl->k_edge_keV) {
+                    const KRelaxation relax = sample_k_relaxation(*fl, rng);
+                    if (relax.line_keV > 0.0
+                        && relax.line_keV < scatter.binding_deposit_keV) {
+                        local = scatter.binding_deposit_keV - relax.line_keV;
+                        LRelaxation l_relax;
+                        if (l_lines && relax.filling_subshell >= kEadlL1
+                            && relax.filling_subshell <= kEadlL3) {
+                            l_relax = sample_l_relaxation(
+                                *fl_L, relax.filling_subshell - kEadlL1, rng);
+                            local -= l_relax.line_keV;
+                        }
+                        auto fl_res = transport_relaxation_xray(position, relax.line_keV);
+                        if (config.record_interactions) {
+                            FluorescenceRecord record{
+                                Z_cs, true, true, relax.line_keV,
+                                fl_res.energy_deposited_scoring < relax.line_keV * 0.99,
+                                fl_res.energy_deposited_scoring};
+                            record.from_compton = true;
+                            record.filling_subshell = relax.filling_subshell;
+                            result.fluorescence_records.push_back(record);
+                        }
+                        if (l_relax.line_keV > 0.0)
+                            transport_relaxation_xray(position, l_relax.line_keV);
+                    }
+                } else if (l_lines && scatter.shell_index >= 1 && scatter.shell_index <= 3) {
+                    // L-shell Compton vacancy (xraylib shell order K, L1, L2, L3).
+                    const int s_l = scatter.shell_index - 1;
+                    const double edge = fl_L->sub[s_l].edge_keV;
+                    if (std::abs(scatter.binding_deposit_keV - edge) < 0.05 * edge) {
+                        const LRelaxation l_relax = sample_l_relaxation(*fl_L, s_l, rng);
+                        if (l_relax.line_keV > 0.0
+                            && l_relax.line_keV < scatter.binding_deposit_keV) {
+                            local = scatter.binding_deposit_keV - l_relax.line_keV;
+                            transport_relaxation_xray(position, l_relax.line_keV);
+                        }
+                    }
+                }
                 if (in_scoring) {
-                    result.energy_deposited_scoring += scatter.binding_deposit_keV;
+                    result.energy_deposited_scoring += local;
                     result.any_interaction_in_scoring = true;
                 }
-                result.energy_deposited_total += scatter.binding_deposit_keV;
+                result.energy_deposited_total += local;
             }
 
             // Update photon state
@@ -656,6 +817,9 @@ TransportResult transport_photon(
             // off the clean 511/escape peaks) from the annihilation site.
             bool   pos_in_flight = false;
             double pos_residual_KE = 0.0;
+            // A positron that walks out of the geometry annihilates outside it
+            // (vacuum world): it emits no photon pair here.
+            bool   pos_escaped = false;
             if (config.enable_electron_csda && deposited_local > 0.0) {
                 double ke_each = 0.5 * deposited_local;
                 // Pair opening angle (Koch-Motz / G4ModifiedTsai): each lepton is
@@ -667,18 +831,15 @@ TransportResult transport_photon(
                 double phi     = kTwoPi * uniform(rng);
                 Eigen::Vector3d dir_neg = rotate_direction(direction, cos_neg, phi);
                 Eigen::Vector3d dir_pos = rotate_direction(direction, cos_pos, phi + kPi);
-                auto e_neg = ElectronCsda::instance()
-                    .deposited_in_scoring(position, dir_neg, ke_each, geometry, rng,
-                                         config.disable_moliere, config.disable_brems);
-                auto e_pos = ElectronCsda::instance()
-                    .deposited_in_scoring(position, dir_pos, ke_each, geometry, rng,
-                                         config.disable_moliere, config.disable_brems,
-                                         /*is_positron=*/true);
+                auto e_neg = walk_electron(position, dir_neg, ke_each, geometry, config, rng);
+                auto e_pos = walk_electron(position, dir_pos, ke_each, geometry, config, rng,
+                                           /*is_positron=*/true);
                 // The positron annihilates where it comes to rest (or in flight),
                 // not at the creation vertex.  (The e⁻ does not annihilate.)
                 annih_pos       = e_pos.stop_position;
                 pos_in_flight   = e_pos.annihilated_in_flight;
                 pos_residual_KE = e_pos.residual_KE_at_annih_keV;
+                pos_escaped     = e_pos.escaped;
                 double dep_pair = e_neg.deposited_scoring_keV + e_pos.deposited_scoring_keV;
                 result.energy_deposited_scoring += dep_pair;
                 if (dep_pair > 0.0) result.any_interaction_in_scoring = true;
@@ -689,6 +850,20 @@ TransportResult transport_photon(
                     double slowing = deposited_local - (pos_in_flight ? pos_residual_KE : 0.0);
                     double e_escape = slowing - dep_pair;
                     if (e_escape > 0.01) result.electron_escape_keV += e_escape;
+                    if (!result.pair_history.occurred) {
+                        auto& history = result.pair_history;
+                        history.occurred = true;
+                        history.in_scoring = in_scoring;
+                        history.annihilated_in_flight = pos_in_flight;
+                        history.positron_escaped = pos_escaped;
+                        history.pair_kinetic_energy_keV = deposited_local;
+                        history.lepton_deposit_in_scoring_keV = dep_pair;
+                        double brems = 0.0;
+                        for (const auto* e_res : {&e_neg, &e_pos})
+                            for (const auto& bp : e_res->brems_photons)
+                                brems += bp.energy_keV;
+                        history.lepton_brems_energy_keV = brems;
+                    }
                 }
 
                 // Transport bremsstrahlung photons from both e- and e+
@@ -696,6 +871,7 @@ TransportResult transport_photon(
                     for (const auto& bp : e_res->brems_photons) {
                         auto br = transport_photon(bp.position, bp.direction, bp.energy_keV,
                                                    geometry, config, rng);
+                        record_impact_xray(bp, br);
                         result.energy_deposited_scoring += br.energy_deposited_scoring;
                         result.energy_deposited_total   += br.energy_deposited_total;
                         if (br.any_interaction_in_scoring) result.any_interaction_in_scoring = true;
@@ -718,28 +894,17 @@ TransportResult transport_photon(
             result.energy_deposited_total += deposited_local
                                            - (pos_in_flight ? pos_residual_KE : 0.0);
 
-            // Emit the two annihilation gammas.
-            //  - At rest: two back-to-back 511 keV photons (isotropic axis).
-            //  - In flight: total energy 2·mₑc² + residual KE, split by a sampled
-            //    fraction and emitted in two independent isotropic directions
-            //    (continuum, not a clean 511 pair).  Same approximation as the
-            //    cascade β⁺ path; proper 2-body boost kinematics are not modeled.
-            constexpr double kElectronMassKeV = 510.998950;
-            double ann_E1, ann_E2;
-            Eigen::Vector3d ann_dir1, ann_dir2;
-            if (pos_in_flight) {
-                double Etot = 2.0 * kElectronMassKeV + pos_residual_KE;
-                double x    = 0.5 + (uniform(rng) - 0.5) * (pos_residual_KE / Etot);
-                ann_E1   = x * Etot;
-                ann_E2   = Etot - ann_E1;
-                ann_dir1 = sample_isotropic_direction(rng);
-                ann_dir2 = sample_isotropic_direction(rng);
-            } else {
-                ann_E1   = kElectronMassKeV;
-                ann_E2   = kElectronMassKeV;
-                ann_dir1 = sample_isotropic_direction(rng);
-                ann_dir2 = -ann_dir1;
+            if (pos_escaped) {
+                energy_keV = 0.0;
+                goto done;
             }
+
+            // Emit the two annihilation gammas (at rest or in flight).
+            const AnnihilationPair pair =
+                sample_annihilation_pair(pos_in_flight, pos_residual_KE, rng);
+            const double ann_E1 = pair.energy_keV[0], ann_E2 = pair.energy_keV[1];
+            const Eigen::Vector3d& ann_dir1 = pair.direction[0];
+            const Eigen::Vector3d& ann_dir2 = pair.direction[1];
 
             // FEP early kill: if pair electron escape already blew the budget,
             // skip annihilation gamma transport entirely.
@@ -763,6 +928,18 @@ TransportResult transport_photon(
             result.escaped_secondaries.insert(
                 result.escaped_secondaries.end(),
                 res1.escaped_secondaries.begin(), res1.escaped_secondaries.end());
+            if (config.record_interactions) {
+                // Preserve the annihilation-photon history after the parent
+                // pair-production record. Detector-response diagnostics use
+                // this ordering to distinguish pair histories with zero, one,
+                // or multiple subsequent Compton scatters. This is diagnostic
+                // only and does not alter transport or the random stream.
+                result.interactions.insert(
+                    result.interactions.end(),
+                    res1.interactions.begin(), res1.interactions.end());
+                record_annihilation_photon(
+                    result.pair_history.annihilation[0], ann_E1, res1);
+            }
 
             // FEP early kill: first annihilation gamma escaped, check if second can save FEP.
             if (fep_killed(ann_E2)) {
@@ -781,6 +958,13 @@ TransportResult transport_photon(
             result.escaped_secondaries.insert(
                 result.escaped_secondaries.end(),
                 res2.escaped_secondaries.begin(), res2.escaped_secondaries.end());
+            if (config.record_interactions) {
+                result.interactions.insert(
+                    result.interactions.end(),
+                    res2.interactions.begin(), res2.interactions.end());
+                record_annihilation_photon(
+                    result.pair_history.annihilation[1], ann_E2, res2);
+            }
 
             energy_keV = 0.0;
             goto done;

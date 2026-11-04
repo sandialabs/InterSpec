@@ -39,12 +39,16 @@ scratch/
 renamed_*
 devcontainer_prefix
 *.back
-.devcontainer 
 det_response_report/
 test_datasets/
 .codex/
+# Dev-container setups are per-developer; example dockerfiles live in target/docker/
 .devcontainer*/
 .opencode*/
+
+data/llm_knowledge/*
+!data/llm_knowledge/README.md
+data/gamma_spec_skills
 
 IDB*
 
@@ -148,7 +152,5 @@ InterSpec_resources/d3.v3.min.js
 target/macos/quicklook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
 
 target/wxwidgets/3rd_party
-.devcontainer/devcontainer.json
-/devcontainer_prefix/
 *.bak
 

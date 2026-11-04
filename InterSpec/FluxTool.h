@@ -98,6 +98,12 @@ protected:
 class FluxToolWidget : public Wt::WContainerWidget
 {
 public:
+  /** Which columns are shown - in the table, the CSV, and the clipboard alike.
+
+   Regardless of level, a fixed-geometry DRF never shows the IntrinsicEff, GeometricEff, FluxOnDet, or
+   FluxPerCm2PerS columns (there is no distance, or flux at the detector, for them), and the
+   BackgroundCps column is only shown while background peaks are being subtracted.
+   */
   enum class DisplayInfoLevel
   {
     /** Only energy, nuclide, and gammas into 4pi are shown.
@@ -130,6 +136,7 @@ public:
     FluxEnergyCol,
     FluxNuclideCol,
     FluxPeakCpsCol,
+    FluxBackgroundCpsCol,
     FluxIntrinsicEffCol,
     FluxGeometricEffCol,
     FluxFluxOnDetCol,
@@ -157,6 +164,12 @@ public:
    Example URIs:
    - "interspec://flux?VER=1&dist=1.2m&display=low"
    - "interspec://flux?VER=1.1&dist=1.2m&display=low&selrows=1&sel=661.66,1173.23"
+   - "interspec://flux?VER=1.2&dist=1.2m&display=normal&air=0&bkgsub=1"
+
+   The optional "AIR" and "BKGSUB" fields (added in version 1.2) give whether to correct for air
+   attenuation, and whether to subtract background peaks.  "BKGSUB" defaults to off.  "AIR" defaults to
+   on for version 1.2 and later, but to off for earlier (or un-versioned) URIs, which predate the option,
+   so they reproduce the numbers they were made with.
 
    The optional "SELROWS" and "SEL" fields (added in version 1.1) give the row-selection
    state; both are optional, so URIs written by previous versions still load.  "SELROWS=1"
@@ -194,6 +207,42 @@ protected:
   void setTableNeedsUpdating();
   void refreshPeakTable();
   void handleDrfChange( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** Sets up the inputs and column labels for the current DRF: fixed-geometry DRFs dont use the
+   distance or air correction, and label the gammas-into-4pi column as the sources emission rate.
+   */
+  void updateForDrf();
+
+  /** Fills #m_colnames and #m_colnamesCsv for the current DRF and background-subtraction state, and
+   tells the table its header changed.
+   */
+  void updateColumnLabels();
+
+  /** Turns the air-attenuation correction on or off, adding an undo/redo step. */
+  void setAttenuateForAir( const bool attenuate );
+
+  /** Applies the air-attenuation setting to the GUI and table, without an undo/redo step. */
+  void applyAttenuateForAir( const bool attenuate );
+
+  /** Turns background-peak subtraction on or off, adding an undo/redo step, and when turning it on,
+   offers to fit background peaks the backgrounds automated search found under foreground peaks
+   (see PeakSearchGuiUtils::prompt_to_add_missing_background_peaks).
+   */
+  void setSubtractBackground( const bool subtract );
+
+  /** Applies the background-subtraction setting to the GUI and table, without an undo/redo step, or
+   prompting about missing background peaks.
+   */
+  void applySubtractBackground( const bool subtract );
+
+  /** Shows the "subtract background peaks" checkbox only when a background is displayed, and some
+   foreground peak has a background peak (fitted, or found by the backgrounds automated search) within
+   GammaInteractionCalc::sm_background_peak_nsigma_near sigma.  Never waits on a peak search.
+   */
+  void updateBackgroundSubVisibility();
+
+  /** Whether background peaks are being subtracted: the user wants it, and the option is available. */
+  bool backgroundSubtractionActive() const;
 
 
   void setDisplayInfoLevel( const DisplayInfoLevel disptype, const bool force );
@@ -253,6 +302,28 @@ protected:
 
   /** Says whether the uncertainties include the detector efficiency's, and what kind. */
   Wt::WText *m_drfUncertNote;
+
+  /** Short notes on how the numbers were computed: fixed geometry, detector setback, background. */
+  Wt::WText *m_calcNote;
+
+  /** Warns of peaks outside the energy range the DRF states it is valid for. */
+  Wt::WText *m_rangeWarning;
+
+  /** Whether to correct the gammas-into-4pi rate for attenuation by air (far-field DRFs only). */
+  Wt::WCheckBox *m_airAttenCb;
+  bool m_attenuateForAir;
+
+  /** Whether to subtract background peak areas; only shown when there is something to subtract, see
+   #updateBackgroundSubVisibility.  #m_subtractBackground is what the user asked for, which is kept
+   while the checkbox is hidden.
+   */
+  Wt::WCheckBox *m_backgroundPeakSub;
+  bool m_subtractBackground;
+
+  /** Set when the user declines to add missing background peaks, so we dont ask again until the
+   foreground changes - as the Activity/Shielding fit does.
+   */
+  bool m_skipBackgroundPeakCheck;
   Wt::WLineEdit *m_distance;
   Wt::WString m_prevDistance; // For undo/redo
   RowStretchTreeView *m_table;
@@ -316,6 +387,11 @@ protected:
   
   std::vector<std::string> m_nucNames;
   std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_data;
+
+  /** Whether each row of #m_data is outside the DRFs stated energy range; same size and order as
+   #m_data.
+   */
+  std::vector<bool> m_rowOutOfRange;
 
   /** The uncertainties of #m_data, split into counting statistics and the systematic part (the
    detector efficiency's).  The table shows them combined in quadrature, with the split in each cell's

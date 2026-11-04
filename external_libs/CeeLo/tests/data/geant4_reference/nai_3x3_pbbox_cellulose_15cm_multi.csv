@@ -1,0 +1,8 @@
+# 3"x3" NaI, 10x15x20 cm Pb-wall (0.2 cm) box + cellulose, 15 cm
+# GEANT4 11.4.0, G4EmStandardPhysics_option4 (--em-option4, explicit:
+#   the harness default is G4EmLivermorePhysics), isotropic GPS volume
+#   source, vacuum world, 16M events/energy.
+# Out-of-sample high-Z wall-box reference (cfg 20-24 family).
+energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
+662,0.00154006,9.80335e-06,0.00365425,1.5085e-05,16000000
+2614,0.00061375,6.19159e-06,0.00351794,1.48019e-05,16000000

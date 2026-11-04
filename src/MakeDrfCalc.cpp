@@ -31,7 +31,6 @@
 #include <stdexcept>
 
 #include "io/DetectorResponse.h"
-#include "io/ResponseGenerator.h"
 
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/MakeDrfFit.h"
@@ -54,9 +53,12 @@ std::vector<MakeDrfFit::EffFitPoint> intrinsicFitPoints( const MeasuredDrfPoints
   if( !geom.fixedGeometry && !use_kernel && (geom.diameter <= 0.0) )
     throw runtime_error( "A detector diameter is needed to interpret the measured points." );
 
+  // The kernel quotes the far field against the diameter the fitted curve will be stored with, so
+  //  the DRF's flat-disk evaluation reads the points back (for Make Detector Response's geometry
+  //  mode that is the object disk; for a re-fit of an existing DRF, whatever diameter it states).
   std::unique_ptr<CeeLoUtils::GeometryKernel> kernel;
   if( use_kernel )
-    kernel.reset( new CeeLoUtils::GeometryKernel( *geom.geometry ) );
+    kernel.reset( new CeeLoUtils::GeometryKernel( *geom.geometry, 2048, geom.diameter / PhysicalUnits::cm ) );
 
   // Flat disk: geometric factor and its distance slope (per cm), central difference
   auto flat_factor = [&geom]( const double dist ) -> double {
@@ -190,7 +192,9 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
   // The CeeLo response: a generated (MC) one grounded to the raw points, else the instant
   //  curve-transfer anchored on the fitted curve with its covariance.  Never both - the MC
   //  grounding carries the raw-point covariance, the transfer carries the fit covariance.
-  if( mcResponse && far_field )
+  // Only a response for the geometry being recorded: one generated for an earlier geometry, or
+  //  before switching to the diameter-only flat disk, describes some other detector.
+  if( mcResponse && geom.geometry && far_field )
   {
     try
     {
@@ -208,7 +212,6 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
       //  several times (store, N42 export, reference sheet) on this same shared response.
       mcResponse->grounding = ceelo::GroundingBlock();
 
-      const ceelo::GeometryDescriptor &gd = mcResponse->descriptor;
       vector<ceelo::GroundingPoint> ground_pts;
       for( const MeasuredEffPoint &p : points.points() )
       {
@@ -220,16 +223,13 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
         gp.frac_stat_sigma = p.fracStatUncert;
         gp.frac_cert_sigma = p.fracCertUncert;
         gp.source_key = p.sourceKey;
-        gp.distance_cm = p.distance / PhysicalUnits::cm;
+        gp.distance_cm = p.distance / PhysicalUnits::cm;  //from the face; see groundResponseToFacePoints
         gp.cos_theta = 1.0;  //Create DRF sources are on-axis
-        // Model efficiency at the point's own (face-referenced) distance
-        gp.model_eff = mcResponse->eps_fep_at( p.energy,
-                          CeeLoUtils::sourcePositionFromFace( gd, 0.0, 0.0, gp.distance_cm ) ).value;
         ground_pts.push_back( std::move(gp) );
       }//for( const MeasuredEffPoint &p : points.points() )
 
       if( was_grounded && !ground_pts.empty() )
-        ceelo::ResponseGenerator::ground_to_points( *mcResponse, ground_pts, /*curve_derived=*/false );
+        CeeLoUtils::groundResponseToFacePoints( *mcResponse, ground_pts, /*curve_derived=*/false );
 
       drf->setCeeloResponse( mcResponse );
     }catch( std::exception &e )

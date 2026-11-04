@@ -87,7 +87,9 @@ public:
   /** Seeds the form from a DRF: its own geometry (DetectorPeakResponse::monteCarloGeometry) when it
    has one - returned, so an owner can tell an unedited form from the descriptor it stands for -
    else a cylinder with diameter = `drf->detectorDiameter()` and (estimated) length = diameter, with
-   a note that the length is a guess (returns nullptr).  Does nothing for null/invalid DRFs.
+   a note that the length is a guess, and the DRF's setback as a front vacuum-gap layer exactly as
+   #seedFromDiameter does, so a response built from the form puts the crystal where the DRF did
+   (returns nullptr).  Does nothing for null/invalid DRFs.
    */
   std::shared_ptr<const ceelo::GeometryDescriptor> seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
 
@@ -141,7 +143,7 @@ public:
 
     struct Layer
     {
-      std::string material, frontThickness, sideThickness;
+      std::string material, frontThickness, sideThickness, backThickness;
       /** See LayerRow::seeded - carried so a descriptor-supplied composition survives undo. */
       std::shared_ptr<const ceelo::MaterialSpec> seeded;
       std::string seededName;
@@ -150,6 +152,11 @@ public:
     };//struct Layer
 
     std::vector<Layer> layers;
+
+    /** Whether the form is still the length==diameter guess (see #generationReady) - part of the
+     state so undoing an import blocks generation again - and the import notes shown with it. */
+    bool seededFromDiameterGuess = false;
+    std::string importNotes;
 
     bool operator==( const State &rhs ) const;
     bool operator!=( const State &rhs ) const{ return !((*this) == rhs); }
@@ -176,7 +183,7 @@ protected:
    material through `MaterialDB`. */
   void updateFromForm();
   void addLayerRow( const Wt::WString &material, const Wt::WString &frontThick,
-                    const Wt::WString &sideThick,
+                    const Wt::WString &sideThick, const Wt::WString &backThick,
                     const std::shared_ptr<const ceelo::MaterialSpec> &seeded = nullptr );
   void removeLayerRow();
 
@@ -186,12 +193,21 @@ protected:
    */
   void popLayerRow();
 
+  /** Replaces every layer row with the one a flat-disk setback (PhysicalUnits) stands for: a front
+   vacuum-gap layer of that thickness, or no layer at all for a zero setback.  The one place both
+   #seedFromDrf and #seedFromDiameter turn a setback into layers.
+   */
+  void setLayersFromSetback( const double setback );
+
   /** One concentric endcap/housing layer input row. */
   struct LayerRow
   {
     Wt::WLineEdit *material;
     Wt::WLineEdit *frontThickness;
     Wt::WLineEdit *sideThickness;
+    /** The plate closing the layer behind whatever it encloses (ceelo::GeometryDescriptor::
+     set_layer_back_thickness_cm); blank = an open back. */
+    Wt::WLineEdit *backThickness;
 
     /** The material this row was seeded with by #setFromDescriptor, kept so a
      descriptor that carries a full composition InterSpec's `MaterialDB` has no

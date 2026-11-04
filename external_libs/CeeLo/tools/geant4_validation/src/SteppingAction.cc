@@ -23,10 +23,13 @@
  */
 
 #include "SteppingAction.hh"
+
+#include "RunAction.hh"
 #include "EventAction.hh"
 
 #include "G4Step.hh"
 #include "G4LogicalVolume.hh"
+#include "G4Material.hh"
 #include "G4LogicalVolumeStore.hh"
 #include "G4VPhysicalVolume.hh"
 #include "G4TouchableHistory.hh"
@@ -53,6 +56,24 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
     // Only score energy deposited in the active crystal logical volume.
     const G4VTouchable* touchable = step->GetPreStepPoint()->GetTouchable();
     G4LogicalVolume* lv = touchable->GetVolume()->GetLogicalVolume();
+
+    // Pair production can happen in the active crystal, dead layer, housing,
+    // or another passive detector volume. Record the event-level history
+    // before the passive-volume early return below so an annihilation photon
+    // entering the crystal can be identified as such.
+    if (diagnostics_enabled_
+        && step->GetTrack()->GetDefinition() == G4Gamma::Definition()) {
+        const G4VProcess* process =
+            step->GetPostStepPoint()->GetProcessDefinedStep();
+        if (process && process->GetProcessName() == "conv")
+            event_action_->SetPairProductionHistory();
+        else if (
+            process && process->GetProcessName() == "compt"
+            && step->GetTrack()->GetTrackID() != 1
+            && event_action_->HadPairProductionHistory()) {
+            event_action_->AddPairSecondaryCompton();
+        }
+    }
 
     // --- Crystal entry diagnostic: detect gammas entering crystal from outside ---
     if (entry_diag_enabled_ && lv == active_crystal_lv_) {
@@ -83,6 +104,80 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
                 if (pname == "e-" || pname == "e+") {
                     event_action_->SetExternalElectronEntry();
                 }
+            }
+        }
+    }
+
+    // --- Environment-scatter sphere flux scorer ---
+    // Accumulate photon TRACK LENGTH inside the scoring volume, binned in
+    // (E, mu). This is phi = L/V, exactly the observable CeeLo's estimator
+    // produces, so the two are directly comparable. All generations count.
+    //
+    // Direct/scattered: the primary is "direct" only until its FIRST real
+    // interaction. The step is scored with the flag as it stood BEFORE this
+    // step's terminating process, which matches CeeLo's run_brute (the flight
+    // leaving a vertex is tallied with the pre-flight state).
+    if (run_action_ && run_action_->SphereFluxEnabled() &&
+        lv == active_crystal_lv_) {
+        const G4Track* trk = step->GetTrack();
+        if (trk->GetDefinition() == G4Gamma::Definition()) {
+            const bool is_primary = (trk->GetTrackID() == 1);
+            const bool scattered = !is_primary || primary_interacted_;
+            const G4StepPoint* pre = step->GetPreStepPoint();
+            // Classify by CREATOR process. Compton and Rayleigh keep the same
+            // track in GEANT4, so the primary's whole scatter chain stays
+            // "primary", and a brems photon's own scatter chain stays "brems" --
+            // matching how CeeLo's channel switches partition the flux.
+            int origin = RunAction::kOriginPrimary;
+            if (!is_primary) {
+                const G4VProcess* cr = trk->GetCreatorProcess();
+                const G4String cn = cr ? cr->GetProcessName() : G4String("");
+                if (cn == "eBrem") {
+                    // Split brems by the material at the CREATION vertex (still
+                    // valid after Compton scatters: the track keeps its vertex).
+                    // Key on material, not LV name -- room mode has many slab
+                    // LVs but only air vs slab material matters for the
+                    // emission-displacement question.
+                    const G4LogicalVolume* vlv = trk->GetLogicalVolumeAtVertex();
+                    const bool in_air = vlv && vlv->GetMaterial() &&
+                        vlv->GetMaterial()->GetName() == "G4_AIR";
+                    origin = in_air ? RunAction::kOriginBremsAir
+                                    : RunAction::kOriginBremsSoil;
+                }
+                else if (cn == "annihil") origin = RunAction::kOriginAnnihil;
+                else                      origin = RunAction::kOriginOther;
+            }
+            run_action_->RecordSphereStep(
+                pre->GetKineticEnergy() / CLHEP::keV,
+                pre->GetMomentumDirection().z(),
+                step->GetStepLength() / CLHEP::cm,
+                scattered, origin);
+        }
+    }
+    // Mark the primary as having interacted once a non-transport process acts.
+    if (run_action_ && run_action_->SphereFluxEnabled() &&
+        step->GetTrack()->GetTrackID() == 1 && !primary_interacted_) {
+        const G4VProcess* proc =
+            step->GetPostStepPoint()->GetProcessDefinedStep();
+        if (proc && proc->GetProcessName() != "Transportation")
+            primary_interacted_ = true;
+    }
+
+    // --- Fluence-at-detector scorer (air-scatter study) ---
+    // Record the PRIMARY photon's kinetic energy the FIRST time it crosses into
+    // the active crystal from outside. Restricting to the primary's first entry
+    // isolates the air-transport effect (uncollided at E0, or air-scattered at
+    // E<E0) and excludes crystal-backscatter re-entries and crystal-born
+    // secondaries -- the apples-to-apples observable with GadrasShieldScatter.
+    // The uncollided (E~=E0) vs scattered (E<E0) split is done in EventAction.
+    if (fluence_enabled_ && lv == active_crystal_lv_) {
+        const G4Track* trk = step->GetTrack();
+        if (trk->GetTrackID() == 1 &&
+            trk->GetDefinition() == G4Gamma::Definition()) {
+            G4StepPoint* pre_pt = step->GetPreStepPoint();
+            if (pre_pt->GetStepStatus() == fGeomBoundary) {
+                event_action_->AddPrimaryFluenceEntry(
+                    pre_pt->GetKineticEnergy() / CLHEP::keV);
             }
         }
     }
@@ -163,14 +258,13 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
     // Only record interaction details for gamma tracks (not electron/positron steps)
     if (track->GetDefinition() != G4Gamma::Definition()) return;
 
-    // Only primary gamma (trackID == 1)
-    if (track->GetTrackID() != 1) return;
-
     // Get the process that defined this step
     const G4VProcess* proc = step->GetPostStepPoint()->GetProcessDefinedStep();
     if (!proc) return;
 
     const G4String& procName = proc->GetProcessName();
+    if (track->GetTrackID() != 1)
+        return;
 
     G4InteractionRecord rec;
     rec.position = step->GetPostStepPoint()->GetPosition();

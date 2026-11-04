@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <set>
 #include <deque>
 #include <vector>
 #include <string>
@@ -32,6 +34,7 @@
 #include <numeric>
 #include <limits>
 #include <iostream>
+#include <algorithm>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -120,6 +123,7 @@
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/DrfImport.h"
 #include "InterSpec/DrfImportWidget.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -133,6 +137,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/EnergyCalUndoRedo.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -1578,7 +1583,8 @@ protected:
 SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   : WObject(),
     m_spectrumManagerWindow( nullptr ),
-    m_treeView( NULL ),
+    m_treeView( nullptr ),
+    m_parkedTreeView( nullptr ),
     m_fileModel( nullptr ),
     m_fileUpload( NULL ),
     m_viewer( viewer ),
@@ -1619,7 +1625,10 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   if( viewer )
     viewer->useMessageResourceBundle( "SpecMeasManager" );
   
-  m_treeView = new RowStretchTreeView();
+  // The table is owned by `m_parkedTreeView` while the Spectrum Manager window isnt showing
+  std::unique_ptr<RowStretchTreeView> treeView = std::make_unique<RowStretchTreeView>();
+  m_treeView = treeView.get();
+  m_parkedTreeView = std::move( treeView );
   m_fileModel = std::make_shared<SpectraFileModel>();
   m_treeView->setModel( m_fileModel );
   m_treeView->selectionChanged().connect( this, [this](){ selectionChanged(); } );
@@ -1629,6 +1638,13 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   deleteSpectrumManager(); //deletes instance
     
   m_sql = viewer->sql();
+
+  // Every displayed spectrum file should be in m_fileModel; this catches any code path that
+  //  displays a SpecMeas without adding it (or after removing it).
+  viewer->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType,
+                    std::shared_ptr<SpecMeas> meas, std::set<int>, std::vector<std::string> ){
+    ensureInFileModel( meas );
+  } );
 
   m_foregroundDragNDrop->fileDrop().connect( this, [this]( const std::string &name, const std::string &spoolName ){
     handleFileDrop( name, spoolName, SpectrumType::Foreground );
@@ -1780,6 +1796,16 @@ SpecMeasManager::~SpecMeasManager()
 
   if( m_nonSpecFileDialog )
     closeNonSpecFileDialog();
+
+  // The session is ending, so there is no need for the headers to write the files they track to
+  //  temporary files when the SpecMeas objects are destructed (e.g., when `m_tempSpectrumInfoCache`
+  //  is destructed below) - the headers would just delete the files right after.
+  for( int row = 0; m_fileModel && (row < m_fileModel->rowCount()); ++row )
+  {
+    const shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
+    if( header && header->m_aboutToBeDeletedConnection.isConnected() )
+      header->m_aboutToBeDeletedConnection.disconnect();
+  }//for( loop over files )
 
   // These WResources are solely owned by this manager (no widget parent); the unique_ptr members free
   //  them (and any temp files they hold) when the manager is destroyed.
@@ -2364,6 +2390,16 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
     result.candidates.push_back( NonSpecFileKind::LlmConfigXml );
 #endif
 
+  // --- Color theme JSON from the "Color Themes" window.  ColorTheme::toJson writes keys in sorted
+  //  order, so "JsonVersion" leads the file, and nothing else we read uses that key. ---
+  {
+    size_t pos = 0;
+    while( (pos < headerLen) && std::isspace( header[pos] ) )
+      ++pos;
+    if( (pos < headerLen) && (header[pos] == '{') && (position_in_header( "\"JsonVersion\"" ) >= 0) )
+      result.candidates.push_back( NonSpecFileKind::ColorThemeJson );
+  }
+
   
 
 #if( USE_REL_ACT_TOOL )
@@ -2572,6 +2608,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 
       case NonSpecFileKind::BatchDecayCsv:
         handled = tryOpenBatchDecayCsv( infile, filesize );
+        break;
+
+      case NonSpecFileKind::ColorThemeJson:
+        handled = tryImportColorThemeJson( infile, filesize );
         break;
 
 #if( USE_LLM_INTERFACE )
@@ -3088,6 +3128,35 @@ bool SpecMeasManager::tryOpenBatchDecayCsv( std::ifstream &infile, const size_t 
 
   return true;
 }//tryOpenBatchDecayCsv(...)
+
+
+bool SpecMeasManager::tryImportColorThemeJson( std::ifstream &infile, const size_t fileSize )
+{
+  // Same limit as the "Color Themes" window's upload button
+  if( (fileSize == 0) || (fileSize > 64*1024) )
+    return false;
+
+  string contents( fileSize, '\0' );
+  if( !infile.read( &(contents[0]), static_cast<std::streamsize>(fileSize) ) )
+    return false;
+
+  const shared_ptr<ColorTheme> theme = make_shared<ColorTheme>();
+  try
+  {
+    ColorTheme::fromJson( contents, *theme );
+  }catch( std::exception & )
+  {
+    return false; // Not a valid theme; let the next candidate, or the "not a spectrum" message, have it
+  }
+
+  ColorThemeWindow * const window = m_viewer->showColorThemeWindow();
+  if( !window )
+    return false;
+
+  window->confirmThemeImport( theme );
+
+  return true;
+}//tryImportColorThemeJson(...)
 
 
 bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
@@ -4433,132 +4502,96 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
 
 
+std::map<std::shared_ptr<SpectraFileHeader>,std::set<int>>
+                    SpecMeasManager::samplesForIndexes( const WModelIndexSet &indexes ) const
+{
+  // A file row means all of its records, unless some of its record rows are also in `indexes`,
+  //  so we'll collect file rows separately, and only use them after we know about records rows.
+  set<shared_ptr<SpectraFileHeader>> whole_files;
+  map<shared_ptr<SpectraFileHeader>,set<int>> answer;
+
+  for( const WModelIndex &index : indexes )
+  {
+    switch( m_fileModel->level( index ) )
+    {
+      case SpectraFileModel::FileHeaderLevel:
+      {
+        const shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( index.row() );
+        if( header )
+          whole_files.insert( header );
+        break;
+      }//case SpectraFileModel::FileHeaderLevel:
+
+      case SpectraFileModel::SampleLevel:
+      {
+        const shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( index.parent().row() );
+        const int row = index.row();
+        if( header && (row >= 0) && (row < static_cast<int>(header->m_samples.size())) )
+          answer[header].insert( header->m_samples[row].sample_number );
+        break;
+      }//case SpectraFileModel::SampleLevel:
+
+      case SpectraFileModel::InvalidLevel:
+        break;
+    }//switch( m_fileModel->level( index ) )
+  }//for( const WModelIndex &index : indexes )
+
+  for( const shared_ptr<SpectraFileHeader> &header : whole_files )
+  {
+    if( answer.count( header ) )
+      continue; // Some of the files records were specifically selected; only use those
+
+    set<int> &samples = answer[header];
+    for( const SpectraHeader &spectra : header->m_samples )
+      samples.insert( spectra.sample_number );
+  }//for( const shared_ptr<SpectraFileHeader> &header : whole_files )
+
+  return answer;
+}//samplesForIndexes(...)
+
+
 std::set<int> SpecMeasManager::selectedSampleNumbers() const
 {
-  std::set<int> sample_nums;
-  const WModelIndexSet selected = m_treeView->selectedIndexes();
+  if( !m_treeView )
+    return std::set<int>{};
 
-  std::shared_ptr<SpectraFileHeader> header;
+  const map<shared_ptr<SpectraFileHeader>,set<int>> files
+                                          = samplesForIndexes( m_treeView->selectedIndexes() );
 
-  for( const WModelIndex &index : selected )
-  {
-    const int row = index.row();
-    if( row < 0 )
-      continue;
-
-    const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-    switch( indexLevel )
-    {
-      case SpectraFileModel::FileHeaderLevel:
-        header = m_fileModel->fileHeader( index.row() );
-        if( header )
-        {
-          for( const SpectraHeader &spectra : header->m_samples )
-            sample_nums.insert( spectra.sample_number );
-        }//if( header )
-      break;
-
-      case SpectraFileModel::SampleLevel:
-        header = m_fileModel->fileHeader( index.parent().row() );
-        if( header && (row<static_cast<int>(header->m_samples.size()) ) )
-          sample_nums.insert( header->m_samples[row].sample_number );
-      break;
-
-      case SpectraFileModel::InvalidLevel:
-      break;
-    } // switch( level(index) )
-  } // for( const WModelIndex &index : selected )
-
-  return sample_nums;
+  return (files.size() == 1) ? files.begin()->second : std::set<int>{};
 } // std::set<int> SpecMeasManager::selectedSampleNumbers()
 
-/**
-Returns a vector of all the selected files.  If you just need one, use selectedFile()
- 
- Also, only returns FileHeaderLevel files.  No longer returns SampleLevel or InvalidLevels.  This will thus only return the main file, and not say, sample files like in passthrough.
-**/
+
 vector<std::shared_ptr<SpectraFileHeader> > SpecMeasManager::getSelectedFiles() const
 {
-  const WModelIndexSet selected = m_treeView->selectedIndexes();
-  vector<std::shared_ptr<SpectraFileHeader> >  ret;
-  
-  if( selected.empty() )
+  vector<std::shared_ptr<SpectraFileHeader> > ret;
+  if( !m_treeView )
     return ret;
-  
-  for( WModelIndexSet::iterator iter = selected.begin(); iter!=selected.end(); ++iter )
-  {
-    std::shared_ptr<SpectraFileHeader> header;
-    
-    const WModelIndex &index = *(iter);
-    
-    const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-    switch( indexLevel )
-    {
-      case SpectraFileModel::FileHeaderLevel:
-        header = m_fileModel->fileHeader( index.row() );
-        break;
-        
-      case SpectraFileModel::SampleLevel:
-        //Do not return SampleLevel
-        continue;
-        //header = m_fileModel->fileHeader( index.parent().row() );
-        break;
-        
-      case SpectraFileModel::InvalidLevel:
-        continue;
-        break;
-    }// switch( level(index) )
-    ret.push_back(header);
-  }//for( loop over selected )
-  
-  return ret;
-}//std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
-
-//Only returns the first selected file.  use getSelectedFiles() for more than 1
-std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
-{
   const WModelIndexSet selected = m_treeView->selectedIndexes();
-
-  std::shared_ptr<SpectraFileHeader> header;
-
-  if( selected.empty() )
-    return header;
-
-  const WModelIndex &index = *(selected.begin());
-
-  const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-  switch( indexLevel )
-  {
-    case SpectraFileModel::FileHeaderLevel:
-      header = m_fileModel->fileHeader( index.row() );
-    break;
-
-    case SpectraFileModel::SampleLevel:
-      header = m_fileModel->fileHeader( index.parent().row() );
-    break;
-
-    case SpectraFileModel::InvalidLevel:
-    break;
-  } // switch( level(index) )
-
-  // XXX a logic check that should be removed!
   for( const WModelIndex &index : selected )
   {
-    std::shared_ptr<SpectraFileHeader> checkheader;
-    if( !index.parent().isValid() )
-    {
-      checkheader = m_fileModel->fileHeader( index.row() );
-    }else checkheader = m_fileModel->fileHeader( index.parent().row() );
-    if( checkheader != header )
-    {
-      passMessage( "Currently cant load samples from multiple files, sorry, will is lazy.", 3 );
-      return std::shared_ptr<SpectraFileHeader>();
-    }
-    
-  }//for( const WModelIndex &index : selected )
+    if( m_fileModel->level( index ) != SpectraFileModel::FileHeaderLevel )
+      continue;
 
-  return header;
+    const shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( index.row() );
+    if( header && (std::find( begin(ret), end(ret), header ) == end(ret)) )
+      ret.push_back( header );
+  }//for( loop over selected )
+
+  return ret;
+}//std::vector<std::shared_ptr<SpectraFileHeader>> getSelectedFiles() const
+
+
+std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
+{
+  if( !m_treeView )
+    return nullptr;
+
+  const map<shared_ptr<SpectraFileHeader>,set<int>> files
+                                          = samplesForIndexes( m_treeView->selectedIndexes() );
+
+  return (files.size() == 1) ? files.begin()->first : nullptr;
 }//shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
 
@@ -4584,9 +4617,19 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
 void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
                                     const bool doPreviousEnergyRangeCheck )
 {
-  std::shared_ptr<SpectraFileHeader> header = selectedFile();
-  std::shared_ptr<SpecMeas> meas = header ? header->parseFile() : nullptr;
-  const set<int> displaySampleNums = selectedSampleNumbers();
+  const map<shared_ptr<SpectraFileHeader>,set<int>> files
+                         = samplesForIndexes( m_treeView ? m_treeView->selectedIndexes() : WModelIndexSet() );
+  const std::shared_ptr<SpectraFileHeader> header = (files.size() == 1) ? files.begin()->first : nullptr;
+  const std::shared_ptr<SpecMeas> meas = header ? header->parseFile() : nullptr;
+  const set<int> displaySampleNums = header ? files.begin()->second : set<int>{};
+
+  // Dont un-load the current spectrum if the selection isnt a single file (the buttons that call
+  //  this function should be disabled in this case anyway); use `unDisplay(...)` to un-load.
+  if( !meas || displaySampleNums.empty() )
+  {
+    passMessage( WString::tr("smm-select-single-file"), WarningWidget::WarningMsgHigh );
+    return;
+  }
 
   WFlags<InterSpec::SetSpectrumOptions> options;
   if( doPreviousEnergyRangeCheck )
@@ -4632,10 +4675,8 @@ void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
     std::shared_ptr<SpecMeas> measurement;
     std::shared_ptr<SpectraFileHeader> header;
     const int result = setFile( display_name, spool_path, header, measurement, SpecUtils::ParserType::Auto );
-    WModelIndexSet selected;
-    WModelIndex index = m_fileModel->index( result, 0 );
-    selected.insert( index );
-    m_treeView->setSelectedIndexes( WModelIndexSet() );
+    if( m_treeView )
+      m_treeView->setSelectedIndexes( WModelIndexSet() );
 
     const bool checkIfPreviouslyOpened = true;
     const bool doPreviousEnergyRangeCheck = true;
@@ -5083,6 +5124,10 @@ void SpecMeasManager::displayFile( int row,
 
   WModelIndex index = m_fileModel->index( row, 0, WModelIndex() );
   
+  // Set to None if we switch to a copy of the file that is already open, since that copy has
+  //  already been through these checks (and its variants are what the user chose to keep).
+  VariantChecksToDo checksToDo = viewingChecks;
+  
   if( checkIfPreviouslyOpened && wApp )
   {
     //Lets check to see if the user has loaded this same spectrum in this same
@@ -5094,29 +5139,51 @@ void SpecMeasManager::displayFile( int row,
     {
       std::shared_ptr<SpectraFileHeader> oldheader
                                           = m_fileModel->fileHeader( testrow );
-      if( oldheader != header
-          && oldheader->m_uuid == header->m_uuid
+      if( oldheader && (oldheader != header)
+          && !header->m_uuid.empty()
+          && (oldheader->m_uuid == header->m_uuid)
           && oldheader->m_fileDbEntry
           && !oldheader->m_fileDbEntry->userHasModified )
       {
+        // If the old copy cant be read back (e.g., from its temporary file), we'll just use the
+        //  just-opened copy.
+        std::shared_ptr<SpecMeas> oldmeas;
+        try
+        {
+          oldmeas = oldheader->parseFile();
+        }catch( std::exception &e )
+        {
+          cerr << "SpecMeasManager::displayFile: failed to read previously opened copy: "
+               << e.what() << endl;
+        }
+        
+        if( !oldmeas )
+          continue;
+        
         cerr << "We found a copy of this file in memmorry that hasnt been "
              << "modified, switching to that" << endl;
+        // The just-opened copy hasnt been displayed, so we can just drop it, and from here on
+        //  use the old header, and its SpecMeas, for everything (including any background
+        //  loaded from the file below), so that whatever we display is in the model.
+        removeFromSpectrumInfoCache( measement_ptr, false );
         m_fileModel->removeRows( row, 1 );
-        row = testrow;
-        index = m_fileModel->index( row, 0, WModelIndex() );
-        measement_ptr = header->parseFile();
+        header = oldheader;
+        measement_ptr = oldmeas;
+        index = m_fileModel->index( header );
+        row = index.row();
         checkIfPreviouslyOpened = false;
+        checksToDo = VariantChecksToDo::None;
         break;
       }
     }//for( int row = 0; row < m_model->rowCount(); ++row )
   }//if( header && checkIfPreviouslyOpened )
   
   
-  if( viewingChecks != VariantChecksToDo::None )
+  if( checksToDo != VariantChecksToDo::None )
   {
     if( checkForAndPromptUserForDisplayOptions( header, measement_ptr,
                                 type, checkIfPreviouslyOpened,
-                                doPreviousEnergyRangeCheck, viewingChecks ) )
+                                doPreviousEnergyRangeCheck, checksToDo ) )
     {
       return;
     }
@@ -5166,37 +5233,39 @@ void SpecMeasManager::displayFile( int row,
               
             case SpecUtils::SourceType::Foreground:
             {
-              ++numForeground;
-              childrow = static_cast<int>( i );
-              const vector<shared_ptr<const SpecUtils::Measurement>> fores
+              // Show the first foreground sample (in preference to an earlier Unknown one)
+              if( !numForeground )
+              {
+                childrow = static_cast<int>( i );
+                const vector<shared_ptr<const SpecUtils::Measurement>> fores
                                       = measement_ptr->sample_measurements(spechead.sample_number);
-              assert( !fores.empty() );
-              for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
-                foreground_start_time = std::max( foreground_start_time, f->start_time() );
-              
-              //i = header->m_samples.size();  //first foreground, terminate loop
+                assert( !fores.empty() );
+                for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
+                  foreground_start_time = std::max( foreground_start_time, f->start_time() );
+              }//if( first foreground sample )
+
+              ++numForeground;
               break;
             }//case SpecUtils::SourceType::Foreground:
-              
+
             case SpecUtils::SourceType::Background:
             {
+              // We keep looping, so `numbackground` counts all background samples - one is only
+              //  loaded along with the foreground if it is unambiguous.
               ++numbackground;
               backrow = static_cast<int>( i );
-              
+
               if( old_back )
               {
                 back_start_time = SpecUtils::time_point_t{};
-                
+
                 const vector<shared_ptr<const SpecUtils::Measurement>> backs
                                       = measement_ptr->sample_measurements(spechead.sample_number);
                 assert( !backs.empty() );
                 for( const shared_ptr<const SpecUtils::Measurement> &b : backs )
                   back_start_time = std::max( back_start_time, b->start_time() );
               }//if( numForeground )
-                
-              if( numForeground )
-                i = header->m_samples.size();  //We have foreground and background, terminate loop
-              
+
               break;
             }//case SpecUtils::SourceType::Background:
             
@@ -5442,12 +5511,26 @@ void SpecMeasManager::displayFile( int row,
     background_sample_numbers.clear();
   }//if( selected.empty() )
   
-  m_treeView->setSelectedIndexes( selected );
+  // Show what we're loading as selected in the Spectrum Manager (only for the user; nothing below
+  //  depends on the tables selection).
+  if( m_treeView )
+    m_treeView->setSelectedIndexes( selected );
 
   if( warningmsg.str().size() )
     passMessage( warningmsg.str(), warningmsgLevel );
   
-  loadSelected( type, doPreviousEnergyRangeCheck );
+  const set<int> sample_numbers = samplesForIndexes( selected )[header];
+  
+  WFlags<InterSpec::SetSpectrumOptions> options;
+  if( doPreviousEnergyRangeCheck )
+  {
+    options |= InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal;
+    options |= InterSpec::SetSpectrumOptions::CheckForRiidResults;
+  }
+  
+  m_viewer->setSpectrum( measement_ptr, sample_numbers, type, options );
+  addToTempSpectrumInfoCache( measement_ptr );
+  selectionChanged(); // update buttons
 
 //if 'old_meas' is the last reference to the SpecMeas object, lets go ahead
 //  and try to save it to disk for later access
@@ -5494,9 +5577,16 @@ void SpecMeasManager::displayFile( int row,
   WApplication *app = wApp;
   if( checkIfPreviouslyOpened && !!header && app )
   {
+    // Capture the destruction sentinels by value, so they can be checked after `this` is gone.
     const std::string sessionId = app->sessionId();
-    WServer::instance()->post( sessionId, [this, sessionId, header, type](){
-      this->checkIfPreviouslyOpened( sessionId, header, type, m_destructMutex, m_destructed );
+    WServer::instance()->post( sessionId, [this, sessionId, header, type,
+                                           mutex = m_destructMutex, destructed = m_destructed](){
+      {// This runs in the session, so `this` cant be destructed after this check
+        std::lock_guard<std::mutex> lock( *mutex );
+        if( *destructed )
+          return;
+      }
+      this->checkIfPreviouslyOpened( sessionId, header, type, mutex, destructed );
     } );
   }//if( checkIfPreviouslyOpened )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
@@ -5510,35 +5600,80 @@ void SpecMeasManager::setDisplayedToSelected()
 
 
 
+void SpecMeasManager::removeFile( const std::shared_ptr<SpectraFileHeader> &header,
+                                  const bool undisplay )
+{
+  const WModelIndex index = m_fileModel->index( header );
+  if( !index.isValid() )
+    return;
+
+  const std::shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
+  if( meas )
+  {
+    if( undisplay )
+    {
+      for( const SpecUtils::SpectrumType type : { SpecUtils::SpectrumType::Foreground,
+                                                  SpecUtils::SpectrumType::Background,
+                                                  SpecUtils::SpectrumType::SecondForeground } )
+      {
+        if( meas == m_viewer->measurment(type) )
+          unDisplay( type );
+      }
+    }//if( undisplay )
+
+    removeFromSpectrumInfoCache( meas, false );
+  }//if( meas )
+
+  // So the SpecMeas wont be written to a temporary file, if/when it is destructed
+  if( header->m_aboutToBeDeletedConnection.isConnected() )
+    header->m_aboutToBeDeletedConnection.disconnect();
+
+  // Undisplaying above may have changed things, so we'll get the row again
+  const WModelIndex current_index = m_fileModel->index( header );
+  if( current_index.isValid() )
+    m_fileModel->removeRows( current_index.row(), 1 );
+}//void removeFile(...)
+
+
+void SpecMeasManager::displayInPlaceOf( const std::shared_ptr<SpecMeas> &replaced,
+                                        const std::shared_ptr<SpecMeas> &replacement )
+{
+  if( !replaced || !replacement || (replaced == replacement) )
+    return;
+
+  WFlags<InterSpec::SetSpectrumOptions> options;
+  options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
+#if( USE_REMOTE_RID )
+  options |= InterSpec::SetSpectrumOptions::SkipExternalRid;
+#endif
+
+  for( const SpecUtils::SpectrumType type : { SpecUtils::SpectrumType::Foreground,
+                                              SpecUtils::SpectrumType::Background,
+                                              SpecUtils::SpectrumType::SecondForeground } )
+  {
+    if( m_viewer->measurment(type) != replaced )
+      continue;
+
+    set<int> samples = m_viewer->displayedSamples( type );
+    const set<int> &available = replacement->sample_numbers();
+    const bool haveAllSamples = std::all_of( begin(samples), end(samples),
+                                    [&available]( const int sample ){ return (available.count( sample ) > 0); } );
+    if( !haveAllSamples )
+      samples.clear();
+
+    m_viewer->setSpectrum( replacement, samples, type, options );
+  }//for( loop over spectrum types )
+}//void displayInPlaceOf(...)
+
+
 void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, const bool undisplay )
 {
-  for( int row = 0; row < m_fileModel->rowCount(); ++row )
-  {
-    std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
-    if( header->measurementIfInMemory() == meas )
-    {
-      std::shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
-      
-      if( undisplay )
-      {
-        //also unassign if it was assigned to foreground/2ndf/background
-        if( meas == m_viewer->measurment(SpecUtils::SpectrumType::Foreground) )
-          unDisplay(SpecUtils::SpectrumType::Foreground);
-        if( meas== m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground) )
-          unDisplay(SpecUtils::SpectrumType::SecondForeground);
-        if( meas == m_viewer->measurment(SpecUtils::SpectrumType::Background) )
-          unDisplay(SpecUtils::SpectrumType::Background);
-      }//if( undisplay )
-      
-      if( header->m_aboutToBeDeletedConnection.isConnected() )
-        header->m_aboutToBeDeletedConnection.disconnect();
-      
-      //This seems to cause problems, so taking this out for now
-      //removeFromSpectrumInfoCache( meas, false );
-      m_fileModel->removeRows( row, 1 );
-      return;
-    }// header->dbEntry()==remove
-  }//for( int row = 0 row < m_fileModel->rowCount(); ++row )
+  if( !meas )
+    return;
+
+  const WModelIndex index = m_fileModel->index( meas );
+  if( index.isValid() )
+    removeFile( m_fileModel->fileHeader( index.row() ), undisplay );
 }//void removeSpecMeas( std::shared_ptr<const SpecMeas> meas )
 
 
@@ -5546,83 +5681,35 @@ void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, cons
 // Used to unassign and unload spectrums just deleted from the Spectrum Manager
 void SpecMeasManager::removeSpecMeas(Dbo::ptr<UserFileInDb> remove )
 {
-  //Goes through each loaded state and checks if it's the same one as
-  //the removed UserFileInDb
+  // Collect the matching files first, since removing them changes the rows
+  vector<shared_ptr<SpectraFileHeader>> to_remove;
   for( int row = 0; row < m_fileModel->rowCount(); ++row )
   {
-    std::shared_ptr<SpectraFileHeader>  header = m_fileModel->fileHeader( row );
-    if (header->dbEntry()==remove) {
-      std::shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
-
-      
-      //also unassign if it was assigned to foreground/2ndf/background
-      if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Foreground))
-        unDisplay(SpecUtils::SpectrumType::Foreground);
-
-      if (meas==m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground))
-        unDisplay(SpecUtils::SpectrumType::SecondForeground);
-      
-      if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Background))
-        unDisplay(SpecUtils::SpectrumType::Background);
-        
-        //This seems to cause problems, so taking this out for now
-        //removeFromSpectrumInfoCache( meas, false );
-      m_fileModel->removeRows( row, 1 );
-    }// header->dbEntry()==remove
+    const shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( row );
+    if( header && (header->dbEntry() == remove) )
+      to_remove.push_back( header );
   }//for( int row = 0 row < m_fileModel->rowCount(); ++row )
-} // void SpecMeasManager::removeSelected()
+  
+  for( const shared_ptr<SpectraFileHeader> &header : to_remove )
+    removeFile( header, true );
+} // void SpecMeasManager::removeSpecMeas( Dbo::ptr<UserFileInDb> remove )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
-/**
- Now supports removing multiple selected spectra
-**/
 void SpecMeasManager::removeSelected()
 {
-    const WModelIndexSet selected = m_treeView->selectedIndexes();
-    WModelIndexSet selectedFiles;
-        
-    for( const WModelIndex &index : selected )
-    {
-        const SpectraFileModel::Level indexLevel = m_fileModel->level(index);
-        if( indexLevel == SpectraFileModel::FileHeaderLevel )
-            selectedFiles.insert( index );
-    } //for( const WModelIndex &index : selected )
-    
-    if( selectedFiles.size() < 1 )
-    {
-        cerr << "SpecMeasManager::removeSelected()\n\tThere are " << selectedFiles.size()
-        << " selected files" << endl;
-        return;
-    } // if( selectedFiles.size() != 1 )
+  // Only files whose file-row is selected are removed (the "Unload" button is only shown then)
+  const vector<shared_ptr<SpectraFileHeader>> selectedHeaders = getSelectedFiles();
+  if( selectedHeaders.empty() )
+    return;
 
-    std::vector<std::shared_ptr<SpectraFileHeader> >  selectedHeaders = getSelectedFiles();
-    
-    for( vector<std::shared_ptr<SpectraFileHeader> > ::iterator iter = selectedHeaders.begin(); iter!=selectedHeaders.end();iter++)
-    {
-        if( *iter )
-        {
-            std::shared_ptr<SpecMeas> meas = (*iter)->measurementIfInMemory();
-            removeFromSpectrumInfoCache( meas, false );
-            
-            //also unassign if it was assigned to foreground/2ndf/background
-            if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Foreground))
-                unDisplay(SpecUtils::SpectrumType::Foreground);
-            
-            if (meas==m_viewer->measurment(SpecUtils::SpectrumType::SecondForeground))
-                unDisplay(SpecUtils::SpectrumType::SecondForeground);
-            
-            if (meas==m_viewer->measurment(SpecUtils::SpectrumType::Background))
-                unDisplay(SpecUtils::SpectrumType::Background);
-        } // if( selectedHeader )
-    } //for( vector<std::shared_ptr<SpectraFileHeader> > ::iterator iter = selectedHeaders.begin(); iter!=selectedHeaders.end();iter++)
- 
+  if( m_treeView )
     m_treeView->setSelectedIndexes( WModelIndexSet() );
-    for( WModelIndexSet::reverse_iterator saveiter = selectedFiles.rbegin(); saveiter != selectedFiles.rend(); ++saveiter )
-    {
-        cout<<saveiter->row()<<endl;
-        m_fileModel->removeRows( saveiter->row(), 1 );
-    } //for( WModelIndexSet::reverse_iterator saveiter = selectedFiles.rbegin(); saveiter != selectedFiles.rend(); ++saveiter )
+
+  for( const shared_ptr<SpectraFileHeader> &header : selectedHeaders )
+    removeFile( header, true );
+
+  selectionChanged(); // update buttons
 } // void SpecMeasManager::removeSelected()
 
 
@@ -5641,7 +5728,7 @@ void SpecMeasManager::removeAllFiles()
 
 std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
 {
-  const WModelIndexSet selected = m_treeView->selectedIndexes();
+  const WModelIndexSet selected = m_treeView ? m_treeView->selectedIndexes() : WModelIndexSet();
 
   if( selected.empty() )
     throw runtime_error( "No files or samples are selected" );
@@ -5651,34 +5738,10 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
   // Note that currently the Spectrum Manager only shows records at the "sample" level, and
   //  not the {sample,detector} level.
   map<std::shared_ptr<const SpecMeas>,set<int>> files_involved;
-  for( const WModelIndex &index : selected )
+  for( const pair<const shared_ptr<SpectraFileHeader>,set<int>> &header_samples : samplesForIndexes( selected ) )
   {
-    const SpectraFileModel::Level index_level = m_fileModel->level(index);
-    
-    shared_ptr<SpectraFileHeader> header;
-    switch( index_level )
-    {
-      case SpectraFileModel::FileHeaderLevel:
-        header = m_fileModel->fileHeader( index.row() );
-        break;
-        
-      case SpectraFileModel::SampleLevel:
-        header = m_fileModel->fileHeader( index.parent().row() );
-        break;
-        
-      case SpectraFileModel::InvalidLevel:
-        break;
-    }//switch( index_level )
-    
-    if( !header )
-    {
-#if( PERFORM_DEVELOPER_CHECKS )
-      const string msg = "Failed to get header for row " + std::to_string( index.row() );
-      log_developer_error( __func__, msg.c_str() );
-#endif
-      continue;
-    }//if( !header )
-    
+    const shared_ptr<SpectraFileHeader> &header = header_samples.first;
+    const set<int> &samples = header_samples.second;
     
     const shared_ptr<const SpecMeas> file = header->parseFile();
     if( !file )
@@ -5690,39 +5753,9 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
       continue;
     }//if( !file )
     
-    
-    switch( index_level )
-    {
-      case SpectraFileModel::FileHeaderLevel:
-      {
-        set<int> &samples = files_involved[file];
-        samples = file->sample_numbers();
-        
-        break;
-      }//case SpectraFileModel::FileHeaderLevel
-        
-      
-      case SpectraFileModel::SampleLevel:
-      {
-        assert( index.row() >= 0 );
-        if( index.row() < 0 )
-          continue;
-        
-        const size_t row = static_cast<size_t>( index.row() );
-        
-        assert( row < header->m_samples.size() );
-        if( row >= header->m_samples.size() )
-          continue;
-        
-        set<int> &samples = files_involved[file];
-        samples.insert( header->m_samples[row].sample_number );
-        break;
-      }//case SpectraFileModel::SampleLevel:
-        
-      case SpectraFileModel::InvalidLevel:
-        break;
-    }//switch( indexLevel )
-  }//for( const WModelIndex &index : selected )
+    if( !samples.empty() )
+      files_involved[file] = samples;
+  }//for( loop over selected files )
   
   if( files_involved.empty() )
     throw runtime_error( "[logic error] Unable to determine contents to use." );
@@ -5741,6 +5774,9 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
     newspec->uniqueCopyContents( *parent_file );
     newspec->set_uuid( "" );
+    // The copy is a new file, so must not refer to the parent files states in the database, or
+    //  saving a state for it could overwrite the parents states.
+    newspec->clearAllDbStateId();
     
     if( samples_to_use == parent_file->sample_numbers() )
       return newspec;
@@ -5978,7 +6014,8 @@ void SpecMeasManager::newFileFromSelection()
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
-    passMessage( WString::tr("smm-failed-combine").arg(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("smm-failed-combine").arg( Wt::Utils::htmlEncode( std::string(e.what()) ) ),
+                 WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, WString::tr("smm-failed-combine").arg(e.what()).toUTF8().c_str() );
@@ -5991,14 +6028,25 @@ void SpecMeasManager::sumSelectedSpectra()
 {
   try
   {
-    shared_ptr<SpecMeas> meas = selectedToSpecMeas();
-    assert( meas );
+    const shared_ptr<SpecMeas> selection = selectedToSpecMeas();
+    assert( selection );
       
-    shared_ptr<SpecUtils::Measurement> spec = meas->sum_measurements( meas->sample_numbers(), meas->detector_names(), nullptr );
+    const shared_ptr<SpecUtils::Measurement> spec
+          = selection->sum_measurements( selection->sample_numbers(), selection->detector_names(), nullptr );
+    if( !spec )
+      throw runtime_error( WString::tr("smm-nothing-to-sum").toUTF8() );
     spec->set_sample_number( 1 );
+    
+    // We'll put the sum into a new SpecMeas that only gets the file-level information (via
+    //  `SpecFile::operator=`), and not the selections peaks, displayed samples, analysis tool
+    //  states, etc., which are keyed to the original sample numbers, and so dont apply to the sum.
+    const shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
+    meas->SpecUtils::SpecFile::operator=( *selection );
     meas->remove_measurements( meas->measurements() );
     meas->add_measurement( spec, true );
     meas->set_filename( "summed" );
+    meas->setDetector( selection->detector() );
+    meas->setPeakFitDetPrefs( selection->peakFitDetPrefs() );
     
     shared_ptr<SpectraFileHeader> header = addFile( meas->filename(), meas );
     
@@ -6014,7 +6062,7 @@ void SpecMeasManager::sumSelectedSpectra()
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
-    WString msg = WString::tr("smm-failed-sum").arg(e.what());
+    WString msg = WString::tr("smm-failed-sum").arg( Wt::Utils::htmlEncode( std::string(e.what()) ) );
     passMessage( msg, WarningWidget::WarningMsgHigh );
     
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -6044,8 +6092,6 @@ void SpecMeasManager::selectionChanged()
     m_setButton->hide();
   }else
   {
-    m_deleteButton->show();
-    
     set<shared_ptr<const SpectraFileHeader>> files;
     bool fullFileSelected = false;
     for( const WModelIndex &index : selected )
@@ -6147,6 +6193,9 @@ void SpecMeasManager::selectionChanged()
       m_saveButton->setHidden( !enableSave );
     } // if( selectedFiles.size() == 1 )
     
+    // "Unload" removes whole files, so is only offered when a file row is selected
+    m_deleteButton->setHidden( selectedFiles.empty() );
+    
     if( selected.size() != toSelect.size() )
       m_treeView->setSelectedIndexes( toSelect );
   }//if( selected.empty() ) / else
@@ -6172,11 +6221,11 @@ void SpecMeasManager::deleteSpectrumManager()
   if( !m_spectrumManagerWindow )
     return;
   
-  // Remove m_treeView from the window before deleting, so it survives for reuse.
-  // Release the unique_ptr so m_treeView is not deleted (we manage its lifetime manually).
-  m_spectrumManagertreeDiv->removeWidget( m_treeView ).release();
+  // Take the table back from the window before deleting it, so it survives for reuse.
+  if( m_treeView )
+    m_parkedTreeView = m_spectrumManagertreeDiv->removeWidget( m_treeView.get() );
   AuxWindow::deleteAuxWindow( m_spectrumManagerWindow.get() );
-  m_spectrumManagerWindow = nullptr;
+  assert( !m_spectrumManagerWindow );
   
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -6208,8 +6257,9 @@ WContainerWidget *SpecMeasManager::createTreeViewDiv()
   m_spectrumManagertreeDiv->setStyleClass( "treeDiv" );
   m_spectrumManagertreeDiv->setOverflow( Overflow::Auto );
 
+  assert( m_parkedTreeView && (m_parkedTreeView.get() == m_treeView.get()) );
   m_treeView->setHeight( WLength(98.0,WLength::Unit::Percentage) );
-  m_spectrumManagertreeDiv->addWidget( std::unique_ptr<WWidget>( m_treeView ) );
+  m_spectrumManagertreeDiv->addWidget( std::move(m_parkedTreeView) );
 
   
 
@@ -6357,12 +6407,12 @@ std::shared_ptr<SpectraFileModel> SpecMeasManager::modelShared()
 
 RowStretchTreeView *SpecMeasManager::treeView()
 {
-  return m_treeView;
+  return m_treeView.get();
 } // RowStretchTreeView *SpecMeasManager::treeView()
 
 const RowStretchTreeView *SpecMeasManager::treeView() const
 {
-  return m_treeView;
+  return m_treeView.get();
 } // const RowStretchTreeView *SpecMeasManager::treeView() const
 
 
@@ -6728,7 +6778,12 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
 #endif
 
     WServer::instance()->post( sessionID,
-                              [this, header, type, modifiedFiles, unModifiedFiles, userStatesWithFile](){
+                              [this, header, type, modifiedFiles, unModifiedFiles, userStatesWithFile, mutex, destructed](){
+                                {// Runs in the session; make sure we havent been destructed since posting
+                                  std::lock_guard<std::mutex> lock( *mutex );
+                                  if( *destructed )
+                                    return;
+                                }
                                 showPreviousSpecFileUsesDialog( header, type, modifiedFiles, unModifiedFiles, userStatesWithFile );
                               } );
     
@@ -6750,16 +6805,37 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::addFile( const std::string &
 {
   if( !measurement )
     throw runtime_error( "SpecMeasManager::addFile(): invalid input" );
-  
+
+  // Dont add a second row for a file already in the model
+  const WModelIndex existing = m_fileModel->index( measurement );
+  if( existing.isValid() )
+    return m_fileModel->fileHeader( existing.row() );
+
   std::shared_ptr<SpectraFileHeader> header
         = std::make_shared<SpectraFileHeader>( false, m_viewer );
   header->setMeasurmentInfo( measurement );
-  
+
   addToTempSpectrumInfoCache( measurement );
   m_fileModel->addRow( header );
-  
+
   return header;
 }//std::shared_ptr<SpectraFileHeader> SpecMeasManager::addFile(...)
+
+
+void SpecMeasManager::ensureInFileModel( const std::shared_ptr<SpecMeas> &meas )
+{
+  if( !meas || m_fileModel->index( meas ).isValid() )
+    return;
+
+#if( PERFORM_DEVELOPER_CHECKS && !BUILD_AS_UNIT_TEST_SUITE )
+  const string msg = "A displayed spectrum file ('" + meas->filename() + "') was not in the"
+                     " file model; adding it.  Whatever displayed it should have added it first.";
+  log_developer_error( __func__, msg.c_str() );
+#endif
+
+  // `setMeasurmentInfo(...)` (in `addFile(...)`) will set the header display name from the filename
+  addFile( meas->filename(), meas );
+}//void ensureInFileModel( const std::shared_ptr<SpecMeas> &meas )
 
 
 int SpecMeasManager::setFile( const std::string &displayName,
@@ -6812,13 +6888,14 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType )
 {
-  return loadFromFileSystem( name, type, parseType, true );
+  return loadFromFileSystem( name, type, parseType,
+                             VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
 }
 
 
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType,
-                                         bool checkIfPreviouslyOpened )
+                                         const VariantChecksToDo viewingChecks )
 {
   if( m_previousStatesDialog )
     handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
@@ -6833,13 +6910,10 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     if( row < 0 )
       throw runtime_error( "invalid file" );
      
-    WModelIndexSet selected;
-    WModelIndex index = m_fileModel->index( row, 0 );
-    selected.insert( index );
-    m_treeView->setSelectedIndexes( WModelIndexSet() );
+    if( m_treeView )
+      m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-    displayFile( row, measurement, type, true, true, 
-              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
+    displayFile( row, measurement, type, true, true, viewingChecks );
   }catch( const std::exception &e )
   {
     {
@@ -6878,10 +6952,8 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<Spec
   {
     std::shared_ptr<SpectraFileHeader> header;
     int result = setFile( origName, fileName, header, measurement, SpecUtils::ParserType::Auto );
-    WModelIndexSet selected;
-    WModelIndex index = m_fileModel->index( result, 0 );
-    selected.insert( index );
-    m_treeView->setSelectedIndexes( WModelIndexSet() );
+    if( m_treeView )
+      m_treeView->setSelectedIndexes( WModelIndexSet() );
 
     //passMessage( "Successfully opened file.", 0 );
 
@@ -7037,33 +7109,32 @@ void SpecMeasManager::startSaveSelected()
   // We shouldnt see these error messages (unless there is a logic error), so we
   //  wont internationalize.
   
-  vector<shared_ptr<SpectraFileHeader>> files = getSelectedFiles();
-  if( files.empty() )
+  // The selection may be of the file row, or just some of its records
+  const map<shared_ptr<SpectraFileHeader>,set<int>> files
+                       = samplesForIndexes( m_treeView ? m_treeView->selectedIndexes() : WModelIndexSet() );
+  if( files.size() != 1 )
   {
-    passMessage( "No files selected for export.", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("smm-select-single-file"), WarningWidget::WarningMsgHigh );
     return;
   }
   
-  if( files.size() > 1 )
+  const shared_ptr<SpectraFileHeader> &header = files.begin()->first;
+  const set<int> &sample_numbers = files.begin()->second;
+  
+  shared_ptr<SpecMeas> spec;
+  try
   {
-    passMessage( "More than one files selected for export; not allowed.", WarningWidget::WarningMsgHigh );
+    spec = header ? header->parseFile() : nullptr;
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("smm-err-export").arg( Wt::Utils::htmlEncode( std::string(e.what()) ) ),
+                 WarningWidget::WarningMsgHigh );
     return;
   }
   
-  shared_ptr<SpectraFileHeader> header = files.front();
-  
-  
-  shared_ptr<SpecMeas> spec = header ? header->parseFile() : nullptr;
-  if( !spec )
+  if( !spec || sample_numbers.empty() )
   {
     passMessage( "Programming logic error: couldn't locate spectrum file to export.", WarningWidget::WarningMsgHigh );
-    return;
-  }
-  
-  const set<int> sample_numbers = selectedSampleNumbers();
-  if( sample_numbers.empty() )
-  {
-    passMessage( "Error determining sample numbers to export.", WarningWidget::WarningMsgHigh );
     return;
   }
   

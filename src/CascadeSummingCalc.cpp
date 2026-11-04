@@ -53,6 +53,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <algorithm>
 #include <stdexcept>
 
 #include "SandiaDecay.h"
@@ -228,6 +229,32 @@ namespace
 }//namespace
 
 
+namespace
+{
+  /** Cascade sets whose members together cover every emission any evaluation of `nuc` can query, at
+   ANY age: each member of the decay chain enumerated on its own (pure parent, age zero), so every
+   branch of the chain appears once.  The corrections age a chain from a pure parent, which has no
+   progeny at all at age zero; and SandiaDecay's activities of deep, slow-growing progeny underflow
+   to zero at small ages - so enumerating at the source age (or any one age) is not a superset over
+   the ages an age fit may move through.
+   */
+  vector<shared_ptr<const vector<ceelo::DecayCascade>>> chain_cascades(
+                                                          const SandiaDecay::Nuclide *nuc )
+  {
+    vector<shared_ptr<const vector<ceelo::DecayCascade>>> answer;
+    for( const SandiaDecay::Nuclide * const member : nuc->descendants() )
+    {
+      ceelo::cascade_adapter::CascadeOptions opts;
+      opts.age_seconds = 0.0;
+      opts.prompt_equilibrium = false;
+      answer.push_back( make_shared<const vector<ceelo::DecayCascade>>(
+                                      ceelo::cascade_adapter::build_cascades( member, opts ) ) );
+    }
+    return answer;
+  }//chain_cascades(...)
+}//namespace
+
+
 std::vector<double> CascadeSummingCalc::partnerEnergies(
               const std::vector<std::pair<const SandiaDecay::Nuclide *,double>> &nuclide_ages )
 {
@@ -236,10 +263,8 @@ std::vector<double> CascadeSummingCalc::partnerEnergies(
   {
     if( !na.first )
       continue;
-    ceelo::cascade_adapter::CascadeOptions opts;
-    opts.age_seconds = na.second / PhysicalUnits::second;
-    all.push_back( make_shared<const vector<ceelo::DecayCascade>>(
-                                 ceelo::cascade_adapter::build_cascades( na.first, opts ) ) );
+    const vector<shared_ptr<const vector<ceelo::DecayCascade>>> sets = chain_cascades( na.first );
+    all.insert( end(all), begin(sets), end(sets) );
   }
 
   return partner_energies_of( all );
@@ -259,7 +284,8 @@ CascadeSummingCalc::CascadeSummingCalc(
               const std::shared_ptr<const DetectorPeakResponse> &drf,
               const double shield_fracH,
               const bool shields_present,
-              const std::string &data_directory )
+              const std::string &data_directory,
+              const std::vector<const SandiaDecay::Nuclide *> &age_fit_nuclides )
 {
   if( !drfHasNeededInfo(drf) )
     throw runtime_error( "Cascade summing correction requires the detector"
@@ -278,12 +304,39 @@ CascadeSummingCalc::CascadeSummingCalc(
   }
 
   // Pre-enumerate cascades at the starting ages, and collect every emission
-  //  energy an evaluation can query (gammas, vacancy K/L x-ray lines, 511).
+  //  energy an evaluation can query (gammas, vacancy K/L x-ray lines, 511) - at any age, for a
+  //  nuclide whose age may be fit (see chain_cascades()).
   vector<shared_ptr<const vector<ceelo::DecayCascade>>> all_cascades;
   for( const pair<const SandiaDecay::Nuclide *,double> &na : nuclide_initial_ages )
+  {
     all_cascades.push_back( cascades( na.first, na.second ) );
+    const bool age_may_change = (std::find( begin(age_fit_nuclides), end(age_fit_nuclides), na.first )
+                                  != end(age_fit_nuclides));
+    if( age_may_change )
+    {
+      const vector<shared_ptr<const vector<ceelo::DecayCascade>>> sets = chain_cascades( na.first );
+      all_cascades.insert( end(all_cascades), begin(sets), end(sets) );
+    }
+  }
 
   m_partner_energies = partner_energies_of( all_cascades );
+
+  // The detector-side constants of every partner energy; see #partnerFepIntrinsic.
+  for( const double energy : m_partner_energies )
+  {
+    double fep_int = 0.0, tot_int = 0.0;
+    try
+    {
+      fep_int = drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+      // CeeLo-aware, and returns 0 (rather than throwing) when the DRF has no total-efficiency
+      //  info - the CeeLo-response case, where the total lives in the response, not a separate curve.
+      tot_int = drf->totalIntrinsicEfficiencyAny( static_cast<float>(energy) );
+    }catch( std::exception & )
+    {
+    }
+    m_partner_fep_int.push_back( std::max( 0.0, fep_int ) );
+    m_partner_tot_int.push_back( std::max( 0.0, tot_int ) );
+  }//for( partner energies )
 
   if( shields_present )
   {
@@ -327,6 +380,8 @@ CascadeSummingCalc::CascadeSummingCalc( const CascadeSummingCalc &other,
                     const std::vector<std::pair<double,double>> &peak_energy_widths,
                     const double photopeak_cluster_sigma )
   : m_partner_energies( other.m_partner_energies ),
+    m_partner_fep_int( other.m_partner_fep_int ),
+    m_partner_tot_int( other.m_partner_tot_int ),
     m_scatter( other.m_scatter )
 {
   // Windows are the only peak-dependent state; rebuild just those.
@@ -541,7 +596,7 @@ std::function<double(double)> CascadeSummingCalc::interpolatedEff(
 }//interpolatedEff(...)
 
 
-std::shared_ptr<const std::vector<ceelo::DecayCascade>> CascadeSummingCalc::cascades(
+CascadeSummingCalc::CachedCascades CascadeSummingCalc::cachedCascades(
                             const SandiaDecay::Nuclide *nuc, const double age ) const
 {
   if( !nuc )
@@ -556,17 +611,38 @@ std::shared_ptr<const std::vector<ceelo::DecayCascade>> CascadeSummingCalc::casc
       return pos->second;
   }
 
+  // Age the chain from a pure parent, exactly as the fit ages its own lines
+  //  (NuclideMixture::addNuclideByActivity, then the source age) - not with SandiaDecay's prompt
+  //  equilibrium, which would give e.g. U-234 its whole Ra-226 chain, and young Th-232 its full
+  //  chain.  Other defaults: include_xrays, vacancy_xray_model, include_annihilation and
+  //  angular_correlations all on.
   ceelo::cascade_adapter::CascadeOptions opts;
   opts.age_seconds = age / PhysicalUnits::second;
-  //defaults: prompt_equilibrium, include_xrays, vacancy_xray_model,
-  // include_annihilation, angular_correlations all on.
+  opts.prompt_equilibrium = false;
 
-  auto casc = make_shared<vector<ceelo::DecayCascade>>(
+  CachedCascades entry;
+  entry.cascades = make_shared<const vector<ceelo::DecayCascade>>(
                           ceelo::cascade_adapter::build_cascades( nuc, opts ) );
+  entry.model = make_shared<const ceelo::AnalyticCascadeModel>( entry.cascades );
 
+  // If another thread filled this bucket meanwhile, use its entry, so every evaluation in a bucket
+  //  sees the same cascades (callers memoise per bucket - see #ageCacheBucket).
   std::lock_guard<std::mutex> lock( m_cascade_mutex );
-  m_cascades[key] = casc;
-  return casc;
+  return m_cascades.emplace( key, entry ).first->second;
+}//cachedCascades(...)
+
+
+std::shared_ptr<const std::vector<ceelo::DecayCascade>> CascadeSummingCalc::cascades(
+                            const SandiaDecay::Nuclide *nuc, const double age ) const
+{
+  return cachedCascades( nuc, age ).cascades;
 }//cascades(...)
+
+
+std::shared_ptr<const ceelo::AnalyticCascadeModel> CascadeSummingCalc::cascadeModel(
+                            const SandiaDecay::Nuclide *nuc, const double age ) const
+{
+  return cachedCascades( nuc, age ).model;
+}//cascadeModel(...)
 
 }//namespace GammaInteractionCalc

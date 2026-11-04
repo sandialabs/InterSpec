@@ -50,7 +50,10 @@ namespace MakeDrfCalc
      (just a diameter, and optionally a setback). */
     std::shared_ptr<const ceelo::GeometryDescriptor> geometry;
 
-    /** Detector (crystal) diameter, PhysicalUnits.  Used by the flat-disk model, and recorded on
+    /** The diameter the efficiency curve is quoted against, PhysicalUnits - the DRF's stated
+     detector diameter: the crystal's for a plain flat disk, the whole object's
+     (2*transverse_half_extent) for Make Detector Response's geometry mode.  Used by the flat-disk
+     model, as the far-field footing of the kernel factor (see #intrinsicFitPoints), and recorded on
      the DRF either way. */
     double diameter = 0.0;
 
@@ -67,8 +70,9 @@ namespace MakeDrfCalc
   /** The far-field intrinsic efficiency each absolute measured point corresponds to, ready to be
    fit: absolute efficiency divided by the geometric factor of its own source distance - the
    flat-disk solid angle fraction, or with a full geometry the kernel factor of
-   CeeLoUtils::GeometryKernel::intrinsicFactor (so points taken at different distances land on one
-   curve, near-field effects included).  A point's distance uncertainty becomes a fractional
+   CeeLoUtils::GeometryKernel::intrinsicFactor quoted against `geom.diameter` (so points taken at
+   different distances land on one curve, near-field effects included, that the DRF's flat-disk
+   model reads back in the far field).  A point's distance uncertainty becomes a fractional
    efficiency uncertainty through the factor's distance slope, correlated within its source.
 
    Energies are keV, or MeV when `inMeV`.  Points without a distance are skipped unless

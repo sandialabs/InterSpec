@@ -73,6 +73,10 @@ ANGULAR_SPECS = (
     ("scattering_function", 27, 504, "log_linear"),
 )
 RUNTIME_ANGULAR_SPECS = (
+    # F(x,Z) is emitted at runtime because the environment-scatter next-event
+    # estimator needs to EVALUATE the coherent angular distribution at an
+    # arbitrary angle, which the offline-packed sampling CDF cannot serve.
+    ("form_factor", 27, 502, "log_log"),
     ("scattering_function", 27, 504, "log_linear"),
 )
 
@@ -849,9 +853,11 @@ def emit_cpp(
 /// needed by the committed gates. Values use per-curve uint16 packing; the
 /// Rayleigh total cross sections share one adaptive energy grid per four
 /// adjacent elements; other photon processes use bit-exact pooled coordinates.
-/// The normalized Rayleigh sampling CDF is generated offline as uint16, and its
-/// source form-factor curve is not emitted at runtime. No Geant4/G4EMLOW data
-/// is read or emitted.
+/// The normalized Rayleigh sampling CDF is generated offline as uint16; its
+/// source form-factor curve F(x,Z) is ALSO emitted at runtime, because the
+/// environment-scatter next-event estimator must evaluate the coherent angular
+/// distribution at a fixed angle, which a sampling CDF cannot serve. No
+/// Geant4/G4EMLOW data is read or emitted.
 
 #include "cross_sections/photon_epics_data.h"
 
@@ -992,7 +998,7 @@ def report_rows(
     for name, _, _, mode in ANGULAR_SPECS:
         curves = [angular[z][name] for z in range(1, PHOTON_Z_MAX + 1)]
         counts = [len(curve.argument) for curve in curves]
-        runtime_emitted = name != "form_factor"
+        runtime_emitted = name in {n for n, _, _, _ in RUNTIME_ANGULAR_SPECS}
         runtime_counts = counts if runtime_emitted else [0] * len(counts)
         rows.append({
             "process": name,

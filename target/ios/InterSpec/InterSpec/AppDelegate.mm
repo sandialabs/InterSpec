@@ -139,7 +139,7 @@ std::unique_ptr<Wt::WApplication> createThisApplication(const Wt::WEnvironment& 
     static const char *argv0 = "--docroot";
     static const char *argv1 = ".";
     static const char *argv4 = "-c";
-    static const char *argv5 = "./data/config/wt_config_mobile.xml";
+    static const char *argv5 = "./data/config/wt_config_ios.xml";
     static const char *argv6 = "--accesslog=-";
     static const char *argv7 = "--tempdir";
     static const char *argv8 = tmpdirstr.c_str();
@@ -419,6 +419,13 @@ std::unique_ptr<Wt::WApplication> createThisApplication(const Wt::WEnvironment& 
   //Called when the application is about to terminate. Save data if appropriate.
   //  See also applicationDidEnterBackground:.
   NSLog(@"applicationWillTerminate");
+
+  //We get here if the app is ended while still running - e.g., the user swipes it away while the
+  //  background task in applicationDidEnterBackground: is waiting to stop the server - so stop it now,
+  //  which saves the session state (iOS gives us about 5 seconds).  Clearing isInBackground stops that
+  //  task from doing it too; if it does anyway, stopping the server again does nothing.
+  self.isInBackground = NO;
+  [self.viewController enteredBackground];
 }
 
 

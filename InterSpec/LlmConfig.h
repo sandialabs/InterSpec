@@ -49,7 +49,7 @@ enum class AgentType : int
   NuclideId,
   ActivityFit,
   Isotopics,
-  DeepResearch,
+  KnowledgeBase,   // Answers domain-knowledge questions from curated `llm_knowledge` skills
   EnergyCalibration,
   SpectrumTimeHistory,
   InSitu,          // Specialized agent for in-situ gamma spectrometry surface/soil contamination analysis
@@ -165,6 +165,7 @@ public:
     std::string systemPrompt; // System prompt for this agent
     std::vector<AgentType> availableForAgents; // List of agent types that can invoke this agent (empty = all agents can invoke)
     std::shared_ptr<AgentStateMachine> state_machine; // Optional state machine for workflow guidance (nullptr if not used)
+    bool requiresForeground = false; // If true, invoking this agent is refused (no LLM call) when no foreground is loaded
   };//struct AgentConfig
 
   /** Configuration for a tool with role-specific descriptions */
@@ -257,6 +258,11 @@ public:
     /** The canonical attribute string for a HttpBackend (returns a static literal). */
     static const char *httpBackendToString( HttpBackend backend );
 
+    /** Parse a `reasoning` attribute value: "true"/"1"/"yes", "false"/"0"/"no", or an effort level
+     "low"/"medium"/"high" (case-insensitive).  Returns an empty optional if not recognized.
+     */
+    static std::optional<std::variant<bool,ReasoningEffort>> parseReasoning( std::string str );
+
     /** Per-model configuration within an ApiProvider. */
     struct ModelInfo
     {
@@ -321,8 +327,20 @@ public:
        the `<ApiProvider>` element; purely additive, so the `LlmApi` version was not bumped. */
       std::optional<HttpBackend> httpBackend;
 
+      /** Optional short text shown above the assistant's input field while this provider is active
+       (e.g., an organization's usage notice); empty means no banner.  Read from an optional
+       `<Banner>` child element of `<ApiProvider>`; purely additive, so the `LlmApi` version was
+       not bumped. */
+      std::string banner;
+
       std::vector<ModelInfo> models;
       size_t activeModelIndex = 0;  // Index of the active model; resolved at parse time
+
+      /** Index of the model that grades LLM benchmark answers (`judge="true"` on a `<Model>`); when
+       unset, the model under test grades its own answers.  Only meaningful for the active provider,
+       since the judge uses the same endpoint and token as the model it grades.
+       */
+      std::optional<size_t> judgeModelIndex;
     };//struct ApiProvider
 
     bool enabled = false;
@@ -331,32 +349,32 @@ public:
      At the moment, this is a seperate service that is not distributed, so it likely will not be of use to anyone besides the primary InterSpec developer.
 
      This field will be a value like: "http://localhost:8000/query", which if you fill it out, will cause the
-     DeepResearch sub-agent to have access to the `query_deep_research_endpoint` tool-call, and post a message
+     KnowledgeBase sub-agent to have access to the `query_rag_endpoint` tool-call, and post a message
      formatted like:
      ```
      {"query": "what is the primary use of Ba133?", "model": "openai/gpt-oss-120b", "corpora": ["example_corpra"]}
      ```
 
-     If you leave this field blank, the DeepResearch sub-agent still remains available, but without
+     If you leave this field blank, the KnowledgeBase sub-agent is still available if any skills are found, but without
      the remote endpoint query tool-call.
      */
-    std::string deep_research_url;
+    std::string rag_url;
 
-    /** Model identifier sent as the `model` field of the deep-research POST body.
+    /** Model identifier sent as the `model` field of the RAG endpoint POST body.
 
      This names a model the *remote* research service understands (e.g., "openai/gpt-oss-120b"); it is
      unrelated to the provider/model InterSpec itself talks to.  Empty means use the built-in default.
-     Only used when `deep_research_url` is non-empty.
+     Only used when `rag_url` is non-empty.
      */
-    std::string deep_research_model;
+    std::string rag_model;
 
-    /** Corpora for the deep-research service to search, sent as the `corpora` array.
+    /** Corpora for the RAG service to search, sent as the `corpora` array.
 
      The remote service validates these against a fixed list of corpus names, and has renamed its corpus
      before, so this is configurable to survive a rename without needing a rebuild.  Empty means use the
-     built-in default.  Only used when `deep_research_url` is non-empty.
+     built-in default.  Only used when `rag_url` is non-empty.
      */
-    std::vector<std::string> deep_research_corpora;
+    std::vector<std::string> rag_corpora;
 
     /** System prompt used for context compaction (summarization of older conversation history).
 
@@ -416,6 +434,14 @@ public:
     std::vector<ApiProvider> providers;
     size_t activeProviderIndex = 0;  // Index of the active provider; resolved at parse time
 
+    /** True if the assistant is enabled, and the active provider has an endpoint set.
+     Safe to call when there are no providers (e.g., when the user has not yet created a config).
+     */
+    bool isConfigured() const
+    {
+      return enabled && (activeProviderIndex < providers.size()) && !apiEndpoint().empty();
+    }
+
     // Convenience accessors for the active provider and model
     const ApiProvider &activeProvider() const { return providers.at( activeProviderIndex ); }
     const ModelInfo &activeModel() const { return activeProvider().models.at( activeProvider().activeModelIndex ); }
@@ -423,6 +449,15 @@ public:
     const std::string &apiEndpoint() const { return activeProvider().apiEndpoint; }
     const std::string &bearerToken() const { return activeProvider().bearerToken; }
     const std::string &model() const { return activeModel().name; }
+
+    /** Makes the model named `name` the active provider's active model, adding it to the provider
+     (with settings from the `LlmModelPresets`, where it has a preset for it) if it is not listed.
+     Used to grade with a different model, or to try a model for a single run, without needing it
+     in llm_config.xml.
+     @returns The index of the model in the active provider's `models`.
+     @throws std::runtime_error if `name` is empty, or there is no active provider.
+     */
+    size_t selectModel( const std::string &name );
     bool supportsImages() const { return activeModel().supportsImages; }
     const std::variant<bool, ReasoningEffort> &reasoning() const { return activeModel().reasoning; }
     int maxTokens() const { return activeModel().maxTokens; }
@@ -488,30 +523,106 @@ public:
      an MCP client directly invoke a specialized agent (NuclideId, ActivityFit, etc.) with a prompt.
      */
     bool allowAgentInvocation = false;
+
+    /** Settings used only by the multi-session MCP HTTP server (target/mcp_http; see
+     `McpSessionManager`).  Read from the optional
+     `<AgentServer>` child of `<McpServer>`; absent elements keep these defaults.
+     */
+    struct AgentServer
+    {
+      size_t maxSessions = 8;
+      int sessionIdleTimeoutSeconds = 1800;
+      int sessionMaxLifetimeSeconds = 14400;
+
+      /** Root that holds one `<YYYY-MM-DD>_<session>/{input,output,logs}` directory per session. */
+      std::string exchangeDirectory = "/exchange";
+
+      /** If false, a session's directory is deleted when the session ends. */
+      bool keepSessionFiles = false;
+
+      uint64_t maxUploadBytes = 256ull * 1024 * 1024;
+      uint64_t maxSessionBytes = 1024ull * 1024 * 1024;
+      uint64_t maxImageBytes = 5ull * 1024 * 1024;
+
+      /** Base of the upload/download URLs handed to clients (e.g., "https://host/interspec");
+       if empty, they are built from the request's Host header.
+       */
+      std::string publicBaseUrl;
+
+      /** Chromium/Chrome executable that hosts the sessions; if empty, a list of usual locations
+       is searched.
+       */
+      std::string browserPath;
+    };//struct AgentServer
+
+    /** Present only if the config file has an `<AgentServer>` element (so saving a desktop config
+     never adds one).
+     */
+    std::optional<AgentServer> agentServer;
   };//struct McpServer
-  
+
 public:
   LlmApi llmApi;
   McpServer mcpServer;
 
   std::vector<AgentConfig> agents;  // Agent-specific configurations
   std::vector<ToolConfig> tools;    // Tool configurations with role-specific descriptions
-  
+
+  /** True if any value in the loaded `llm_config.xml` came from an `env(...)` reference; such a
+   config must not be saved back, as that would write the (secret) values into the file.
+   */
+  bool usesEnvReferences = false;
+
+  /** Set the directory that is searched before the writable and static data directories for the
+   LLM config files (see `configFilePath()`), and the `llm_knowledge/` directory.
+   Intended for deployments that mount their configuration (`--llm-config-dir`).  Empty to unset.
+   */
+  static void setConfigDirectory( const std::string &dir );
+
+  /** The directory set by `setConfigDirectory()`, or empty if none. */
+  static std::string configDirectory();
+
+  /** Resolves an `env(NAME)` or `env(NAME,default)` reference.
+
+   Only a value that is entirely such a reference (ignoring surrounding whitespace) is resolved; any
+   other value is returned unchanged, with `wasReference` set false.  NAME must start with
+   "INTERSPEC_" (so a shared config file can not read unrelated secrets from the environment).
+
+   @throws std::runtime_error if the reference names a disallowed variable, or the variable is unset
+           and no default is given.
+   */
+  static std::string resolveEnvReference( const std::string &value, bool &wasReference );
+
+  /** Returns the path to use for an LLM-related config/data file: the copy in `configDirectory()`
+   if one is set and has the file, else the copy in InterSpec::writableDataDirectory() if one
+   exists there (for builds that have one), otherwise the path in InterSpec::staticDataDirectory()
+   (which may or may not exist).
+   */
+  static std::string configFilePath( const std::string &filename );
+
   /** Load configuration from XML files with fallback logic.
 
    Tries to load from:
+   0. LlmConfig::configDirectory() + "/" + {filename}, if a config directory is set
    1. InterSpec::writableDataDirectory() + "/" + {filename}
    2. InterSpec::staticDataDirectory() + "/" + {filename}
 
+   When InterSpec runs as an MCP agent server, `llm_config.xml` must be in the config directory (no
+   fallback), and the native HTTP backend is forced, so API keys never reach a browser.  The stdio
+   MCP server also forces the native backend, and always has the MCP server enabled.
+
    Config files loaded:
-   - "llm_config.xml" - API and MCP server settings
+   - "llm_config.xml" - API and MCP server settings.  This file is not distributed with InterSpec; it
+     is written to the writable data directory by the "LLM Provider Settings" window.  If it does not
+     exist, a default config is returned, with the LLM assistant and MCP server both disabled (and no
+     providers), so the assistant will prompt the user to configure a provider.
    - "llm_tools_config.xml" - Tool definitions
    - "llm_agent_{AgentName}.xml" - Per-agent configuration files (e.g., llm_agent_NuclideId.xml)
 
    Each agent is loaded from its own file, allowing users to override individual agents
    by placing a modified copy in the writable data directory.
 
-   If a user config file exists, but is invalid, throws exception.
+   If a config file exists, but is invalid, throws exception.
 
    @return LlmConfig instance with loaded settings.
    */
@@ -519,11 +630,15 @@ public:
   
   /** Load LLM API and MCP server configuration from XML file.
 
+   Values that are entirely an `env(...)` reference are resolved first (see `resolveEnvReference`).
+
    @param llmConfigPath Path to the llm_config.xml file
+   @param usesEnvReferences If non-null, set to whether any `env(...)` reference was resolved.
    @return pair of LlmApi and McpServer settings loaded from XML
    @throws std::runtime_error if file cannot be parsed
    */
-  static std::pair<LlmApi, McpServer> loadApiAndMcpConfigs( const std::string &llmConfigPath );
+  static std::pair<LlmApi, McpServer> loadApiAndMcpConfigs( const std::string &llmConfigPath,
+                                                            bool *usesEnvReferences = nullptr );
   
   /** Serialize a configuration to an XML string.
 

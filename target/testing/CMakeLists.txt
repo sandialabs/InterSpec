@@ -611,6 +611,14 @@ add_test( NAME TDetectionLimitState
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Needs a Wt test session: checks the Spectrum Manager keeps displayed files in its file model.
+add_executable( test_SpecMeasManager test_SpecMeasManager.cpp )
+target_link_libraries( test_SpecMeasManager PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+add_test( NAME TSpecMeasManager
+  COMMAND $<TARGET_FILE:test_SpecMeasManager> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # The deconvolution coverage study is a report, not a gate: it is opt-in, it is held to a
 #  wall-clock budget rather than a fixed trial count, and `DeconCoverageGate` inside
 #  test_DetectionLimit is what actually guards against regressions on every build.
@@ -815,6 +823,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmKnowledgeBase test_LlmKnowledgeBase.cpp )
+  target_link_libraries( test_LlmKnowledgeBase PRIVATE InterSpecLib )
+  add_test( NAME TLlmKnowledgeBase
+    COMMAND $<TARGET_FILE:test_LlmKnowledgeBase> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_LlmPromptTemplate test_LlmPromptTemplate.cpp )
   target_link_libraries( test_LlmPromptTemplate PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TLlmPromptTemplate
@@ -857,10 +872,44 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmBenchmarkJudge test_LlmBenchmarkJudge.cpp )
+  target_link_libraries( test_LlmBenchmarkJudge PRIVATE InterSpecLib )
+  add_test( NAME TLlmBenchmarkJudge
+    COMMAND $<TARGET_FILE:test_LlmBenchmarkJudge> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmModelPresets test_LlmModelPresets.cpp )
+  target_link_libraries( test_LlmModelPresets PRIVATE InterSpecLib )
+  add_test( NAME TLlmModelPresets
+    COMMAND $<TARGET_FILE:test_LlmModelPresets> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  # The MCP agent server (env() config references, path confinement, analysis N42 round trip);
+  #  the MCP server is only built for desktop-style platforms.  The session manager is built into the
+  #  test, as it is part of target/mcp_http rather than InterSpecLib.
+  if( NOT (IOS OR ANDROID) )
+    add_executable( test_McpAgentServer test_McpAgentServer.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_http/McpSessionManager.cpp )
+    target_link_libraries( test_McpAgentServer PRIVATE InterSpecLib )
+    add_test( NAME TMcpAgentServer
+      COMMAND $<TARGET_FILE:test_McpAgentServer> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+  endif( NOT (IOS OR ANDROID) )
+
   add_executable( test_LlmInterface test_LlmInterface.cpp )
   target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TLlmInterface
     COMMAND $<TARGET_FILE:test_LlmInterface> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  # Resuming a conversation cut off when the LLM Assistant, or the session, was closed.
+  add_executable( test_LlmResume test_LlmResume.cpp )
+  target_link_libraries( test_LlmResume PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmResume
+    COMMAND $<TARGET_FILE:test_LlmResume> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
@@ -878,6 +927,15 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 endif( USE_LLM_INTERFACE )
+
+# The Flux Tool's per-peak math (FluxToolCalc), and the background-peak helpers it shares with the
+#  Activity/Shielding fit.
+add_executable( test_FluxTool test_FluxTool.cpp )
+target_link_libraries( test_FluxTool PRIVATE InterSpecLib )
+add_test( NAME TFluxTool
+  COMMAND $<TARGET_FILE:test_FluxTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
 
 add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
 target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
@@ -967,6 +1025,13 @@ add_test( NAME TExportSpecFile
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_SpecMeasN42RoundTrip test_SpecMeasN42RoundTrip.cpp )
+target_link_libraries( test_SpecMeasN42RoundTrip PRIVATE InterSpecLib )
+add_test( NAME TSpecMeasN42RoundTrip
+  COMMAND $<TARGET_FILE:test_SpecMeasN42RoundTrip> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_EnergyCalTool test_EnergyCalTool.cpp )
 target_link_libraries( test_EnergyCalTool PRIVATE InterSpecLib )
 add_test( NAME TEnergyCalTool
@@ -986,6 +1051,16 @@ add_test( NAME TExportCAM
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"
 #            optimized "${Wt_TEST_LIBRARY}"
 #)
+
+
+# Sources beside / behind the detector: Monte-Carlo truth banks (opt-in generation) and how the
+#  responses measure against them.
+add_executable( test_BackIncidence test_BackIncidence.cpp )
+target_link_libraries( test_BackIncidence PRIVATE InterSpecLib )
+add_test( NAME TBackIncidence
+  COMMAND $<TARGET_FILE:test_BackIncidence> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
 
 
 # For some reason in Xcode, the RUN_TESTS target doesnt cause the executables to be built if there

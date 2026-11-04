@@ -52,6 +52,7 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 
 #define BOOST_TEST_MODULE CascadeRefLineSumming_suite
 #include <boost/test/included/unit_test.hpp>
@@ -259,6 +260,16 @@ namespace
           if( !std::isnan(rl) )
             out[ ekey(rl) ] += gain;
         }
+
+        //Two photons of this one line (two K vacancies filled by the same K line)
+        if( dc.members[a].self_pair_prob > 0.0 )
+        {
+          const double gain = dc.branch_weight * dc.members[a].self_pair_prob
+                              * eps(ea) * eps(ea) * bsurv / msurv[a];
+          const double rl = nearest( 2.0*ea );
+          if( (gain > 0.0) && !std::isnan(rl) )
+            out[ ekey(rl) ] += gain;
+        }
       }
     }
     return out;
@@ -344,6 +355,7 @@ BOOST_AUTO_TEST_CASE( PairwiseVsExactEngine )
     vector<double> all_real_energies;
     for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
       if( (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
+         && (l.m_decay_intensity > 0.0)
          && ((l.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma)
              || (l.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)) )
         all_real_energies.push_back( l.m_energy );
@@ -551,6 +563,9 @@ BOOST_AUTO_TEST_CASE( SumPeaksMatchEngine )
           g *= bsurv / (msurv[ai] * msurv[bi]);
           recon += g;
         }
+
+        if( (dc.members[a].self_pair_prob > 0.0) && (std::fabs( 2.0*ea - found->m_energy ) <= 0.25) )
+          recon += dc.branch_weight * dc.members[a].self_pair_prob * fep(ea) * fep(ea) * bsurv / msurv[a];
       }
     }//for( cascades )
 
@@ -623,6 +638,139 @@ BOOST_AUTO_TEST_CASE( SumPeaksMatchEngine )
         << crossover->m_uncorrected_intensity << " to " << crossover->m_normalized_intensity );
   }
 }//BOOST_AUTO_TEST_CASE( SumPeaksMatchEngine )
+
+
+// K x-ray - K x-ray sums: two K vacancies in one decay (a K-shell electron capture
+//  plus a K-converted transition after it, or two K-converted transitions) give two
+//  K x-rays, which sum to peaks that are prominent in close-geometry HPGe spectra.
+//  Pb-203's Tl K lines sum to 141.7 (Ka2+Ka2), 143.7 (Ka2+Ka1) and 145.7 (Ka1+Ka1),
+//  next to the 352.1 keV Ka1 + 279.2 sum; Ba-133's Cs K lines to ~61-62 keV.
+BOOST_AUTO_TEST_CASE( KxraySumPeaks )
+{
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const shared_ptr<DetectorPeakResponse> det = example_detector();
+  auto fep = [det]( double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, kDist ); };
+  auto tot = [det]( double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, kDist ); };
+
+  auto sum_peaks = [&]( const char *nuc, const char *age,
+                       const std::function<double(double)> &fep_fn,
+                       const std::function<double(double)> &tot_fn ) -> vector<ReferenceLineInfo::RefLine> {
+    RefLineInput input;
+    input.m_input_txt = nuc;
+    input.m_age = age;
+    input.m_showGammas = true;
+    input.m_showXrays = true;
+    input.m_showCascades = true;
+    input.m_lower_br_cutt_off = 0.0;
+    input.m_do_cascade_summing = true;
+    input.m_summing_fep_eff = fep_fn;
+    input.m_summing_total_eff = tot_fn;
+    const shared_ptr<ReferenceLineInfo> info = ReferenceLineInfo::generateRefLineInfo( input );
+    BOOST_REQUIRE( info && (info->m_validity == ReferenceLineInfo::InputValidity::Valid) );
+    vector<ReferenceLineInfo::RefLine> answer;
+    for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
+      if( l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak )
+        answer.push_back( l );
+    return answer;
+  };
+
+  auto rate_near = []( const vector<ReferenceLineInfo::RefLine> &lines, const double energy ) -> double {
+    double rate = 0.0;
+    for( const ReferenceLineInfo::RefLine &l : lines )
+      if( std::fabs(l.m_energy - energy) < 0.2 )
+        rate += l.m_decay_intensity;
+    return rate;
+  };
+
+  // Pb-203
+  {
+    const vector<ReferenceLineInfo::RefLine> pb = sum_peaks( "Pb203", "", fep, tot );
+    const double r_aa2 = rate_near( pb, 141.67 ), r_a2a1 = rate_near( pb, 143.71 );
+    const double r_aa1 = rate_near( pb, 145.75 ), r_xg = rate_near( pb, 352.07 );
+    BOOST_TEST_MESSAGE( "Pb203 sum rates: 141.7=" << r_aa2 << ", 143.7=" << r_a2a1
+                        << ", 145.7=" << r_aa1 << ", 352.1=" << r_xg );
+    BOOST_REQUIRE( (r_aa2 > 0.0) && (r_a2a1 > 0.0) && (r_aa1 > 0.0) && (r_xg > 0.0) );
+    BOOST_CHECK( (r_a2a1 > r_aa1) && (r_aa1 > r_aa2) );
+
+    //The relative sizes the two-vacancy law implies: per vacancy, line a in p_a, so the
+    //  (a,a) pair is p_a/(2 p_b) of the (a,b) one, times the efficiency ratio, times the
+    //  survival against line b (in the (a,a) pair, but not in the (a,b) one).
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( "Pb203" );
+    BOOST_REQUIRE( nuc );
+    ceelo::cascade_adapter::CascadeOptions copt;
+    copt.prompt_equilibrium = false;
+    copt.vacancy_xray_model = false;
+    const vector<ceelo::DecayCascade> cascades = ceelo::cascade_adapter::build_cascades( nuc, copt );
+    const double e1 = 72.873, e2 = 70.833, e_g = 279.197;
+    double i_ka1 = 0.0, i_ka2 = 0.0, i_g = 0.0, p_ka2_given_ka1 = 0.0, p_g_given_ka1 = 0.0;
+    for( const ceelo::DecayCascade &dc : cascades )
+    {
+      for( const ceelo::CascadeMember &m : dc.members )
+      {
+        if( std::fabs(m.energy_keV - e2) < 0.01 )
+          i_ka2 = m.intensity;
+        if( std::fabs(m.energy_keV - e_g) < 0.01 )
+          i_g = m.intensity;
+        if( std::fabs(m.energy_keV - e1) >= 0.01 )
+          continue;
+        i_ka1 = m.intensity;
+        for( const ceelo::CoincidenceLink &lk : m.coincident )
+        {
+          if( std::fabs(dc.members[lk.partner].energy_keV - e2) < 0.01 )
+            p_ka2_given_ka1 = lk.prob;
+          if( std::fabs(dc.members[lk.partner].energy_keV - e_g) < 0.01 )
+            p_g_given_ka1 = lk.prob;
+        }
+      }
+    }
+    BOOST_REQUIRE( (i_ka1 > 0.0) && (i_ka2 > 0.0) && (i_g > 0.0) );
+    BOOST_REQUIRE( (p_ka2_given_ka1 > 0.0) && (p_g_given_ka1 > 0.0) );
+    BOOST_CHECK_CLOSE( r_aa1 / r_a2a1, (i_ka1 / (2.0*i_ka2)) * (fep(e1) / fep(e2)) * (1.0 - i_ka2*tot(e2)), 1.0 );
+    BOOST_CHECK_CLOSE( r_aa2 / r_a2a1, (i_ka2 / (2.0*i_ka1)) * (fep(e2) / fep(e1)) * (1.0 - i_ka1*tot(e1)), 1.0 );
+
+    //Against the Ka1 + 279.2 keV sum: P(Ka1,Ka2) is ~0.029 per decay, against ~0.37 for
+    //  Ka1 with the 279.2 keV gamma.  Each pair is knocked out by the other's partner
+    //  (Ka2 in one, the 279.2 keV gamma in the other), but not by its own.
+    const double ratio = r_a2a1 / r_xg;
+    const double expected = (p_ka2_given_ka1 * fep(e2) * (1.0 - std::min(1.0, i_g)*tot(e_g)))
+                            / (p_g_given_ka1 * fep(e_g) * (1.0 - i_ka2*tot(e2)));
+    BOOST_TEST_MESSAGE( "Pb203 143.7/352.1 = " << ratio << " (expected " << expected << ")" );
+    BOOST_CHECK_CLOSE( ratio, expected, 1.0 );
+  }
+
+  // Ba-133: Cs Ka2+Ka2 61.25, Ka2+Ka1 61.60, Ka1+Ka1 61.95 keV.  The example detector's
+  //  response starts at 35 keV, so these ~31 keV x-rays get flat efficiencies instead -
+  //  which also makes the expected ratios exact.
+  {
+    const double flat_fep = 0.05, flat_tot = 0.2;
+    const vector<ReferenceLineInfo::RefLine> ba = sum_peaks( "Ba133", "20 y",
+                    [flat_fep]( double ){ return flat_fep; }, [flat_tot]( double ){ return flat_tot; } );
+    const double r_aa2 = rate_near( ba, 61.25 ), r_a2a1 = rate_near( ba, 61.60 ), r_aa1 = rate_near( ba, 61.95 );
+    BOOST_TEST_MESSAGE( "Ba133 sum rates: 61.25=" << r_aa2 << ", 61.60=" << r_a2a1 << ", 61.95=" << r_aa1 );
+    BOOST_REQUIRE( (r_aa2 > 0.0) && (r_a2a1 > 0.0) && (r_aa1 > 0.0) );
+
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( "Ba133" );
+    BOOST_REQUIRE( nuc );
+    ceelo::cascade_adapter::CascadeOptions copt;
+    copt.prompt_equilibrium = false;
+    copt.vacancy_xray_model = false;
+    double i_ka1 = 0.0, i_ka2 = 0.0;
+    for( const ceelo::DecayCascade &dc : ceelo::cascade_adapter::build_cascades( nuc, copt ) )
+    {
+      for( const ceelo::CascadeMember &m : dc.members )
+      {
+        if( std::fabs(m.energy_keV - 30.973) < 0.01 )
+          i_ka1 = m.intensity;
+        if( std::fabs(m.energy_keV - 30.625) < 0.01 )
+          i_ka2 = m.intensity;
+      }
+    }
+    BOOST_REQUIRE( (i_ka1 > 0.0) && (i_ka2 > 0.0) );
+    BOOST_CHECK_CLOSE( r_aa1 / r_a2a1, (i_ka1 / (2.0*i_ka2)) * (1.0 - i_ka2*flat_tot), 1.0 );
+    BOOST_CHECK_CLOSE( r_aa2 / r_a2a1, (i_ka2 / (2.0*i_ka1)) * (1.0 - i_ka1*flat_tot), 1.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( KxraySumPeaks )
 
 
 // The assumed summing distance defaults to a near-contact 2.54 cm, and a stored
@@ -705,12 +853,14 @@ BOOST_AUTO_TEST_CASE( CascadeTimingReport )
 
   struct TimeCase { const char *nuc; const char *age; };
   const TimeCase cases[] = {
-    {"Co60","20 y"}, {"Cs137","20 y"}, {"Ba133","20 y"}, {"Am241","20 y"},
+    {"Co60","20 y"}, {"Cs137","20 y"}, {"Ba133","20 y"}, {"Am241","20 y"}, {"Pb203","0 s"},
     {"Eu152","20 y"}, {"Ra226","20 y"}, {"Th232","20 y"}, {"U238","20 y"}, {"U238","1 y"}
   };
 
-  cout << "\nCascade ref-line timing (CPU seconds, example HPGe at 2.54 cm):\n"
-       << "  nuclide  age    no-casc  1st-use  repeat  real-lines  sum-peaks\n";
+  cout << "\nCascade ref-line timing (CPU seconds, example HPGe at 2.54 cm; engine columns are the\n"
+       << "  flat-x-ray build_cascades call (ms) and compute_cascade_analytic per window (ms), over\n"
+       << "  every displayed line, without / with the K x-ray pair links):\n"
+       << "  nuclide  age    no-casc  1st-use  repeat  real-lines  sum-peaks  build-ms(off/on)  ms/window(off/on)\n";
   for( const TimeCase &tc : cases )
   {
     BOOST_REQUIRE_MESSAGE( db->nuclide( tc.nuc ), "no nuclide " << tc.nuc );
@@ -761,16 +911,72 @@ BOOST_AUTO_TEST_CASE( CascadeTimingReport )
     std::sort( begin(plain_secs), end(plain_secs) );
 
     size_t nreal = 0, nsum = 0;
+    vector<ceelo::PeakWindow> windows;
     for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
     {
-      nreal += (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal);
+      const bool is_real = (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal);
+      nreal += is_real;
       nsum += (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak);
+      if( is_real && (l.m_energy >= 5.0) )
+      {
+        ceelo::PeakWindow w;
+        w.energy_keV = l.m_energy;
+        w.tolerance_keV = 0.25;  //match production
+        windows.push_back( w );
+      }
     }
+
+    //The engine alone, on the same flat-x-ray cascades production builds, with a
+    //  window on every displayed line (production skips invisible ones, so this is
+    //  an upper bound on its window count, but the per-window cost is the same).
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( tc.nuc );
+    ceelo::cascade_adapter::CascadeOptions copt;
+    copt.age_seconds = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( tc.age,
+                                                   nuc->halfLife ) / PhysicalUnits::second;
+    copt.prompt_equilibrium = input.m_promptLinesOnly;
+    copt.include_xrays = true;
+    copt.vacancy_xray_model = false;
+
+    struct Prov : public ceelo::EfficiencyProvider
+    {
+      std::function<double(double)> fep_fn, tot_fn;
+      double fep( double e ) const override { return std::max( 0.0, fep_fn(e) ); }
+      double total( double e ) const override { return std::max( 0.0, tot_fn(e) ); }
+      bool has( double ) const override { return true; }
+    } prov;
+    prov.fep_fn = input.m_summing_fep_eff;
+    prov.tot_fn = input.m_summing_total_eff;
+
+    double build_med[2] = { 0.0, 0.0 }, window_med[2] = { 0.0, 0.0 };
+    for( int links = 0; links < 2; ++links )
+    {
+      copt.kxray_coincidences = (links == 1);
+      vector<double> build_ms, window_ms;
+      for( int rep = 0; rep < 5; ++rep )
+      {
+        std::clock_t start = std::clock();
+        const vector<ceelo::DecayCascade> cascades = ceelo::cascade_adapter::build_cascades( nuc, copt );
+        build_ms.push_back( 1000.0 * double(std::clock() - start) / CLOCKS_PER_SEC );
+
+        start = std::clock();
+        const ceelo::AnalyticCascadeOptions eopts;
+        const vector<ceelo::AnalyticPeakResult> res
+                  = ceelo::compute_cascade_analytic( cascades, windows, prov, eopts );
+        BOOST_CHECK_EQUAL( res.size(), windows.size() );
+        window_ms.push_back( 1000.0 * double(std::clock() - start) / CLOCKS_PER_SEC
+                             / std::max( size_t(1), windows.size() ) );
+      }
+      std::sort( begin(build_ms), end(build_ms) );
+      std::sort( begin(window_ms), end(window_ms) );
+      build_med[links] = build_ms[build_ms.size()/2];
+      window_med[links] = window_ms[window_ms.size()/2];
+    }//for( without / with the K x-ray pair links )
 
     char line[256];
     const double casc = secs[secs.size()/2], plainmed = plain_secs[plain_secs.size()/2];
-    snprintf( line, sizeof(line), "  %-8s %-5s  %7.3f  %7.3f  %6.3f  %10zu  %9zu\n",
-              tc.nuc, tc.age, plainmed, cold, casc, nreal, nsum );
+    snprintf( line, sizeof(line), "  %-8s %-5s  %7.3f  %7.3f  %6.3f  %10zu  %9zu  %7.2f/%7.2f  %8.4f/%8.4f\n",
+              tc.nuc, tc.age, plainmed, cold, casc, nreal, nsum,
+              build_med[0], build_med[1], window_med[0], window_med[1] );
     cout << line;
   }//for( cases )
   cout << endl;

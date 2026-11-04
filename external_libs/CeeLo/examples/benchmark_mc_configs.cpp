@@ -103,11 +103,22 @@ void print_usage(const char* argv0) {
         << "  (source-escape model is COMPILE-TIME: -DCEELO_SOURCE_ESCAPE_MODEL=gate|tails|gs)\n"
         << "  --no-source-brems        Disable bremsstrahlung from electrons in source\n"
         << "  --no-source-electrons    Disable source-electron escape transport\n"
-           "                           material/shielding (A/B quantification)\n"
+        << "  --no-crystal-brems       Disable Seltzer-Berger bremsstrahlung inside the\n"
+        << "                           CRYSTAL (distinct from --no-source-brems, which is\n"
+        << "                           the source-geometry channel)\n"
+        << "  --no-moliere             Collapse the in-crystal condensed-history walk to\n"
+        << "                           straight-line CSDA (no angular diffusion)\n"
+        << "  --no-source-fluorescence No K x-rays from photoelectric absorption in source\n"
+        << "                           material/shields (A/B)\n"
+        << "  --no-source-positrons    Annihilate source pair positrons at the vertex (A/B)\n"
+        << "  --spectrum-fidelity      EfficiencyCalculator::enable_spectrum_fidelity (Compton\n"
+        << "                           K-vacancy x-rays, Detailed electron walk): how far\n"
+        << "                           the full-spectrum physics moves FEP and total\n"
         << "  --analog                 Force fully analog sampling (disable the\n"
         << "                           library's auto-enabled biasing)\n"
         << "  --histogram              Also write pulse-height spectra (1 keV bins)\n"
-        << "                           to our_<cfg>_<E>keV_spec.csv (fixed-N mode)\n"
+        << "                           to our_<cfg>_<E>keV_<label>_spec.csv\n"
+        << "                           (ignored when --precision is given)\n"
         << "  (default: library auto-enables biasing per geometry/energy)\n"
         << "  --skip-export            Skip GDML/macro export (recommended for profiling)\n"
         << "  --macro-events <N>       Events written into exported macros (default: 500000)\n"
@@ -208,6 +219,12 @@ struct FomWriter {
     }
 };
 
+// --spectrum-fidelity, --no-source-fluorescence, --no-source-positrons: shared by
+// every config of one invocation.
+bool g_spectrum_fidelity = false;
+bool g_no_source_fluorescence = false;
+bool g_no_source_positrons = false;
+
 bool run_config(int cfg,
                 const std::vector<double>& energies,
                 uint64_t n_mc,
@@ -221,6 +238,8 @@ bool run_config(int cfg,
                 bool histogram,
                 bool no_source_brems,
                 bool no_source_electrons,
+                bool no_crystal_brems,
+                bool no_moliere,
                 double fep_window_keV,
                 FomWriter& fom) {
     EfficiencyCalculator calc;
@@ -236,6 +255,15 @@ bool run_config(int cfg,
     if (fep_only) calc.enable_fep_only_mode(true);
     if (no_source_brems) calc.set_source_brems(false);
     if (no_source_electrons) calc.enable_source_electron_transport(false);
+    // In-crystal CSDA A/B knobs: Seltzer-Berger brems sampling versus electron
+    // escape from the crystal, for isolating either channel behind an
+    // E >= 2 MeV FEP discrepancy (the condensed-history walk's Highland log
+    // term, Bohr straggling and residual-KE handling all act on the second).
+    if (no_crystal_brems) calc.set_disable_brems(true);
+    if (no_moliere) calc.set_disable_moliere(true);
+    if (g_spectrum_fidelity) calc.enable_spectrum_fidelity(true);
+    if (g_no_source_fluorescence) calc.set_source_fluorescence(false);
+    if (g_no_source_positrons) calc.set_source_positron_transport(false);
 
     std::cout << "\n=== Config " << cfg << ": " << setup.description << " ===\n";
 
@@ -410,6 +438,8 @@ int main(int argc, char** argv) {
     bool histogram = false;
     bool no_source_brems = false;
     bool no_source_electrons = false;
+    bool no_crystal_brems = false;
+    bool no_moliere = false;
     double fep_window_keV = kReferenceFepWindowKeV;
 
     for (int i = 1; i < argc; ++i) {
@@ -517,6 +547,26 @@ int main(int argc, char** argv) {
             no_source_electrons = true;
             continue;
         }
+        if (arg == "--no-crystal-brems") {
+            no_crystal_brems = true;
+            continue;
+        }
+        if (arg == "--no-moliere") {
+            no_moliere = true;
+            continue;
+        }
+        if (arg == "--spectrum-fidelity") {
+            g_spectrum_fidelity = true;
+            continue;
+        }
+        if (arg == "--no-source-fluorescence") {
+            g_no_source_fluorescence = true;
+            continue;
+        }
+        if (arg == "--no-source-positrons") {
+            g_no_source_positrons = true;
+            continue;
+        }
         if (arg == "--no-source-brems") {
             no_source_brems = true;
             continue;
@@ -576,7 +626,8 @@ int main(int argc, char** argv) {
                               skip_export, macro_events, label,
                               biasing_explicit ? &biasing : nullptr,
                               fep_only, histogram, no_source_brems,
-                              no_source_electrons, fep_window_keV, fom);
+                              no_source_electrons, no_crystal_brems,
+                              no_moliere, fep_window_keV, fom);
         ok = ok && ran;
     }
 

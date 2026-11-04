@@ -221,7 +221,7 @@ namespace
     double m_energy_units = 0.0;         // Will be zero if not specified, otherwise keV or MeV
     string m_detector_setback;           // Empty if not user specified
     string m_det_diam;                   // Empty if not user specified
-    string m_source_to_crystal_distance; // Empty if not user specified
+    string m_source_to_face_distance;    // Empty if not user specified; from the detector face
     float m_lower_energy = 0.0f;         // Will be zero if not user-specified
     float m_upper_energy = 0.0f;         // Will be zero if not user-specified
     bool m_fixed_geom = false;           // Currently not used, but set if known
@@ -308,18 +308,29 @@ namespace
       if( SpecUtils::parse_double(add_info[1].c_str(), add_info[1].size(), det_radius) )
         results.m_det_diam = PhysicalUnits::printToBestLengthUnits( 2.0 * det_radius * PhysicalUnits::cm, 5 );
       
-      if( SpecUtils::parse_double(add_info[2].c_str(), add_info[2].size(), src_to_det_face) )
-        src_to_det_face *= PhysicalUnits::cm;
+      const bool have_face_dist = SpecUtils::parse_double( add_info[2].c_str(), add_info[2].size(),
+                                                           src_to_det_face );
       
       // 3 - source radius
       
-      if( SpecUtils::parse_double(add_info[4].c_str(), add_info[4].size(), det_setback) )
+      if( SpecUtils::parse_double(add_info[4].c_str(), add_info[4].size(), det_setback)
+         && (det_setback > 0.0) )
         results.m_detector_setback = add_info[4] + " cm";
       
       // 5 - Detector Area
       
-      if( SpecUtils::parse_double(add_info[6].c_str(), add_info[6].size(), src_to_crystal) )
-        results.m_source_to_crystal_distance = add_info[6] + " cm";
+      const bool have_crystal_dist = SpecUtils::parse_double( add_info[6].c_str(), add_info[6].size(),
+                                                              src_to_crystal );
+      
+      // The Distance field is measured from the detector FACE, as every InterSpec distance is (the
+      //  setback goes in its own field), so use the "Source to Detector Face" column; the "Source to
+      //  Crystal Face" one is that plus the setback.  (Same as DetectorPeakResponse's relative
+      //  efficiency CSV parser.)
+      if( have_face_dist && (src_to_det_face > 0.0) )
+        results.m_source_to_face_distance = add_info[2] + " cm";
+      else if( have_crystal_dist && (src_to_crystal > 0.0) )
+        results.m_source_to_face_distance
+                   = SpecUtils::printCompact( std::max( 0.0, src_to_crystal - std::max( 0.0, det_setback ) ), 6 ) + " cm";
       
       // 7 - Relative Efficiency (%) - doesnt seem to
       
@@ -3722,6 +3733,28 @@ void DrfSelect::updateDrfContentSummary()
                     .arg( ceelo::to_string( mc->provenance.profile ) )
                     .arg( mc->provenance.valid_e_min_keV )
                     .arg( mc->provenance.valid_e_max_keV );
+
+    // The Monte-Carlo choices it was generated with (a no-MC transfer has none).
+    const ceelo::ResponseProvenance &prov = mc->provenance;
+    if( prov.method != ceelo::ProductionMethod::CurveTransfer )
+    {
+      const bool balanced = (prov.precision_profile == ceelo::PrecisionProfile::RelaxMild);
+      tip += WString::tr( balanced ? "ds-chip-tt-mc-precision-balanced" : "ds-chip-tt-mc-precision" )
+               .arg( SpecUtils::printCompact( 100.0*prov.node_fep_precision, 3 ) + "%" );
+    }
+
+    if( prov.method == ceelo::ProductionMethod::FullMc )
+    {
+      // Responses saved before the level was recorded still show whether they reach behind the face.
+      const bool covered = !mc->eta_fep.cos_thetas.empty() && (mc->eta_fep.cos_thetas.front() < 0.0);
+      const char *back_key = covered ? "ds-chip-tt-mc-back-yes" : "ds-chip-tt-mc-back-none";
+      if( prov.back_coverage == ceelo::BackCoverage::Coarse )
+        back_key = "ds-chip-tt-mc-back-coarse";
+      else if( prov.back_coverage == ceelo::BackCoverage::Fine )
+        back_key = "ds-chip-tt-mc-back-fine";
+      tip += WString::tr( back_key );
+    }//if( full MC )
+
     add_chip( WString::tr("ds-chip-mc"), tip, true );
 
     // Efficiency-transfer response (quick MC backbone, or anchored on a
@@ -4004,13 +4037,17 @@ void DrfSelect::verifyManualDefinition()
       m_detectorManualDiameterText->setText( coef_formula_info.m_det_diam );
     }
     
-    if( !coef_formula_info.m_source_to_crystal_distance.empty()
+    if( !coef_formula_info.m_source_to_face_distance.empty()
        && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() )
        && !coef_formula_info.m_fixed_geom )
     {
       m_drfType->setCurrentIndex( 1 );
-      m_detectorManualDistText->setText( coef_formula_info.m_source_to_crystal_distance );
+      m_detectorManualDistText->setText( coef_formula_info.m_source_to_face_distance );
     }
+
+    if( !coef_formula_info.m_detector_setback.empty() && m_detectorManualSetbackText->text().empty()
+       && !coef_formula_info.m_fixed_geom )
+      m_detectorManualSetbackText->setText( coef_formula_info.m_detector_setback );
     
     const WString &pre_det_wname = m_detectorManualFunctionName->text();
     const string prev_det_name = pre_det_wname.toUTF8();
@@ -4282,8 +4319,6 @@ void DrfSelect::setFormulaDefineDetector()
 //#if( PERFORM_DEVELOPER_CHECKS )
 //    check_url_serialization( detec );
 //#endif
-    
-    updateChart();
   }catch( std::exception &e )
   {
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
@@ -4298,6 +4333,7 @@ void DrfSelect::setFormulaDefineDetector()
   m_gui_select_matches_det = true;
   setAcceptButtonEnabled( true );
 
+  updateChart();
   emitChangedSignal();
 }//setFormulaDefineDetector(const std::string fcn)
 

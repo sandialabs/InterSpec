@@ -10,14 +10,19 @@
     followed by units; valid units are: meters, m, cm, mm, km, feet,
     ft, ', in, inches, or ".  You may also add multiple distances,
     such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to
-    40inches and 15.6cm respectively.
+    40inches and 15.6cm respectively.  With a detector response that models the
+    detector's geometry, the distance may be zero or negative, as long as the
+    source and its shielding stay clear of the detector: the source then sits
+    beside the detector (with "Off-axis" checked), or behind it.
   </message>
   <message id="ssd-offset-check">Off-axis</message>
   <message id="ssd-tt-offset-check">
     Displace the whole source/shielding assembly off the detector axis.  When checked,
     one or two offset inputs appear (depending on geometry) so you can position the
     item off to the side of where the detector is pointing.  The offsets are user
-    inputs; they are never fit for.
+    inputs; they are never fit for.  With a detector response that models the
+    detector's geometry, the source may sit beside or behind the detector face, as
+    long as it and its shielding stay clear of the detector itself.
   </message>
   <message id="ssd-offset-spherical">Offset:</message>
   <message id="ssd-offset-radial">Radial Offset:</message>
@@ -124,7 +129,11 @@
   <message id="ssd-cb-atten-for-air">Attenuate for air</message>
   <message id="ssd-tt-atten-for-air">When checked attenuation due to air between the source, or outer shielding, and detector will be accounted for in the calculations.</message>
   <message id="ssd-cb-sub-back-peaks">Subtract background peaks</message>
-  <message id="ssd-tt-sub-back-peaks">This forces the isotopes of a element to all be the same age in the fit.</message>
+  <message id="ssd-tt-sub-back-peaks">When checked, the area of any background peak within one sigma of a foreground
+    peak is subtracted from that foreground peak, after scaling the background to the foreground (using the
+    background's display scale factor, or else the ratio of live times).  If the background spectrum's
+    automated peak search finds peaks under your foreground peaks that you have not fit in the background,
+    you will be offered to fit and add them.</message>
   <message id="ssd-cb-same-el-same-age">Same Z same age</message>
   <message id="ssd-tt-same-el-same-age">Enforce isotopes for the same element should all have the same age.</message>
   <message id="ssd-cb-corr-for-decay">Correct for decay during meas.</message>
@@ -262,23 +271,8 @@
     the foreground, identify the peaks to potentially be subtracted, and then switch back to your current
     foreground/background combination.
   </message>
-  <message id="ssd-missing-back-peaks-title">Missing Background Peaks</message>
-  <message id="ssd-missing-back-peaks-msg">
-    The background spectrum does not have peaks added at energies {1}, but there
-    are likely real peaks in the background spectrum at those energies - would you
-    like to add those peaks to the background spectrum?
-  </message>
-  <message id="ssd-btn-no-dont-add">No</message>
-  <message id="ssd-btn-add-peaks">Add Peaks...</message>
-  <message id="ssd-btn-add-all-detectable">Add all auto-fit peaks</message>
-  <message id="ssd-back-peak-preview-title">Preview Background Peaks</message>
-  <message id="ssd-back-peak-preview-msg">The following peaks would be added to the background spectrum:</message>
-  <message id="ssd-no-new-back-peaks">No additional peaks were found in the background spectrum at the indicated energies.</message>
-  <message id="ssd-back-peaks-all-fit">{1} candidate peaks were fit to the background.</message>
-  <message id="ssd-back-peaks-some-fit">{1} of {2} candidate peaks were significant and fit to the background.</message>
-  <message id="ssd-back-peaks-manual-hint">(you can also manually fit background peaks by Alt-key (mac: Option-key) plus double<br />
-  clicking on the spectrum, or by loading the background as the foreground)</message>
-  <message id="ssd-err-adding-back-peaks">Error adding peaks to background: {1}</message>
+  <message id="ssd-err-overlaps-detector">The source or its shielding overlaps the detector.</message>
+  <message id="ssd-err-behind-needs-response">The source is beside or behind the detector face.  Only a detector response that models the detector's geometry can be used there - the flat-disk efficiency describes the detector face-on only.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Shielding thicknesses have been scaled to be less then detector distance.</message>
   <message id="ssd-err-fit-only-one-an">You can only fit for the atomic number of one generic shielding at a time.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">An invalid chi2 was calculated for {1} keV, other results may be invalid</message>

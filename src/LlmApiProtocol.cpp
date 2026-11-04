@@ -23,7 +23,10 @@
 
 #include "InterSpec_config.h"
 
+#include <string>
+#include <vector>
 #include <variant>
+#include <algorithm>
 #include <stdexcept>
 
 #include <nlohmann/json.hpp>
@@ -43,14 +46,102 @@ namespace
 /** Anthropic requires `max_tokens`; used when the active model leaves MaxTokens unset (0). */
 const int sm_anthropic_default_max_tokens = 4096;
 
-/** Whether a Claude model accepts thinking:{type:"adaptive"} (the model sizes its own thinking).
- Adaptive thinking is supported on the larger current Claude models (Opus, Sonnet) but some models -
- notably Haiku 4.5 - reject it with a 400 ("adaptive thinking is not supported on this model") and
- require the explicit {type:"enabled",budget_tokens:N} form instead.  Default to true so new/unknown
- models get the modern form; only carve out families known not to support it. */
-bool anthropic_supports_adaptive_thinking( const std::string &model )
+/** The family ("opus", "sonnet", "haiku", "fable", ...) and version of a Claude model id. */
+struct ClaudeModelVersion
 {
-  return !SpecUtils::icontains( model, "haiku" );
+  std::string family;
+  int version = 0;  // 100*major + minor (e.g., 405 for 4.5); 0 if not recognized
+};
+
+
+/** Parses ids like "claude-sonnet-4-5", "claude-opus-4-20250514" (= 4.0), OpenRouter's
+ "anthropic/claude-sonnet-4.5", Bedrock's "anthropic.claude-haiku-4-5-20251001-v1:0", Vertex's
+ "claude-opus-4-5@20251101", and the Claude 3 style "claude-3-5-haiku" (version before family, which
+ Ask Sage also uses, e.g. "claude-35-sonnet").
+ */
+ClaudeModelVersion claude_model_version( std::string model )
+{
+  ClaudeModelVersion result;
+  SpecUtils::to_lower_ascii( model );
+  const size_t pos = model.find( "claude-" );
+  if( pos == std::string::npos )
+    return result;
+
+  std::string rest = model.substr( pos + 7 );
+  std::replace( begin(rest), end(rest), '.', '-' );
+  std::replace( begin(rest), end(rest), '@', '-' );
+  std::vector<std::string> tokens;
+  SpecUtils::split( tokens, rest, "-" );
+
+  const auto is_number = []( const std::string &s ) -> bool {
+    return !s.empty() && (s.size() <= 2)
+           && std::all_of( begin(s), end(s), []( char c ){ return (c >= '0') && (c <= '9'); } );
+  };
+
+  // Version is either first ("3-5-haiku"), or follows the family ("sonnet-4-5").
+  size_t ver_index = 0;
+  if( !tokens.empty() && is_number(tokens[0]) )
+  {
+    if( tokens.size() > 1 )
+      result.family = (is_number(tokens[1]) && (tokens.size() > 2)) ? tokens[2] : tokens[1];
+  }else if( tokens.size() > 1 )
+  {
+    result.family = tokens[0];
+    ver_index = 1;
+  }
+
+  if( (ver_index == 0) && !tokens.empty() && (tokens[0].size() == 2) && is_number(tokens[0]) )
+  {
+    // Ask Sage style "claude-35-sonnet"
+    result.version = 100*(tokens[0][0] - '0') + (tokens[0][1] - '0');
+  }else if( (ver_index < tokens.size()) && is_number(tokens[ver_index]) )
+  {
+    const int major = std::stoi( tokens[ver_index] );
+    // A minor version is one or two digits; a date ("4-20250514") or nothing means ".0".
+    const bool has_minor = ((ver_index + 1) < tokens.size()) && is_number(tokens[ver_index + 1]);
+    const int minor = has_minor ? std::stoi( tokens[ver_index + 1] ) : 0;
+    result.version = 100*major + minor;
+  }
+
+  return result;
+}//claude_model_version(...)
+
+
+/** Whether a Claude model accepts thinking:{type:"adaptive"} (the model sizes its own thinking).
+ Adaptive thinking arrived with Opus/Sonnet 4.6; Haiku 4.5 and all earlier models reject it with a
+ 400, and need the explicit {type:"enabled",budget_tokens:N} form instead - which is in turn
+ rejected by Opus 4.7+, Sonnet 5+, Haiku 5.5, and Fable.  Unrecognized ids get the modern form. */
+bool claude_supports_adaptive_thinking( const ClaudeModelVersion &claude )
+{
+  if( claude.version == 0 )
+    return true;
+  if( claude.family == "haiku" )
+    return (claude.version >= 500);
+  return (claude.version >= 406);
+}
+
+
+/** Whether a Claude model rejects a `temperature` (and other sampling parameters): Opus 4.7+,
+ Sonnet 5+, Haiku 5+, and Fable / Mythos. */
+bool claude_rejects_temperature( const ClaudeModelVersion &claude )
+{
+  if( (claude.family == "fable") || (claude.family == "mythos") )
+    return true;
+  if( claude.family == "opus" )
+    return (claude.version >= 407);
+  return (claude.version >= 500);
+}
+
+
+/** Whether a Claude model rejects a forced tool_choice ("any" or "tool"): Opus/Sonnet 5.5+, and
+ Fable / Mythos 5.1+. */
+bool claude_rejects_forced_tool_choice( const ClaudeModelVersion &claude )
+{
+  if( (claude.family == "fable") || (claude.family == "mythos") )
+    return (claude.version >= 501);
+  if( (claude.family == "opus") || (claude.family == "sonnet") )
+    return (claude.version >= 505);
+  return false;
 }
 
 
@@ -68,6 +159,35 @@ std::optional<size_t> get_usage_count( const json &usage, const char *key )
     return std::nullopt;
   return static_cast<size_t>( count );
 }//get_usage_count(...)
+
+
+/** Extract the provider-reported cost (USD) of a request from its usage object, if present.
+ OpenRouter reports `usage.cost` on every response.  For BYOK (bring-your-own-key) requests that is
+ only OpenRouter's fee, with the upstream provider's charge (billed to the user's own key) in
+ `cost_details.upstream_inference_cost`; we add the two so the result is the request's total spend. */
+std::optional<double> get_usage_cost( const json &usage )
+{
+  if( !usage.contains("cost") || !usage["cost"].is_number() )
+    return std::nullopt;
+
+  double cost = usage["cost"].get<double>();
+  if( !(cost >= 0.0) )
+    return std::nullopt;
+
+  const bool is_byok = usage.contains("is_byok") && usage["is_byok"].is_boolean() && usage["is_byok"].get<bool>();
+  if( is_byok && usage.contains("cost_details") && usage["cost_details"].is_object() )
+  {
+    const json &details = usage["cost_details"];
+    if( details.contains("upstream_inference_cost") && details["upstream_inference_cost"].is_number() )
+    {
+      const double upstream = details["upstream_inference_cost"].get<double>();
+      if( upstream > 0.0 )
+        cost += upstream;
+    }
+  }//if( is_byok )
+
+  return cost;
+}//get_usage_cost(...)
 
 
 /** Attach a 5-minute ephemeral cache breakpoint to the last content block of `msg`, promoting
@@ -360,6 +480,7 @@ public:
       out.promptTokens = get_usage_count( usage, "prompt_tokens" );
       out.completionTokens = get_usage_count( usage, "completion_tokens" );
       out.totalTokens = get_usage_count( usage, "total_tokens" );
+      out.cost = get_usage_cost( usage );
 
       if( usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() )
         out.cachedTokens = get_usage_count( usage["prompt_tokens_details"], "cached_tokens" );
@@ -807,11 +928,14 @@ public:
     // placeConversationCacheBreakpoints().
     request["messages"] = messages;
 
-    // Map any configured reasoning to Claude extended thinking.  Newer models (Opus/Sonnet) take the
-    // "adaptive" type (the model sizes its own thinking); others (e.g. Haiku 4.5) reject "adaptive"
-    // and need the explicit {type:"enabled",budget_tokens:N} form - gate on model capability so
-    // reasoning="true" works across models.  When thinking is on, `temperature` must be omitted on
-    // current models, so only set temperature otherwise.
+    // Map any configured reasoning to Claude extended thinking.  Claude 4.6+ models take the
+    // "adaptive" type (the model sizes its own thinking), with the effort level in
+    // output_config.effort; older ones (and Haiku 4.5) need the explicit
+    // {type:"enabled",budget_tokens:N} form - gate on model capability so reasoning works across
+    // models.  When thinking is on, `temperature` must be omitted, and the newest models reject it
+    // outright, so only set temperature otherwise.
+    const ClaudeModelVersion claude = claude_model_version( api.model() );
+    const bool allowTemperature = api.temperature().has_value() && !claude_rejects_temperature( claude );
     const std::variant<bool,LlmConfig::LlmApi::ReasoningEffort> &reasoning = api.reasoning();
     bool thinkingEnabled = false;
     LlmConfig::LlmApi::ReasoningEffort effort = LlmConfig::LlmApi::ReasoningEffort::medium;
@@ -824,9 +948,20 @@ public:
       effort = std::get<LlmConfig::LlmApi::ReasoningEffort>(reasoning);
     }
 
-    if( thinkingEnabled && anthropic_supports_adaptive_thinking( api.model() ) )
+    if( thinkingEnabled && claude_supports_adaptive_thinking( claude ) )
     {
       request["thinking"]["type"] = "adaptive";
+
+      // Plain "true" leaves the model's default effort.
+      if( std::holds_alternative<LlmConfig::LlmApi::ReasoningEffort>(reasoning) )
+      {
+        switch( effort )
+        {
+          case LlmConfig::LlmApi::ReasoningEffort::low:    request["output_config"]["effort"] = "low";    break;
+          case LlmConfig::LlmApi::ReasoningEffort::medium: request["output_config"]["effort"] = "medium"; break;
+          case LlmConfig::LlmApi::ReasoningEffort::high:   request["output_config"]["effort"] = "high";   break;
+        }
+      }
     }else if( thinkingEnabled )
     {
       // Explicit extended-thinking budget (supported across thinking-capable models incl. Haiku).
@@ -846,11 +981,11 @@ public:
       {
         request["thinking"]["type"] = "enabled";
         request["thinking"]["budget_tokens"] = budget;
-      }else if( api.temperature().has_value() )
+      }else if( allowTemperature )
       {
         request["temperature"] = api.temperature().value();  // max_tokens too small for thinking
       }
-    }else if( api.temperature().has_value() )
+    }else if( allowTemperature )
     {
       request["temperature"] = api.temperature().value();
     }
@@ -863,13 +998,16 @@ public:
         json toolDef;
         toolDef["name"] = t.name;
         toolDef["description"] = t.description;
-        toolDef["input_schema"] = t.parameters;
+        // Anthropic rejects oneOf/anyOf/allOf at the top level of input_schema.
+        toolDef["input_schema"] = strip_top_level_schema_combinators( t.parameters );
         toolsArr.push_back( toolDef );
       }
       request["tools"] = toolsArr;
       // Anthropic requires tool_choice to be "auto" (or "none") when extended thinking is enabled,
-      // so don't force "any" in that case (it would be rejected with a 400).
-      const bool forceTool = (toolChoice == ToolChoice::Required) && !thinkingEnabled;
+      // and the newest models reject a forced choice outright, so don't force "any" in those cases
+      // (it would be rejected with a 400).
+      const bool forceTool = (toolChoice == ToolChoice::Required) && !thinkingEnabled
+                             && !claude_rejects_forced_tool_choice( claude );
       request["tool_choice"]["type"] = forceTool ? "any" : "auto";
     }
 
@@ -887,6 +1025,7 @@ public:
       out.completionTokens = get_usage_count( usage, "output_tokens" );
       out.cachedTokens = get_usage_count( usage, "cache_read_input_tokens" );
       out.cacheCreationTokens = get_usage_count( usage, "cache_creation_input_tokens" );
+      out.cost = get_usage_cost( usage );  // e.g. OpenRouter's Anthropic-compatible /v1/messages
 
       // Anthropic's `input_tokens` counts only the *uncached* input; cache reads and cache writes
       // are reported separately and are additive.  Fold them in so promptTokens means the TOTAL
@@ -957,7 +1096,7 @@ public:
 
   std::vector<std::string> cachePriorityFields() const override
   {
-    return { "model", "max_tokens", "system", "thinking", "tools", "tool_choice" };
+    return { "model", "max_tokens", "system", "thinking", "output_config", "tools", "tool_choice" };
   }
 };//class AnthropicProtocol
 
@@ -1233,6 +1372,7 @@ public:
       out.totalTokens = get_usage_count( usage, "total_tokens" );
       if( !out.totalTokens.has_value() && out.promptTokens.has_value() && out.completionTokens.has_value() )
         out.totalTokens = out.promptTokens.value() + out.completionTokens.value();
+      out.cost = get_usage_cost( usage );
 
       if( usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object() )
         out.cachedTokens = get_usage_count( usage["input_tokens_details"], "cached_tokens" );
@@ -1330,3 +1470,14 @@ std::unique_ptr<const LlmApiProtocol> LlmApiProtocol::create( LlmConfig::LlmApi:
   }
   throw std::logic_error( "LlmApiProtocol::create: unknown ApiFormat" );
 }//LlmApiProtocol::create(...)
+
+
+nlohmann::json strip_top_level_schema_combinators( nlohmann::json schema )
+{
+  if( schema.is_object() )
+  {
+    for( const char *key : { "oneOf", "anyOf", "allOf", "not", "if", "then", "else" } )
+      schema.erase( key );
+  }
+  return schema;
+}//strip_top_level_schema_combinators(...)

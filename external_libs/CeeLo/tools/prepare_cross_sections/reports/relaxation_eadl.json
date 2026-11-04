@@ -1,30 +1,839 @@
 {
   "acceptance_gate_percent": 0.1,
+  "k_alpha1_energies": [
+    {
+      "Z": 6,
+      "binding_difference_keV": 0.27674,
+      "tabulated_keV": 0.28202999999999995
+    },
+    {
+      "Z": 7,
+      "binding_difference_keV": 0.39062,
+      "tabulated_keV": 0.39337
+    },
+    {
+      "Z": 8,
+      "binding_difference_keV": 0.52438,
+      "tabulated_keV": 0.52313
+    },
+    {
+      "Z": 9,
+      "binding_difference_keV": 0.6765800000000001,
+      "tabulated_keV": 0.6713899999999999
+    },
+    {
+      "Z": 10,
+      "binding_difference_keV": 0.8484400000000001,
+      "tabulated_keV": 0.8382200000000001
+    },
+    {
+      "Z": 11,
+      "binding_difference_keV": 1.041,
+      "tabulated_keV": 1.02778
+    },
+    {
+      "Z": 12,
+      "binding_difference_keV": 1.254,
+      "tabulated_keV": 1.23826
+    },
+    {
+      "Z": 13,
+      "binding_difference_keV": 1.487,
+      "tabulated_keV": 1.46917
+    },
+    {
+      "Z": 14,
+      "binding_difference_keV": 1.74,
+      "tabulated_keV": 1.72052
+    },
+    {
+      "Z": 15,
+      "binding_difference_keV": 2.014,
+      "tabulated_keV": 1.99222
+    },
+    {
+      "Z": 16,
+      "binding_difference_keV": 2.308,
+      "tabulated_keV": 2.2845
+    },
+    {
+      "Z": 17,
+      "binding_difference_keV": 2.623,
+      "tabulated_keV": 2.5972
+    },
+    {
+      "Z": 18,
+      "binding_difference_keV": 2.9578,
+      "tabulated_keV": 2.9305100000000004
+    },
+    {
+      "Z": 19,
+      "binding_difference_keV": 3.314,
+      "tabulated_keV": 3.2846599999999997
+    },
+    {
+      "Z": 20,
+      "binding_difference_keV": 3.692,
+      "tabulated_keV": 3.6598
+    },
+    {
+      "Z": 21,
+      "binding_difference_keV": 4.091,
+      "tabulated_keV": 4.05694
+    },
+    {
+      "Z": 22,
+      "binding_difference_keV": 4.511,
+      "tabulated_keV": 4.475359999999999
+    },
+    {
+      "Z": 23,
+      "binding_difference_keV": 4.952,
+      "tabulated_keV": 4.91506
+    },
+    {
+      "Z": 24,
+      "binding_difference_keV": 5.415,
+      "tabulated_keV": 5.37679
+    },
+    {
+      "Z": 25,
+      "binding_difference_keV": 5.899,
+      "tabulated_keV": 5.8586800000000006
+    },
+    {
+      "Z": 26,
+      "binding_difference_keV": 6.404,
+      "tabulated_keV": 6.36271
+    },
+    {
+      "Z": 27,
+      "binding_difference_keV": 6.93,
+      "tabulated_keV": 6.8884099999999995
+    },
+    {
+      "Z": 28,
+      "binding_difference_keV": 7.478,
+      "tabulated_keV": 7.435779999999999
+    },
+    {
+      "Z": 29,
+      "binding_difference_keV": 8.048,
+      "tabulated_keV": 8.00571
+    },
+    {
+      "Z": 30,
+      "binding_difference_keV": 8.639,
+      "tabulated_keV": 8.5964
+    },
+    {
+      "Z": 31,
+      "binding_difference_keV": 9.252,
+      "tabulated_keV": 9.209
+    },
+    {
+      "Z": 32,
+      "binding_difference_keV": 9.887,
+      "tabulated_keV": 9.8442
+    },
+    {
+      "Z": 33,
+      "binding_difference_keV": 10.544,
+      "tabulated_keV": 10.5007
+    },
+    {
+      "Z": 34,
+      "binding_difference_keV": 11.223,
+      "tabulated_keV": 11.180399999999999
+    },
+    {
+      "Z": 35,
+      "binding_difference_keV": 11.925,
+      "tabulated_keV": 11.8814
+    },
+    {
+      "Z": 36,
+      "binding_difference_keV": 12.6486,
+      "tabulated_keV": 12.6066
+    },
+    {
+      "Z": 37,
+      "binding_difference_keV": 13.396,
+      "tabulated_keV": 13.3539
+    },
+    {
+      "Z": 38,
+      "binding_difference_keV": 14.165,
+      "tabulated_keV": 14.124600000000001
+    },
+    {
+      "Z": 39,
+      "binding_difference_keV": 14.958,
+      "tabulated_keV": 14.9185
+    },
+    {
+      "Z": 40,
+      "binding_difference_keV": 15.775,
+      "tabulated_keV": 15.737200000000001
+    },
+    {
+      "Z": 41,
+      "binding_difference_keV": 16.615,
+      "tabulated_keV": 16.5789
+    },
+    {
+      "Z": 42,
+      "binding_difference_keV": 17.479,
+      "tabulated_keV": 17.444
+    },
+    {
+      "Z": 43,
+      "binding_difference_keV": 18.367,
+      "tabulated_keV": 18.334400000000002
+    },
+    {
+      "Z": 44,
+      "binding_difference_keV": 19.279,
+      "tabulated_keV": 19.2483
+    },
+    {
+      "Z": 45,
+      "binding_difference_keV": 20.215,
+      "tabulated_keV": 20.1865
+    },
+    {
+      "Z": 46,
+      "binding_difference_keV": 21.177,
+      "tabulated_keV": 21.1504
+    },
+    {
+      "Z": 47,
+      "binding_difference_keV": 22.163,
+      "tabulated_keV": 22.139
+    },
+    {
+      "Z": 48,
+      "binding_difference_keV": 23.173,
+      "tabulated_keV": 23.1526
+    },
+    {
+      "Z": 49,
+      "binding_difference_keV": 24.209,
+      "tabulated_keV": 24.1926
+    },
+    {
+      "Z": 50,
+      "binding_difference_keV": 25.271,
+      "tabulated_keV": 25.2572
+    },
+    {
+      "Z": 51,
+      "binding_difference_keV": 26.359,
+      "tabulated_keV": 26.3485
+    },
+    {
+      "Z": 52,
+      "binding_difference_keV": 27.473,
+      "tabulated_keV": 27.4653
+    },
+    {
+      "Z": 53,
+      "binding_difference_keV": 28.613,
+      "tabulated_keV": 28.6095
+    },
+    {
+      "Z": 54,
+      "binding_difference_keV": 29.7777,
+      "tabulated_keV": 29.781299999999998
+    },
+    {
+      "Z": 55,
+      "binding_difference_keV": 30.973,
+      "tabulated_keV": 30.978900000000003
+    },
+    {
+      "Z": 56,
+      "binding_difference_keV": 32.193,
+      "tabulated_keV": 32.2056
+    },
+    {
+      "Z": 57,
+      "binding_difference_keV": 33.442,
+      "tabulated_keV": 33.459199999999996
+    },
+    {
+      "Z": 58,
+      "binding_difference_keV": 34.72,
+      "tabulated_keV": 34.743199999999995
+    },
+    {
+      "Z": 59,
+      "binding_difference_keV": 36.027,
+      "tabulated_keV": 36.0556
+    },
+    {
+      "Z": 60,
+      "binding_difference_keV": 37.362,
+      "tabulated_keV": 37.396300000000004
+    },
+    {
+      "Z": 61,
+      "binding_difference_keV": 38.724,
+      "tabulated_keV": 38.7671
+    },
+    {
+      "Z": 62,
+      "binding_difference_keV": 40.117,
+      "tabulated_keV": 40.168099999999995
+    },
+    {
+      "Z": 63,
+      "binding_difference_keV": 41.541,
+      "tabulated_keV": 41.599199999999996
+    },
+    {
+      "Z": 64,
+      "binding_difference_keV": 42.996,
+      "tabulated_keV": 43.060300000000005
+    },
+    {
+      "Z": 65,
+      "binding_difference_keV": 44.481,
+      "tabulated_keV": 44.5547
+    },
+    {
+      "Z": 66,
+      "binding_difference_keV": 45.998,
+      "tabulated_keV": 46.08
+    },
+    {
+      "Z": 67,
+      "binding_difference_keV": 47.547,
+      "tabulated_keV": 47.6373
+    },
+    {
+      "Z": 68,
+      "binding_difference_keV": 49.128,
+      "tabulated_keV": 49.2266
+    },
+    {
+      "Z": 69,
+      "binding_difference_keV": 50.742,
+      "tabulated_keV": 50.8499
+    },
+    {
+      "Z": 70,
+      "binding_difference_keV": 52.389,
+      "tabulated_keV": 52.5072
+    },
+    {
+      "Z": 71,
+      "binding_difference_keV": 54.07,
+      "tabulated_keV": 54.198800000000006
+    },
+    {
+      "Z": 72,
+      "binding_difference_keV": 55.786,
+      "tabulated_keV": 55.9237
+    },
+    {
+      "Z": 73,
+      "binding_difference_keV": 57.535,
+      "tabulated_keV": 57.6858
+    },
+    {
+      "Z": 74,
+      "binding_difference_keV": 59.32,
+      "tabulated_keV": 59.483
+    },
+    {
+      "Z": 75,
+      "binding_difference_keV": 61.141,
+      "tabulated_keV": 61.318
+    },
+    {
+      "Z": 76,
+      "binding_difference_keV": 63.0,
+      "tabulated_keV": 63.189
+    },
+    {
+      "Z": 77,
+      "binding_difference_keV": 64.896,
+      "tabulated_keV": 65.1
+    },
+    {
+      "Z": 78,
+      "binding_difference_keV": 66.832,
+      "tabulated_keV": 67.048
+    },
+    {
+      "Z": 79,
+      "binding_difference_keV": 68.806,
+      "tabulated_keV": 69.038
+    },
+    {
+      "Z": 80,
+      "binding_difference_keV": 70.82,
+      "tabulated_keV": 71.066
+    },
+    {
+      "Z": 81,
+      "binding_difference_keV": 72.874,
+      "tabulated_keV": 73.138
+    },
+    {
+      "Z": 82,
+      "binding_difference_keV": 74.97,
+      "tabulated_keV": 75.25
+    },
+    {
+      "Z": 83,
+      "binding_difference_keV": 77.108,
+      "tabulated_keV": 77.407
+    },
+    {
+      "Z": 84,
+      "binding_difference_keV": 79.29,
+      "tabulated_keV": 79.607
+    },
+    {
+      "Z": 85,
+      "binding_difference_keV": 81.517,
+      "tabulated_keV": 81.853
+    },
+    {
+      "Z": 86,
+      "binding_difference_keV": 83.789,
+      "tabulated_keV": 84.145
+    },
+    {
+      "Z": 87,
+      "binding_difference_keV": 86.102,
+      "tabulated_keV": 86.486
+    },
+    {
+      "Z": 88,
+      "binding_difference_keV": 88.471,
+      "tabulated_keV": 88.864
+    },
+    {
+      "Z": 89,
+      "binding_difference_keV": 90.886,
+      "tabulated_keV": 91.307
+    },
+    {
+      "Z": 90,
+      "binding_difference_keV": 93.347,
+      "tabulated_keV": 93.795
+    },
+    {
+      "Z": 91,
+      "binding_difference_keV": 95.865,
+      "tabulated_keV": 96.337
+    },
+    {
+      "Z": 92,
+      "binding_difference_keV": 98.439,
+      "tabulated_keV": 98.928
+    },
+    {
+      "Z": 93,
+      "binding_difference_keV": 101.068,
+      "tabulated_keV": 101.574
+    },
+    {
+      "Z": 94,
+      "binding_difference_keV": 103.741,
+      "tabulated_keV": 104.279
+    },
+    {
+      "Z": 95,
+      "binding_difference_keV": 106.468,
+      "tabulated_keV": 107.043
+    },
+    {
+      "Z": 96,
+      "binding_difference_keV": 109.286,
+      "tabulated_keV": 109.866
+    },
+    {
+      "Z": 97,
+      "binding_difference_keV": 112.15,
+      "tabulated_keV": 112.748
+    },
+    {
+      "Z": 98,
+      "binding_difference_keV": 115.063,
+      "tabulated_keV": 115.701
+    },
+    {
+      "Z": 99,
+      "binding_difference_keV": 118.057,
+      "tabulated_keV": 118.701
+    }
+  ],
+  "l_photoelectric_shares": {
+    "acceptance_absolute_error": 0.003,
+    "elements": [
+      {
+        "Z": 69,
+        "edges_keV": [
+          10.118,
+          59.393
+        ],
+        "maximum_share_error": 0.001468381518814621,
+        "nodes": 29
+      },
+      {
+        "Z": 70,
+        "edges_keV": [
+          10.49,
+          61.335
+        ],
+        "maximum_share_error": 0.0013360218542790847,
+        "nodes": 29
+      },
+      {
+        "Z": 71,
+        "edges_keV": [
+          10.355,
+          10.876,
+          63.32
+        ],
+        "maximum_share_error": 0.0010943824390036716,
+        "nodes": 32
+      },
+      {
+        "Z": 72,
+        "edges_keV": [
+          10.742,
+          11.275,
+          65.35
+        ],
+        "maximum_share_error": 0.0009107503234284109,
+        "nodes": 32
+      },
+      {
+        "Z": 73,
+        "edges_keV": [
+          11.139,
+          11.684,
+          67.419
+        ],
+        "maximum_share_error": 0.0012657498570814996,
+        "nodes": 32
+      },
+      {
+        "Z": 74,
+        "edges_keV": [
+          10.209,
+          11.546,
+          12.103,
+          69.529
+        ],
+        "maximum_share_error": 0.0011659334815758149,
+        "nodes": 35
+      },
+      {
+        "Z": 75,
+        "edges_keV": [
+          10.54,
+          11.963,
+          12.532,
+          71.681
+        ],
+        "maximum_share_error": 0.0013599203682815308,
+        "nodes": 35
+      },
+      {
+        "Z": 76,
+        "edges_keV": [
+          10.876,
+          12.39,
+          12.972,
+          73.876
+        ],
+        "maximum_share_error": 0.0011038914756199836,
+        "nodes": 35
+      },
+      {
+        "Z": 77,
+        "edges_keV": [
+          11.219,
+          12.828,
+          13.422,
+          76.115
+        ],
+        "maximum_share_error": 0.0012488466335212611,
+        "nodes": 35
+      },
+      {
+        "Z": 78,
+        "edges_keV": [
+          11.567,
+          13.277,
+          13.883,
+          78.399
+        ],
+        "maximum_share_error": 0.0013638139005126004,
+        "nodes": 35
+      },
+      {
+        "Z": 79,
+        "edges_keV": [
+          11.923,
+          13.738,
+          14.356,
+          80.729
+        ],
+        "maximum_share_error": 0.0010913083622668407,
+        "nodes": 35
+      },
+      {
+        "Z": 80,
+        "edges_keV": [
+          12.288,
+          14.214,
+          14.845,
+          83.108
+        ],
+        "maximum_share_error": 0.0009152846971902107,
+        "nodes": 35
+      },
+      {
+        "Z": 81,
+        "edges_keV": [
+          12.662,
+          14.704,
+          15.35,
+          85.536
+        ],
+        "maximum_share_error": 0.001524102286736273,
+        "nodes": 35
+      },
+      {
+        "Z": 82,
+        "edges_keV": [
+          13.041,
+          15.206,
+          15.867,
+          88.011
+        ],
+        "maximum_share_error": 0.0008961885266836889,
+        "nodes": 35
+      },
+      {
+        "Z": 83,
+        "edges_keV": [
+          13.426,
+          15.719,
+          16.396,
+          90.534
+        ],
+        "maximum_share_error": 0.0018009877064507074,
+        "nodes": 35
+      },
+      {
+        "Z": 84,
+        "edges_keV": [
+          13.816,
+          16.244,
+          16.937,
+          93.106
+        ],
+        "maximum_share_error": 0.0017208089576686292,
+        "nodes": 35
+      },
+      {
+        "Z": 85,
+        "edges_keV": [
+          14.212,
+          16.782,
+          17.49,
+          95.729
+        ],
+        "maximum_share_error": 0.0012637667422904508,
+        "nodes": 35
+      },
+      {
+        "Z": 86,
+        "edges_keV": [
+          14.615,
+          17.334,
+          18.055,
+          98.404
+        ],
+        "maximum_share_error": 0.0011789199335467404,
+        "nodes": 35
+      },
+      {
+        "Z": 87,
+        "edges_keV": [
+          15.028,
+          17.903,
+          18.637,
+          101.13
+        ],
+        "maximum_share_error": 0.0028413929466822863,
+        "nodes": 34
+      },
+      {
+        "Z": 88,
+        "edges_keV": [
+          15.449,
+          18.488,
+          19.237,
+          103.92
+        ],
+        "maximum_share_error": 0.0014162298445675736,
+        "nodes": 35
+      },
+      {
+        "Z": 89,
+        "edges_keV": [
+          15.874,
+          19.086,
+          19.85,
+          106.76
+        ],
+        "maximum_share_error": 0.002404368961365755,
+        "nodes": 35
+      },
+      {
+        "Z": 90,
+        "edges_keV": [
+          16.303,
+          19.696,
+          20.475,
+          109.65
+        ],
+        "maximum_share_error": 0.0015945511948532998,
+        "nodes": 35
+      },
+      {
+        "Z": 91,
+        "edges_keV": [
+          16.735,
+          20.318,
+          21.112,
+          112.6
+        ],
+        "maximum_share_error": 0.0012721006868212648,
+        "nodes": 35
+      },
+      {
+        "Z": 92,
+        "edges_keV": [
+          17.171,
+          20.953,
+          21.762,
+          115.61
+        ],
+        "maximum_share_error": 0.00145357713555605,
+        "nodes": 35
+      },
+      {
+        "Z": 93,
+        "edges_keV": [
+          17.612,
+          21.602,
+          22.427,
+          118.68
+        ],
+        "maximum_share_error": 0.0013823338732519286,
+        "nodes": 35
+      },
+      {
+        "Z": 94,
+        "edges_keV": [
+          18.059,
+          22.267,
+          23.109,
+          121.8
+        ],
+        "maximum_share_error": 0.0013097199140073568,
+        "nodes": 35
+      },
+      {
+        "Z": 95,
+        "edges_keV": [
+          18.512,
+          22.949,
+          23.803,
+          124.98
+        ],
+        "maximum_share_error": 0.0012658778283391459,
+        "nodes": 35
+      },
+      {
+        "Z": 96,
+        "edges_keV": [
+          18.974,
+          23.654,
+          24.523,
+          128.26
+        ],
+        "maximum_share_error": 0.001076588123906097,
+        "nodes": 35
+      },
+      {
+        "Z": 97,
+        "edges_keV": [
+          19.44,
+          24.372,
+          25.26,
+          131.59
+        ],
+        "maximum_share_error": 0.001355546339684488,
+        "nodes": 35
+      },
+      {
+        "Z": 98,
+        "edges_keV": [
+          19.907,
+          25.103,
+          26.008,
+          134.97
+        ],
+        "maximum_share_error": 0.001697067399003993,
+        "nodes": 35
+      }
+    ],
+    "maximum_absolute_error": 0.0028413929466822863,
+    "range_keV": [
+      10.0,
+      20000.0
+    ],
+    "source": "EPICS2023 EPDL MF=23 MT=535-537 over MT=522",
+    "source_sha256": "b4888d0d0e3b7672f56232f1c6ef8da369a67ad2f2d773168fc26275fac82fca"
+  },
   "l_transport_cut_keV": 10.0,
+  "line_energy_definition": "E_b(vacancy) - E_b(filling subshell) from the same EADL MF=28 MT=533 section; EADL's tabulated transition energies are not used",
   "maximum_atomic_number": 99,
-  "maximum_float32_mean_emitted_energy_error_percent": 4.3679915240346645e-06,
+  "maximum_float32_mean_emitted_energy_error_percent": 5.3869013472152005e-06,
   "maximum_float32_yield_error_percent": 5.302432404263868e-06,
+  "maximum_k_line_shift_from_tabulated_keV": 0.6709999999999923,
   "maximum_lines_per_subshell": 23,
-  "p95_float32_mean_emitted_energy_error_percent": 2.792948911034543e-06,
-  "p95_float32_yield_error_percent": 3.3969981161341423e-06,
+  "p95_float32_mean_emitted_energy_error_percent": 2.5477832787945687e-06,
+  "p95_float32_yield_error_percent": 3.4916206120838567e-06,
   "passed": true,
   "processes": {
     "K_relaxation": {
-      "coefficient_bytes": 8624,
-      "metadata_bytes": 2400,
+      "coefficient_bytes": 9602,
+      "metadata_bytes": 4000,
       "native_coefficients": 2154,
       "retained_coefficients": 2156
     },
     "L_relaxation": {
-      "coefficient_bytes": 12360,
-      "metadata_bytes": 7200,
-      "native_coefficients": 3083,
-      "retained_coefficients": 3090
+      "coefficient_bytes": 29992,
+      "metadata_bytes": 9600,
+      "native_coefficients": 7488,
+      "retained_coefficients": 7498
     }
   },
   "schema_version": 1,
-  "source": "EPICS2023 EADL MF=28 MT=533",
-  "source_lock_sha256": "3efabdacdc1e88e33a82ce69e4e6734cbaa482287db8a586760f2d04fdc7ce9a",
+  "source": "EPICS2023 EADL MF=28 MT=533; EPDL MF=23 MT=522/534-537",
+  "source_lock_sha256": "6e3f7af063f6bd0e9eb45cdd5027bfdbe6af4b3f012f3e22eafa9d626fbc059f",
   "source_sha256": "5909058c0fdc2aedc659ba3944ca2caeaaee0c6e7ed8d72ba61c747d4956c2f0",
   "subshells": [
     {
@@ -170,7 +979,7 @@
     {
       "Z": 6,
       "line_count": 2,
-      "mean_energy_keV": 0.28202666195823284,
+      "mean_energy_keV": 0.27674,
       "shell": "K",
       "yield": 0.001682088
     },
@@ -198,7 +1007,7 @@
     {
       "Z": 7,
       "line_count": 2,
-      "mean_energy_keV": 0.39336331992271084,
+      "mean_energy_keV": 0.39062,
       "shell": "K",
       "yield": 0.00327601
     },
@@ -226,7 +1035,7 @@
     {
       "Z": 8,
       "line_count": 2,
-      "mean_energy_keV": 0.5231166314175844,
+      "mean_energy_keV": 0.52438,
       "shell": "K",
       "yield": 0.00570795
     },
@@ -254,7 +1063,7 @@
     {
       "Z": 9,
       "line_count": 2,
-      "mean_energy_keV": 0.671366591930548,
+      "mean_energy_keV": 0.6765800000000001,
       "shell": "K",
       "yield": 0.00917584
     },
@@ -282,7 +1091,7 @@
     {
       "Z": 10,
       "line_count": 2,
-      "mean_energy_keV": 0.8381798359110096,
+      "mean_energy_keV": 0.8484400000000001,
       "shell": "K",
       "yield": 0.01387296
     },
@@ -310,7 +1119,7 @@
     {
       "Z": 11,
       "line_count": 2,
-      "mean_energy_keV": 1.0277130530685195,
+      "mean_energy_keV": 1.041,
       "shell": "K",
       "yield": 0.01998586
     },
@@ -338,7 +1147,7 @@
     {
       "Z": 12,
       "line_count": 2,
-      "mean_energy_keV": 1.238156190378002,
+      "mean_energy_keV": 1.254,
       "shell": "K",
       "yield": 0.02769217
     },
@@ -366,7 +1175,7 @@
     {
       "Z": 13,
       "line_count": 4,
-      "mean_energy_keV": 1.4694742198622017,
+      "mean_energy_keV": 1.4874312869800395,
       "shell": "K",
       "yield": 0.0371483244
     },
@@ -394,7 +1203,7 @@
     {
       "Z": 14,
       "line_count": 4,
-      "mean_energy_keV": 1.7219930269715251,
+      "mean_energy_keV": 1.741606512867788,
       "shell": "K",
       "yield": 0.048497146000000005
     },
@@ -422,7 +1231,7 @@
     {
       "Z": 15,
       "line_count": 4,
-      "mean_energy_keV": 1.995798594387053,
+      "mean_energy_keV": 2.017376082842476,
       "shell": "K",
       "yield": 0.061850469
     },
@@ -450,7 +1259,7 @@
     {
       "Z": 16,
       "line_count": 4,
-      "mean_energy_keV": 2.2912547648700965,
+      "mean_energy_keV": 2.3143848440469483,
       "shell": "K",
       "yield": 0.07729153
     },
@@ -478,7 +1287,7 @@
     {
       "Z": 17,
       "line_count": 4,
-      "mean_energy_keV": 2.6083477557511836,
+      "mean_energy_keV": 2.633938273984928,
       "shell": "K",
       "yield": 0.09486916000000001
     },
@@ -506,7 +1315,7 @@
     {
       "Z": 18,
       "line_count": 4,
-      "mean_energy_keV": 2.947379899566662,
+      "mean_energy_keV": 2.974750740183389,
       "shell": "K",
       "yield": 0.11458944
     },
@@ -534,7 +1343,7 @@
     {
       "Z": 19,
       "line_count": 4,
-      "mean_energy_keV": 3.307746645019904,
+      "mean_energy_keV": 3.3372750464175964,
       "shell": "K",
       "yield": 0.13641917
     },
@@ -562,7 +1371,7 @@
     {
       "Z": 20,
       "line_count": 4,
-      "mean_energy_keV": 3.689573213026122,
+      "mean_energy_keV": 3.7216800736168327,
       "shell": "K",
       "yield": 0.16027856000000001
     },
@@ -590,7 +1399,7 @@
     {
       "Z": 21,
       "line_count": 6,
-      "mean_energy_keV": 4.092288823172888,
+      "mean_energy_keV": 4.126332232197356,
       "shell": "K",
       "yield": 0.186041595161
     },
@@ -618,7 +1427,7 @@
     {
       "Z": 22,
       "line_count": 6,
-      "mean_energy_keV": 4.516494823018656,
+      "mean_energy_keV": 4.552136130581991,
       "shell": "K",
       "yield": 0.213541378615
     },
@@ -646,7 +1455,7 @@
     {
       "Z": 23,
       "line_count": 6,
-      "mean_energy_keV": 4.962195797474661,
+      "mean_energy_keV": 4.999259557507535,
       "shell": "K",
       "yield": 0.24256500183000002
     },
@@ -674,7 +1483,7 @@
     {
       "Z": 24,
       "line_count": 6,
-      "mean_energy_keV": 5.428891177313516,
+      "mean_energy_keV": 5.467225299212873,
       "shell": "K",
       "yield": 0.2728670109
     },
@@ -702,7 +1511,7 @@
     {
       "Z": 25,
       "line_count": 6,
-      "mean_energy_keV": 5.918519878087451,
+      "mean_energy_keV": 5.9587992645237815,
       "shell": "K",
       "yield": 0.30418999666
     },
@@ -730,7 +1539,7 @@
     {
       "Z": 26,
       "line_count": 6,
-      "mean_energy_keV": 6.429271141219825,
+      "mean_energy_keV": 6.470478015623458,
       "shell": "K",
       "yield": 0.3362420802
     },
@@ -758,7 +1567,7 @@
     {
       "Z": 27,
       "line_count": 6,
-      "mean_energy_keV": 6.961925498058645,
+      "mean_energy_keV": 7.003475685413244,
       "shell": "K",
       "yield": 0.36872688051
     },
@@ -786,7 +1595,7 @@
     {
       "Z": 28,
       "line_count": 6,
-      "mean_energy_keV": 7.516498821448934,
+      "mean_energy_keV": 7.558820488583295,
       "shell": "K",
       "yield": 0.401345036
     },
@@ -814,7 +1623,7 @@
     {
       "Z": 29,
       "line_count": 6,
-      "mean_energy_keV": 8.092443559721696,
+      "mean_energy_keV": 8.134894793883134,
       "shell": "K",
       "yield": 0.4338115737
     },
@@ -842,7 +1651,7 @@
     {
       "Z": 30,
       "line_count": 6,
-      "mean_energy_keV": 8.692187936411154,
+      "mean_energy_keV": 8.73498085647456,
       "shell": "K",
       "yield": 0.46587239680000003
     },
@@ -870,7 +1679,7 @@
     {
       "Z": 31,
       "line_count": 8,
-      "mean_energy_keV": 9.315273682945744,
+      "mean_energy_keV": 9.358378304761565,
       "shell": "K",
       "yield": 0.49728651900000004
     },
@@ -898,7 +1707,7 @@
     {
       "Z": 32,
       "line_count": 8,
-      "mean_energy_keV": 9.96258358480674,
+      "mean_energy_keV": 10.00551232641729,
       "shell": "K",
       "yield": 0.5278357326
     },
@@ -926,7 +1735,7 @@
     {
       "Z": 33,
       "line_count": 8,
-      "mean_energy_keV": 10.632658540522021,
+      "mean_energy_keV": 10.676342826715636,
       "shell": "K",
       "yield": 0.5573661502
     },
@@ -954,7 +1763,7 @@
     {
       "Z": 34,
       "line_count": 8,
-      "mean_energy_keV": 11.327369585364892,
+      "mean_energy_keV": 11.37048492774038,
       "shell": "K",
       "yield": 0.5857069857
     },
@@ -982,7 +1791,7 @@
     {
       "Z": 35,
       "line_count": 8,
-      "mean_energy_keV": 12.044965558620031,
+      "mean_energy_keV": 12.089065010989344,
       "shell": "K",
       "yield": 0.612776326
     },
@@ -1010,7 +1819,7 @@
     {
       "Z": 36,
       "line_count": 8,
-      "mean_energy_keV": 12.788295266356783,
+      "mean_energy_keV": 12.830764317791601,
       "shell": "K",
       "yield": 0.6384790427
     },
@@ -1038,7 +1847,7 @@
     {
       "Z": 37,
       "line_count": 8,
-      "mean_energy_keV": 13.555203672909135,
+      "mean_energy_keV": 13.597649940415634,
       "shell": "K",
       "yield": 0.6627845363
     },
@@ -1066,7 +1875,7 @@
     {
       "Z": 38,
       "line_count": 8,
-      "mean_energy_keV": 14.346625159205622,
+      "mean_energy_keV": 14.387583372607287,
       "shell": "K",
       "yield": 0.685672853
     },
@@ -1094,7 +1903,7 @@
     {
       "Z": 39,
       "line_count": 10,
-      "mean_energy_keV": 15.16231763588121,
+      "mean_energy_keV": 15.202574292626677,
       "shell": "K",
       "yield": 0.7071189458129999
     },
@@ -1122,7 +1931,7 @@
     {
       "Z": 40,
       "line_count": 10,
-      "mean_energy_keV": 16.003476623218134,
+      "mean_energy_keV": 16.042191870655472,
       "shell": "K",
       "yield": 0.72718046891
     },
@@ -1150,7 +1959,7 @@
     {
       "Z": 41,
       "line_count": 10,
-      "mean_energy_keV": 16.867819008047405,
+      "mean_energy_keV": 16.90489022212638,
       "shell": "K",
       "yield": 0.74588091358
     },
@@ -1178,7 +1987,7 @@
     {
       "Z": 42,
       "line_count": 10,
-      "mean_energy_keV": 17.755724408774835,
+      "mean_energy_keV": 17.791758302167633,
       "shell": "K",
       "yield": 0.76325992173
     },
@@ -1206,7 +2015,7 @@
     {
       "Z": 43,
       "line_count": 10,
-      "mean_energy_keV": 18.669599556142284,
+      "mean_energy_keV": 18.703171093335307,
       "shell": "K",
       "yield": 0.77937805235
     },
@@ -1234,7 +2043,7 @@
     {
       "Z": 44,
       "line_count": 10,
-      "mean_energy_keV": 19.606384270832095,
+      "mean_energy_keV": 19.638302690959584,
       "shell": "K",
       "yield": 0.7943017708
     },
@@ -1262,7 +2071,7 @@
     {
       "Z": 45,
       "line_count": 10,
-      "mean_energy_keV": 20.568224687158065,
+      "mean_energy_keV": 20.598277983688025,
       "shell": "K",
       "yield": 0.808089394
     },
@@ -1290,7 +2099,7 @@
     {
       "Z": 46,
       "line_count": 10,
-      "mean_energy_keV": 21.556542233629937,
+      "mean_energy_keV": 21.584700845976307,
       "shell": "K",
       "yield": 0.820830813
     },
@@ -1318,7 +2127,7 @@
     {
       "Z": 47,
       "line_count": 10,
-      "mean_energy_keV": 22.569260320057857,
+      "mean_energy_keV": 22.59475739587093,
       "shell": "K",
       "yield": 0.8325701
     },
@@ -1346,7 +2155,7 @@
     {
       "Z": 48,
       "line_count": 10,
-      "mean_energy_keV": 23.607533384429974,
+      "mean_energy_keV": 23.629546493182882,
       "shell": "K",
       "yield": 0.8433812253
     },
@@ -1374,7 +2183,7 @@
     {
       "Z": 49,
       "line_count": 12,
-      "mean_energy_keV": 24.673609638873216,
+      "mean_energy_keV": 24.691817257896027,
       "shell": "K",
       "yield": 0.8533404025
     },
@@ -1402,7 +2211,7 @@
     {
       "Z": 50,
       "line_count": 12,
-      "mean_energy_keV": 25.7657813544207,
+      "mean_energy_keV": 25.781559892960075,
       "shell": "K",
       "yield": 0.8625105413999999
     },
@@ -1430,7 +2239,7 @@
     {
       "Z": 51,
       "line_count": 12,
-      "mean_energy_keV": 26.885621248762,
+      "mean_energy_keV": 26.89827201071713,
       "shell": "K",
       "yield": 0.870929563
     },
@@ -1458,7 +2267,7 @@
     {
       "Z": 52,
       "line_count": 12,
-      "mean_energy_keV": 28.0323489759407,
+      "mean_energy_keV": 28.042223145291167,
       "shell": "K",
       "yield": 0.878689054
     },
@@ -1486,7 +2295,7 @@
     {
       "Z": 53,
       "line_count": 12,
-      "mean_energy_keV": 29.207469923869052,
+      "mean_energy_keV": 29.21334798953856,
       "shell": "K",
       "yield": 0.8858094977
     },
@@ -1514,7 +2323,7 @@
     {
       "Z": 54,
       "line_count": 12,
-      "mean_energy_keV": 30.410813764523052,
+      "mean_energy_keV": 30.410279369672363,
       "shell": "K",
       "yield": 0.8923700265
     },
@@ -1542,7 +2351,7 @@
     {
       "Z": 55,
       "line_count": 12,
-      "mean_energy_keV": 31.6405845719049,
+      "mean_energy_keV": 31.637600614317627,
       "shell": "K",
       "yield": 0.8983888062
     },
@@ -1570,7 +2379,7 @@
     {
       "Z": 56,
       "line_count": 12,
-      "mean_energy_keV": 32.89980739312515,
+      "mean_energy_keV": 32.8905183195912,
       "shell": "K",
       "yield": 0.9039301869999999
     },
@@ -1598,7 +2407,7 @@
     {
       "Z": 57,
       "line_count": 12,
-      "mean_energy_keV": 34.18658719097501,
+      "mean_energy_keV": 34.17306999400202,
       "shell": "K",
       "yield": 0.9090299620000001
     },
@@ -1626,7 +2435,7 @@
     {
       "Z": 58,
       "line_count": 12,
-      "mean_energy_keV": 35.50431609946486,
+      "mean_energy_keV": 35.4848586084962,
       "shell": "K",
       "yield": 0.913719414
     },
@@ -1654,7 +2463,7 @@
     {
       "Z": 59,
       "line_count": 12,
-      "mean_energy_keV": 36.85070760944109,
+      "mean_energy_keV": 36.825918167590814,
       "shell": "K",
       "yield": 0.9180304079999999
     },
@@ -1682,7 +2491,7 @@
     {
       "Z": 60,
       "line_count": 12,
-      "mean_energy_keV": 38.225755415064974,
+      "mean_energy_keV": 38.195112833113086,
       "shell": "K",
       "yield": 0.921999971
     },
@@ -1710,7 +2519,7 @@
     {
       "Z": 61,
       "line_count": 12,
-      "mean_energy_keV": 39.63154200015444,
+      "mean_energy_keV": 39.59267453971118,
       "shell": "K",
       "yield": 0.9256601200000001
     },
@@ -1738,7 +2547,7 @@
     {
       "Z": 62,
       "line_count": 12,
-      "mean_energy_keV": 41.06712088981306,
+      "mean_energy_keV": 41.02063293277071,
       "shell": "K",
       "yield": 0.929029673
     },
@@ -1766,7 +2575,7 @@
     {
       "Z": 63,
       "line_count": 12,
-      "mean_energy_keV": 42.53321862250025,
+      "mean_energy_keV": 42.47983355070827,
       "shell": "K",
       "yield": 0.93212983
     },
@@ -1794,7 +2603,7 @@
     {
       "Z": 64,
       "line_count": 12,
-      "mean_energy_keV": 44.030589356810694,
+      "mean_energy_keV": 43.97133277998593,
       "shell": "K",
       "yield": 0.934990078
     },
@@ -1822,7 +2631,7 @@
     {
       "Z": 65,
       "line_count": 12,
-      "mean_energy_keV": 45.558797312416736,
+      "mean_energy_keV": 45.49027881949099,
       "shell": "K",
       "yield": 0.93763011
     },
@@ -1850,7 +2659,7 @@
     {
       "Z": 66,
       "line_count": 12,
-      "mean_energy_keV": 47.118935909379495,
+      "mean_energy_keV": 47.04234277042617,
       "shell": "K",
       "yield": 0.94005963
     },
@@ -1878,7 +2687,7 @@
     {
       "Z": 67,
       "line_count": 12,
-      "mean_energy_keV": 48.71153603083258,
+      "mean_energy_keV": 48.626796772816334,
       "shell": "K",
       "yield": 0.941501233
     },
@@ -1906,7 +2715,7 @@
     {
       "Z": 68,
       "line_count": 12,
-      "mean_energy_keV": 50.334795987324945,
+      "mean_energy_keV": 50.241970201669794,
       "shell": "K",
       "yield": 0.943839296
     },
@@ -1934,14 +2743,14 @@
     {
       "Z": 69,
       "line_count": 12,
-      "mean_energy_keV": 51.992561576813785,
+      "mean_energy_keV": 51.890335794093275,
       "shell": "K",
       "yield": 0.946019544
     },
     {
       "Z": 69,
       "line_count": 2,
-      "mean_energy_keV": 10.048901257989101,
+      "mean_energy_keV": 10.085443860317147,
       "shell": "L1",
       "yield": 0.0019539120000000004
     },
@@ -1962,14 +2771,14 @@
     {
       "Z": 70,
       "line_count": 12,
-      "mean_energy_keV": 53.684392050445666,
+      "mean_energy_keV": 53.571960662380654,
       "shell": "K",
       "yield": 0.948049059
     },
     {
       "Z": 70,
       "line_count": 6,
-      "mean_energy_keV": 10.136001077241927,
+      "mean_energy_keV": 10.15989258249258,
       "shell": "L1",
       "yield": 0.0149208452
     },
@@ -1990,23 +2799,23 @@
     {
       "Z": 71,
       "line_count": 14,
-      "mean_energy_keV": 55.410803358522514,
+      "mean_energy_keV": 55.28791054282142,
       "shell": "K",
       "yield": 0.94995026762
     },
     {
       "Z": 71,
       "line_count": 8,
-      "mean_energy_keV": 10.508839335520067,
+      "mean_energy_keV": 10.530992388018456,
       "shell": "L1",
       "yield": 0.015546927862
     },
     {
       "Z": 71,
-      "line_count": 6,
-      "mean_energy_keV": 10.16572881440073,
+      "line_count": 5,
+      "mean_energy_keV": 10.144374332720888,
       "shell": "L2",
-      "yield": 0.038324452950000004
+      "yield": 0.03828165875
     },
     {
       "Z": 71,
@@ -2018,21 +2827,21 @@
     {
       "Z": 72,
       "line_count": 14,
-      "mean_energy_keV": 57.17042649937108,
+      "mean_energy_keV": 57.039262217996175,
       "shell": "K",
       "yield": 0.9517205572499999
     },
     {
       "Z": 72,
       "line_count": 8,
-      "mean_energy_keV": 10.890204656057875,
+      "mean_energy_keV": 10.912285670795638,
       "shell": "L1",
       "yield": 0.015919307919
     },
     {
       "Z": 72,
       "line_count": 7,
-      "mean_energy_keV": 10.530460247511188,
+      "mean_energy_keV": 10.50569730937546,
       "shell": "L2",
       "yield": 0.04228755271
     },
@@ -2046,21 +2855,21 @@
     {
       "Z": 73,
       "line_count": 14,
-      "mean_energy_keV": 58.96716308492487,
+      "mean_energy_keV": 58.82349775710035,
       "shell": "K",
       "yield": 0.9533797312300001
     },
     {
       "Z": 73,
       "line_count": 8,
-      "mean_energy_keV": 11.28182363692451,
+      "mean_energy_keV": 11.30278937846535,
       "shell": "L1",
       "yield": 0.015601920200000001
     },
     {
       "Z": 73,
       "line_count": 7,
-      "mean_energy_keV": 10.91530924905604,
+      "mean_energy_keV": 10.888455285114711,
       "shell": "L2",
       "yield": 0.0450155376
     },
@@ -2074,728 +2883,728 @@
     {
       "Z": 74,
       "line_count": 14,
-      "mean_energy_keV": 60.79868828988251,
+      "mean_energy_keV": 60.643051152768756,
       "shell": "K",
       "yield": 0.95386044919
     },
     {
       "Z": 74,
       "line_count": 10,
-      "mean_energy_keV": 11.541315283987435,
+      "mean_energy_keV": 11.562642559140805,
       "shell": "L1",
       "yield": 0.01680984482
     },
     {
       "Z": 74,
       "line_count": 7,
-      "mean_energy_keV": 11.309922827666444,
+      "mean_energy_keV": 11.281637855042268,
       "shell": "L2",
       "yield": 0.047876729
     },
     {
       "Z": 74,
       "line_count": 7,
-      "mean_energy_keV": 10.172184960035535,
+      "mean_energy_keV": 10.176561618274775,
       "shell": "L3",
       "yield": 0.00156767518
     },
     {
       "Z": 75,
       "line_count": 14,
-      "mean_energy_keV": 62.66794204180176,
+      "mean_energy_keV": 62.49889678057383,
       "shell": "K",
       "yield": 0.9550494872
     },
     {
       "Z": 75,
       "line_count": 11,
-      "mean_energy_keV": 10.82465290750039,
+      "mean_energy_keV": 10.840729974844134,
       "shell": "L1",
       "yield": 0.04454992955
     },
     {
       "Z": 75,
       "line_count": 8,
-      "mean_energy_keV": 10.316955546256903,
+      "mean_energy_keV": 10.294242958069468,
       "shell": "L2",
       "yield": 0.3007804452
     },
     {
       "Z": 75,
       "line_count": 11,
-      "mean_energy_keV": 10.283666125370372,
+      "mean_energy_keV": 10.286201558380915,
       "shell": "L3",
       "yield": 0.04093566044
     },
     {
       "Z": 76,
       "line_count": 14,
-      "mean_energy_keV": 64.5731790671217,
+      "mean_energy_keV": 64.39205278457987,
       "shell": "K",
       "yield": 0.956149948
     },
     {
       "Z": 76,
       "line_count": 12,
-      "mean_energy_keV": 10.854610439507107,
+      "mean_energy_keV": 10.869719968823794,
       "shell": "L1",
       "yield": 0.06867072963
     },
     {
       "Z": 76,
       "line_count": 8,
-      "mean_energy_keV": 10.682489312307071,
+      "mean_energy_keV": 10.656629479911468,
       "shell": "L2",
       "yield": 0.3143859645
     },
     {
       "Z": 76,
       "line_count": 12,
-      "mean_energy_keV": 10.58696469493813,
+      "mean_energy_keV": 10.58742848464128,
       "shell": "L3",
       "yield": 0.046020397979999995
     },
     {
       "Z": 77,
       "line_count": 14,
-      "mean_energy_keV": 66.51732926592761,
+      "mean_energy_keV": 66.32219361251317,
       "shell": "K",
       "yield": 0.9571805879999999
     },
     {
       "Z": 77,
       "line_count": 12,
-      "mean_energy_keV": 11.225035025397398,
+      "mean_energy_keV": 11.238734587009764,
       "shell": "L1",
       "yield": 0.0740881758
     },
     {
       "Z": 77,
       "line_count": 9,
-      "mean_energy_keV": 11.056622095037302,
+      "mean_energy_keV": 11.028394878258318,
       "shell": "L2",
       "yield": 0.32802804680000003
     },
     {
       "Z": 77,
       "line_count": 12,
-      "mean_energy_keV": 10.914696093703231,
+      "mean_energy_keV": 10.915575188674433,
       "shell": "L3",
       "yield": 0.04873740916
     },
     {
       "Z": 78,
       "line_count": 14,
-      "mean_energy_keV": 68.49903691685314,
+      "mean_energy_keV": 68.29149646946826,
       "shell": "K",
       "yield": 0.9581198432
     },
     {
       "Z": 78,
       "line_count": 12,
-      "mean_energy_keV": 11.606610211145819,
+      "mean_energy_keV": 11.618452899988782,
       "shell": "L1",
       "yield": 0.07746698618
     },
     {
       "Z": 78,
-      "line_count": 11,
-      "mean_energy_keV": 11.410129844784935,
+      "line_count": 10,
+      "mean_energy_keV": 11.409486513668009,
       "shell": "L2",
-      "yield": 0.3490438106
+      "yield": 0.3414471706
     },
     {
       "Z": 78,
       "line_count": 13,
-      "mean_energy_keV": 11.249965777793513,
+      "mean_energy_keV": 11.247461586567683,
       "shell": "L3",
       "yield": 0.05157000092
     },
     {
       "Z": 79,
       "line_count": 14,
-      "mean_energy_keV": 70.52151976144089,
+      "mean_energy_keV": 70.29880665524537,
       "shell": "K",
       "yield": 0.9589999662
     },
     {
       "Z": 79,
       "line_count": 12,
-      "mean_energy_keV": 11.996585950760789,
+      "mean_energy_keV": 12.006306938658183,
       "shell": "L1",
       "yield": 0.0801122732
     },
     {
       "Z": 79,
       "line_count": 11,
-      "mean_energy_keV": 11.803708421932702,
+      "mean_energy_keV": 11.76898288199041,
       "shell": "L2",
       "yield": 0.3627030704
     },
     {
       "Z": 79,
       "line_count": 13,
-      "mean_energy_keV": 11.589715447430695,
+      "mean_energy_keV": 11.586478300518852,
       "shell": "L3",
       "yield": 0.0544714928
     },
     {
       "Z": 80,
       "line_count": 14,
-      "mean_energy_keV": 72.58190634517373,
+      "mean_energy_keV": 72.34559753033285,
       "shell": "K",
       "yield": 0.9598203422
     },
     {
       "Z": 80,
       "line_count": 12,
-      "mean_energy_keV": 12.39737244591372,
+      "mean_energy_keV": 12.405299530183875,
       "shell": "L1",
       "yield": 0.0840098088
     },
     {
       "Z": 80,
       "line_count": 11,
-      "mean_energy_keV": 12.207124172189074,
+      "mean_energy_keV": 12.169605438982726,
       "shell": "L2",
       "yield": 0.3763826624
     },
     {
       "Z": 80,
       "line_count": 13,
-      "mean_energy_keV": 11.935407192412406,
+      "mean_energy_keV": 11.931759276846662,
       "shell": "L3",
       "yield": 0.057425438759999996
     },
     {
       "Z": 81,
       "line_count": 16,
-      "mean_energy_keV": 74.6857542656184,
+      "mean_energy_keV": 74.43223304449572,
       "shell": "K",
       "yield": 0.9605905186
     },
     {
       "Z": 81,
       "line_count": 14,
-      "mean_energy_keV": 12.808289478036528,
+      "mean_energy_keV": 12.815782043545703,
       "shell": "L1",
       "yield": 0.0885041107
     },
     {
       "Z": 81,
       "line_count": 12,
-      "mean_energy_keV": 12.619602194108525,
+      "mean_energy_keV": 12.579021515881875,
       "shell": "L2",
       "yield": 0.389995414111
     },
     {
       "Z": 81,
       "line_count": 17,
-      "mean_energy_keV": 10.632824520333356,
+      "mean_energy_keV": 10.633970727340193,
       "shell": "L3",
       "yield": 0.32521972524000003
     },
     {
       "Z": 82,
       "line_count": 16,
-      "mean_energy_keV": 76.82975065108317,
+      "mean_energy_keV": 76.56040977358862,
       "shell": "K",
       "yield": 0.9613108603
     },
     {
       "Z": 82,
       "line_count": 14,
-      "mean_energy_keV": 13.230718820255316,
+      "mean_energy_keV": 13.237372224811185,
       "shell": "L1",
       "yield": 0.0950997173
     },
     {
       "Z": 82,
       "line_count": 12,
-      "mean_energy_keV": 13.043556077003982,
+      "mean_energy_keV": 12.998945786491001,
       "shell": "L2",
       "yield": 0.403659654926
     },
     {
       "Z": 82,
       "line_count": 17,
-      "mean_energy_keV": 10.936719755247905,
+      "mean_energy_keV": 10.93599703609725,
       "shell": "L3",
       "yield": 0.336075509252
     },
     {
       "Z": 83,
       "line_count": 16,
-      "mean_energy_keV": 79.01802933370108,
+      "mean_energy_keV": 78.73071837718139,
       "shell": "K",
       "yield": 0.9619792662
     },
     {
       "Z": 83,
       "line_count": 14,
-      "mean_energy_keV": 13.663576220058243,
+      "mean_energy_keV": 13.669568828001404,
       "shell": "L1",
       "yield": 0.098954948
     },
     {
       "Z": 83,
       "line_count": 12,
-      "mean_energy_keV": 13.47782850163862,
+      "mean_energy_keV": 13.42844097218659,
       "shell": "L2",
       "yield": 0.417144128779
     },
     {
       "Z": 83,
       "line_count": 18,
-      "mean_energy_keV": 11.243460823380454,
+      "mean_energy_keV": 11.241776357449696,
       "shell": "L3",
       "yield": 0.34701198291400004
     },
     {
       "Z": 84,
       "line_count": 16,
-      "mean_energy_keV": 81.25039530977861,
+      "mean_energy_keV": 80.94503538257523,
       "shell": "K",
       "yield": 0.9626208624
     },
     {
       "Z": 84,
       "line_count": 14,
-      "mean_energy_keV": 14.107555209678148,
+      "mean_energy_keV": 14.111736922280018,
       "shell": "L1",
       "yield": 0.1038757327
     },
     {
       "Z": 84,
       "line_count": 12,
-      "mean_energy_keV": 13.922519654881382,
+      "mean_energy_keV": 13.86865065588829,
       "shell": "L2",
       "yield": 0.4306176652
     },
     {
       "Z": 84,
       "line_count": 18,
-      "mean_energy_keV": 11.5563214794764,
+      "mean_energy_keV": 11.55250681784433,
       "shell": "L3",
       "yield": 0.357708448596
     },
     {
       "Z": 85,
       "line_count": 16,
-      "mean_energy_keV": 83.52662521113822,
+      "mean_energy_keV": 83.20243503338367,
       "shell": "K",
       "yield": 0.9632190951999999
     },
     {
       "Z": 85,
       "line_count": 14,
-      "mean_energy_keV": 14.562790774561615,
+      "mean_energy_keV": 14.56380609110049,
       "shell": "L1",
       "yield": 0.108158058
     },
     {
       "Z": 85,
       "line_count": 12,
-      "mean_energy_keV": 14.379390857692501,
+      "mean_energy_keV": 14.320321756299062,
       "shell": "L2",
       "yield": 0.44385653419
     },
     {
       "Z": 85,
       "line_count": 19,
-      "mean_energy_keV": 11.872620783168841,
+      "mean_energy_keV": 11.866828793219524,
       "shell": "L3",
       "yield": 0.368489847629
     },
     {
       "Z": 86,
       "line_count": 16,
-      "mean_energy_keV": 85.84924902020724,
+      "mean_energy_keV": 85.50542967454675,
       "shell": "K",
       "yield": 0.9638002859
     },
     {
       "Z": 86,
       "line_count": 14,
-      "mean_energy_keV": 15.029954546866671,
+      "mean_energy_keV": 15.025878398479682,
       "shell": "L1",
       "yield": 0.1127418577
     },
     {
       "Z": 86,
       "line_count": 12,
-      "mean_energy_keV": 14.847531427427672,
+      "mean_energy_keV": 14.785431983642779,
       "shell": "L2",
       "yield": 0.45704391362
     },
     {
       "Z": 86,
       "line_count": 20,
-      "mean_energy_keV": 12.103249396737747,
+      "mean_energy_keV": 12.095893942571314,
       "shell": "L3",
       "yield": 0.39669500677
     },
     {
       "Z": 87,
       "line_count": 16,
-      "mean_energy_keV": 88.21897174902055,
+      "mean_energy_keV": 87.848495237943,
       "shell": "K",
       "yield": 0.9643597086
     },
     {
       "Z": 87,
       "line_count": 14,
-      "mean_energy_keV": 15.508646099888663,
+      "mean_energy_keV": 15.501292044086156,
       "shell": "L1",
       "yield": 0.1181912887
     },
     {
       "Z": 87,
       "line_count": 13,
-      "mean_energy_keV": 15.328299999861532,
+      "mean_energy_keV": 15.26244109281749,
       "shell": "L2",
       "yield": 0.4699238407
     },
     {
       "Z": 87,
       "line_count": 21,
-      "mean_energy_keV": 12.425668858126912,
+      "mean_energy_keV": 12.418275951281668,
       "shell": "L3",
       "yield": 0.40748091272
     },
     {
       "Z": 88,
       "line_count": 16,
-      "mean_energy_keV": 90.62579877122506,
+      "mean_energy_keV": 90.24738957463309,
       "shell": "K",
       "yield": 0.9648999844
     },
     {
       "Z": 88,
       "line_count": 14,
-      "mean_energy_keV": 15.998179904574574,
+      "mean_energy_keV": 15.990480545593181,
       "shell": "L1",
       "yield": 0.12076064419999999
     },
     {
       "Z": 88,
       "line_count": 13,
-      "mean_energy_keV": 15.821297364405396,
+      "mean_energy_keV": 15.751334909378702,
       "shell": "L2",
       "yield": 0.4646389199
     },
     {
       "Z": 88,
       "line_count": 21,
-      "mean_energy_keV": 12.75311038548897,
+      "mean_energy_keV": 12.74411938501242,
       "shell": "L3",
       "yield": 0.41806638622
     },
     {
       "Z": 89,
       "line_count": 16,
-      "mean_energy_keV": 93.09376337119949,
+      "mean_energy_keV": 92.68823862304698,
       "shell": "K",
       "yield": 0.9654302194
     },
     {
       "Z": 89,
       "line_count": 14,
-      "mean_energy_keV": 16.499262890536578,
+      "mean_energy_keV": 16.490528836274194,
       "shell": "L1",
       "yield": 0.1262954335
     },
     {
       "Z": 89,
       "line_count": 13,
-      "mean_energy_keV": 16.327830205796705,
+      "mean_energy_keV": 16.25370877275946,
       "shell": "L2",
       "yield": 0.47727237653
     },
     {
       "Z": 89,
       "line_count": 21,
-      "mean_energy_keV": 13.085216556904495,
+      "mean_energy_keV": 13.074981069964837,
       "shell": "L3",
       "yield": 0.42844112286
     },
     {
       "Z": 90,
       "line_count": 16,
-      "mean_energy_keV": 95.60543656619797,
+      "mean_energy_keV": 95.1743291176875,
       "shell": "K",
       "yield": 0.9659508499999999
     },
     {
       "Z": 90,
       "line_count": 14,
-      "mean_energy_keV": 17.011724603146536,
+      "mean_energy_keV": 17.002122917323106,
       "shell": "L1",
       "yield": 0.1314140415
     },
     {
       "Z": 90,
       "line_count": 13,
-      "mean_energy_keV": 16.847053903556432,
+      "mean_energy_keV": 16.7686345066254,
       "shell": "L2",
       "yield": 0.48998144592
     },
     {
       "Z": 90,
       "line_count": 21,
-      "mean_energy_keV": 13.420640214391277,
+      "mean_energy_keV": 13.410027225929179,
       "shell": "L3",
       "yield": 0.43858837438
     },
     {
       "Z": 91,
       "line_count": 16,
-      "mean_energy_keV": 98.16858638143671,
+      "mean_energy_keV": 97.71433479254522,
       "shell": "K",
       "yield": 0.966479937
     },
     {
       "Z": 91,
       "line_count": 14,
-      "mean_energy_keV": 17.53501657629152,
+      "mean_energy_keV": 17.521990822083374,
       "shell": "L1",
       "yield": 0.137346203
     },
     {
       "Z": 91,
       "line_count": 14,
-      "mean_energy_keV": 17.37897421584935,
+      "mean_energy_keV": 17.29510343486259,
       "shell": "L2",
       "yield": 0.45937719208
     },
     {
       "Z": 91,
       "line_count": 23,
-      "mean_energy_keV": 13.759832132758428,
+      "mean_energy_keV": 13.74723580020117,
       "shell": "L3",
       "yield": 0.44846380371
     },
     {
       "Z": 92,
       "line_count": 16,
-      "mean_energy_keV": 100.77826481360795,
+      "mean_energy_keV": 100.30776875364599,
       "shell": "K",
       "yield": 0.9670100829999999
     },
     {
       "Z": 92,
       "line_count": 14,
-      "mean_energy_keV": 18.070457924945394,
+      "mean_energy_keV": 18.053123127984495,
       "shell": "L1",
       "yield": 0.1453277358
     },
     {
       "Z": 92,
       "line_count": 14,
-      "mean_energy_keV": 17.924974823641776,
+      "mean_energy_keV": 17.8349130299045,
       "shell": "L2",
       "yield": 0.47092359966999997
     },
     {
       "Z": 92,
       "line_count": 23,
-      "mean_energy_keV": 14.10422017846915,
+      "mean_energy_keV": 14.089335554607018,
       "shell": "L3",
       "yield": 0.45807893321000004
     },
     {
       "Z": 93,
       "line_count": 16,
-      "mean_energy_keV": 103.43876921654449,
+      "mean_energy_keV": 102.95262582103972,
       "shell": "K",
       "yield": 0.967540574
     },
     {
       "Z": 93,
       "line_count": 14,
-      "mean_energy_keV": 18.61975840665611,
+      "mean_energy_keV": 18.596352839902206,
       "shell": "L1",
       "yield": 0.1518181466
     },
     {
       "Z": 93,
       "line_count": 14,
-      "mean_energy_keV": 18.485853633909038,
+      "mean_energy_keV": 18.388009706286052,
       "shell": "L2",
       "yield": 0.48284908615
     },
     {
       "Z": 93,
       "line_count": 23,
-      "mean_energy_keV": 14.45223738817617,
+      "mean_energy_keV": 14.435335611877953,
       "shell": "L3",
       "yield": 0.46737461144000003
     },
     {
       "Z": 94,
       "line_count": 16,
-      "mean_energy_keV": 106.15786481638878,
+      "mean_energy_keV": 105.64087014484977,
       "shell": "K",
       "yield": 0.9680999849999999
     },
     {
       "Z": 94,
       "line_count": 14,
-      "mean_energy_keV": 19.18123528644054,
+      "mean_energy_keV": 19.15359368120346,
       "shell": "L1",
       "yield": 0.1585811497
     },
     {
       "Z": 94,
       "line_count": 14,
-      "mean_energy_keV": 19.061449798210987,
+      "mean_energy_keV": 18.955196394195244,
       "shell": "L2",
       "yield": 0.49342038138
     },
     {
       "Z": 94,
       "line_count": 23,
-      "mean_energy_keV": 14.80462780100505,
+      "mean_energy_keV": 14.784838928844264,
       "shell": "L3",
       "yield": 0.4763608987
     },
     {
       "Z": 95,
       "line_count": 16,
-      "mean_energy_keV": 108.93173293438345,
+      "mean_energy_keV": 108.3792433277056,
       "shell": "K",
       "yield": 0.968669529
     },
     {
       "Z": 95,
       "line_count": 14,
-      "mean_energy_keV": 19.75807035947663,
+      "mean_energy_keV": 19.720921809830454,
       "shell": "L1",
       "yield": 0.166051184
     },
     {
       "Z": 95,
       "line_count": 14,
-      "mean_energy_keV": 19.652801294165094,
+      "mean_energy_keV": 19.53859787400104,
       "shell": "L2",
       "yield": 0.50583983061
     },
     {
       "Z": 95,
       "line_count": 23,
-      "mean_energy_keV": 15.161906638625652,
+      "mean_energy_keV": 15.140052327113025,
       "shell": "L3",
       "yield": 0.4849892784
     },
     {
       "Z": 96,
       "line_count": 16,
-      "mean_energy_keV": 111.7621074981141,
+      "mean_energy_keV": 111.20856438489706,
       "shell": "K",
       "yield": 0.969259925
     },
     {
       "Z": 96,
       "line_count": 14,
-      "mean_energy_keV": 20.34811859183254,
+      "mean_energy_keV": 20.3174556139264,
       "shell": "L1",
       "yield": 0.17297201299999998
     },
     {
       "Z": 96,
       "line_count": 14,
-      "mean_energy_keV": 20.26073638759625,
+      "mean_energy_keV": 20.14014816639762,
       "shell": "L2",
       "yield": 0.51672130387
     },
     {
       "Z": 96,
       "line_count": 23,
-      "mean_energy_keV": 15.523037481904812,
+      "mean_energy_keV": 15.50463462718003,
       "shell": "L3",
       "yield": 0.49327324094
     },
     {
       "Z": 97,
       "line_count": 16,
-      "mean_energy_keV": 114.64736864526886,
+      "mean_energy_keV": 114.07759263133424,
       "shell": "K",
       "yield": 0.970540371
     },
     {
       "Z": 97,
       "line_count": 14,
-      "mean_energy_keV": 20.953142677256324,
+      "mean_energy_keV": 20.91939385029922,
       "shell": "L1",
       "yield": 0.1805535
     },
     {
       "Z": 97,
       "line_count": 14,
-      "mean_energy_keV": 20.885256183222833,
+      "mean_energy_keV": 20.755160131422407,
       "shell": "L2",
       "yield": 0.51760603169
     },
     {
       "Z": 97,
       "line_count": 23,
-      "mean_energy_keV": 15.888720374727814,
+      "mean_energy_keV": 15.867996455634966,
       "shell": "L3",
       "yield": 0.501159781
     },
     {
       "Z": 98,
       "line_count": 16,
-      "mean_energy_keV": 117.60066648727076,
+      "mean_energy_keV": 116.99331605968638,
       "shell": "K",
       "yield": 0.97054056
     },
     {
       "Z": 98,
       "line_count": 14,
-      "mean_energy_keV": 21.573190253185235,
+      "mean_energy_keV": 21.534023255245206,
       "shell": "L1",
       "yield": 0.187601462
     },
     {
       "Z": 98,
       "line_count": 14,
-      "mean_energy_keV": 21.525910963216138,
+      "mean_energy_keV": 21.387016223954163,
       "shell": "L2",
       "yield": 0.52909633692
     },
     {
       "Z": 98,
       "line_count": 23,
-      "mean_energy_keV": 16.257348450900906,
+      "mean_energy_keV": 16.23625333669443,
       "shell": "L3",
       "yield": 0.50865172482
     },
     {
       "Z": 99,
       "line_count": 16,
-      "mean_energy_keV": 120.59836597634296,
+      "mean_energy_keV": 119.98560102641108,
       "shell": "K",
       "yield": 0.9718304990000001
     },
     {
       "Z": 99,
       "line_count": 14,
-      "mean_energy_keV": 22.2084132965063,
+      "mean_energy_keV": 22.164904107603892,
       "shell": "L1",
       "yield": 0.19511302
     },
     {
       "Z": 99,
       "line_count": 14,
-      "mean_energy_keV": 22.185892722782118,
+      "mean_energy_keV": 22.038251574252037,
       "shell": "L2",
       "yield": 0.5386853473400001
     },
     {
       "Z": 99,
       "line_count": 23,
-      "mean_energy_keV": 16.632089776059846,
+      "mean_energy_keV": 16.606613008540638,
       "shell": "L3",
       "yield": 0.5157349057
     }

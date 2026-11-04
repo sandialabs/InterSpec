@@ -16,6 +16,7 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
@@ -574,8 +575,8 @@ nlohmann::json executeCloseActivityShieldingDisplay(
   json result;
   result["success"] = false;
 
-  // Get the ShieldingSourceDisplay from InterSpec
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
+  // Get the ShieldingSourceDisplay from InterSpec, without creating it
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( false );
 
   if( !display )
   {
@@ -632,6 +633,12 @@ nlohmann::json executeAskUserQuestion(
 
   json result;
 
+#if( NO_INTERACTIVE_GUI_USER )
+  // Not registered for the MCP servers (no one could answer, and the modal dialog would block the
+  //  session forever); see ToolRegistry::registerDefaultTools().
+  throw runtime_error( "ask_user_question is not available: there is no interactive user." );
+#else
+
   // Create a modal dialog
   // Wt4 has no owner-taking WDialog ctor; hold it locally so it is destroyed when this function
   //  returns (exec() blocks until the user is done, so the scope outlives the dialog's use).
@@ -677,6 +684,7 @@ nlohmann::json executeAskUserQuestion(
   result["success"] = true;
 
   return result;
+#endif //NO_INTERACTIVE_GUI_USER / else
 }//executeAskUserQuestion(...)
 
 
@@ -2248,7 +2256,18 @@ void add_peak_info_to_json(
 
   peak_json["observed_counts"] = peak.observedCounts;
   peak_json["observed_counts_uncert"] = peak.observedUncert;
-  peak_json["observed_cps"] = peak.cps;
+
+  // The rate the fit used - background-subtracted, like observed_counts - and the gross peak rate.
+  //  The uncertainty is the counting statistics only (observedUncert may include the DRF's).
+  if( peak.liveTime > 0.0 )
+  {
+    const double live_time = peak.liveTime;
+    const double bkg_uncert = (peak.backgroundCounts > 0.0f) ? peak.backgroundCountsUncert : 0.0;
+    peak_json["observed_cps"] = LlmTools::compact_rate( peak.observedCounts / live_time );
+    peak_json["observed_cps_uncert"] = LlmTools::compact_rate(
+                    sqrt( peak.countsUncert*peak.countsUncert + bkg_uncert*bkg_uncert ) / live_time );
+    peak_json["gross_cps"] = LlmTools::compact_rate( peak.cps );
+  }//if( we know the live time )
   peak_json["predicted_counts"] = peak.expectedCounts;
   peak_json["num_sigma_off"] = peak.numSigmaOff;
   peak_json["observed_over_predicted"] = peak.observedOverExpected;
@@ -2814,14 +2833,16 @@ nlohmann::json executeActivityFit(
   json result;
   result["status"] = "failed";
 
-  // Check if GUI is already open
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
+  // Opens the tool, if not already open
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( true );
 
   if( !display )
-  {
-    throw runtime_error( "Activity/Shielding fit GUI is not currently open. "
-                       "Please open it manually from the Tools menu, or use 'activity_fit_one_off' for direct fitting without the GUI." );
-  }
+    throw runtime_error( "The Activity/Shielding fit tool could not be opened; use 'activity_fit_one_off' instead." );
+
+  // The fit uses the peaks marked for it, so do not quietly fit other peaks than were asked for.
+  if( params.contains( "peak_energies" ) )
+    throw runtime_error( "activity_fit uses the peaks marked for fitting, and does not take 'peak_energies';"
+                         " choose them with mark_peaks_for_activity_fit, or use activity_fit_one_off." );
 
   // TODO: Apply any parameter overrides from params (distance, add shielding, etc.)
   // For now, just trigger the fit with existing configuration
@@ -2969,16 +2990,30 @@ nlohmann::json executeActivityFitOneOff(
   if( params.contains("peak_energies") && params["peak_energies"].is_array() )
   {
     // Use specified peaks
+    std::set<std::shared_ptr<const PeakDef>> requested;
     for( const auto &energy_json : params["peak_energies"] )
     {
       const double energy = energy_json.get<double>();
-      auto peak = find_peak_by_energy( energy, all_peaks, "activity_fit" );
+      std::shared_ptr<const PeakDef> peak = find_peak_by_energy( energy, all_peaks, "activity_fit" );
       if( !peak )
         throw runtime_error( "No peak found near " + std::to_string(energy) + " keV" );
 
       if( !peak->parentNuclide() )
         throw runtime_error( "Peak at " + std::to_string(peak->mean())
                            + " keV does not have a nuclide assigned" );
+
+      // Two energies matching the same peak must not count it twice.
+      if( !requested.insert( peak ).second )
+        continue;
+
+      // A requested peak is used whether or not it is marked for the activity fit (the fit
+      //  otherwise drops unmarked peaks, without saying so); a copy, so the session is unchanged.
+      if( !peak->useForShieldingSourceFit() )
+      {
+        auto marked = std::make_shared<PeakDef>( *peak );
+        marked->useForShieldingSourceFit( true );
+        peak = marked;
+      }
 
       fitting_peaks.push_back( peak );
     }

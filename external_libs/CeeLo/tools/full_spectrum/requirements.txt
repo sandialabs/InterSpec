@@ -1,0 +1,7 @@
+# Python packages the full-spectrum bake needs (see README.md in this directory).
+# Python >= 3.10.  The floors are met by Ubuntu 24.04's apt packages
+# (python3-numpy python3-scipy python3-h5py python3-matplotlib).
+numpy>=1.26
+scipy>=1.11
+h5py>=3.10
+matplotlib>=3.6

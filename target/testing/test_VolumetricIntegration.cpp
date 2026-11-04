@@ -41,7 +41,6 @@
 #include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -293,7 +292,7 @@ BOOST_AUTO_TEST_CASE( SphericalTwoVsThreeDim )
 }//BOOST_AUTO_TEST_CASE( SphericalTwoVsThreeDim )
 
 
-/** Benchmark of the adaptive Gauss-Legendre backend vs Cuba/Cuhre, at the production
+/** Benchmark of the adaptive Gauss-Legendre backend's cost and accuracy at the production
  tolerance (epsrel=1e-4), with accuracy judged against a tight (epsrel=1e-7) GL
  reference.  Diagnostic only (asserts nothing beyond sanity) - run explicitly with
  --run_test=IntegrationBackendBenchmark.
@@ -310,7 +309,7 @@ BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled(
 
   const int num_timing_repeats = 10;
 
-  cout << "\nfixture, cuhre_relerr, gl_relerr, cuhre_ms, gl_ms, cuhre_evals, gl_evals" << endl;
+  cout << "\nfixture, gl_relerr, gl_ms, gl_evals" << endl;
 
   for( const VolumetricFixture::VolumetricSrcSpec &spec : fixtures )
   {
@@ -321,11 +320,6 @@ BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled(
     const double reference = ref_calc.integral;
     BOOST_REQUIRE( reference > 0.0 );
 
-    // (The Cuhre leg this used to time is gone with the legacy calculator; the GL backend below is
-    //  now the only integration path, so this benchmark reports its cost rather than a ratio.)
-    const auto cuhre_start = std::chrono::steady_clock::now();
-    const auto cuhre_finish = cuhre_start;
-
     // The GL backend at production settings
     GammaInteractionCalc::DistributedSrcCalcT<double> calc
                             = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
@@ -335,16 +329,13 @@ BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled(
       GammaInteractionCalc::self_shielding_integration_imp( calc );
     const auto gl_finish = std::chrono::steady_clock::now();
 
-    const double cuhre_ms = std::chrono::duration_cast<std::chrono::microseconds>(cuhre_finish - cuhre_start).count()
-                            / (1000.0 * num_timing_repeats);
     const double gl_ms = std::chrono::duration_cast<std::chrono::microseconds>(gl_finish - gl_start).count()
                          / (1000.0 * num_timing_repeats);
 
     cout << spec.name << ", "
-         << std::setprecision(3) << "n/a, "
-         << fabs(calc.integral - reference)/reference << ", "
-         << std::setprecision(4) << cuhre_ms << ", " << gl_ms << ", "
-         << "n/a, " << calc.m_num_evals << endl;
+         << std::setprecision(3) << fabs(calc.integral - reference)/reference << ", "
+         << std::setprecision(4) << gl_ms << ", "
+         << calc.m_num_evals << endl;
   }//for( loop over fixtures )
 }//BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark )
 

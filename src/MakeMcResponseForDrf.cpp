@@ -49,6 +49,7 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WGroupBox.h>
+#include <Wt/WFileUpload.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WProgressBar.h>
@@ -63,11 +64,13 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfChart.h"
+#include "InterSpec/DrfImport.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DetectorEfficiency.h"
@@ -158,7 +161,7 @@ namespace
 
   /** Predicted cumulative wall-seconds after each planned node, in generation order (backbone
    energies ascending, then the angular nodes of each shape energy, then the near-field nodes of
-   each); size total + 1, [0] = 0. */
+   each, then the side & back nodes of each); size total + 1, [0] = 0. */
   std::vector<double> prior_cumulative_cost( const ceelo::ResponseGenerator::NodePlan &plan,
                                              const ceelo::GenerationOptions &opts,
                                              const McTimeCalibration *calib )
@@ -182,6 +185,10 @@ namespace
     for( const double energy : plan.shape_energies_keV )
       for( int i = 0; i < plan.n_near_positions; ++i )
         push( 3, energy );
+    for( const double energy : plan.shape_energies_keV )
+      for( int i = 0; i < plan.n_back_cos_theta * plan.n_phi; ++i )
+        cum.push_back( cum.back() + node_cost_s( opts.back_precision_scale * prec(4, energy),
+                                                 opts.scans_stop_on_total, opts, calib ) );
 
     return cum;
   }//prior_cumulative_cost(...)
@@ -262,65 +269,27 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
     if( drf->isFixedGeometry() )
       return answer;  //no geometry to map a fixed-geometry curve through
 
-    // Curve fallback: sample the legacy intrinsic curve and turn it into
-    //  absolute efficiencies.  When the curve was specified as absolute
-    //  efficiency at a stated distance, anchor there - that is where the curve
-    //  is actually pinned to data; otherwise use a comfortably far-field
-    //  reference distance.  (farFieldIntrinsicEfficiency() already backs out any air
-    //  attenuation the absolute curve included, so the reconstructed absolute
-    //  efficiencies below are in-vacuum - consistent with the ray-trace kernel
-    //  the grounding fit compares against.)
+    // Curve fallback: the legacy intrinsic curve as absolute efficiencies at one distance - the
+    //  same anchor the curve transfer uses (CeeLoUtils::transferAnchorForDrf): the far field, where
+    //  the flat-disk reconstruction is trustworthy, or the distance an absolute curve was stated
+    //  at.  This used to anchor at max(50 cm, 10a), close enough in that the flat-disk near-field
+    //  error (~11% for a 3x3 NaI at 50 cm) was baked into the grounding.
     curve_derived = true;
 
-    const double a_cm = geom.transverse_half_extent();
-    double d_ref_cm = std::max( 50.0, 10.0 * a_cm );
-    if( (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
-        && (drf->absoluteEfficiencyDistance() > 0.0) )
-      d_ref_cm = drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
-    const double diam = drf->detectorDiameter();
-    const double dist = d_ref_cm * PhysicalUnits::cm;
-    const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle(
-                                        diam, dist + drf->detectorSetback() );
-
-    double e_lo = drf->lowerEnergy(), e_hi = drf->upperEnergy();
-    if( (e_lo <= 0.0) || (e_hi <= e_lo) )
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( drf, geom, -1.0 );
+    for( size_t i = 0; i < anchor.curve.energies_keV.size(); ++i )
     {
-      e_lo = 59.0;
-      e_hi = 2614.0;
-    }
-    e_lo = std::max( e_lo, 20.0 );
-
-    const int n_samples = 8;
-    vector<double> energies;
-    for( int i = 0; i < n_samples; ++i )
-      energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_samples-1) ) );
-
-    // One covariance query: for a DRF carrying a response this traces a full aperture fan.
-    const vector<double> cov = drf->efficiencyFracCovariance( energies );
-    vector<double> sigmas;
-    if( cov.size() == (energies.size()*energies.size()) )
-    {
-      for( size_t i = 0; i < energies.size(); ++i )
-        sigmas.push_back( std::sqrt( std::max(0.0, cov[i*energies.size()+i]) ) );
-    }
-
-    for( size_t i = 0; i < energies.size(); ++i )
-    {
-      const double intrinsic = drf->farFieldIntrinsicEfficiency( static_cast<float>(energies[i]) );
-      if( intrinsic <= 0.0 )
-        continue;
-
       ceelo::GroundingPoint gp;
-      gp.energy_keV = energies[i];
-      gp.measured_eff = intrinsic * frac_solid_angle;
-      gp.frac_stat_sigma = sigmas.empty() ? CeeLoUtils::sm_default_anchor_frac_sigma
-                                          : std::max( CeeLoUtils::sm_min_anchor_frac_sigma, sigmas[i] );
+      gp.energy_keV = anchor.curve.energies_keV[i];
+      gp.measured_eff = anchor.curve.eff[i];
+      gp.frac_stat_sigma = (i < anchor.curve.frac_sigma.size()) ? anchor.curve.frac_sigma[i]
+                                                                : CeeLoUtils::sm_default_anchor_frac_sigma;
       gp.frac_cert_sigma = 0.0;
       gp.source_key = "legacy-curve";
-      gp.distance_cm = d_ref_cm;
+      gp.distance_cm = anchor.ref_distance_cm;
       gp.cos_theta = 1.0;
       answer.push_back( std::move(gp) );
-    }//for( size_t i = 0; i < energies.size(); ++i )
+    }//for( anchor points )
 
     return answer;
 }//groundingPointsForDrf(...)
@@ -338,6 +307,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_precision( nullptr ),
     m_customPrecision( nullptr ),
     m_anchorAngles( nullptr ),
+    m_backCoverage( nullptr ),
+    m_backInfo( nullptr ),
     m_groundCb( nullptr ),
     m_groundInfo( nullptr ),
     m_groundRow( nullptr ),
@@ -348,6 +319,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_profileRow( nullptr ),
     m_precRow( nullptr ),
     m_anchorAnglesRow( nullptr ),
+    m_backCoverageRow( nullptr ),
+    m_backInfoRow( nullptr ),
     m_anchorInfoRow( nullptr ),
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
@@ -361,6 +334,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_formBaselineState(),
     m_gridGeomRow( nullptr ),
     m_revertGeomBtn( nullptr ),
+    m_importGeomRow( nullptr ),
     m_gridTotalInfo( nullptr ),
     m_gridTotalRow( nullptr ),
     m_cancelBtn( nullptr ),
@@ -437,6 +411,17 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_gridGeomRow->hide();
   }//if( m_gridResponse )
 
+  // A detector with no recorded shape can borrow one from another detector file.
+  {
+    m_importGeomRow = geomBox->addNew<WContainerWidget>();
+    m_importGeomRow->addStyleClass( "McImportGeomRow" );
+    WPushButton *importBtn = m_importGeomRow->addNew<WPushButton>( WString::tr("mmr-import-geom-btn") );
+    importBtn->addStyleClass( "LinkBtn" );
+    importBtn->setToolTip( WString::tr("mmr-tt-import-geom") );
+    importBtn->clicked().connect( this, &MakeMcResponseForDrf::showImportGeometryDialog );
+    m_importGeomRow->hide();   //see updateImportGeometryLink
+  }
+
   //Characterization options - a label/input table, so the inputs line up with each other and with
   //  the geometry form above (see `DgiTable` in DetectorGeometryInput).
   WGroupBox *optsBox = addNew<WGroupBox>( WString::tr("mmr-options-title") );
@@ -503,6 +488,23 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_profile->setCurrentIndex( 0 );
   m_profile->activated().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
   HelpSystem::attachToolTipOn( m_profile, WString::tr("mmr-tt-profile"), true );
+
+  // A far-field scan beside and behind the detector, so a source there (an Activity/Shielding fit
+  //  with offsets) is answered from Monte Carlo rather than extrapolated or refused.
+  m_backCoverage = add_row( WString::tr("mmr-back-coverage") )->addNew<WComboBox>();
+  m_backCoverageRow = optsTable->rowAt( opt_row - 1 );
+  m_backCoverage->addItem( WString::tr("mmr-back-coverage-none") );    //idx0
+  m_backCoverage->addItem( WString::tr("mmr-back-coverage-coarse") );  //idx1
+  m_backCoverage->addItem( WString::tr("mmr-back-coverage-fine") );    //idx2
+  m_backCoverage->setCurrentIndex( 1 );
+  m_backCoverage->activated().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
+  HelpSystem::attachToolTipOn( m_backCoverage, WString::tr("mmr-tt-back-coverage"), true );
+
+  m_backInfo = add_wide_row()->addNew<WText>( WString::tr("mmr-back-no-structure") );
+  m_backInfoRow = optsTable->rowAt( opt_row - 1 );
+  m_backInfo->addStyleClass( "McAnchorInfo" );
+  m_backInfo->setInline( false );
+  m_backInfoRow->hide();
 
   WTableCell *precCell = add_row( WString::tr("mmr-precision") );
   m_precRow = optsTable->rowAt( opt_row - 1 );
@@ -629,7 +631,10 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   if( m_gridResponse )
     m_method->setCurrentIndex( static_cast<int>(Method::ImportedGrid) );
   else if( seed_resp )
+  {
     m_method->setCurrentIndex( static_cast<int>(seed_resp->provenance.method) );
+    restoreGenerationChoices( *seed_resp );
+  }
   else if( m_seedDrf && m_seedDrf->isValid() && m_seedDrf->geometry() )
     m_method->setCurrentIndex( static_cast<int>(Method::CurveTransfer) );
 
@@ -791,6 +796,7 @@ bool MakeMcResponseForDrf::State::operator==( const State &rhs ) const
          && (profile == rhs.profile)
          && (precision == rhs.precision)
          && (anchorAngles == rhs.anchorAngles)
+         && (backCoverage == rhs.backCoverage)
          && (chartMode == rhs.chartMode)
          && (groundToMeasured == rhs.groundToMeasured)
          && (customPrecision == rhs.customPrecision)
@@ -812,6 +818,7 @@ MakeMcResponseForDrf::State MakeMcResponseForDrf::currentState() const
   state.profile = m_profile->currentIndex();
   state.precision = m_precision->currentIndex();
   state.anchorAngles = m_anchorAngles->currentIndex();
+  state.backCoverage = m_backCoverage->currentIndex();
   state.chartMode = m_chartMode->currentIndex();
   state.groundToMeasured = m_groundCb->isChecked();
   state.customPrecision = m_customPrecision->text().toUTF8();
@@ -851,6 +858,7 @@ void MakeMcResponseForDrf::setState( const State &state )
   m_profile->setCurrentIndex( state.profile );
   m_precision->setCurrentIndex( state.precision );
   m_anchorAngles->setCurrentIndex( state.anchorAngles );
+  m_backCoverage->setCurrentIndex( state.backCoverage );
   m_chartMode->setCurrentIndex( state.chartMode );
   m_groundCb->setChecked( state.groundToMeasured );
   m_customPrecision->setText( WString::fromUTF8(state.customPrecision) );
@@ -912,6 +920,8 @@ void MakeMcResponseForDrf::updateMethodRows()
   m_profileRow->setHidden( (method != Method::FullMc) && !grid );
   m_precRow->setHidden( no_mc );
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
+  // The transfer methods have no back scan; an imported grid's total efficiency does.
+  m_backCoverageRow->setHidden( (method != Method::FullMc) && !grid );
   m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
   m_anchorRow->setHidden( method != Method::CurveTransfer );
 
@@ -928,7 +938,103 @@ void MakeMcResponseForDrf::updateMethodRows()
     m_gridTotalRow->setHidden( !grid );
   if( m_gridGeomRow && !grid )
     m_gridGeomRow->hide();  //shown by syncGridResult, for an edited geometry
+
+  updateImportGeometryLink();
 }//updateMethodRows()
+
+
+void MakeMcResponseForDrf::updateImportGeometryLink()
+{
+  if( m_importGeomRow && m_geometry )
+    m_importGeomRow->setHidden( m_geometry->generationReady()
+                                || (selectedMethod() == Method::ImportedGrid) );
+}//updateImportGeometryLink()
+
+
+void MakeMcResponseForDrf::showImportGeometryDialog()
+{
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("mmr-import-geom-title"),
+                                                           WString::tr("mmr-import-geom-body") );
+  WFileUpload *upload = dialog->contents()->addNew<WFileUpload>();
+  upload->setInline( false );
+  upload->addStyleClass( "McImportGeomUpload" );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  upload->changed().connect( upload, &WFileUpload::upload );
+  upload->uploaded().connect( this, [this, dialog, upload](){
+    // Read before closing: the spooled file goes with the upload widget.
+    importGeometryFromUpload( upload->spoolFileName(), upload->clientFileName().toUTF8() );
+    dialog->accept();
+  } );
+  upload->fileTooLarge().connect( this, [dialog]( ::int64_t ){
+    dialog->accept();
+    passMessage( WString::tr("mmr-import-geom-too-large"), WarningWidget::WarningMsgHigh );
+  } );
+}//showImportGeometryDialog()
+
+
+void MakeMcResponseForDrf::importGeometryFromUpload( const std::string &spool_file,
+                                                     const std::string &display_name )
+{
+  shared_ptr<const ceelo::GeometryDescriptor> geom;
+  string from_name;
+
+  try
+  {
+    const shared_ptr<const string> data = DrfImport::readFile( spool_file );
+    const shared_ptr<const DrfImport::ParsedFile> parsed = DrfImport::parseFile( display_name, data, false );
+
+    // A DRF that states its shape (a saved geometry, or an attached response's own descriptor).
+    for( const shared_ptr<const DetectorPeakResponse> &drf : parsed->drfs )
+    {
+      geom = drf ? drf->monteCarloGeometry() : nullptr;
+      if( geom )
+      {
+        from_name = drf->name();
+        break;
+      }
+    }//for( const auto &drf : parsed->drfs )
+
+    // A geometry-only file (ANGLE .detx/.outx, GADRAS Detector.dat) has its shape on the seed the
+    //  import would characterize.
+    if( !geom )
+    {
+      //  No companion file is passed, so this can never take the slow .par-grid build (which needs
+      //  its DETECTOR.txt) - hence no DrfImport::isSlow() check or worker thread.
+      const DrfImport::Source src = DrfImport::makeSource( parsed, nullptr, 0 );
+      for( const shared_ptr<const DetectorPeakResponse> &drf : { src.base, src.generic } )
+      {
+        geom = drf ? drf->monteCarloGeometry() : nullptr;
+        if( geom )
+        {
+          from_name = drf->name();
+          break;
+        }
+      }//for( base, generic )
+    }//if( !geom )
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("mmr-import-geom-error").arg( WString::fromUTF8(display_name) )
+                   .arg( WString::fromUTF8(e.what()) ), WarningWidget::WarningMsgHigh );
+    return;
+  }//try / catch
+
+  if( !geom )
+  {
+    passMessage( WString::tr("mmr-import-geom-none").arg( WString::fromUTF8(display_name) ),
+                 WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !geom )
+
+  string note = "Geometry imported from " + display_name;
+  if( !from_name.empty() && (from_name != display_name) )
+    note += " (" + from_name + ")";
+  note += ".";
+
+  // Emits userChanged (through the form's change, and handleGeometryChanged), so an owner records
+  //  this as one undo step.
+  setGeometryFromDescriptor( *geom, { note } );
+}//importGeometryFromUpload(...)
 
 
 void MakeMcResponseForDrf::handleMethodChanged()
@@ -986,6 +1092,7 @@ void MakeMcResponseForDrf::handleGeometryChanged()
   }
 
   m_generate->setEnabled( m_geometry->generationReady() );
+  updateImportGeometryLink();
   updateAnchorInfo();
   updateGroundingInfo();
   updateEstimate();
@@ -1064,6 +1171,8 @@ void MakeMcResponseForDrf::setEditingEnabled( const bool enabled )
     m_method->setEnabled( enabled );
   if( m_profile )
     m_profile->setEnabled( enabled );
+  if( m_backCoverage )
+    m_backCoverage->setEnabled( enabled );
   if( m_precision )
     m_precision->setEnabled( enabled );
   if( m_customPrecision )
@@ -1406,8 +1515,8 @@ void MakeMcResponseForDrf::updateResponseChart()
   m_chart->updateChart( preview );
 
   // Start on the DRFs valid range, but no further than 3 MeV - above that the curves are mostly
-  //  empty chart.  Only the first showing picks a range (`updateChart` resets it from the DRFs
-  //  JSON extent), so re-draws for a mode/distance change dont undo the users zooming.
+  //  empty chart.  Only the first showing picks a range; later re-draws (`updateChart`) reset it to
+  //  the DRFs own initial range (DetectorPeakResponse::toJSON's "initialRange").
   if( !m_chartRangeSet )
   {
     const double lower = std::max( 0.0, preview->lowerEnergy() );
@@ -1482,6 +1591,57 @@ bool MakeMcResponseForDrf::selectedRelaxMild() const
 }//selectedRelaxMild()
 
 
+void MakeMcResponseForDrf::restoreGenerationChoices( const ceelo::DetectorResponse &resp )
+{
+  const ceelo::ResponseProvenance &prov = resp.provenance;
+  if( prov.method == ceelo::ProductionMethod::CurveTransfer )
+    return;  //no Monte Carlo: nothing was chosen beyond the method
+
+  if( prov.method == ceelo::ProductionMethod::FullMc )  //transfer mode always runs Far-field
+  {
+    switch( prov.profile )
+    {
+      case ceelo::ResponseProfile::General:  m_profile->setCurrentIndex( 0 ); break;
+      case ceelo::ResponseProfile::FarField: m_profile->setCurrentIndex( 1 ); break;
+      case ceelo::ResponseProfile::Contact:  m_profile->setCurrentIndex( 2 ); break;
+    }
+  }//if( FullMc )
+
+  // The precision options, by the target they run (see #selectedPrecision); anything else is custom.
+  const double prec = prov.node_fep_precision;
+  const bool relax = (prov.precision_profile == ceelo::PrecisionProfile::RelaxMild);
+  const auto is = [prec]( const double target ){ return fabs( prec - target ) < 1.0E-6*target; };
+  int prec_index = 4;
+  if( relax && is(0.003) )
+    prec_index = 2;
+  else if( !relax && is(0.01) )
+    prec_index = 0;
+  else if( !relax && is(0.003) )
+    prec_index = 1;
+  else if( !relax && is(0.001) )
+    prec_index = 3;
+  m_precision->setCurrentIndex( prec_index );
+  m_customPrecision->setHidden( prec_index != 4 );
+  if( prec_index == 4 )
+    m_customPrecision->setText( WString::fromUTF8( SpecUtils::printCompact( 100.0*prec, 4 ) + "%" ) );
+
+  if( prov.back_coverage )
+  {
+    switch( *prov.back_coverage )
+    {
+      case ceelo::BackCoverage::None:   m_backCoverage->setCurrentIndex( 0 ); break;
+      case ceelo::BackCoverage::Coarse: m_backCoverage->setCurrentIndex( 1 ); break;
+      case ceelo::BackCoverage::Fine:   m_backCoverage->setCurrentIndex( 2 ); break;
+    }
+  }//if( back coverage recorded )
+
+  if( prov.n_anchor_angles )
+    m_anchorAngles->setCurrentIndex( (*prov.n_anchor_angles <= 1) ? 0 : 1 );
+
+  m_groundCb->setChecked( !resp.grounding.empty() );
+}//restoreGenerationChoices(...)
+
+
 double MakeMcResponseForDrf::selectedPrecision() const
 {
   switch( m_precision->currentIndex() )
@@ -1519,6 +1679,21 @@ double MakeMcResponseForDrf::selectedPrecision() const
 void MakeMcResponseForDrf::updateEstimate()
 {
   const Method method = selectedMethod();
+
+  // A side & back scan of a geometry with nothing described behind the crystal characterizes a
+  //  bare crystal back - say so, as the real detector's back housing would shield those sources.
+  bool bare_back = false;
+  if( ((method == Method::FullMc) || (method == Method::ImportedGrid))
+      && (m_backCoverage->currentIndex() != 0) && m_geometry->isValid() )
+  {
+    try
+    {
+      bare_back = !(m_geometry->toDescriptor().back_structure_extent_cm() > 0.0);
+    }catch( std::exception & )
+    {
+    }
+  }//if( a side & back scan is selected )
+  m_backInfoRow->setHidden( !bare_back );
 
   if( method == Method::CurveTransfer )
   {
@@ -1567,6 +1742,12 @@ void MakeMcResponseForDrf::updateEstimate()
       const WString near_part = WString::tr("mmr-est-part-near").arg( plan.n_near_positions ).arg( nE );
       parts = WString::tr("mmr-est-part-join").arg( parts ).arg( near_part  );
     }//if( near-field nodes )
+
+    if( (plan.n_back() > 0) && (nE > 0) )
+    {
+      const WString back_part = WString::tr("mmr-est-part-back").arg( plan.n_back_cos_theta * plan.n_phi ).arg( nE );
+      parts = WString::tr("mmr-est-part-join").arg( parts ).arg( back_part );
+    }//if( side & back nodes )
 
     const char *durKey = "mmr-est-dur-model";
     if( m_calibrating )
@@ -1806,22 +1987,12 @@ bool MakeMcResponseForDrf::startGeneration()
       ceelo::GenerationOptions run_opts = opts;
       run_opts.stats_out = stats.get();
       response = ceelo::ResponseGenerator::generate( gd, run_opts );
+      // The point distances are from the detector face (InterSpec's convention, not the
+      //  descriptor's reference point) - see CeeLoUtils::groundResponseToFacePoints.  (For an
+      //  imported grid, k only feeds the consistency figure logged below: attachTotalEfficiency
+      //  takes the Monte Carlo's total/FEP ratio, ignoring any grounding.)
       if( response && !ground_pts.empty() )
-      {
-        // Model efficiencies at each point's own geometry, with the point distances in InterSpec's
-        //  face-referenced convention (rather than leaving ground_to_points to interpret them).
-        vector<ceelo::GroundingPoint> pts = ground_pts;
-        for( ceelo::GroundingPoint &p : pts )
-        {
-          if( p.model_eff > 0.0 )
-            continue;
-          const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
-          const double phi = p.phi_deg * 3.14159265358979323846 / 180.0;
-          const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, phi, p.distance_cm );
-          p.model_eff = response->eps_fep_at( p.energy_keV, pos ).value;
-        }
-        ceelo::ResponseGenerator::ground_to_points( *response, pts, curve_derived );
-      }
+        CeeLoUtils::groundResponseToFacePoints( *response, ground_pts, curve_derived );
 
       // Keep only its total, re-expressed onto the grid, whose FEP stays the file's.
       if( response && grid )
@@ -1990,6 +2161,16 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
     case 2: opts.profile = ceelo::ResponseProfile::Contact; break;
     default: opts.profile = ceelo::ResponseProfile::General; break;
   }
+
+  if( (selectedMethod() == Method::FullMc) || (selectedMethod() == Method::ImportedGrid) )
+  {
+    switch( m_backCoverage->currentIndex() )
+    {
+      case 0:  opts.back_coverage = ceelo::GenerationOptions::BackCoverage::None;   break;
+      case 2:  opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Fine;   break;
+      default: opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Coarse; break;
+    }
+  }//if( Full MC, or an imported grid's total )
 
   if( selectedMethod() == Method::QuickMc )
   {

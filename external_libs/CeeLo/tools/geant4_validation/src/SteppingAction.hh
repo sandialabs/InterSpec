@@ -29,6 +29,7 @@
 #include <cstdint>
 
 class EventAction;
+class RunAction;
 class G4LogicalVolume;
 
 /// Interaction record for per-interaction diagnostic histograms.
@@ -65,6 +66,18 @@ public:
     void EnableDiagnostics(bool on) { diagnostics_enabled_ = on; }
     void EnableEntryDiag(bool on) { entry_diag_enabled_ = on; }
 
+    /// Enable the photon-fluence-at-detector scorer (air-scatter study):
+    /// records every gamma's kinetic energy as it first crosses into the
+    /// active crystal from outside. For a bare detector the crystal IS the
+    /// detector envelope, so this is the photon fluence incident on the
+    /// detector (uncollided peak + air-scattered continuum).
+    void EnableFluence(bool on) { fluence_enabled_ = on; }
+
+    /// Wire in the RunAction so the sphere flux scorer can tally into it, and
+    /// reset the per-event primary-interaction flag.
+    void SetRunAction(RunAction* ra) { run_action_ = ra; }
+    void ResetPrimaryInteracted() { primary_interacted_ = false; }
+
     /// Set crystal dimensions for entry surface classification.
     void SetCrystalDimensions(double length_cm, double radius_cm) {
         crystal_length_ = length_cm;
@@ -74,8 +87,11 @@ public:
 private:
     EventAction*     event_action_;
     G4LogicalVolume* active_crystal_lv_;
+    RunAction* run_action_ = nullptr;
+    bool primary_interacted_ = false;
     bool diagnostics_enabled_ = false;
     bool entry_diag_enabled_ = false;
+    bool fluence_enabled_ = false;
     double crystal_length_ = 7.62;  // cm
     double crystal_radius_ = 3.81;  // cm
 };

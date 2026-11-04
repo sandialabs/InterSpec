@@ -46,6 +46,7 @@
 #include <vector>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <functional>
 #include <chrono>
 #include <utility>
@@ -420,10 +421,22 @@ struct CascadeResult {
 };
 
 /// How to handle air attenuation in the gap between source and detector.
+///
+/// The two analytic modes differ only in whether Rayleigh scattering counts as
+/// removal. For an OPEN geometry, coherent scatter is compensated (the photons
+/// Rayleigh-scattered out of the line are replaced by others scattered in from
+/// the surrounding air), so removing it would double-count the loss — on the
+/// air benchmark an apparent 9% "attenuation gap" at 59 keV / 50 m is exactly
+/// the Rayleigh mu/rho, a cone-biasing artifact rather than real attenuation.
+/// For a genuinely COLLIMATED path
+/// (a narrow-beam / shielded-aperture measurement, where the compensating
+/// in-scatter is blocked), Rayleigh IS removal and the collimated mode applies.
 enum class AirAttenuation : uint8_t {
     None,                ///< No air attenuation (default, current behavior)
-    AnalyticNoScatter    ///< exp(-mu_no_rayleigh * air_distance) per event;
-                         ///< excludes Rayleigh (isotropic cancellation argument)
+    AnalyticNoScatter,   ///< exp(-mu_no_rayleigh * air_distance) per event;
+                         ///< excludes Rayleigh (open-geometry compensation)
+    AnalyticCollimated   ///< exp(-mu_total * air_distance) per event; Rayleigh
+                         ///< counts as removal (collimated / narrow-beam paths)
 };
 
 /// Configuration for position-based importance sampling in extended sources.
@@ -826,8 +839,43 @@ public:
     void set_min_energy_keV(double e) { transport_config_.min_energy_keV = e; }
     void enable_rayleigh(bool on) { transport_config_.enable_rayleigh = on; }
     void enable_doppler_broadening(bool on) { transport_config_.enable_doppler_broadening = on; }
+    /// K x-ray from a Compton K-shell vacancy in the detector (see
+    /// TransportConfig::enable_compton_fluorescence). Off by default.
+    void enable_compton_fluorescence(bool on) { transport_config_.enable_compton_fluorescence = on; }
+
+    /// Detector-side electron walk (see TransportConfig::electron_transport).
+    void set_electron_transport(ElectronTransport t) { transport_config_.electron_transport = t; }
+
+    /// Electron-impact ionization K x-rays: in the detector's Detailed walk
+    /// (TransportConfig::enable_impact_ionization) and from electrons in source
+    /// material and shields (SourceGeometry::set_source_impact_ionization).
+    void enable_impact_ionization(bool on) {
+        transport_config_.enable_impact_ionization = on;
+        source_geometry_.set_source_impact_ionization(on);
+    }
+
+    /// Spectrum-fidelity physics: refinements that shape the deposited spectrum
+    /// but move FEP and total efficiency by well under the ~1% goal, at some
+    /// cost in speed. Off by default; full-spectrum work turns it on: Compton
+    /// vacancy fluorescence in the detector, the Detailed electron walk,
+    /// electron-impact ionization x-rays, and Doppler-sampled Compton
+    /// collisions in source material and shields (whose K and L vacancies then
+    /// relax like the detector's).
+    void enable_spectrum_fidelity(bool on) {
+        enable_compton_fluorescence(on);
+        set_electron_transport(on ? ElectronTransport::Detailed : ElectronTransport::Fast);
+        enable_impact_ionization(on);
+        source_geometry_.set_compton_doppler_enabled(on);
+    }
     void enable_electron_csda(bool on) { transport_config_.enable_electron_csda = on; }
     void enable_cone_sampling(bool on) { use_cone_sampling_ = on; }
+    /// Cone-sample sources BESIDE the detector too.  The legacy cone is centred on the direction to
+    /// the crystal-face origin, and degenerates to the full sphere whenever the source lies within
+    /// the detector's z-range - ~300x the histories for a far-field node beside a 3x3 NaI.  With
+    /// this on, such a source instead gets the smallest cone, with its own axis, around the outer
+    /// envelope (envelope_bounding_cone), padded like the legacy one.  Off by default, so every
+    /// existing random-number stream is unchanged.
+    void enable_general_cone_sampling(bool on) { general_cone_sampling_ = on; }
     void enable_fep_only_mode(bool on) { fep_only_mode_ = on; }
     void set_disable_fep_early_kill(bool on) { transport_config_.disable_fep_early_kill = on; }
 
@@ -855,7 +903,22 @@ public:
     /// Disable bremsstrahlung from electrons stopping in source
     /// material/shielding (on by default; off switch for A/B quantification).
     void set_source_brems(bool on) { source_geometry_.set_source_brems(on); }
+    /// K x-rays from photoelectric absorption in source material/shielding
+    /// (on by default; see SourceGeometry::set_source_fluorescence). Full
+    /// mode only: FEP-only runs never transport source secondaries.
+    void set_source_fluorescence(bool on) { source_geometry_.set_source_fluorescence(on); }
+    /// Track pair-production positrons in source material/shielding to their
+    /// stop or escape (on by default; see SourceGeometry).
+    void set_source_positron_transport(bool on) {
+        source_geometry_.set_source_positron_transport(on);
+    }
     void set_air_attenuation(AirAttenuation mode) { air_attenuation_ = mode; }
+
+    /// Override the air the gap is filled with (composition + density).
+    /// Defaults to dry sea-level air (make_Air(), 0.001205 g/cm^3). Use this
+    /// for altitude, humidity, or a non-air fill gas. Has no effect unless an
+    /// analytic air-attenuation mode is selected.
+    void set_air_material(const Material& air) { air_material_override_ = air; }
 
     // --- Event Biasing (variance reduction) ---
 
@@ -1057,9 +1120,14 @@ public:
     /// Export the detector geometry as a GDML file for GEANT4 validation.
     /// The active crystal volume is named "active_crystal".
     /// @param vacuum_world  If true, world volume uses vacuum instead of air.
+    /// @param min_world_half_xy_cm  If > 0, force the world box transverse
+    ///        half-size (cm) — air-scatter studies need a wide air region.
+    /// @param min_world_half_z_cm  If > 0, force the world box half-length in z.
     /// @see tools/geant4_validation/ for the matching GEANT4 harness.
     void export_geant4_gdml(const std::string& filename,
-                             bool vacuum_world = false) const;
+                             bool vacuum_world = false,
+                             double min_world_half_xy_cm = 0.0,
+                             double min_world_half_z_cm = 0.0) const;
 
     /// Export a GEANT4 GPS macro file for a point-source simulation.
     /// Uses the currently configured source position (center for extended sources).
@@ -1138,9 +1206,12 @@ private:
 
     // Options
     bool use_cone_sampling_ = true;
+    bool general_cone_sampling_ = false;
     bool fep_only_mode_ = false;
     bool source_electron_transport_ = false;
     AirAttenuation air_attenuation_ = AirAttenuation::None;
+    /// Unset => dry sea-level air (make_Air()).
+    std::optional<Material> air_material_override_;
 
     // Event biasing (variance reduction)
     BiasingConfig biasing_;
@@ -1199,7 +1270,7 @@ private:
     CascadePeakTally cascade_peak_thread(
         const std::vector<DecayCascade>& cascades, std::size_t primary_branch,
         std::size_t primary_index, double peak_keV, double tol_keV,
-        double cos_theta_max, bool coned,
+        double cos_theta_max, bool coned, const Eigen::Vector3d& cone_axis,
         const std::vector<CascadeVacancyDraw>& prim_vacancies,
         const std::vector<CascadeSumPairChannel>& channels,
         uint64_t num_events, uint64_t seed, bool ic_electrons,
@@ -1338,6 +1409,20 @@ private:
     Eigen::Vector3d sample_cone_direction(const Eigen::Vector3d& from_pos,
                                           double cos_theta_max,
                                           std::mt19937_64& rng) const;
+    /// sample_cone_direction about an explicit unit axis.
+    Eigen::Vector3d sample_cone_about(const Eigen::Vector3d& axis,
+                                      double cos_theta_max,
+                                      std::mt19937_64& rng) const;
+
+    /// A sampling cone from a point: unit axis, half-angle (pi means the full sphere) and cosine.
+    struct SamplingCone {
+        Eigen::Vector3d axis;
+        double half_angle = 0.0;
+        double cos_max = 1.0;
+    };
+    /// The cone compute_cone_half_angle describes (axis toward the crystal-face origin) - or, with
+    /// enable_general_cone_sampling, the outer-envelope cone wherever that one degenerates.
+    SamplingCone sampling_cone(const Eigen::Vector3d& from_pos) const;
 
     /// Sample a direction by targeting a random point on the detector's outer
     /// surface. Returns {direction, weight} where weight = A * cos_inc / (4pi * d^2).

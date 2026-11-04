@@ -8,28 +8,31 @@
 <div align="left">
 <img src="InterSpec_resources/static_text/images/flux_tool_overview.png" class="imageBorder" style="max-width:60%;float:left;display:block;margin-right:20px;"/>
 <p>
-The <b>Flux Tool</b> converts the observed counts per second peak rates into
-the flux of that energy gamma or x-ray by accounting for the detector response
-and geometrical factor.  For each energy, the tool gives the number of incident
-photons on the detector per second, the number of incident photons per cm&sup2;
-per second, and the total number of gammas into 4&pi; steradians per second.
+The <b>Flux Tool</b> converts the counts per second (CPS) of each fit peak into the flux of that
+energy gamma or x-ray, by accounting for the detector response and the geometry.
 This information can be useful for dose calculations, record keeping, or for
 export for specialized applications like density determinations.
 </p>
+<p>The columns are:</p>
+<ul>
+  <li><b>Peak CPS</b>: the peak area divided by the live time of the foreground spectrum as displayed
+    (i.e., of the samples currently shown, not of the whole file).</li>
+  <li><b>Intr. Eff.</b> and <b>Geom. Eff.</b>: the detector&apos;s intrinsic efficiency (the chance a gamma
+    crossing the crystal face is recorded in the full-energy peak), and the fraction of the solid angle the
+    crystal face takes up; the two multiply to the efficiency used.</li>
+  <li><b>Flux on Det. (&#611;/s)</b>: gammas per second crossing the face of the detector crystal - a disk
+    of the detector&apos;s diameter, at the distance plus the detector setback (see below).</li>
+  <li><b>Flux (&#611;/cm&sup2;/s)</b>: gammas per cm&sup2; per second at the detector face - that is, at
+    the distance you entered.  This equals &#611;/4&pi;/s divided by 4&pi;d&sup2;, unless air attenuation
+    is corrected for (see below).</li>
+  <li><b>&#611;/4&pi;/s</b>: the number of gammas per second the source gives off in all directions.</li>
+</ul>
 <p>
-The fluxes and total number of gammas into 4&pi; steradians is the total emitted
-after any shielding.  That is, the numbers given are the uncollided gammas
-after any shielding materials.
+These are the uncollided gammas after any shielding.  That is, if the source is shielded, the
+&#611;/4&pi;/s is what makes it out of the shielding, not what the source itself emits.
 </p>
-<p>Since the output of this tool is primarily intended for export for use outside
-of <b>InterSpec</b>, you can either export to a <em>CSV</em> file, or copy the
-table to your clipboard to paste into other applications by clicking on the
-&quot;Copy&nbsp;To&nbsp;Clipboard&quot; button.  When exported as a <em>CSV</em>
-file all information will always be included to full accuracy (the table displayed
-in the tool has limited number of significant figures), and when copied to the
-clipboard all columns shown in the tool will be copied with full accuracy.
-</p>
-<p>In order for the table in the GUI to have any entries, you must enter a
+
+<p>In order for the table to have any entries, you must enter a
 distance and have a detector response function (DRF) selected.  The distance can
 be entered in nearly any reasonable format (ex. &quot;3.2 cm&quot;,
 &quot;4ft 8in&quot;, &quot;5m&quot;, etc.), and the DRF can be selected by
@@ -37,19 +40,89 @@ clicking or tapping on the detector widget in the upper right side of the tool
 to bring up the DRF selection tool.  If either the DRF is not selected, or a
 valid distance is not entered, there will be a prominent message displayed.
 </p>
-<p>The &quot;<i>show more info</i>&quot; check box lets you toggle between
-showing only the energy, CPS, flux per cm&sup2;, and flux into 4&pi;, and
-showing those same columns plus nuclide, intrinsic efficiency, geometric
-efficiency, and flux on detector.  This option effects what information will be
-copied to the clipboard, but not what will be included in the <em>CSV</em>
-export.
+
+<h3>Distance and detector setback</h3>
+<p>
+The distance is from the center of the source to the face of the detector (the front of the endcap).
+The detector crystal sits a little behind the face: the DRF&apos;s <em>setback</em>, or for a DRF with a
+geometry-modeled response, the modeled endcap.  This is added to the distance when computing the
+efficiency, and so is included in &#611;/4&pi;/s and in the geometric efficiency and flux on detector.
+The flux per cm&sup2;, however, is given at the distance you entered - the front face of the detector -
+not at the crystal.
 </p>
+
+<h3>Correct for air attenuation</h3>
+<p>
+When checked (the default), the &#611;/4&pi;/s column is corrected for the gammas absorbed or scattered by
+the air between the source and the detector face, so that it is what the source (or its shielding) gives
+off.  The correction is about 1% at 1 m and 9% at 10 m for 662 keV gammas, and about 2% at 1 m and
+20% at 10 m for 60 keV gammas; it is smaller at higher energies, and larger for low-energy x-rays.  The two flux columns are what actually
+reaches the detector, so are not changed by this option - which means that when it is checked,
+&#611;/4&pi;/s is larger than the flux per cm&sup2; times 4&pi;d&sup2;.
+</p>
+<p>
+The air correction assumes the DRF&apos;s efficiency does not itself include air attenuation, as is the
+case for intrinsic efficiencies, and for absolute efficiencies entered with the option to correct them for
+air attenuation.  If your efficiency was measured at some distance without removing the effect of the air
+in between, leave this option unchecked, or the air will be accounted for twice.
+</p>
+
+<h3>Subtract background peaks</h3>
+<p>
+When a background spectrum is displayed, and it has peaks under the foreground peaks, a
+&quot;Subtract background peaks&quot; option is shown.  When checked, the area of any background peak
+within one sigma of a foreground peak&apos;s mean is subtracted from it, the same way the
+<b>Activity/Shielding Fit</b> tool does it: the background peak areas are first scaled to the foreground,
+using the background&apos;s display scale factor if you have set one, and otherwise the ratio of live times.
+Only Gaussian background peaks are used.  The CPS column then becomes &quot;Net Peak CPS&quot;, and a
+&quot;Bkg. CPS&quot; column gives the background that was subtracted; if the scale factor used is not the
+ratio of live times, a note below the table says so.  If the background&apos;s automated peak search found peaks under your foreground peaks
+that you have not fit in the background, you will be offered to fit and add them when you check the
+option.
+</p>
+
+<h3>Fixed-geometry detector responses</h3>
+<p>
+A fixed-geometry DRF already describes the whole source-detector arrangement, so the distance is not used
+(and can not be edited), there is no air correction, and the flux on detector, flux per cm&sup2;, and
+efficiency breakdown columns are not shown.  The &#611;/4&pi;/s column becomes the source&apos;s gamma emission
+rate: &#611;/s for a DRF giving total activity, or &#611;/s/cm2, &#611;/s/m2, or &#611;/s/g for DRFs giving
+activity per unit area or mass.  Such an efficiency is usually made for the specific source, including
+the attenuation within it and any surrounding materials, so this is the emission rate of the source itself,
+not the &quot;after shielding&quot; number a far-field DRF gives.
+</p>
+
+<h3>Peaks outside the DRF&apos;s energy range</h3>
+<p>
+If the DRF states the energy range it is valid for, peaks outside of that range have their energy shown
+in a warning color, and a message below the table lists them; their efficiency is extrapolated (or
+held at the value at the end of the range), so their numbers are less certain.  In the CSV and copied
+table, a &quot;Notes&quot; column is added saying which rows are affected.
+</p>
+
+<h3>Display levels, copying, and CSV export</h3>
+<p>
+The <b>Simple</b>, <b>Standard</b>, and <b>More</b> options choose which columns are shown.
+<b>Simple</b> shows the energy, nuclide, and &#611;/4&pi;/s, with uncertainties as percentages;
+<b>Standard</b> shows the energy, CPS, flux per cm&sup2;, and &#611;/4&pi;/s; and <b>More</b> also adds the
+nuclide, intrinsic and geometric efficiencies, and flux on detector.
+</p>
+<p>Since the output of this tool is primarily intended for use outside of <b>InterSpec</b>, you can
+either export the table to a <em>CSV</em> file, or copy it to your clipboard to paste into other
+applications by clicking the &quot;Copy&quot; link right below the table.  Both include the columns
+of the current display level, with each uncertainty in its own column.  Values are given to the same number
+of significant figures as in the table: between 3 and 9, chosen from the size of the uncertainty (6 when
+there is no uncertainty) - one more than the uncertainty justifies.  Checking &quot;Select rows&quot; adds a
+checkbox to each row, so you can choose which rows are copied or exported.
+</p>
+
+<h3>Uncertainties</h3>
 <p>Uncertainties given by this tool combine the statistical uncertainty of the
-peak amplitude with the efficiency uncertainty the detector response states of its
-own (plus, for a geometry-modeled detector, the uncertainty its geometry model adds
-close to the detector).  An uncertainty that is only assumed for a detector response
-stating none (as for the GADRAS detectors) is not included.  A line under the
-distance says what was included.  The table shows the two combined; hover over a value
+peak area (plus that of any background peak area subtracted, added in quadrature) with the efficiency
+uncertainty the detector response states of its own (plus, for a geometry-modeled detector, the
+uncertainty its geometry model adds close to the detector).  An uncertainty that is only assumed for a
+detector response stating none (as for the GADRAS detectors) is not included.  A line below the
+table says what was included.  The table shows the two combined; hover over a value
 to see them separately, and the CSV and copied tables give them separately, as in
 <code>0.401 (stat) +- 0.112 (syst)</code>.
 </p>

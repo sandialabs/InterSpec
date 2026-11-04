@@ -408,6 +408,19 @@ public:
   //decodeSpecMeasStuffFromXml(...): Parent node should be named "DHS:InterSpec"
   //Throws on error.
   void decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *parent );
+
+  /** Makes the sample numbers of a just-parsed N42 file InterSpec wrote match the ones its
+   <DHS:InterSpec> information is keyed by; must be called before #decodeSpecMeasStuffFromXml.
+
+   Uses the <AllSampleNumbers> written with the file.  For files written before it existed, which
+   for search-mode data starting with a long background read back numbered from 0, restores the
+   numbering InterSpec used to read these files with.
+
+   \param RadInstrumentData The parsed N42-2012 <RadInstrumentData> node.
+   \param interspec_node The <DHS:InterSpec> child of `RadInstrumentData`.
+   */
+  void reconcileSampleNumbersWithInterSpecXml( const ::rapidxml::xml_node<char> *RadInstrumentData,
+                                               const ::rapidxml::xml_node<char> *interspec_node );
   
   
   void addPeaksToXml( ::rapidxml::xml_node<char> *peaksnode ) const;
@@ -477,9 +490,9 @@ public:
 #endif //#if( USE_LLM_INTERFACE )
 
 protected:
-  /** Changes all instances of the first sample number, to the second sample number in `m_peaks`, `m_autoSearchPeaks`, and
-   `m_dbUserStateIndexes`.  DOES NOT change the sample numbers of `SpecUtils::Measurement` - see `change_sample_numbers`
-   for that.
+  /** Changes all instances of the first sample number, to the second sample number in `m_peaks`, `m_autoSearchPeaks`,
+   `m_dbUserStateIndexes`, `m_displayedSampleNumbers`, and `m_llmConversationHistory`.  DOES NOT change the
+   sample numbers of `SpecUtils::Measurement` - see `change_sample_numbers` for that.
    */
   void change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums );
 
@@ -584,6 +597,9 @@ protected:
   /** Version of XML serialization of the <DHS:InterSpec> node.
    Changes:
    - Added version field to xml 20200807, with initial value 1.  Added <DisplayedDetectors> field.
+   - 20260302, version 2: added <PeakFitDetPrefs>.
+   - 20261021, version 3: added <AllSampleNumbers>, so the sample numbers InterSpec keys its
+     information by can be restored if the N42 is read back with different sample numbers.
    */
   static const int sm_specMeasSerializationVersion;
   

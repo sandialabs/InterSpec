@@ -104,9 +104,9 @@ namespace CeeLoUtils
      in-vacuum, strictly ascending in energy. */
     ceelo::AnchorCurve curve;
 
-    /** On-axis source distance of the anchor, in cm, measured from the
-     geometry descriptor's reference point (user convention - typically the
-     endcap front, NOT the crystal face). */
+    /** On-axis source distance of the anchor, in cm, from the DETECTOR FACE (the
+     endcap front - InterSpec's one distance convention; see #sourcePositionFromFace),
+     NOT the crystal face, whatever the descriptor's reference point says. */
     double ref_distance_cm = 0.0;
 
     /** True when the anchor was sampled from the DRF's fitted efficiency
@@ -206,15 +206,16 @@ namespace CeeLoUtils
    #intrinsicFactor(E, d) puts points taken at different distances on one far-field footing,
    whatever distance each was taken at.
 
-   That footing is the OBJECT disk - `transverse_half_extent()` - which is the disk a stored
-   efficiency curve is quoted against (#MakeDrfCalc pairs this with a flat-disk factor built from
-   the DRF's own stated diameter, and DetectorPeakResponse::efficiency multiplies that same disk
-   back in).  It is therefore NOT in general what
-   DetectorPeakResponse::intrinsicEfficiencyEval reports: that quotes the intrinsic against the
-   CRYSTAL disk (#crystalHalfExtent), since "intrinsic" means per photon crossing the crystal
-   face.  The two differ by the ratio of the disks - ~2.7% for the nai3x3 golden, 2.0x for the
-   czt_box - and that is deliberate: a curve transfer must preserve the ABSOLUTE efficiency, which
-   is what a measurement sees, rather than agree about a convention.  Pinned in
+   That footing is a disk the caller names - the one the efficiency curve in question is (or will
+   be) quoted against, i.e. the DRF's stated #DetectorPeakResponse::detectorDiameter, which the
+   flat-disk model multiplies back in - defaulting to the OBJECT disk, `transverse_half_extent()`,
+   which is what Make Detector Response states for a geometry it fits.  Quoting a curve against one
+   disk and reading it back with another scales every efficiency by the ratio of the two (~2.7% for
+   the nai3x3 golden's crystal vs object disk, 2.0x for the czt_box).  It is therefore NOT in
+   general what DetectorPeakResponse::intrinsicEfficiencyEval reports: that quotes the intrinsic
+   against the CRYSTAL disk (#crystalHalfExtent), since "intrinsic" means per photon crossing the
+   crystal face - and that is deliberate: a curve transfer must preserve the ABSOLUTE efficiency,
+   which is what a measurement sees, rather than agree about a convention.  Pinned in
    test_CeeLoDrfIntegration's `curve_anchor_covariance_flows_to_drf`.
 
    Sub-millisecond per evaluation; the ray quadrature is built once
@@ -223,7 +224,10 @@ namespace CeeLoUtils
   class GeometryKernel
   {
   public:
-    explicit GeometryKernel( const ceelo::GeometryDescriptor &geom, int n_rays = 2048 );
+    /** @param footing_diameter_cm The disk (cm) #intrinsicFactor quotes the far field against; <= 0
+     for the object disk, 2*`transverse_half_extent()`. */
+    explicit GeometryKernel( const ceelo::GeometryDescriptor &geom, int n_rays = 2048,
+                             double footing_diameter_cm = -1.0 );
     ~GeometryKernel();
 
     /** K(E) for an on-axis point source `face_dist_cm` from the detector face. */
@@ -233,10 +237,10 @@ namespace CeeLoUtils
      max(1000*a, 100 cm), with `a` the transverse half-extent - as intrinsicEfficiencyEval uses. */
     double farFieldDistanceCm() const;
 
-    /** g(E,d) = K(E,d) * Omega_disk(d_far,a) / K(E,d_far): absolute efficiency at `face_dist_cm`
-     divided by this is the far-field intrinsic efficiency on the OBJECT-disk footing described
-     above - not DetectorPeakResponse::intrinsicEfficiencyEval's crystal-disk one.  Reduces to the
-     flat-disk solid angle fraction far from the detector. */
+    /** g(E,d) = K(E,d) * Omega_disk(d_far,a) / K(E,d_far), `a` the footing disk's radius:
+     absolute efficiency at `face_dist_cm` divided by this is the far-field intrinsic efficiency on
+     that footing (see above) - not DetectorPeakResponse::intrinsicEfficiencyEval's crystal-disk
+     one.  Reduces to the footing disk's solid angle fraction far from the detector. */
     double intrinsicFactor( double energy_keV, double face_dist_cm );
 
     /** d ln(g)/d(d) at `face_dist_cm`, per cm (central difference) - about -2/d far from the
@@ -302,6 +306,21 @@ namespace CeeLoUtils
                                           double theta_rad, double phi_rad,
                                           double dist_from_face_cm );
 
+  /** Grounds `response` to `points` - CeeLo's level-1 k(E) fit,
+   ceelo::ResponseGenerator::ground_to_points - where each point's `distance_cm` is an InterSpec
+   distance, from the DETECTOR FACE.  ground_to_points evaluates any point that arrives without a
+   `model_eff` through the descriptor's own reference point, which for a CrystalFace descriptor puts
+   the source one endcap offset too close; so here every point's model efficiency is formed
+   face-referenced (#sourcePositionFromFace), on the UNGROUNDED response (an existing grounding is
+   cleared first - k(E) is a ratio to the ungrounded model).  Points whose model efficiency is zero
+   (nothing reaches the crystal there) are dropped; throws std::runtime_error if none remain.  The
+   one way InterSpec grounds a response.  Touches nothing but its arguments, so it may run on a
+   worker thread.
+   */
+  void groundResponseToFacePoints( ceelo::DetectorResponse &response,
+                                   std::vector<ceelo::GroundingPoint> points,
+                                   const bool curve_derived );
+
   /** THE far-field on-axis query InterSpec's intrinsic (solid-angle-free) views of a response use:
    DetectorPeakResponse::intrinsicEfficiencyEval, its no-geometry efficiencyFracCovariance, and
    setLegacyEfficiencyFromResponse all evaluate at this one position, so the stored curve, the
@@ -310,6 +329,13 @@ namespace CeeLoUtils
    */
   double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd );
   Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd );
+
+  /** The solid-angle fraction of the CRYSTAL disk (#crystalHalfExtent) at #farFieldDistanceCm: what a
+   response's far-field absolute efficiency is divided by to give its intrinsic efficiency ("per
+   photon crossing the crystal face") - the one definition intrinsicEfficiencyEval and
+   setLegacyEfficiencyFromResponse share.
+   */
+  double farFieldCrystalSolidAngle( const ceelo::GeometryDescriptor &gd );
 
   /** Worker threads for a detector Monte Carlo run from the GUI: all but two cores with 8 or more,
    all but one with 2-7, so the session and the rest of the machine stay responsive.
@@ -337,8 +363,9 @@ namespace CeeLoUtils
    with a chemical-formula fallback; anything still unresolved becomes a
    near-transparent spacer that preserves the layer's physical extent but not
    its attenuation, and a human-readable note is appended to `warnings`.  A thin
-   implanted contact is folded into the dead layer; `contactPin` and any piece
-   behind the crystal are dropped with a warning.  The crystal's front-edge bulletization and
+   implanted contact is folded into the dead layer; `contactPin` is dropped with a
+   warning, plates behind the crystal (optical coupling, PMT window) become back
+   plates directly behind it, and the PMT wall is dropped, each with a warning.  The crystal's front-edge bulletization and
    the core's rounded tip are carried through (`bullet_radius_cm` /
    `BoreHoleConfig::rounded_tip`), and dropped with a warning only when they
    violate a CeeLo geometry precondition (see #relaxGeometryFeatures).  The
@@ -524,9 +551,9 @@ namespace CeeLoUtils
    crystal K-edge so the interpolated curve never bridges one.  The per-point MC
    sigma is carried into `EnergyEffPoint::efficiencyUncert`.
 
-   The detector diameter, geometry type and energy range are taken from the
-   response; @p drf's setback and DRF-source are preserved across the call (they
-   are members #DetectorPeakResponse::setEfficiencyPoints otherwise resets).
+   The detector diameter (the crystal's), setback (the response's endcap offset), geometry type and
+   energy range are taken from the response, so the flat-disk model places the crystal where the
+   response does; @p drf's DRF-source is preserved across the call.
 
    Throws std::runtime_error for a null response, or if fewer than two positive
    points can be sampled.
@@ -537,6 +564,22 @@ namespace CeeLoUtils
   void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
                       const std::shared_ptr<const ceelo::DetectorResponse> &response,
                       const size_t num_points = 48 );
+
+
+  /** Whether @p resp carries a Monte-Carlo efficiency of its own (a full or quick-MC scan), and so
+   is still a valid detector with its grounding removed.  A curve transfer (which includes an
+   imported grid) builds its efficiency *from* the anchor curve, so there is nothing under it.
+   */
+  bool responseHasMcBackbone( const ceelo::DetectorResponse &resp );
+
+
+  /** A deep copy of @p resp with its grounding (the k(E) that pins it to measured or curve-derived
+   points) removed, so it answers with the bare Monte-Carlo efficiency.  The model-transfer, floor
+   and per-node sigma terms are kept: they describe the Monte Carlo's own uncertainty.
+
+   Only meaningful for a response with #responseHasMcBackbone.  Throws on a copy failure.
+   */
+  std::shared_ptr<const ceelo::DetectorResponse> withoutGrounding( const ceelo::DetectorResponse &resp );
 
 
   /** A copy of @p drf whose ordinary efficiency curve reproduces the attached Monte-Carlo

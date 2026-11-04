@@ -54,8 +54,8 @@ namespace AnalystChecks
 {
   /** Options for peak detection analysis. */
   struct DetectedPeaksOptions {
-    SpecUtils::SpectrumType specType;
-    bool nonBackgroundPeaksOnly;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+    bool nonBackgroundPeaksOnly = false;
     std::optional<double> lowerEnergy;
     std::optional<double> upperEnergy;
   };
@@ -92,25 +92,134 @@ namespace AnalystChecks
   
   
   struct FitPeakOptions {
-    bool doNotAddToAnalysisPeaks;
-    double energy;
-    SpecUtils::SpectrumType specType;
+    bool doNotAddToAnalysisPeaks = false;
+    double energy = 0.0;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
     std::optional<std::string> source;
+
+    /** A ROI the caller fully specifies: exactly these peaks are fit together in one ROI. */
+    struct ExplicitRoi
+    {
+      /** Starting means (keV) of the peaks to fit; at most #sm_max_peaks. */
+      std::vector<double> energies;
+
+      /** Source for each peak (empty string for none); either empty, or the same size as `energies`. */
+      std::vector<std::string> sources;
+
+      /** ROI range (keV); a bound not given is chosen from the data around the outermost peaks. */
+      std::optional<double> lowerEnergy;
+      std::optional<double> upperEnergy;
+
+      /** A `PeakContinuum::offset_type_str(...)` name; if not given, chosen from the number of peaks. */
+      std::optional<std::string> continuumType;
+
+      static constexpr size_t sm_max_peaks = 10;
+    };//struct ExplicitRoi
+
+    /** If set, `energy` and `source` are ignored, and the requested peaks are fit in one ROI,
+     instead of searching for the best peak near `energy`.
+     */
+    std::optional<ExplicitRoi> explicitRoi;
   };
-  
+
+  /** What the data show near an energy where the (single-energy) automated-threshold peak search
+   accepted no peak; see `FitPeakStatus::diagnostic`.
+   */
+  struct UnfitPeakDiagnostic
+  {
+    /** Why no peak was accepted, e.g., "significance 2.1 sigma is below the 5 sigma the automated
+     search requires"; intended to be read by an LLM or a user. */
+    std::string reason;
+
+    /** The best candidate peak (and its ROI) found using the more lenient thresholds of a user
+     double-click; null if not even that found a peak.  Never added to the session. */
+    std::shared_ptr<const PeakDef> candidate;
+    std::vector<std::shared_ptr<const PeakDef>> candidateRoiPeaks;
+
+    /** Expected FWHM (keV) at the energy, and a description of where it came from. */
+    double expectedFwhm = 0.0;
+    std::string expectedFwhmSource;
+
+    /** A Gaussian of the expected FWHM at exactly the requested energy, fit with a quadratic
+     continuum over +-2 FWHM (see `FitPeaksForNuclides::detail::fixed_shape_peak_fit`). */
+    bool fixedFitValid = false;
+    double fixedFitArea = 0.0;        // signed net counts
+    double fixedFitAreaUncert = 0.0;
+    double fixedFitChi2Dof = -1.0;
+    double fixedFitLowerEnergy = 0.0;
+    double fixedFitUpperEnergy = 0.0;
+  };//struct UnfitPeakDiagnostic
+
+
   struct FitPeakStatus {
+    /** The fit peak; for a `FitPeakOptions::explicitRoi` fit, the peak nearest the first requested
+     energy.  When `significant` is false, no peak was accepted, and this is the rejected candidate
+     (`UnfitPeakDiagnostic::candidate`; may be null) - so test `significant`, not this, for success. */
     std::shared_ptr<const PeakDef> fitPeak;
     std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
+
+    /** False when the single-energy search found no peak to add, and the caller asked to only
+     probe the energy (`FitPeakOptions::doNotAddToAnalysisPeaks`); `diagnostic` then says why,
+     and what the data show at the energy. */
+    bool significant = true;
+    std::optional<UnfitPeakDiagnostic> diagnostic;
+
+    /** If this was a `FitPeakOptions::explicitRoi` fit; the members below are only used for these. */
+    bool explicitRoi = false;
+
+    /** Previously existing peaks replaced by the fit (a requested peak was at about their energy). */
+    std::vector<std::shared_ptr<const PeakDef>> removedPeaks;
+
+    /** Notes for the caller, e.g., weak peaks, or peaks that moved a lot. */
+    std::vector<std::string> warnings;
   };
-  
+
+  /** Fits a peak, and unless `options.doNotAddToAnalysisPeaks`, adds it to the analysis peaks.
+
+   Normally searches for the best peak near `options.energy`, with the fitter choosing the ROI and the
+   peaks in it (like a user double-click, but with the automated-search significance requirements).
+
+   If `options.explicitRoi` is set, instead creates one ROI with the given (or a default) range and
+   continuum, holding one Gaussian peak per requested energy, all fit together, even if weak.
+   Existing ROIs are combined into the new ROI (their peaks fit along with the requested ones) as a
+   user double-click would combine them - or, if ROI bounds are given, if at least half of an existing
+   ROI, or all its peaks, are inside the bounds.  An existing peak at about a requested energy is
+   replaced by the requested peak.  Overlapping, but not combined, ROIs must not have peaks inside the
+   new ROI; that, or overlapping a data-defined peak, is an error.  Records an undo/redo step.
+
+   Throws std::exception, with a description intended to be actionable by an LLM, on error.
+   */
   InterSpec_API FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
 
-  /** Async version of fit_user_peak that runs the expensive peak search in a background thread.
+  /** Async version of fit_user_peak that runs the expensive peak search (or explicit ROI fit) in a
+   background thread.
    The callback is called on the GUI thread with either a FitPeakStatus (success) or a string (error message).
    */
   using FitPeakCallback = std::function<void( std::variant<FitPeakStatus, std::string> )>;
   InterSpec_API void fit_user_peak_async( const FitPeakOptions &options, InterSpec *interspec,
                                           FitPeakCallback callback );
+
+  struct ExplicitRoiSetup;
+  struct ExplicitRoiFitResult;
+
+  /** The stages of a `FitPeakOptions::explicitRoi` fit, which `fit_user_peak_async` runs on the GUI
+   thread, a background thread, and the GUI thread, respectively.  Exposed so tests can interleave
+   the stages of several requests, as happens with parallel tool calls.
+   */
+  struct ExplicitRoiPreparedFit
+  {
+    std::shared_ptr<ExplicitRoiSetup> setup;
+    std::shared_ptr<ExplicitRoiFitResult> fit;
+  };
+
+  /** Validates the request, and works out what to do with existing peaks (GUI thread); throws on error. */
+  InterSpec_API ExplicitRoiPreparedFit prepare_explicit_roi_fit( const FitPeakOptions &options, InterSpec *interspec );
+
+  /** Fits the peaks; touches no session state, so may be run on any thread.  Throws on error. */
+  InterSpec_API void run_explicit_roi_fit( ExplicitRoiPreparedFit &prepared );
+
+  /** Updates the analysis peaks (GUI thread); throws if the peaks it depends on have changed. */
+  InterSpec_API FitPeakStatus commit_explicit_roi_fit( const ExplicitRoiPreparedFit &prepared, InterSpec *interspec );
 
   struct GetUserPeakOptions {
     SpecUtils::SpectrumType specType;
@@ -173,7 +282,29 @@ namespace AnalystChecks
    */
   std::vector<std::tuple<float,float,float>> cacl_estimated_gamma_importance( const std::vector<std::tuple<float,float>> &gamma_energies_and_yields );
 
+  /** Returns up to three of the most prominent photon energies of a nuclide, x-ray element, or
+   reaction; empty if it emits no photons (e.g., a pure beta emitter such as H3 or P32).
+   */
   InterSpec_API std::vector<float> get_characteristic_gammas( const std::string &nuclide );
+
+  /** Fewest 511 keV annihilation photons per decay for a nuclide to count as a positron emitter -
+   for its characteristic lines (#get_characteristic_gammas), and for 511 keV lookups. */
+  constexpr double sm_min_annihilation_photons_per_decay = 0.1;
+
+  /** A positron emitter whose annihilation photons are a significant 511 keV source. */
+  struct AnnihilationSource
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    double photons511PerDecay = 0.0;  // 2 x positrons per decay of the parent, progeny included
+  };//struct AnnihilationSource
+
+  /** Positron emitters a 511 keV annihilation peak may come from: the nuclide-search category
+   nuclides, the characteristic-gamma nuclides, and common beta+ emitters (Na22, F18, Ga68, Ge68,
+   Cu64, ...), that give at least `min_photons_per_decay` 511 keV photons per decay, at their default
+   age; sorted by that yield, largest first.
+   */
+  InterSpec_API std::vector<AnnihilationSource> positron_emitters_for_annihilation( InterSpec *interspec,
+                                      const double min_photons_per_decay = sm_min_annihilation_photons_per_decay );
   
   /** Returns the Nuclides, x-rays, and reaction gammas from CharacteristicGammas.txt, in the energy range. */
   std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
@@ -194,24 +325,45 @@ namespace AnalystChecks
    
    @param energy The energy (in keV) to calculate the expected FWHM for
    @param interspec Pointer to the InterSpec session
+   @param source If non-null, set to a short description of where the FWHM came from.
    @return The expected FWHM in keV
-   @throws std::runtime_error if no InterSpec session, no foreground loaded, or FWHM cannot be determined
+   @throws std::runtime_error if no InterSpec session, no foreground loaded, energy not positive,
+           or FWHM cannot be determined
    */
-  float get_expected_fwhm( const double energy, InterSpec *interspec );
+  InterSpec_API float get_expected_fwhm( const double energy, InterSpec *interspec, std::string *source = nullptr );
 
   /** Returns a callable giving the expected FWHM (keV) at an energy (keV).
 
-   The underlying resolution source is resolved once, up front - in order of preference: the
-   loaded DRF's resolution info, a one-time resolution fit to the detected peaks, the nearest
-   detected peak (within 20% of the requested energy), then a generic HPGe/low-res estimate -
-   so the returned function is cheap to evaluate repeatedly, and does not touch InterSpec
-   session state when called.
+   The resolution source is resolved once, up front, so the returned function is cheap to evaluate
+   repeatedly, and does not touch InterSpec session state when called.  In order of preference:
+   - the loaded DRF's resolution, unless the spectrum's own peaks show it is off by more than ~33%
+     (a generic DRF on a better or worse detector);
+   - a resolution curve fit to the detected peaks, anchored to the shape of the DRF's (or, without
+     one, the detector class's) curve, so a few peaks still give a sensible curve;
+   - the nearest detected peak (within 20% of the requested energy);
+   - a generic HPGe or low-resolution estimate.
+   Gets the detected peaks (which may run the automated peak search, once per spectrum).
 
    @param interspec Pointer to the InterSpec session
+   @param source If non-null, set to a short description of where the FWHM comes from.
    @return Function mapping energy (keV) to expected FWHM (keV)
    @throws std::runtime_error if no InterSpec session or no foreground loaded
    */
-  InterSpec_API std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec );
+  InterSpec_API std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec, std::string *source = nullptr );
+
+  /** Worker-safe implementation of `make_expected_fwhm_fcn(InterSpec *)`.
+
+   @param drf The loaded detector response; used if it has resolution info consistent with `peaks`.  May be null.
+   @param peaks Peaks of `spectrum` to check the DRF against, or fit a resolution to.  May be null or empty.
+   @param spectrum The spectrum the peaks are from.
+   @param det_type The detector class; selects the resolution shape and the final generic fallback.
+   @param source If non-null, set to a short description of where the FWHM comes from.
+   */
+  InterSpec_API std::function<float(double)> make_expected_fwhm_fcn( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                     const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &peaks,
+                                     const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                                     const PeakFitUtils::CoarseResolutionType det_type,
+                                     std::string *source = nullptr );
 
   struct SpectrumCountsInEnergyRange
   {
@@ -402,9 +554,42 @@ namespace AnalystChecks
   /** Options for checking if a peak is an escape peak. */
   struct EscapePeakCheckOptions
   {
-    double energy;
-    SpecUtils::SpectrumType specType;  // defaults to Foreground if not specified
+    double energy = 0.0;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
   };//struct EscapePeakCheckOptions
+
+  /** A peak found at an energy the escape check looked at. */
+  struct EscapeCheckPeak
+  {
+    std::shared_ptr<const PeakDef> peak;
+    std::optional<std::string> source;  // the peak's assigned nuclide, x-ray element, or reaction
+  };//struct EscapeCheckPeak
+
+  /** A possible detector-material K x-ray escape relation between the queried peak and a
+   higher-energy line: a photon photo-absorbed near the crystal surface, whose fluorescence
+   K x-ray escapes, deposits (parent energy - x-ray energy).
+   */
+  struct XrayEscapeInfo
+  {
+    std::string element;          // detector element the x-ray comes from, e.g., "Ge", "I", "Cd"
+    std::string line;             // "Ka" or "Kb"
+    double xrayEnergy = 0.0;      // keV
+    double kEdgeEnergy = 0.0;     // keV; a parent must be above this to produce the x-ray
+    double parentEnergy = 0.0;    // queried energy + xrayEnergy: where the parent line would be
+
+    /** A peak found at `parentEnergy`, if any. */
+    std::optional<EscapeCheckPeak> parentPeak;
+
+    /** Queried peak area / parent peak area; only set if both peaks exist. */
+    std::optional<double> areaRatio;
+
+    /** A generous upper bound on (escape peak area / parent peak area) for this line, at the
+     parent energy; zero if the parent is below the K edge. */
+    double maxEscapeFraction = 0.0;
+
+    /** True if a parent peak exists, and `areaRatio` is no larger than `maxEscapeFraction`. */
+    bool plausible = false;
+  };//struct XrayEscapeInfo
 
   /** Results of escape peak analysis. */
   struct EscapePeakCheckStatus
@@ -412,18 +597,45 @@ namespace AnalystChecks
     // If the specified peak IS an escape peak of another peak in the spectrum
     std::optional<ParentPeakInfo> parentPeak;
 
-    // Energies where escape peaks COULD be found (calculated independent of actual peaks)
-    double potentialSingleEscapePeakEnergy;     // input - 511 keV
-    double potentialDoubleEscapePeakEnergy;     // input - 1022 keV
-    double potentialParentPeakSingleEscape;     // input + 511 keV
-    double potentialParentPeakDoubleEscape;     // input + 1022 keV
+    // Where this peak's own escape peaks would be, if this peak were a parent; only set when the
+    //  energy is above the 1022 keV pair-production threshold, and the escape energy is inside
+    //  the spectrum.
+    std::optional<double> potentialSingleEscapePeakEnergy;     // input - 511 keV
+    std::optional<double> potentialDoubleEscapePeakEnergy;     // input - 1022 keV
+
+    // Peaks found at those energies, if any.
+    std::optional<EscapeCheckPeak> singleEscapePeakFound;
+    std::optional<EscapeCheckPeak> doubleEscapePeakFound;
+
+    // Where the parent would be if this peak were its single or double escape peak (always
+    //  above 1022 keV for a double escape; for a single escape, below 1022 keV when the input is
+    //  below 511 keV - in which case no such parent can pair-produce).
+    double potentialParentPeakSingleEscape = 0.0;     // input + 511 keV
+    double potentialParentPeakDoubleEscape = 0.0;     // input + 1022 keV
+
+    // Peaks found at those energies, whether or not they can be the parent.
+    std::optional<EscapeCheckPeak> peakAtPotentialSingleEscapeParent;
+    std::optional<EscapeCheckPeak> peakAtPotentialDoubleEscapeParent;
+
+    /** True when the input energy is below 1022 keV, so it can have no escape peaks of its own. */
+    bool belowPairProductionThreshold = false;
+
+    /** Detector material the x-ray escape checks assume, e.g., "Ge (HPGe)", "NaI", or "unknown
+     (all common materials checked)". */
+    std::string detectorMaterialAssumed;
+
+    /** Detector K x-ray escape relations of the queried peak to higher-energy lines. */
+    std::vector<XrayEscapeInfo> xrayEscapes;
+
+    /** Plain-language notes, e.g., that a would-be parent is below the pair-production threshold. */
+    std::vector<std::string> notes;
 
     // Search windows (±keV) for finding peaks at those energies
     // Calculated as max(1.0, min(0.5*fwhm, 15.0)) - fairly arbitrary and untested
-    double singleEscapeSearchWindow;            // window for finding S.E. peak of input energy
-    double doubleEscapeSearchWindow;            // window for finding D.E. peak of input energy
-    double singleEscapeParentSearchWindow;      // window for finding parent if input is S.E.
-    double doubleEscapeParentSearchWindow;      // window for finding parent if input is D.E.
+    double singleEscapeSearchWindow = 0.0;            // window for finding S.E. peak of input energy
+    double doubleEscapeSearchWindow = 0.0;            // window for finding D.E. peak of input energy
+    double singleEscapeParentSearchWindow = 0.0;      // window for finding parent if input is S.E.
+    double doubleEscapeParentSearchWindow = 0.0;      // window for finding parent if input is D.E.
   };//struct EscapePeakCheckStatus
 
   /** Check if a peak at a specified energy is a single or double escape peak.
@@ -447,10 +659,11 @@ namespace AnalystChecks
   /** Enum specifying the type of sum peak. */
   enum class SumPeakType
   {
-    NotASumPeak,   // Not identified as a sum peak
-    RandomSum,     // Sum from random coincidence (pile-up) due to high dead time
-    CascadeSum,    // Sum from cascade decay photons emitted nearly simultaneously
-    Unknown        // Could be a sum peak but type cannot be determined
+    NotASumPeak,          // Not identified as a sum peak
+    RandomSum,            // Sum from random coincidence (pile-up)
+    CascadeSum,           // Sum from cascade decay photons emitted nearly simultaneously
+    CascadeAndRandomSum,  // Both: a cascade pair, with random summing a sizable part of the rate
+    Unknown               // Could be a sum peak but type cannot be determined
   };//enum class SumPeakType
 
   /** Converts SumPeakType enum to string representation.
@@ -467,14 +680,33 @@ namespace AnalystChecks
     std::shared_ptr<const PeakDef> firstPeak;   // First contributing peak
     std::shared_ptr<const PeakDef> secondPeak;  // Second contributing peak
     std::optional<std::string> userLabel;       // e.g., "Sum 661.66 + 661.66 keV" or "Co60 cascade-sum 1173.23+1332.49 keV"
-    std::optional<double> coincidenceFraction;  // For cascade sums: fraction of time photons are emitted together
+
+    /** For cascade sums: probability per decay that both photons are emitted (the two photon
+     yields times their coincidence probability), for the nuclide in `cascadeNuclide`. */
+    std::optional<double> coincidenceFraction;
+    std::optional<std::string> cascadeNuclide;
+    std::optional<std::string> coincidenceType;  // "gamma-gamma", "x-ray-gamma", "x-ray-x-ray", or "annihilation-gamma"
+
+    /** True if the pair is a cascade, but random summing alone explains the observed rate. */
+    bool cascadeAlsoPossible = false;
+
+    /** Count rate of the sum peak (net, per live-time second), if a peak is there. */
+    std::optional<double> observedSumCps;
+
+    /** Random-summing rate expected for this pair: tau*R^2 for a line summing with itself,
+     2*tau*R1*R2 for two different lines; see `SumPeakCheckStatus::pileupTau`.  When tau is only
+     an upper bound, so is this. */
+    std::optional<double> expectedRandomSumCps;
+
+    /** Why this classification was made, for an LLM or user to read. */
+    std::string reason;
   };//struct SumPeakInfo
 
   /** Options for checking if a peak is a sum peak. */
   struct SumPeakCheckOptions
   {
-    double energy;
-    SpecUtils::SpectrumType specType;  // defaults to Foreground if not specified
+    double energy = 0.0;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
     std::optional<double> distance;     // Optional: source-to-detector distance (in PhysicalUnits, e.g., PhysicalUnits::cm). If > 15 cm, cascade-sums are not considered
   };//struct SumPeakCheckOptions
 
@@ -485,7 +717,18 @@ namespace AnalystChecks
     std::optional<SumPeakInfo> sumPeakInfo;
 
     // Energy windows used for searching for contributing peaks
-    double searchWindow;  // calculated as max(1.0, min(0.5*fwhm, 15.0))
+    double searchWindow = 0.0;  // calculated as max(1.0, min(0.5*fwhm, 15.0))
+
+    /** Pile-up (random summing) time constant, in seconds, so a line of rate R sums with itself at
+     tau*R^2, and two lines at 2*tau*R1*R2.  Measured from self-sum peaks of strong lines when there
+     are any (other than the queried one), otherwise only an upper bound from the dead time. */
+    std::optional<double> pileupTau;
+    bool pileupTauIsUpperBound = false;
+    std::string pileupTauSource;  // e.g., "558.30 keV = 2 x 279.15 keV self-sum peak", or "dead time (upper bound)"
+
+    /** Other sources with a characteristic line at about the queried energy, which could explain
+     the peak instead of summing. */
+    std::vector<std::string> otherSourcesAtThisEnergy;
   };//struct SumPeakCheckStatus
 
   /** Check if a peak at a specified energy is a sum peak (random-sum or cascade-sum).
@@ -577,11 +820,84 @@ namespace AnalystChecks
     SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
   };//struct ComptonPeakCheckOptions
 
+  /** A higher-energy peak whose single-Compton-scatter features cover an energy - found from the
+   kinematics alone, so no peak needs to have been fit at that energy.
+
+   A photon of energy Ep that scatters by 180 deg in material around the detector, then is absorbed,
+   deposits E_bs = Ep / (1 + 2 Ep/511) - the backscatter peak, a broad bump from scatters of ~120-180
+   deg.  One that scatters by 180 deg in the detector and escapes deposits E_edge = Ep - E_bs - the
+   Compton edge, a step down in the continuum.
+   */
+  struct ComptonKinematicParent
+  {
+    std::shared_ptr<const PeakDef> parentPeak;
+    double parentEnergy = 0.0;        // keV
+    double parentArea = 0.0;          // counts
+    double parentCps = -1.0;          // counts per live-time second; -1 if no live time
+    std::optional<std::string> parentSource;
+    double backscatterEnergy = 0.0;   // E_bs (keV)
+    double comptonEdgeEnergy = 0.0;   // E_edge (keV)
+    double window = 0.0;              // keV the energy may be outside the backscatter range, or from E_edge
+
+    /** For a backscatter match: the angle (degrees) a photon from the parent must scatter by to have
+     the queried energy (180 if the energy is just below E_bs).  -1 for an edge-only match. */
+    double scatterAngle = -1.0;
+
+    /** ComptonPeak (backscatter, angle >= ~120 deg), ComptonEdge (within the window of E_edge), or
+     ComptonPeakOrEdge (both); ComptonPeak with a smaller angle is less likely to be a visible feature. */
+    ComptonScatterType feature = ComptonScatterType::None;
+
+    /** Parent area / area of the largest peak above the queried energy. */
+    double prominence = 0.0;
+
+    /** Significance of the excess of the counts in [E - w, E + w] over a straight line
+     interpolated between the regions just outside the parent's [E_bs - w, E_edge + w];
+     0 if not computable. */
+    double excessSigma = 0.0;
+
+    /** How strongly the region alone (`prominence` and `excessSigma`) suggests a scatter feature
+     from this parent.  A fitted candidate peak is judged on more criteria (its width and area), so
+     the overall verdict can be lower than this.
+     */
+    ComptonScatterConfidence confidence = ComptonScatterConfidence::No;
+  };//struct ComptonKinematicParent
+
+  /** Finds the higher-energy peaks in `peaks` with a scatter feature at `energy`: either the energy
+   is in the parent's backscatter range ([E_bs - window, E_bs(120 deg) + window], where scatters of
+   ~120-180 degrees bunch up into the backscatter peak), or it is within `window` of the parent's
+   Compton edge.  (Scatters at smaller angles spread over the Compton continuum, and make no
+   feature.)  Most confident first.
+
+   Only Gaussian peaks above ~50 keV, with significance of at least 5, are considered parents.
+   Thread-safe: touches no session state.
+
+   @param window keV beyond E_bs and E_edge that `energy` may be; typically the FWHM at `energy`.
+   */
+  InterSpec_API std::vector<ComptonKinematicParent> compton_kinematic_parents( const double energy,
+                                    const double window,
+                                    const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &spectrum );
+
   /** Results of Compton-scatter analysis for a candidate peak. */
   struct ComptonPeakCheckStatus
   {
     ComptonScatterConfidence confidence = ComptonScatterConfidence::No;
     ComptonScatterType type = ComptonScatterType::None;
+
+    /** True if no fitted peak was found within `searchWindow` of the energy; the confidence and
+     type then come from `kinematicParents` alone. */
+    bool noCandidatePeak = false;
+
+    /** The peak nearest the queried energy, and its distance (keV), if there are any peaks. */
+    std::optional<double> nearestPeakEnergy;
+    std::optional<double> nearestPeakDistance;
+
+    /** Why the result is what it is, e.g., why a candidate peak was rejected. */
+    std::string reason;
+
+    /** Parents whose scatter features cover the energy, from kinematics alone; see
+     #compton_kinematic_parents.  Only filled in by the `InterSpec *` overload. */
+    std::vector<ComptonKinematicParent> kinematicParents;
 
     // Populated only when confidence != No.
     std::optional<ComptonScatterParentInfo> parentInfo;
@@ -626,15 +942,18 @@ namespace AnalystChecks
    @param user_peaks  All user peaks in the spectrum (parents are searched here).
    @param spectrum    The displayed histogram, used to integrate the parent's continuum.
    @param detector    Optional; if non-null and carrying resolution info, used for FWHM check.
+   @param expected_fwhm Optional; if given, used for the FWHM check instead of `detector` (e.g.,
+                      from #make_expected_fwhm_fcn, which checks the DRF against the spectrum).
    @return ComptonPeakCheckStatus with confidence, scatter type, and parent info.
            confidence == No / type == None when no kinematic match is found or
-           any hard-No guard fails.
+           any hard-No guard fails; `reason` then says which.
    */
   InterSpec_API ComptonPeakCheckStatus compton_peak_check(
       const std::shared_ptr<const PeakDef> &candidate,
       const std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > &user_peaks,
       const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
-      const std::shared_ptr<const DetectorPeakResponse> &detector );
+      const std::shared_ptr<const DetectorPeakResponse> &detector,
+      const std::function<float(double)> &expected_fwhm = nullptr );
 
   /** Main-thread wrapper around the worker-safe overload above.
 

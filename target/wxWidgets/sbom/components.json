@@ -124,15 +124,6 @@
     },
 
     {
-      "name": "cuba",
-      "version": "3.0",
-      "type": "library",
-      "license": "LGPL-3.0-or-later",
-      "url": "https://feynarts.de/cuba/",
-      "notes": "Vendored multidimensional numerical integration library.",
-      "version_source": "vendored:external_libs/Cuba-3.0"
-    },
-    {
       "name": "muparserx",
       "version": "4.0.7",
       "type": "library",

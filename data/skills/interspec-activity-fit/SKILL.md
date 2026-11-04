@@ -26,7 +26,9 @@ Before fitting, verify:
 The loaded DRF type fundamentally affects how fits are configured. Use `detector_efficiency_function_info` to check.
 
 ### Far-Field (FarField) DRFs
-Characterize the detector's intrinsic or absolute efficiency as a function of energy, independent of source geometry. The source-to-detector distance and detector face diameter are used to compute the geometric solid angle.
+Characterize the detector's intrinsic or absolute efficiency as a function of energy, independent of source geometry. The source-to-detector distance and the detector's crystal diameter and setback are used to compute the geometric solid angle.
+
+**Distance convention:** `distance` is always from the CENTER of the source (a sphere's or cylinder's center, not its surface) to the FACE of the detector (the front of its endcap). The detector response accounts for how far behind the face the crystal sits - never add the setback yourself, and never give a surface-to-face gap. E.g., a 5 cm radius sphere whose surface is 20 cm from the detector face is at `distance: "25 cm"`.
 
 - **FarFieldIntrinsic**: Efficiency is the probability that a photon hitting the detector face produces a full-energy count. Requires `distance` and detector diameter (stored in the DRF) to compute activity.
 - **FarFieldAbsolute**: Efficiency is measured at a specific characterization distance. Requires `distance` to scale.
@@ -144,10 +146,10 @@ The thin length (1 cm) makes it effectively a surface source. The large radius (
 ## Peak Selection
 
 ### For `activity_fit_one_off`
-Specify peak energies directly via `peak_energies`. Only include peaks of the isotopes of interest.
+Specify peak energies directly via `peak_energies`; they are used whether or not they are marked for fitting. Only include peaks of the isotopes of interest.
 
 ### For `activity_fit` (app state)
-Uses peaks with the `useForShieldingSourceFit` flag. To manage:
+Takes no arguments (it does not accept `peak_energies`), and uses the peaks with the `useForShieldingSourceFit` flag. To manage:
 - `mark_peaks_for_activity_fit` - Batch mark/unmark by energy
 - `edit_analysis_peak` with `useForShieldingSourceFit` - Individual peaks
 

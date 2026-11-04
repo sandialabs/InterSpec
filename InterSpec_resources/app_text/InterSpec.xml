@@ -36,6 +36,9 @@
   <message id="nuclide-label">Nuclide:</message>
   <message id="age-label">Age:</message>
   <message id="distance-label">Distance:</message>
+  <message id="app-tt-distance-from-face">Distance from the center of the source to the face of the
+    detector (the front of its endcap).  The detector response accounts for how far behind that face
+    the crystal sits.</message>
   <message id="activity-label">Activity:</message>
   <message id="dose-label">Dose:</message>
   <message id="shielding-label">Shielding:</message>
@@ -203,6 +206,10 @@
   <message id="app-tab-tt-terminal">Numeric, algebraic, and text-based spectrum interaction terminal.</message>
   <message id="app-tab-tt-rel-eff">Relative Efficiency analysis, from peaks you have fit.</message>
   <message id="app-tab-tt-llm-assistant">Chat with the Large Language Model assistant for spectrum analysis help.</message>
+  <message id="app-llm-side-to-tabs-tt">Move the assistant into the tool tabs, below the spectrum</message>
+  <message id="app-llm-side-to-window-tt">Move the assistant into its own window</message>
+  <message id="app-llm-side-to-full-tt">Make the assistant full-screen</message>
+  <message id="app-llm-side-close-tt">Close the assistant</message>
 
 
   <!-- App-level menu names -->

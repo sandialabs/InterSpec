@@ -229,6 +229,11 @@
 /* A formula curve's rows carry uncertainty only - the formula supplies the efficiency. */
 .DrfModifyAnchorTable.DrfNoEffCol td.DrfEffCol { display: none; }
 
+/* An editor's Add/Remove row; "Remove anchor" (when offered) leads it, pushed to the far left. */
+.DrfModifyAnchorBtnRow { display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
+.DrfModifyAnchorBtnRow > .DrfRemoveAnchorBtn { margin-right: auto; }
+.DrfModifyAnchorRemoved { margin-top: 8px; }
+
 /* Efficiency-equation coefficients: a row of labelled spin boxes, as the FWHM tool lays them out. */
 .DrfModifyCoefs { margin-top: 8px; }
 .DrfModifyCoefParams { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 4px 0; }
@@ -287,3 +292,7 @@
 /* Why the generate button is disabled; stands in for the export tip while it applies. */
 .DrfModifyFooterRow .DrfModifyGenerateHint { color: var(--interspec-warning-color);
   font-style: italic; }
+
+/* Bottom-left of the geometry form, while no usable geometry has been entered. */
+.McImportGeomRow { text-align: left; margin-top: 4px; }
+.McImportGeomUpload { margin-top: 8px; }

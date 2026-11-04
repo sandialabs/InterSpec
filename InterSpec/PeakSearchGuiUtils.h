@@ -33,6 +33,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <functional>
 
 #include <boost/function.hpp>
 
@@ -55,6 +56,7 @@ namespace SpecUtils{
 }
 
 namespace Wt{
+  class WObject;
   class WSvgImage;
 };
 
@@ -171,6 +173,65 @@ bool ensure_background_peaks_recovered(
     const std::set<int> &background_samples,
     const std::shared_ptr<const SpecUtils::Measurement> &background_spectrum,
     std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
+
+/** For each of `fore_peaks` that has no background user peak within
+ GammaInteractionCalc::sm_background_peak_nsigma_near sigma (the same tolerance background-peak
+ subtraction uses, so a peak this calls covered is one that gets subtracted), the closest of
+ `back_auto_peaks` within one FWHM of it - unless a background user peak is already within that
+ candidates FWHM (so would not be added anyway).
+
+ A candidate shared by several foreground peaks is only returned once.  Pure; no GUI.
+ */
+std::vector<std::shared_ptr<const PeakDef>> missing_background_peak_candidates(
+    const std::vector<std::shared_ptr<const PeakDef>> &fore_peaks,
+    const std::deque<std::shared_ptr<const PeakDef>> &back_user_peaks,
+    const std::deque<std::shared_ptr<const PeakDef>> &back_auto_peaks );
+
+
+/** How #prompt_to_add_missing_background_peaks ended. */
+enum class MissingBackPeaksOutcome
+{
+  /** The user said not to add the peaks. */
+  Declined,
+
+  /** Peaks were added to the background. */
+  Added,
+
+  /** Nothing was added: nothing new could be fit, or the user rejected the preview. */
+  NoneAdded,
+
+  /** The background spectrum went away before the peaks could be fit. */
+  NoBackground,
+
+  /** Adding the peaks failed (the user has been told why). */
+  Error
+};//enum class MissingBackPeaksOutcome
+
+
+/** Offers to fit, and add to the background, the background peaks under foreground peaks the user
+ has not fit in the background, but that the backgrounds automated peak search found
+ (see #missing_background_peak_candidates).
+
+ If there are any, a dialog asks the user whether to add them; on yes, the candidates are re-fit
+ to the background and previewed, and on accepting the preview added with InterSpec::setPeaks
+ (so the change can be undone).
+
+ Gets the automated-search peaks with #get_or_launch_automated_search_peaks, waiting for a search
+ still in progress.
+
+ @param viewer The session.
+ @param fore_peaks The foreground peaks that matter to the caller.
+ @param tracker The object the dialogs button handlers are tied to; if it is deleted before the
+        user answers, `on_done` is not called.  Must not be null.
+ @param on_done Called once the user has finished with the dialogs (not called if no dialog is
+        shown).
+ @returns true if a dialog was shown, false if there was nothing to offer.
+ */
+bool prompt_to_add_missing_background_peaks( InterSpec *viewer,
+    const std::vector<std::shared_ptr<const PeakDef>> &fore_peaks,
+    const Wt::WObject *tracker,
+    std::function<void(MissingBackPeaksOutcome)> on_done );
+
 
 /** Uses the currently displayed foreground to estimate the expected FWHM for the wanted energy.
  

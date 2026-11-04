@@ -1,0 +1,570 @@
+{
+  "acceptance_relative_error": 0.0001,
+  "coefficient_bytes": 13152,
+  "elements": {
+    "Ac": {
+      "maximum_relative_error": 8.058253537335247e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 19.543399810791016,
+      "threshold_keV": 106.76000213623047
+    },
+    "Ag": {
+      "maximum_relative_error": 9.386300275360249e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 98.37740325927734,
+      "threshold_keV": 25.520000457763672
+    },
+    "Al": {
+      "maximum_relative_error": 6.168668071127037e-06,
+      "nodes": 22,
+      "peak_sigma_barn": 12669.2998046875,
+      "threshold_keV": 1.5640000104904175
+    },
+    "Ar": {
+      "maximum_relative_error": 2.905526778618217e-06,
+      "nodes": 22,
+      "peak_sigma_barn": 2921.949951171875,
+      "threshold_keV": 3.2063000202178955
+    },
+    "As": {
+      "maximum_relative_error": 1.1799315552951661e-05,
+      "nodes": 19,
+      "peak_sigma_barn": 254.39500427246094,
+      "threshold_keV": 11.871000289916992
+    },
+    "At": {
+      "maximum_relative_error": 1.4535842796981058e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 22.27869987487793,
+      "threshold_keV": 95.72899627685547
+    },
+    "Au": {
+      "maximum_relative_error": 2.4242304682564608e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 27.312700271606445,
+      "threshold_keV": 80.72899627685547
+    },
+    "B": {
+      "maximum_relative_error": 6.440192266476963e-06,
+      "nodes": 28,
+      "peak_sigma_barn": 847579.0,
+      "threshold_keV": 0.19200000166893005
+    },
+    "Ba": {
+      "maximum_relative_error": 1.8406112660573903e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 58.71120071411133,
+      "threshold_keV": 37.44200134277344
+    },
+    "Be": {
+      "maximum_relative_error": 8.724763397860436e-06,
+      "nodes": 31,
+      "peak_sigma_barn": 2374010.0,
+      "threshold_keV": 0.11500000208616257
+    },
+    "Bi": {
+      "maximum_relative_error": 1.1087254887076625e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 22.251699447631836,
+      "threshold_keV": 90.53399658203125
+    },
+    "Br": {
+      "maximum_relative_error": 3.0075663797202168e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 219.38600158691406,
+      "threshold_keV": 13.480999946594238
+    },
+    "C": {
+      "maximum_relative_error": 2.9836522650983355e-05,
+      "nodes": 25,
+      "peak_sigma_barn": 374575.0,
+      "threshold_keV": 0.2879999876022339
+    },
+    "Ca": {
+      "maximum_relative_error": 1.5377917146786046e-05,
+      "nodes": 20,
+      "peak_sigma_barn": 1821.260009765625,
+      "threshold_keV": 4.040999889373779
+    },
+    "Cd": {
+      "maximum_relative_error": 2.6790655870412294e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 93.2229995727539,
+      "threshold_keV": 26.71500015258789
+    },
+    "Ce": {
+      "maximum_relative_error": 1.275874344242034e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 61.53179931640625,
+      "threshold_keV": 40.44599914550781
+    },
+    "Cl": {
+      "maximum_relative_error": 1.727375429139144e-06,
+      "nodes": 21,
+      "peak_sigma_barn": 3758.320068359375,
+      "threshold_keV": 2.8289999961853027
+    },
+    "Co": {
+      "maximum_relative_error": 9.53926759772461e-06,
+      "nodes": 19,
+      "peak_sigma_barn": 500.6820068359375,
+      "threshold_keV": 7.715000152587891
+    },
+    "Cr": {
+      "maximum_relative_error": 9.295346832693951e-06,
+      "nodes": 19,
+      "peak_sigma_barn": 826.4730224609375,
+      "threshold_keV": 5.994999885559082
+    },
+    "Cs": {
+      "maximum_relative_error": 8.55649451403373e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 70.41130065917969,
+      "threshold_keV": 35.98699951171875
+    },
+    "Cu": {
+      "maximum_relative_error": 2.271054479807688e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 369.5660095214844,
+      "threshold_keV": 8.986000061035156
+    },
+    "Dy": {
+      "maximum_relative_error": 1.329477418154923e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 41.19850158691406,
+      "threshold_keV": 53.79199981689453
+    },
+    "Er": {
+      "maximum_relative_error": 8.543436702757035e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 35.54899978637695,
+      "threshold_keV": 57.48899841308594
+    },
+    "Eu": {
+      "maximum_relative_error": 5.733144458286432e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 49.737300872802734,
+      "threshold_keV": 48.52199935913086
+    },
+    "F": {
+      "maximum_relative_error": 2.8549254840193328e-06,
+      "nodes": 24,
+      "peak_sigma_barn": 67258.796875,
+      "threshold_keV": 0.6940000057220459
+    },
+    "Fe": {
+      "maximum_relative_error": 8.74004039175258e-06,
+      "nodes": 17,
+      "peak_sigma_barn": 580.7570190429688,
+      "threshold_keV": 7.117000102996826
+    },
+    "Fr": {
+      "maximum_relative_error": 1.5111344777940516e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 20.851499557495117,
+      "threshold_keV": 101.12999725341797
+    },
+    "Ga": {
+      "maximum_relative_error": 1.5043765397959596e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 278.14898681640625,
+      "threshold_keV": 10.371000289916992
+    },
+    "Gd": {
+      "maximum_relative_error": 2.406729472381741e-07,
+      "nodes": 15,
+      "peak_sigma_barn": 41.54779815673828,
+      "threshold_keV": 50.24300003051758
+    },
+    "Ge": {
+      "maximum_relative_error": 1.3688397959232823e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 274.177001953125,
+      "threshold_keV": 11.107000350952148
+    },
+    "H": {
+      "maximum_relative_error": 4.862227768631655e-06,
+      "nodes": 35,
+      "peak_sigma_barn": 57837100.0,
+      "threshold_keV": 0.01360000018030405
+    },
+    "He": {
+      "maximum_relative_error": 1.0577260610489247e-05,
+      "nodes": 34,
+      "peak_sigma_barn": 49080700.0,
+      "threshold_keV": 0.02459000051021576
+    },
+    "Hf": {
+      "maximum_relative_error": 1.2241950414049185e-05,
+      "nodes": 14,
+      "peak_sigma_barn": 30.500200271606445,
+      "threshold_keV": 65.3499984741211
+    },
+    "Hg": {
+      "maximum_relative_error": 6.080342927372584e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 26.375099182128906,
+      "threshold_keV": 83.10800170898438
+    },
+    "Ho": {
+      "maximum_relative_error": 1.488100641910961e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 36.9119987487793,
+      "threshold_keV": 55.62200164794922
+    },
+    "I": {
+      "maximum_relative_error": 2.4445493556513043e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 72.54190063476562,
+      "threshold_keV": 33.17599868774414
+    },
+    "In": {
+      "maximum_relative_error": 5.1166997729890085e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 82.59649658203125,
+      "threshold_keV": 27.944000244140625
+    },
+    "Ir": {
+      "maximum_relative_error": 1.0468262043206167e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 29.324399948120117,
+      "threshold_keV": 76.11499786376953
+    },
+    "K": {
+      "maximum_relative_error": 1.617194485437068e-05,
+      "nodes": 22,
+      "peak_sigma_barn": 2256.1298828125,
+      "threshold_keV": 3.609999895095825
+    },
+    "Kr": {
+      "maximum_relative_error": 1.4932340467010974e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 204.56500244140625,
+      "threshold_keV": 14.32699966430664
+    },
+    "La": {
+      "maximum_relative_error": 2.716514413869664e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 60.18339920043945,
+      "threshold_keV": 38.928001403808594
+    },
+    "Li": {
+      "maximum_relative_error": 7.930122620791735e-06,
+      "nodes": 31,
+      "peak_sigma_barn": 8992000.0,
+      "threshold_keV": 0.057999998331069946
+    },
+    "Lu": {
+      "maximum_relative_error": 3.640835389395747e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 31.6648006439209,
+      "threshold_keV": 63.31999969482422
+    },
+    "Mg": {
+      "maximum_relative_error": 1.3576172718909874e-05,
+      "nodes": 25,
+      "peak_sigma_barn": 18586.900390625,
+      "threshold_keV": 1.3079999685287476
+    },
+    "Mn": {
+      "maximum_relative_error": 1.0229388687998942e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 689.8579711914062,
+      "threshold_keV": 6.544000148773193
+    },
+    "Mo": {
+      "maximum_relative_error": 1.2945828330224174e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 121.54499816894531,
+      "threshold_keV": 20.006000518798828
+    },
+    "N": {
+      "maximum_relative_error": 3.1200114674057033e-06,
+      "nodes": 28,
+      "peak_sigma_barn": 195432.0,
+      "threshold_keV": 0.40299999713897705
+    },
+    "Na": {
+      "maximum_relative_error": 1.6015389482260112e-05,
+      "nodes": 24,
+      "peak_sigma_barn": 26896.599609375,
+      "threshold_keV": 1.0750000476837158
+    },
+    "Nb": {
+      "maximum_relative_error": 7.773000382238493e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 129.22000122070312,
+      "threshold_keV": 18.989999771118164
+    },
+    "Nd": {
+      "maximum_relative_error": 6.685237609826977e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 49.13959884643555,
+      "threshold_keV": 43.57500076293945
+    },
+    "Ne": {
+      "maximum_relative_error": 9.932509141941104e-06,
+      "nodes": 25,
+      "peak_sigma_barn": 43531.69921875,
+      "threshold_keV": 0.8701000213623047
+    },
+    "Ni": {
+      "maximum_relative_error": 2.112632669848402e-05,
+      "nodes": 18,
+      "peak_sigma_barn": 425.864990234375,
+      "threshold_keV": 8.338000297546387
+    },
+    "O": {
+      "maximum_relative_error": 9.251099115870076e-06,
+      "nodes": 26,
+      "peak_sigma_barn": 111008.0,
+      "threshold_keV": 0.5379999876022339
+    },
+    "Os": {
+      "maximum_relative_error": 3.4046737333870425e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 30.36090087890625,
+      "threshold_keV": 73.8759994506836
+    },
+    "P": {
+      "maximum_relative_error": 1.350141743849953e-06,
+      "nodes": 21,
+      "peak_sigma_barn": 6519.72998046875,
+      "threshold_keV": 2.1480000019073486
+    },
+    "Pa": {
+      "maximum_relative_error": 7.305145580671635e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 18.327499389648438,
+      "threshold_keV": 112.5999984741211
+    },
+    "Pb": {
+      "maximum_relative_error": 9.18969334873232e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 24.633699417114258,
+      "threshold_keV": 88.01100158691406
+    },
+    "Pd": {
+      "maximum_relative_error": 6.059942284530884e-06,
+      "nodes": 13,
+      "peak_sigma_barn": 96.96260070800781,
+      "threshold_keV": 24.35700035095215
+    },
+    "Pm": {
+      "maximum_relative_error": 2.7364445924771275e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 54.02429962158203,
+      "threshold_keV": 45.1879997253418
+    },
+    "Po": {
+      "maximum_relative_error": 1.2838739381959563e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 21.540700912475586,
+      "threshold_keV": 93.10600280761719
+    },
+    "Pr": {
+      "maximum_relative_error": 1.6776545091801154e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 58.890201568603516,
+      "threshold_keV": 41.994998931884766
+    },
+    "Pt": {
+      "maximum_relative_error": 1.1717230595009731e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 28.224199295043945,
+      "threshold_keV": 78.39900207519531
+    },
+    "Ra": {
+      "maximum_relative_error": 5.018898873165867e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 20.20009994506836,
+      "threshold_keV": 103.91999816894531
+    },
+    "Rb": {
+      "maximum_relative_error": 3.329180705891055e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 190.97799682617188,
+      "threshold_keV": 15.20300006866455
+    },
+    "Re": {
+      "maximum_relative_error": 2.491103384461013e-06,
+      "nodes": 17,
+      "peak_sigma_barn": 31.44260025024414,
+      "threshold_keV": 71.68099975585938
+    },
+    "Rh": {
+      "maximum_relative_error": 6.966136813502111e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 102.41400146484375,
+      "threshold_keV": 23.225000381469727
+    },
+    "Rn": {
+      "maximum_relative_error": 6.7916237564968895e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 21.579200744628906,
+      "threshold_keV": 98.40399932861328
+    },
+    "Ru": {
+      "maximum_relative_error": 1.6414900142480704e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 123.68499755859375,
+      "threshold_keV": 22.12299919128418
+    },
+    "S": {
+      "maximum_relative_error": 1.9264538073548998e-05,
+      "nodes": 21,
+      "peak_sigma_barn": 4942.39013671875,
+      "threshold_keV": 2.4760000705718994
+    },
+    "Sb": {
+      "maximum_relative_error": 3.5206068493831566e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 79.97840118408203,
+      "threshold_keV": 30.496000289916992
+    },
+    "Sc": {
+      "maximum_relative_error": 6.332685023924256e-06,
+      "nodes": 21,
+      "peak_sigma_barn": 1450.8399658203125,
+      "threshold_keV": 4.49399995803833
+    },
+    "Se": {
+      "maximum_relative_error": 1.229851906625612e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 236.33700561523438,
+      "threshold_keV": 12.661999702453613
+    },
+    "Si": {
+      "maximum_relative_error": 2.778000751879617e-06,
+      "nodes": 23,
+      "peak_sigma_barn": 9085.1904296875,
+      "threshold_keV": 1.843999981880188
+    },
+    "Sm": {
+      "maximum_relative_error": 1.7554011817577653e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 51.860198974609375,
+      "threshold_keV": 46.83700180053711
+    },
+    "Sn": {
+      "maximum_relative_error": 6.480406630871016e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 84.33439636230469,
+      "threshold_keV": 29.20400047302246
+    },
+    "Sr": {
+      "maximum_relative_error": 4.917245649993518e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 167.5919952392578,
+      "threshold_keV": 16.107999801635742
+    },
+    "Ta": {
+      "maximum_relative_error": 1.0559836862489291e-05,
+      "nodes": 14,
+      "peak_sigma_barn": 29.390499114990234,
+      "threshold_keV": 67.41899871826172
+    },
+    "Tb": {
+      "maximum_relative_error": 7.4643699449206125e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 39.90959930419922,
+      "threshold_keV": 51.999000549316406
+    },
+    "Tc": {
+      "maximum_relative_error": 2.290277264593854e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 114.7030029296875,
+      "threshold_keV": 21.049999237060547
+    },
+    "Te": {
+      "maximum_relative_error": 4.276223124710654e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 76.14800262451172,
+      "threshold_keV": 31.81999969482422
+    },
+    "Th": {
+      "maximum_relative_error": 6.0904161326424955e-06,
+      "nodes": 15,
+      "peak_sigma_barn": 18.92289924621582,
+      "threshold_keV": 109.6500015258789
+    },
+    "Ti": {
+      "maximum_relative_error": 4.474390992115218e-05,
+      "nodes": 21,
+      "peak_sigma_barn": 1203.3900146484375,
+      "threshold_keV": 4.96999979019165
+    },
+    "Tl": {
+      "maximum_relative_error": 1.4773352459251932e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 25.485000610351562,
+      "threshold_keV": 85.53600311279297
+    },
+    "Tm": {
+      "maximum_relative_error": 1.3677692098812422e-05,
+      "nodes": 15,
+      "peak_sigma_barn": 34.159698486328125,
+      "threshold_keV": 59.393001556396484
+    },
+    "U": {
+      "maximum_relative_error": 2.3045771897489686e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 17.75790023803711,
+      "threshold_keV": 115.61000061035156
+    },
+    "V": {
+      "maximum_relative_error": 1.5024521310857963e-05,
+      "nodes": 20,
+      "peak_sigma_barn": 980.5089721679688,
+      "threshold_keV": 5.46999979019165
+    },
+    "W": {
+      "maximum_relative_error": 6.615403895349203e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 30.457500457763672,
+      "threshold_keV": 69.52899932861328
+    },
+    "Xe": {
+      "maximum_relative_error": 1.663905943161126e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 69.135498046875,
+      "threshold_keV": 34.564998626708984
+    },
+    "Y": {
+      "maximum_relative_error": 1.764922879676778e-05,
+      "nodes": 16,
+      "peak_sigma_barn": 167.1929931640625,
+      "threshold_keV": 17.041000366210938
+    },
+    "Yb": {
+      "maximum_relative_error": 9.0238272911769e-06,
+      "nodes": 14,
+      "peak_sigma_barn": 32.89339828491211,
+      "threshold_keV": 61.334999084472656
+    },
+    "Zn": {
+      "maximum_relative_error": 5.563424288701491e-06,
+      "nodes": 16,
+      "peak_sigma_barn": 321.9049987792969,
+      "threshold_keV": 9.663000106811523
+    },
+    "Zr": {
+      "maximum_relative_error": 2.536781833595292e-05,
+      "nodes": 17,
+      "peak_sigma_barn": 137.3800048828125,
+      "threshold_keV": 18.00200080871582
+    }
+  },
+  "interpolation": "linear-linear, as EEDL declares; zero below threshold",
+  "maximum_energy_keV": 20000.0,
+  "maximum_relative_error": 4.474390992115218e-05,
+  "output_sha256": "dca75cbf194707445a4791978ba27d1bd2f19cdfd37daedaf8f878dd1d715585",
+  "passed": true,
+  "reactions": [
+    "MF=23 MT=534"
+  ],
+  "retained_coefficients": 3288,
+  "source": "eedl2023",
+  "source_lock_sha256": "6e3f7af063f6bd0e9eb45cdd5027bfdbe6af4b3f012f3e22eafa9d626fbc059f",
+  "source_sha256": "1cf45f070fe31d5c0753930499f9e04b59c04285108b6e704f8693c25362ff57"
+}

@@ -362,7 +362,8 @@ private:
     Auto,
 
     /** Evaluate the DRF's stored full-MC `ceelo::DetectorResponse` per element
-     (`eps_fep(energy,theta,phi,dist)`): near-field distance factor and
+     (`eps_fep_at` at the face-referenced position, CeeLoUtils::sourcePositionFromFace): near-field
+     distance factor and
      off-axis eta.  Falls back to FlatDisk (with a calc-log note) if the DRF
      has no MC response. */
     MCTransfer,
@@ -721,6 +722,8 @@ private:
 
     double distance;
     GammaInteractionCalc::GeometryType geometry;
+    /** The source's offsets perpendicular to the detector axis (ShieldSourceConfig::source_offsets). */
+    double source_offsets[2] = { 0.0, 0.0 };
     std::vector<PeakDef> foreground_peaks;
     /**  Note: these have been scaled by live time normalization factor (or user could have set thier own scale factor) - see `ShieldingSourceChi2Fcn::setBackgroundPeaks(...)`.
      So if you are going to plot these peaks, you need to un-scale the area and area uncert

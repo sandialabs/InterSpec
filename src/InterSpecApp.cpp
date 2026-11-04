@@ -89,6 +89,10 @@
 #include "InterSpec/RemoteRid.h"
 #endif
 
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
+
 
 using namespace std;
 using namespace Wt;
@@ -155,14 +159,33 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
     , m_safeAreas{ 0.0f }
 #endif
 {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // Only the server's own headless browser opens sessions, and anyone else knowing a session's
+  //  handle (e.g., from its exchange directory name) must not be able to take it, or end it.
+  const std::string client_address = environment().clientAddress();
+  if( (client_address != "127.0.0.1") && (client_address != "::1")
+      && (client_address != "::ffff:127.0.0.1") )
+  {
+    setTitle( "Error loading" );
+    WApplication::quit( "Sessions of this server are not opened from a browser" );
+    return;
+  }
+#endif
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( !checkExternalTokenFromUrl() )
   {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+    // The token may belong to a live session (this is then a duplicate), which the destructor
+    //  must not mark as ended.
+    m_externalToken.clear();
+#endif
     setTitle( "Error loading" );
     root()->addNew<WText>( "Invalid 'apptoken' specified, not loading" );
     WApplication::quit( "InterSpec is configured to not allow arbitrary sessions" );
     return;
   }//if( !checkExternalTokenFromUrl() )
+
 #endif
  
   setupDomEnvironment();
@@ -179,6 +202,14 @@ InterSpecApp::~InterSpecApp()
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( !m_externalToken.empty() )
     InterSpecServer::set_session_destructing( m_externalToken.c_str() );
+#endif
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  {
+    const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+    if( manager && !m_externalToken.empty() )
+      manager->appEnded( m_externalToken, sessionId() );
+  }
 #endif
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -372,10 +403,16 @@ void InterSpecApp::setupDomEnvironment()
     if( !e || !e.key || e.altKey || (e.shiftKey && ((e.key != 'Z') && (e.key != 'z'))) || (typeof e.keyCode === 'undefined') )
       return;
 
+    // Whether a modal dialog is showing; the cover is position:fixed, so its offsetParent is
+    //  always null, and we must check its size instead.
+    function dialogCoverShowing(){
+      var dc = document.querySelector('.Wt-dialogcover');
+      return !!dc && (dc.offsetWidth > 0);
+    }
+
     // Activate menu bar for keyboard browsing (Ctrl/Cmd+I or F10)
     function activateMenuBar(){
-      var dc = document.querySelector('.Wt-dialogcover');
-      if( dc && dc.offsetParent !== null )
+      if( dialogCoverShowing() )
         return;
       var firstBtn = document.querySelector('.MenuLabel.PopupMenuParentButton');
       if( !firstBtn )
@@ -404,7 +441,7 @@ void InterSpecApp::setupDomEnvironment()
         case 's': // Store
         case 'l': // Log/Linear
         case 'e': case 'E': // Export file dialog
-          if( (function(){ var dc = document.querySelector('.Wt-dialogcover'); return dc && dc.offsetParent !== null; })() ) // Dont do shortcut when there is a blocking-dialog showing
+          if( dialogCoverShowing() ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
           break;
@@ -935,10 +972,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
   };//auto showWelcomeCallback
   
+#if( !NO_INTERACTIVE_GUI_USER )  // An MCP session has no one to welcome
   if( !loadedSpecFile )
   {
     showWelcomeCallback();
   }//if( specfile.empty() )
+#endif
   
   //Only display warning message on navigation away from current session if in
   //  a browser environment, and not this isnt a developers build
@@ -986,6 +1025,27 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   {
     std::lock_guard<std::mutex> lock( AppInstancesMutex );
     AppInstances.insert( this );
+  }
+#endif
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  {
+    // Charts the assistant's tools may show are otherwise loaded when first used - from an update
+    //  the server pushes, where Wt can send a chart's JavaScript ahead of its script, and a
+    //  JavaScript error ends the session; so load them with the page.
+    require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
+    for( const char * const script : { "RelEffPlot.js", "ShieldingSourceFitPlot.js", "Shielding2DView.js",
+                                        "DetectorPeakResponseJS.js", "DrfChart.js", "DecayChainChart.js",
+                                        "DetectionLimitTool.js" } )
+      require( std::string("InterSpec_resources/") + script );
+
+    // The assistant is what the session is for; with it created up front, a conversation saved in
+    //  a file the client loads is restored into it (see InterSpec::setSpectrum).
+    m_viewer->createLlmTool();
+
+    const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+    if( manager )
+      manager->appStarted( m_externalToken, sessionId() );
   }
 #endif
   
@@ -1037,10 +1097,19 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 
 std::string InterSpecApp::getUserNameFromEnvironment() const
 {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // Each agent session gets its own user (preferences, DRF history, ...), so nothing one client
+  //  does is seen by another; the handle itself is not put in the database.
+  char buffer[32];
+  snprintf( buffer, sizeof(buffer), "mcp-%016llx",
+            static_cast<unsigned long long>( std::hash<std::string>()( m_externalToken ) ) );
+  return buffer;
+#else
   string remoteUser = environment().getCgiValue( "REMOTE_USER" );
   SpecUtils::ireplace_all( remoteUser, " ", "" );
   SpecUtils::to_lower_ascii( remoteUser );
   return remoteUser;
+#endif
 }//std::string getUserNameFromEnvironment() const
 
 
@@ -1408,6 +1477,8 @@ void InterSpecApp::prepareForEndOfSession()
   << m_viewer->user()->userName();
   
 #if( USE_DB_TO_STORE_SPECTRA )
+  static_assert( !BUILD_AS_MCP_HTTP_SERVER, "An MCP agent session's spectra belong to its client, and are not kept" );
+
   try
   {
     // Neither of these functions should throw, but jic

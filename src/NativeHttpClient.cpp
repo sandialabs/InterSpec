@@ -23,8 +23,10 @@
 
 #include "InterSpec_config.h"
 
+#include <chrono>
 #include <string>
 #include <utility>
+#include <iostream>
 #include <algorithm>
 
 #include <Wt/WServer.h>
@@ -170,22 +172,67 @@ void Detail::RequestState::dispatch( std::function<void()> fcn )
   if( !server )
     return;
 
-  // Capture the state by shared_ptr so it outlives the owning Call, and re-check `detached`
-  //  inside the posted function rather than here - that is what makes the "no callbacks after
-  //  ~Call() returns" guarantee hold for a callback that was already queued.
-  //
-  // Wt::WServer::post() with no delay goes through WIOService::schedule(0,...), which posts to
-  //  an asio strand ("guarantees execution order"), and from there onto a per-session FIFO
-  //  event queue - so these arrive in the order we post them.
+  // Not `WServer::post()`: that goes through one asio strand shared by the whole server, and a
+  //  posted function runs on that strand when its session is idle - so the assistant's tool calls,
+  //  made from these callbacks, would hold up posted work in every other session until they
+  //  finished.  A delayed `WServer::schedule()` runs on an ordinary io_service thread instead,
+  //  but such events are not ordered relative to each other, so callbacks are queued here and
+  //  drained in order by one scheduled event at a time.
+  bool scheduleDrain = false;
+  {
+    std::lock_guard<std::mutex> lock( pendingMutex );
+    pendingCallbacks.push_back( std::move(fcn) );
+    scheduleDrain = !drainScheduled;
+    drainScheduled = true;
+  }
+
+  if( !scheduleDrain )
+    return;
+
+  // Capture the state by shared_ptr so it outlives the owning Call; `detached` is re-checked when
+  //  each callback runs, which is what makes the "no callbacks after ~Call() returns" guarantee
+  //  hold for a callback that was already queued.
   const std::shared_ptr<Detail::RequestState> self = shared_from_this();
-  server->post( sessionId, [self, fcn](){
-    if( self->detached.load() )
-      return;
-    std::lock_guard<std::mutex> lock( self->handlerMutex );
-    if( !self->detached.load() )
-      fcn();
+  server->schedule( std::chrono::milliseconds(1), sessionId, [self](){
+    self->drainPending();
+  }, [self](){
+    // The session is gone
+    std::lock_guard<std::mutex> lock( self->pendingMutex );
+    self->pendingCallbacks.clear();
+    self->drainScheduled = false;
   } );
 }//Detail::RequestState::dispatch(...)
+
+
+void Detail::RequestState::drainPending()
+{
+  for( ;; )
+  {
+    std::function<void()> fcn;
+    {
+      std::lock_guard<std::mutex> lock( pendingMutex );
+      if( pendingCallbacks.empty() )
+      {
+        drainScheduled = false;
+        return;
+      }
+      fcn = std::move( pendingCallbacks.front() );
+      pendingCallbacks.pop_front();
+    }
+
+    // A callback may dispatch more (e.g., cancelling its own request); those are queued, and run
+    //  by this loop after it.  One that throws must not strand the rest (e.g., the completion).
+    std::lock_guard<std::mutex> lock( handlerMutex );
+    try
+    {
+      if( !detached.load() )
+        fcn();
+    }catch( const std::exception &e )
+    {
+      std::cerr << "NativeHttpClient: a response callback threw: " << e.what() << std::endl;
+    }
+  }//for( ;; )
+}//Detail::RequestState::drainPending()
 
 
 void Detail::RequestState::deliverHeaders( int status, HeaderList headers )

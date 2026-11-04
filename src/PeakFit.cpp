@@ -3472,11 +3472,32 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
 
 
 
+/** Sets `*reason` (if non-null) to the printf-formatted rejection reason of a candidate peak. */
+template<typename... Args>
+static void set_peak_rejection_reason( std::string *reason, const char *fmt, Args... args )
+{
+  if( !reason )
+    return;
+  char buffer[512] = { '\0' };
+  if constexpr( sizeof...(Args) == 0 )
+    snprintf( buffer, sizeof(buffer), "%s", fmt );
+  else
+    snprintf( buffer, sizeof(buffer), fmt, args... );
+  *reason = buffer;
+}//set_peak_rejection_reason(...)
+
+
 bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
                                    const std::shared_ptr<const Measurement> &dataH,
                                    const bool lowstatregion,
-                                   const bool automated )
+                                   const bool automated,
+                                   std::string *reject_reason )
 {
+  const auto reject = [reject_reason]( const char *fmt, auto... args ) -> bool {
+    set_peak_rejection_reason( reject_reason, fmt, args... );
+    return false;
+  };
+
   const double lowres_max_chi2dof = automated ? 25.0 : 50.0;
   const double lowres_min_core_chi2dof_peak_improvment = automated ? 0.5 : 0.25;
   const double lowres_min_withinsigma_chi2dof_peak_improvment = automated ? 1.5 : 0.5;
@@ -3516,7 +3537,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
          << no_peak_chi2dof << " w/ continuum only, " << core_chi2dof
          << " w/ continuum and peak)" << "\n";
 #endif
-    return false;
+    return reject( "adding the peak improves the chi2/dof of the peak region too little (%.3g with the peak, %.3g without; needs %.3g)", core_chi2dof, no_peak_chi2dof, lowres_min_core_chi2dof_peak_improvment );
   }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
       
   const double withpeakchi2dof = evaluate_chi2dof_for_range( fitpeaks, dataH, mean-sigma, mean+sigma );
@@ -3531,7 +3552,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
          << ", withoutpeakschi2dof=" << withoutpeakschi2dof << "\n";
 #endif
     
-    return false;
+    return reject( "within +-1 sigma of the mean, the peak improves the chi2/dof too little (%.3g with the peak, %.3g without)", withpeakchi2dof, withoutpeakschi2dof );
   }
   
   const double gausarea = peak->gauss_integral( mean-2.0*sigma, mean+2.0*sigma );
@@ -3552,7 +3573,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
          << " being to bad (" << chi2Dof << ")" << "\n";
 #endif
     
-    return false;
+    return reject( "the ROI chi2/dof of %.3g is above the %.3g limit, for a peak of significance %.2g", chi2Dof, lowres_max_chi2dof, nsigma );
   }//if( chi2Dof > 25.0 )
   
   if( nsigma < lowres_min_nsigma_peak )
@@ -3562,7 +3583,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
          << " significance to low (" << nsigma << ")" << "\n";
 #endif
     
-    return false;
+    return reject( "significance of %.2g sigma is below the %.2g sigma required", nsigma, lowres_min_nsigma_peak );
   }
   
   //Check if ROI extent kinda makes sense for this peak
@@ -3578,7 +3599,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
          << nsigma << "\n";
 #endif
     
-    return false;
+    return reject( "the ROI is only %.2g sigma wide, and the peak significance of %.2g sigma is below the %.2g required for so narrow a ROI", roi_width/sigma, nsigma, lowres_min_for_narrow_roi_nsigma_peak );
   }
   
 //The following test erroneously fails CZT spectra actual peaks
@@ -3608,7 +3629,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       << min_sigma << ", max_sigma: " << max_sigma << "})" << "\n";
 #endif
       
-      return false;
+      return reject( "fitted FWHM of %.3g keV is outside the %.3g to %.3g keV expected", fwhm, min_sigma*PhysicalUnits::fwhm_nsigma, max_sigma*PhysicalUnits::fwhm_nsigma );
     }
   }//if( lowres_enforce_peak_width_limits )
   
@@ -3692,7 +3713,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << core_chi2dof << ", linechi2dof=" << linechi2dof << ")"
            << "\n";
 #endif
-      return false;
+      return reject( "a straight line fits the region about as well as the peak does (chi2/dof %.3g with the peak, %.3g for a line)", core_chi2dof, linechi2dof );
     }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
   
     if( (linechi2dof-core_chi2dof) < lowres_min_necassary_chi2_improv_over_line
@@ -3704,7 +3725,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << " (core_chi2dof=" << core_chi2dof << ", linechi2dof="
            << linechi2dof << ")" << "\n";
 #endif
-      return false;
+      return reject( "a straight line fits the region about as well as the peak does (chi2/dof %.3g with the peak, %.3g for a line)", core_chi2dof, linechi2dof );
     }
 
     //This next test is intended to elimnate peaks where the continuum is
@@ -3725,7 +3746,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << ")" << "\n";
 #endif
       
-      return false;
+      return reject( "a straight line fits the region well (chi2/dof %.3g), but the peak's continuum does not (%.3g)", linechi2dof, no_peak_chi2dof );
     }
     
     const double lowres_line_is_close = 1.1;
@@ -3740,7 +3761,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       << core_chi2dof << ")" << "\n";
 #endif
       
-      return false;
+      return reject( "a straight line fits the region well (chi2/dof %.3g), and adding a peak improves it little (%.3g)", linechi2dof, core_chi2dof );
     }
 
     if( avrguncert < 0.2 && linechi2dof < 1.2 )
@@ -3752,7 +3773,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       << avrguncert << ")" << "\n";
 #endif
       
-      return false;
+      return reject( "a straight line fits the region well (chi2/dof %.3g)", linechi2dof );
     }
     
     
@@ -3804,7 +3825,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       << ", avrguncert=" << avrguncert << "\n";
 #endif
       
-      return false;
+      return reject( "the continuum is steeper than the peak (ratio %.2g), as on a Compton edge or other continuum feature", contdiff/peakdiff );
     }//If slope is too steep )
     
   }catch( std::exception &e )
@@ -4317,8 +4338,14 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
 
 bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
                                    const std::shared_ptr<const Measurement> &dataH,
-                                   const bool automated )
+                                   const bool automated,
+                                   std::string *reject_reason = nullptr )
 {
+  const auto reject = [reject_reason]( const char *fmt, auto... args ) -> bool {
+    set_peak_rejection_reason( reject_reason, fmt, args... );
+    return false;
+  };
+
   const double max_chi2dof_persignificance = 2.0;
   const ExperimentalAutomatedPeakSearch::SearchCuts &cuts = ExperimentalAutomatedPeakSearch::search_cuts();
   const double min_nsigma_peak = automated ? cuts.highres_min_nsigma : 1.5;
@@ -4367,7 +4394,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
         << " w/ continuum and peak)" << "\n";
 #endif
       
-      return false;
+      return reject( "adding the peak improves the chi2/dof of the peak region too little (%.3g with the peak, %.3g without; needs %.3g)", core_chi2dof, no_peak_chi2dof, min_core_chi2dof_peak_improvment );
     }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
   }else
   {
@@ -4381,7 +4408,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
         << " w/ continuum and peak)\n";
 #endif
       
-      return false;
+      return reject( "the continuum alone fits the peak region better than with the peak (chi2/dof %.3g vs %.3g)", no_peak_chi2dof, core_chi2dof );
     }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
 
   }//if( (core_chi2dof > (4*min_core_chi2dof_peak_improvment)) )
@@ -4408,7 +4435,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << " being to bad (chi2dof=" << peak->chi2dof()
            << ", nsigma_significance=" << nsigma << ")" << "\n";
 #endif
-    return false;
+    return reject( "the ROI chi2/dof of %.3g is too large for a peak of significance %.2g", peak->chi2dof(), nsigma );
   }//if( chi2Dof > 25.0 )
   
   // Is the peak there: its detection significance - the area over its uncertainty conditional on the
@@ -4443,7 +4470,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << "stat significance to low (" << nsigma << ")" << "\n";
 #endif
     
-    return false;
+    return reject( "significance of %.2g sigma is below the %.2g sigma required", nsignif, min_nsigma_peak );
   }
   
   
@@ -4457,7 +4484,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       << ", nsignif=" << nsignif << ")\n";
 #endif
     
-    return false;
+    return reject( "the ROI chi2/dof of %.3g is above the %.3g limit, for a peak of significance %.2g", chi2dof, max_chi2dof_roi, nsignif );
   }
   
   
@@ -4475,7 +4502,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
            << " being out of range (mean=" << mean << ", sigma=" << sigma
            << ", expected {" << min_sigma << ", " << max_sigma << "})" << "\n";
     
-    return false;
+    return reject( "fitted FWHM of %.3g keV is outside the %.3g to %.3g keV expected", fwhm, min_sigma*PhysicalUnits::fwhm_nsigma, max_sigma*PhysicalUnits::fwhm_nsigma );
   }
   
   
@@ -4508,7 +4535,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
         << ", lowerspecchannel=" << lower_channel <<  ")" << "\n";
 #endif
       
-      return false;
+      return reject( "the peak is below where the detector starts responding" );
     }
     
 /*
@@ -4655,7 +4682,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
              << "data was consistent with a straight line"
              << " (linechi2dof=" << linechi2dof << ")" << "\n";
 #endif
-      return false;
+      return reject( "the data are consistent with a straight line (chi2/dof %.3g)", linechi2dof );
     }
     
     //if the continuum only chi2 is much different then the line-only chi2,
@@ -4672,7 +4699,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
              << "\n";
 #endif
       
-      return false;
+      return reject( "a straight line fits the region about as well as the peak does (chi2/dof %.3g with the peak, %.3g for a line)", core_chi2dof, linechi2dof );
     }//if( (no_peak_chi2dof - core_chi2dof) < 0.5 )
     
     if( (linechi2dof-core_chi2dof) < min_necassary_chi2_improv_over_line
@@ -4685,7 +4712,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
              << " (core_chi2dof=" << core_chi2dof << ", linechi2dof="
              << linechi2dof << ")" << "\n";
 #endif
-      return false;
+      return reject( "a straight line fits the region about as well as the peak does (chi2/dof %.3g with the peak, %.3g for a line)", core_chi2dof, linechi2dof );
     }
     
     //This next test is intended to elimnate peaks where the continuum is
@@ -4705,7 +4732,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
              << no_peak_chi2dof << ", linechi2dof=" << linechi2dof
              << ")" << "\n";
 #endif
-      return false;
+      return reject( "a straight line fits the region well (chi2/dof %.3g), but the peak's continuum does not (%.3g)", linechi2dof, no_peak_chi2dof );
     }
     
     if( linechi2dof < line_is_close
@@ -4718,7 +4745,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
              << " (linechi2dof=" << linechi2dof  << ", core_chi2dof="
              << core_chi2dof << ")" << "\n";
 #endif
-      return false;
+      return reject( "a straight line fits the region well (chi2/dof %.3g), and adding a peak improves it little (%.3g)", linechi2dof, core_chi2dof );
     }
   }catch( std::exception &e )
   {
@@ -4741,7 +4768,8 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
                                                        const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
                                                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
-                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag );
+                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag,
+                                                       std::string *reject_reason );
 
 
 pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
@@ -4751,10 +4779,11 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
                                                        const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
                                                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
-                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag )
+                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag,
+                                                       std::string *reject_reason )
 {
   pair< PeakShrdVec, PeakShrdVec > answer = search_for_peak_from_user_imp( x, pixelPerKev, dataH, inpeaks, drf,
-                                                                    auto_search_peaks, fitPrefs, cancel_flag );
+                                                      auto_search_peaks, fitPrefs, cancel_flag, reject_reason );
 
   // The peak is chosen by chi2 trial fits; a user's peak is then fit like any other.  Automated callers
   //  (pixelPerKev <= 0) get the decision fits: the search, which hands them on as evidence, and callers
@@ -4777,16 +4806,23 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
                                                        const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
                                                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
-                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag )
+                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag,
+                                                       std::string *reject_reason )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
+
+  const auto rejected = [reject_reason]( const char *why ) -> pair<PeakShrdVec,PeakShrdVec> {
+    if( reject_reason )
+      *reject_reason = why;
+    return pair<PeakShrdVec,PeakShrdVec>();
+  };
 
   assert( fitPrefs );
   const bool isHPGe = (PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr )
                        == PeakFitUtils::CoarseResolutionType::High);
 
   if( !dataH || !dataH->num_gamma_channels() )
-    return pair<PeakShrdVec,PeakShrdVec>();
+    return rejected( "there is no spectrum data" );
 
   const bool automated = (pixelPerKev <= 0.0);
   if( automated )
@@ -4815,7 +4851,7 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
   {
     if( !inpeaks.empty() )
     {
-      return pair<PeakShrdVec,PeakShrdVec>();
+      return rejected( "could not form a ROI that includes the nearby existing peaks" );
     }else
     {
       const double rough_fwhm = isHPGe ? PeakFitUtils::hpge_fwhm_fcn( static_cast<float>(mean0) )
@@ -4839,7 +4875,7 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
               " sigma=%f - skipping peak fit.", roiLower, roiUpper, mean0, sigma0 );
     log_developer_error( __func__, buffer );
 #endif
-    return pair<PeakShrdVec,PeakShrdVec>();
+    return rejected( "could not form a sensible ROI around the energy" );
   }//if( ROI limits are degenerate )
 
   const size_t nFitPeaks = coFitPeaks.size() + 1;
@@ -4869,7 +4905,7 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
                              fitPrefs, drf, cancel_flag );
   
   if( initialfitpeaks.empty() )
-    return pair<PeakShrdVec,PeakShrdVec>();
+    return rejected( "the peak fit failed" );
   
   if( initialfitpeaks.size() > 1 )
   {
@@ -4891,7 +4927,7 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
         break;
         
       case RejectedDontTryAgain:
-        return pair<PeakShrdVec,PeakShrdVec>();
+        return rejected( "the peak, fit together with the nearby existing peaks, did not pass the quality checks" );
     }//switch( status )
       
     
@@ -4914,7 +4950,7 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
                     dataH, PeakShrdVec(), mean0, sigma0, area0, pixelPerKev, isHPGe );
       }catch( std::exception & )
       {
-        return pair<PeakShrdVec,PeakShrdVec>();
+        return rejected( "could not form a ROI for the peak, apart from the nearby existing peaks" );
       }
       
       lowerEnergies = vector<double>( 1, roiLower );
@@ -4928,7 +4964,7 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
                                  fitPrefs, drf, cancel_flag );
     }else
     {
-      return pair<PeakShrdVec,PeakShrdVec>();
+      return rejected( "the peak, fit together with the nearby existing peaks, did not pass the quality checks" );
     }
   }//if( !isHPGe && initialfitpeaks.size() > 1 )
   
@@ -4944,9 +4980,9 @@ static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const dou
     
     bool passed;
     if( isHPGe )
-      passed = check_highres_single_peak_fit( p, dataH, automated );
+      passed = check_highres_single_peak_fit( p, dataH, automated, reject_reason );
     else
-      passed = check_lowres_single_peak_fit( p, dataH, lowstatregion, automated );
+      passed = check_lowres_single_peak_fit( p, dataH, lowstatregion, automated, reject_reason );
     
     if( passed )
       return std::make_pair( initialfitpeaks, coFitPeaks );

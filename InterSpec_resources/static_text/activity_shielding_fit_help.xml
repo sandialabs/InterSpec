@@ -56,7 +56,17 @@ of the detector.  You can enter the distance using entries like
 &quot;3'&quot;,
 &quot;13 cm&quot;,
 &quot;4m 100mm&quot;, where if multiple distances are entered they are summed
-(so the last example would give 4.1m).
+(so the last example would give 4.1m).<br />
+The source can also be moved off the detector's axis by checking &quot;<b>Off-axis</b>&quot;
+and entering the offsets.  With a detector response that models the detector's geometry (for
+example a Monte-Carlo response from the &quot;Geom &amp; MC&quot; tab of &quot;Modify Detector
+Response&quot;, or an imported ISOCS/Genie characterization), the distance may also be zero or
+negative, putting the source beside the detector (off-axis) or behind it (on the axis or off it),
+as long as the source and its shielding stay clear of the detector itself.  How accurately such a response describes sources beside and behind the detector depends
+on how it was characterized: a Monte-Carlo response made with the &quot;Side &amp; back&quot;
+option (on by default) is characterized there, other responses are extrapolated with a larger uncertainty, and
+the housing behind the crystal is only modeled as well as it is described.  A flat-disk
+(face-on) efficiency only describes sources in front of the detector face.
 
 <h2>Geometry</h2>
 You can select the shielding geometry to be spherical, end-on cylindrical, side-on cylindrical, or
@@ -145,12 +155,12 @@ surface at which 63% of the contamination is contained within.
 See the <a href="https://sandialabs.github.io/InterSpec/tutorials/" target="_blank">InterSpec
 tutorials</a> further information.
 </p>
-<p>A current limitation in <b>InterSpec</b> is that detector response function does not have a
-angular dependent component, and assumes the same efficiency no matter the angle or position of the
-incoming gamma ray.  For volumetric sources that are comparable or larger than the distance to the
-detector, this can result in some inaccuracies.  For surface contamination measurements with the
-detector 1 meter from the ground, this may lead to inaccuracies of 10% or so, with lower energy
-gammas generally being effected more.
+<p>A detector response that only has a flat-disk (face-on) efficiency has no angular dependence: it
+assumes the same intrinsic efficiency no matter the angle of the incoming gamma ray.  For volumetric
+sources that are comparable or larger than the distance to the detector, this can result in some
+inaccuracies - for surface contamination measurements with the detector 1 meter from the ground,
+10% or so, with lower energy gammas generally being affected more.  A detector response that models
+the detector's geometry accounts for the angle and position of every part of the source.
 </p>
 
 <h2>Graphic</h2>

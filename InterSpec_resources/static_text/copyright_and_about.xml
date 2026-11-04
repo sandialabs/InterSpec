@@ -101,13 +101,6 @@ IT &quot;AS IS.&quot;
     </li>
 
 
-    <li><b><a href="http://www.feynarts.de/cuba/" target="_blank">Cuba</a> 3.0:</b> a library for multidimensional numerical integration
-      <div style="margin-left: 1em; font-size: small;">
-        <b>Cuba</b> is used to perform the numericall integration for self-attenuation sources in the shielding/source tool.
-        <b>Cuba</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-3.0.en.html" target="_blank">LGPL v3 License</a>.
-      </div>
-    </li>
-
     <li><b><a href="https://github.com/beltoforion/muparserx/" target="_blank">muparserx</a> 4.0.7:</b> c++ Math Parser Library.
       <div style="margin-left: 1em; font-size: small;">
         <b>muparserx</b> is used to evaluate user entered detector efficiencies, and to help evaluate expressions for the <em>TerminalWidget</em> (not all builds of <b>InterSpec</b> contain this tool).

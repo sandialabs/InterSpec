@@ -516,14 +516,19 @@ BOOST_AUTO_TEST_CASE( ParAndDetectorTxt )
       }
     }
 
-    // The float-stored 10 deg step still yields a 90 deg node at exactly cos = 0, so a source in
-    //  the face plane is not "clamped".
+    // Every 10 deg column of the grid's 0-180 deg becomes a node: 10 in front, where the
+    //  float-stored step still yields a 90 deg node at exactly cos = 0 (so a source in the face plane
+    //  is not "clamped"), and 9 behind, down to exactly cos = -1.
     const shared_ptr<const ceelo::DetectorResponse> resp = result.drf->ceeloResponse();
     BOOST_REQUIRE( resp );
-    BOOST_CHECK_EQUAL( resp->eta_fep.cos_thetas.size(), 10 );
-    BOOST_CHECK_EQUAL( resp->eta_fep.cos_thetas.front(), 0.0 );
+    const vector<double> &cos_thetas = resp->eta_fep.cos_thetas;
+    BOOST_CHECK_EQUAL( cos_thetas.size(), 19 );
+    BOOST_CHECK_EQUAL( cos_thetas.front(), -1.0 );
+    BOOST_CHECK_EQUAL( std::count( begin(cos_thetas), end(cos_thetas), 0.0 ), 1 );
     const ceelo::EffResult side_on = resp->eps_fep_at( 661.0, ceelo::source_position( 30.0, 0.0, 0.0 ) );
     BOOST_CHECK( side_on.flag != ceelo::ResponseFlag::OutOfRangeClamped );
+    const ceelo::EffResult behind = resp->eps_fep_at( 661.0, ceelo::source_position( 30.0, -0.5, 0.0 ) );
+    BOOST_CHECK( behind.flag != ceelo::ResponseFlag::OutOfRangeClamped );
   }
 
   // A DETECTOR.txt with several records, none naming this .par: the user picks one.

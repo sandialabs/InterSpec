@@ -1,6 +1,7 @@
 #include "InterSpec_config.h"
 
 #include <ctime>
+#include <atomic>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -9,6 +10,8 @@
 
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
+
+#include <Wt/Utils.h>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -60,6 +63,77 @@ namespace
     }
   }//parse_ull_or(...)
 }//namespace
+
+
+namespace
+{
+  std::atomic<bool> ns_save_user_images( BUILD_AS_MCP_HTTP_SERVER );
+}
+
+
+bool LlmToolCall::ImageContent::setTypeFromContent( const std::string_view bytes )
+{
+  if( bytes.size() < 12 )
+    return false;
+
+  const auto u8 = [&bytes]( const size_t i ) -> unsigned int {
+    return (i < bytes.size()) ? static_cast<unsigned char>( bytes[i] ) : 0u;
+  };
+
+  widthPx = heightPx = 0;
+  if( (u8(0) == 0x89) && (bytes.compare( 1, 3, "PNG" ) == 0) )
+  {
+    mimeType = "image/png";
+    widthPx = static_cast<int>( (u8(16) << 24) | (u8(17) << 16) | (u8(18) << 8) | u8(19) );
+    heightPx = static_cast<int>( (u8(20) << 24) | (u8(21) << 16) | (u8(22) << 8) | u8(23) );
+  }else if( (u8(0) == 0xFF) && (u8(1) == 0xD8) && (u8(2) == 0xFF) )
+  {
+    mimeType = "image/jpeg";
+    // Dimensions are in the first start-of-frame segment.
+    for( size_t pos = 2; (pos + 9) < bytes.size(); )
+    {
+      if( u8(pos) != 0xFF )
+        break;
+      const unsigned int marker = u8(pos + 1);
+      const size_t length = (u8(pos + 2) << 8) | u8(pos + 3);
+      if( (marker >= 0xC0) && (marker <= 0xCF) && (marker != 0xC4) && (marker != 0xC8) && (marker != 0xCC) )
+      {
+        heightPx = static_cast<int>( (u8(pos + 5) << 8) | u8(pos + 6) );
+        widthPx = static_cast<int>( (u8(pos + 7) << 8) | u8(pos + 8) );
+        break;
+      }
+      pos += 2 + length;
+    }//for( loop over JPEG segments )
+  }else if( bytes.compare( 0, 4, "GIF8" ) == 0 )
+  {
+    mimeType = "image/gif";
+    widthPx = static_cast<int>( u8(6) | (u8(7) << 8) );
+    heightPx = static_cast<int>( u8(8) | (u8(9) << 8) );
+  }else if( (bytes.compare( 0, 4, "RIFF" ) == 0) && (bytes.compare( 8, 4, "WEBP" ) == 0) )
+  {
+    mimeType = "image/webp";
+  }else
+  {
+    return false;
+  }
+
+  if( (widthPx <= 0) || (heightPx <= 0) || (widthPx > 100000) || (heightPx > 100000) )
+    widthPx = heightPx = 0;
+
+  return true;
+}//bool LlmToolCall::ImageContent::setTypeFromContent(...)
+
+
+void LlmConversationHistory::setSaveUserImages( const bool save )
+{
+  ns_save_user_images.store( save );
+}
+
+
+bool LlmConversationHistory::saveUserImages()
+{
+  return ns_save_user_images.load();
+}
 
 
 LlmConversationHistory::LlmConversationHistory()
@@ -144,6 +218,29 @@ std::shared_ptr<LlmInteraction> LlmInteraction::createEmpty()
 }
 
 
+bool LlmInteraction::isAwaitingWork() const
+{
+  if( responses.empty() || !responses.back() )
+    return false;
+
+  switch( responses.back()->type() )
+  {
+    case LlmInteractionTurn::Type::InitialRequest:
+    case LlmInteractionTurn::Type::ToolCall:
+    case LlmInteractionTurn::Type::ToolResult:
+    case LlmInteractionTurn::Type::AutoReply:
+      return true;
+
+    case LlmInteractionTurn::Type::FinalLlmResponse:
+    case LlmInteractionTurn::Type::Error:
+    case LlmInteractionTurn::Type::ConversationSummary:
+      break;
+  }//switch( responses.back()->type() )
+
+  return false;
+}//bool isAwaitingWork() const
+
+
 std::shared_ptr<LlmInteraction> LlmInteraction::shallowClone() const
 {
   // Create a new interaction with the same type/agent, then copy scalar fields.
@@ -162,6 +259,7 @@ std::shared_ptr<LlmInteraction> LlmInteraction::shallowClone() const
   clone->totalTokens      = totalTokens;
   clone->cachedTokens     = cachedTokens;
   clone->cacheCreationTokens = cacheCreationTokens;
+  clone->cost             = cost;
   clone->responses        = responses; // shared_ptr copies; turns are immutable read-only objects
   if( state_machine )
     clone->state_machine = state_machine->copy();
@@ -233,7 +331,8 @@ std::shared_ptr<LlmInteractionFinalResponse> LlmConversationHistory::addAssistan
 
 shared_ptr<LlmToolRequest> LlmConversationHistory::addToolCalls( std::vector<LlmToolCall> &&toolCalls,
                                                                 const std::string &rawResponseContent,
-                                           const std::shared_ptr<LlmInteraction> &convo )
+                                           const std::shared_ptr<LlmInteraction> &convo,
+                                           const std::optional<std::chrono::milliseconds> &callDuration )
 {
   assert( convo );
   if( !convo )
@@ -251,6 +350,8 @@ shared_ptr<LlmToolRequest> LlmConversationHistory::addToolCalls( std::vector<Llm
   auto response = std::make_shared<LlmToolRequest>( convo );
   response->setToolCalls( std::move(toolCalls) );
   response->setRawContent( rawResponseContent );
+  if( callDuration.has_value() )
+    response->setCallDuration( callDuration.value() );
   convo->responses.push_back(response);
   convo->responseAdded.emit( response );
   
@@ -333,7 +434,8 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conv
                                            std::optional<int> completionTokens,
                                            std::optional<int> totalTokens,
                                            std::optional<int> cachedTokens,
-                                           std::optional<int> cacheCreationTokens )
+                                           std::optional<int> cacheCreationTokens,
+                                           std::optional<double> cost )
 {
   assert( conversation );
   if( !conversation )
@@ -375,6 +477,10 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conv
 
   if( cacheCreationTokens.has_value() && (cacheCreationTokens.value() >= 0) )
     conversation->cacheCreationTokens = conversation->cacheCreationTokens.value_or(0) + static_cast<size_t>( cacheCreationTokens.value() );
+
+  // Cost: like the cache counters, a reported 0 (e.g. a free model) is kept, so it still displays.
+  if( cost.has_value() && (cost.value() >= 0.0) )
+    conversation->cost = conversation->cost.value_or(0.0) + cost.value();
 }//void addTokenUsage(...)
 
 
@@ -752,7 +858,8 @@ void LlmConversationHistory::toXml(rapidxml::xml_node<char>* parent, rapidxml::x
 }
 
 void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &conversations,
-                                   rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc)
+                                   rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc,
+                                   const bool include_raw_content )
 {
   rapidxml::xml_node<char>* historyNode = doc->allocate_node(rapidxml::node_element, "LlmHistory");
   parent->append_node(historyNode);
@@ -789,6 +896,24 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
       XmlUtils::append_attrib(convNode, "finishTime", finishTimeStr );
     }
 
+    // Record an interruption, so the conversation can be resumed when read back.  One still running as
+    //  it is written is recorded as interrupted now: if it is read back unfinished, that is the latest it
+    //  is known to have been running (e.g., the end-of-session state is saved before the LLM interface
+    //  is torn down).
+    if( conv->interruption.has_value() || (!conv->finishTime.has_value() && conv->isAwaitingWork()) )
+    {
+      const chrono::system_clock::time_point when = conv->interruption.has_value()
+                                                     ? conv->interruption->time
+                                                     : chrono::system_clock::now();
+      XmlUtils::append_attrib( convNode, "interruptedTime",
+                               std::to_string( chrono::system_clock::to_time_t( when ) ) );
+      if( conv->interruption.has_value() && conv->interruption->byUser() )
+      {
+        const bool closed = (conv->interruption->cause == LlmInteraction::Interruption::Cause::AssistantClosed);
+        XmlUtils::append_attrib( convNode, "interruptedBy", closed ? "AssistantClosed" : "SpectrumChanged" );
+      }
+    }//if( interrupted, or still running )
+
     // Add token usage, where known
     const auto append_tokens = [convNode]( const char *name, const std::optional<size_t> &value ){
       if( value.has_value() )
@@ -800,6 +925,14 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
     append_tokens( "lastCallPromptTokens", conv->lastCallPromptTokens );
     append_tokens( "cachedTokens", conv->cachedTokens );
     append_tokens( "cacheCreationTokens", conv->cacheCreationTokens );
+
+    if( conv->cost.has_value() )
+    {
+      // Enough significant figures that small per-request costs (e.g. $0.0000123) survive a round trip.
+      std::ostringstream costStrm;
+      costStrm << std::setprecision( 10 ) << conv->cost.value();
+      XmlUtils::append_attrib( convNode, "cost", costStrm.str() );
+    }
 
     // Add responses
     rapidxml::xml_node<char> *responsesNode = nullptr; //Will create at first message
@@ -843,7 +976,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
         XmlUtils::append_string_node( responseNode, "ReasoningDetails", response->reasoningDetails() );
 
       // Add raw content (JSON sent to LLM or received from LLM)
-      if( !response->rawContent().empty() )
+      if( include_raw_content && !response->rawContent().empty() )
         XmlUtils::append_string_node( responseNode, "RawContent", response->rawContent() );
 
       // Add call duration if available
@@ -863,6 +996,25 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
             // Add request type attribute (system or user)
             const string reqTypeStr = (initialReq->requestType() == LlmInteractionInitialRequest::RequestType::System) ? "system" : "user";
             XmlUtils::append_attrib( responseNode, "requestType", reqTypeStr );
+
+            // Images the user sent along with the message; see `setSaveUserImages(...)`.
+            if( saveUserImages() && !initialReq->imageContent().empty() )
+            {
+              rapidxml::xml_node<char> *imagesNode = doc->allocate_node( rapidxml::node_element, "Images" );
+              responseNode->append_node( imagesNode );
+              for( const LlmToolCall::ImageContent &img : initialReq->imageContent() )
+              {
+                rapidxml::xml_node<char> *imageNode = XmlUtils::append_string_node( imagesNode, "Image", img.base64Data );
+                XmlUtils::append_attrib( imageNode, "mimeType", img.mimeType );
+                if( !img.caption.empty() )
+                  XmlUtils::append_attrib( imageNode, "caption", img.caption );
+                if( (img.widthPx > 0) && (img.heightPx > 0) )
+                {
+                  XmlUtils::append_attrib( imageNode, "width", std::to_string(img.widthPx) );
+                  XmlUtils::append_attrib( imageNode, "height", std::to_string(img.heightPx) );
+                }
+              }//for( const LlmToolCall::ImageContent &img : initialReq->imageContent() )
+            }//if( write images )
           }
           break;
         }
@@ -937,7 +1089,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
               // Recursively serialize the sub-agent conversation (for invoke_* tool calls) so it
               // survives a save/reload round-trip, mirroring ConversationSummary::originalConversations.
               if( toolCall.sub_agent_conversation )
-                toXml( { toolCall.sub_agent_conversation }, toolCallNode, doc );
+                toXml( { toolCall.sub_agent_conversation }, toolCallNode, doc, include_raw_content );
             }//for( loop over toolCalls )
           }//if( toolCalls && numToolCalls > 0 )
           break;
@@ -976,7 +1128,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
 
             // Recursively serialize the archived original conversations
             if( !summary->originalConversations().empty() )
-              toXml( summary->originalConversations(), responseNode, doc );
+              toXml( summary->originalConversations(), responseNode, doc, include_raw_content );
           }
           break;
         }
@@ -1010,7 +1162,8 @@ std::string LlmConversationHistory::logFileName( const std::chrono::system_clock
 
 
 void LlmConversationHistory::writeLogFile( const std::string &path,
-                                  const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const
+                                  const std::vector<std::pair<std::string,std::string>> &rootAttribs,
+                                  const bool include_raw_content ) const
 {
   rapidxml::xml_document<char> doc;
 
@@ -1025,7 +1178,7 @@ void LlmConversationHistory::writeLogFile( const std::string &path,
   for( const pair<string,string> &attrib : rootAttribs )
     XmlUtils::append_attrib( root, attrib.first, attrib.second );
 
-  toXml( root, &doc );
+  toXml( m_conversations, root, &doc, include_raw_content );
 
   string xml;
   rapidxml::print( std::back_inserter(xml), doc );
@@ -1135,6 +1288,16 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
     read_tokens( "lastCallPromptTokens", conv->lastCallPromptTokens );
     read_tokens( "cachedTokens", conv->cachedTokens );
     read_tokens( "cacheCreationTokens", conv->cacheCreationTokens );
+
+    if( const rapidxml::xml_attribute<char> *costAttr = convNode->first_attribute( "cost" ) )
+    {
+      double costVal = 0.0;
+      if( SpecUtils::parse_double( costAttr->value(), costAttr->value_size(), costVal ) && (costVal >= 0.0) )
+        conv->cost = costVal;
+      else
+        cerr << "LlmConversationHistory: could not parse cost from '"
+             << SpecUtils::xml_value_str( costAttr ) << "' - ignoring" << endl;
+    }
 
     // Read responses
     if( rapidxml::xml_node<char> *responsesNode = XML_FIRST_NODE(convNode, "Responses") )
@@ -1251,6 +1414,25 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
             {
               if( rapidxml::xml_node<char>* contentNode = XML_FIRST_NODE(responseNode,"Content") )
                 initialReq->setContent( SpecUtils::xml_value_str(contentNode) );
+
+              vector<LlmToolCall::ImageContent> images;
+              const rapidxml::xml_node<char> * const imagesNode = XML_FIRST_NODE( responseNode, "Images" );
+              for( const rapidxml::xml_node<char> *imageNode = imagesNode ? XML_FIRST_NODE(imagesNode, "Image") : nullptr;
+                   imageNode; imageNode = XML_NEXT_TWIN(imageNode) )
+              {
+                // The file may not be one InterSpec wrote, so the type (which the GUI serves the
+                //  image as) and size come from the content, and the data is re-encoded.
+                const string bytes = Wt::Utils::base64Decode( SpecUtils::xml_value_str( imageNode ) );
+                LlmToolCall::ImageContent img;
+                if( !img.setTypeFromContent( bytes ) )
+                  continue;
+                img.base64Data = Wt::Utils::base64Encode( bytes, false );
+                img.caption = SpecUtils::xml_value_str( XML_FIRST_ATTRIB(imageNode, "caption") );
+                images.push_back( std::move(img) );
+              }//for( loop over <Image> nodes )
+
+              if( !images.empty() )
+                initialReq->setImageContent( std::move(images) );
             }
             break;
           }
@@ -1407,6 +1589,33 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
         conv->responses.push_back(response);
       }//XML_FOREACH_CHILD( responseNode, responsesNode, "Response" )
     }//if( rapidxml::xml_node<char> *responsesNode = XML_FIRST_NODE(convNode, "Responses") )
+
+    // Read the interruption.  An unfinished conversation written before these were recorded was cut off
+    //  at an unknown time - use its start, so it is offered for resuming rather than resumed on its own.
+    if( const rapidxml::xml_attribute<char> *attr = XML_FIRST_ATTRIB(convNode, "interruptedTime") )
+    {
+      LlmInteraction::Interruption interruption;
+      const time_t when = static_cast<time_t>( parse_ll_or( SpecUtils::xml_value_str(attr), 0 ) );
+      interruption.time = chrono::system_clock::from_time_t( when );
+      if( const rapidxml::xml_attribute<char> *byAttr = XML_FIRST_ATTRIB(convNode, "interruptedBy") )
+      {
+        const string by = SpecUtils::xml_value_str( byAttr );
+        if( by == "AssistantClosed" )
+          interruption.cause = LlmInteraction::Interruption::Cause::AssistantClosed;
+        else if( by == "SpectrumChanged" )
+          interruption.cause = LlmInteraction::Interruption::Cause::SpectrumChanged;
+      }
+      conv->interruption = interruption;
+    }else if( !conv->finishTime.has_value() && conv->isAwaitingWork() )
+    {
+      LlmInteraction::Interruption interruption;
+      interruption.time = conv->timestamp;
+      conv->interruption = interruption;
+    }
+
+    // A conversation that was finished is not waiting to be resumed, whatever the file says.
+    if( conv->finishTime.has_value() || !conv->isAwaitingWork() )
+      conv->interruption.reset();
 
     conversations.push_back(conv);
   }//XML_FOREACH_CHILD(convNode, node, "Conversation")

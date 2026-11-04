@@ -43,8 +43,10 @@ struct ComptonScatterResult {
     double deposited_energy_keV;  ///< Recoil electron kinetic energy
     double cos_theta;             ///< Cosine of the scattering angle
     Eigen::Vector3d new_direction; ///< New photon direction (normalized)
-    double binding_deposit_keV = 0.0; ///< Subshell binding energy U_i, deposited
-                                      ///< locally (Doppler sampling only)
+    double binding_deposit_keV = 0.0; ///< Subshell binding energy U_i of the
+                                      ///< vacancy left (Doppler sampling only)
+    int shell_index = -1;             ///< Sampled subshell (Doppler only; -1 =
+                                      ///< free electron). 0 is the K shell.
 };
 
 /// Sample a Compton scatter from the Klein-Nishina distribution.
@@ -63,8 +65,9 @@ struct ComptonScatterResult {
 /// angle is additionally Doppler-broadened by the bound electron's momentum
 /// (impulse approximation with PENELOPE-style analytic one-parameter subshell
 /// profiles).  The subshell binding energy U_i is returned in
-/// binding_deposit_keV for local deposition (no Compton-vacancy relaxation),
-/// so E' + KE + U_i == E exactly.
+/// binding_deposit_keV and the subshell in shell_index, so E' + KE + U_i == E
+/// exactly; the caller deposits U_i locally or relaxes a K vacancy
+/// (TransportConfig::enable_compton_fluorescence).
 ///
 /// @param energy_keV  Incident photon energy in keV
 /// @param direction   Current photon direction (normalized)
@@ -98,6 +101,18 @@ double doppler_scattered_energy(double energy_keV, double cos_theta, double t);
 /// Maximum t allowed by kinematics for subshell binding energy U_keV
 /// (the t for which E' = E - U at the given angle).
 double doppler_t_max(double energy_keV, double cos_theta, double U_keV);
+
+/// Probability that the Doppler-broadened scattered photon energy lies in
+/// [lower_keV, upper_keV) at a fixed Compton angle. This is the deterministic
+/// counterpart of finish_compton_at_angle(): it uses the same eligible-shell
+/// occupancy weights, truncated analytic Compton profiles, binding-energy
+/// cap, and free-line fallback. It is intended for binned response kernels.
+double doppler_energy_bin_probability(
+    double energy_keV,
+    double cos_theta,
+    int Z,
+    double lower_keV,
+    double upper_keV);
 ///@}
 
 /// Sample only the Compton scattering cosine from KN x S(x,Z)/Z (the same

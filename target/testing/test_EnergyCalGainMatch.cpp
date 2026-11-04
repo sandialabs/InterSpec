@@ -804,3 +804,79 @@ BOOST_AUTO_TEST_CASE( MultiPeakRefinement )
   BOOST_CHECK_MESSAGE( refined_resid < 0.25*linear_resid,
       "refinement did not substantially beat linear (" << refined_resid << " vs " << linear_resid << ")" );
 }//BOOST_AUTO_TEST_CASE( MultiPeakRefinement )
+
+
+/** A test spectrum whose transformed energy range extends past the reference's must not have
+ its counts beyond the reference range lumped into the references end channel (which is what
+ rebin_by_lower_edge does to conserve the total); that used to bias the fitted gain low, by ~0.3%
+ for a 1% gain difference on a 1024 channel NaI.  Uses noise-free analytic spectra, so any gain
+ error is from the method, not counting statistics.
+ */
+BOOST_AUTO_TEST_CASE( OverflowPastReferenceDoesNotBiasGain )
+{
+  // Expected counts from 0 keV up to `energy`: a falling continuum, plus 662, 1461, and 2614 keV
+  //  peaks with sigma = sigma_coef*sqrt(E)
+  const auto cumulative_counts = []( const double energy, const double sigma_coef ) -> double {
+    const double peaks[3][2] = { {661.657, 5.0E4}, {1460.82, 2.0E4}, {2614.5, 1.0E4} };
+    double answer = 4.0E6*(1.0 - std::exp(-energy/400.0)) + 2.0*energy;
+    for( const auto &peak : peaks )
+    {
+      const double sigma = sigma_coef * std::sqrt( peak[0] );
+      answer += peak[1] * 0.5 * (1.0 + std::erf( (energy - peak[0]) / (sigma*std::sqrt(2.0)) ));
+    }
+    return answer;
+  };//cumulative_counts
+
+  // Nominal calibration is 0-3000 keV, but channel contents are of true energy true_gain*E
+  const auto make_spectrum = [&]( const size_t nchannel, const double true_gain,
+                                  const double scale, const double sigma_coef ) {
+    auto counts = make_shared<vector<float>>( nchannel );
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      const double lower = true_gain * 3000.0 * i / nchannel;
+      const double upper = true_gain * 3000.0 * (i + 1) / nchannel;
+      (*counts)[i] = static_cast<float>( scale * (cumulative_counts( upper, sigma_coef )
+                                                  - cumulative_counts( lower, sigma_coef )) );
+    }
+
+    auto cal = make_shared<EnergyCalibration>();
+    cal->set_polynomial( nchannel, { 0.0f, static_cast<float>(3000.0 / nchannel) }, {} );
+
+    auto meas = make_shared<Measurement>();
+    meas->set_gamma_counts( counts, 300.0f, 300.0f );
+    meas->set_energy_calibration( cal );
+    return meas;
+  };//make_spectrum
+
+  struct DetectorCase
+  {
+    const char *name;
+    size_t nchannel;
+    double sigma_coef;
+    double tolerance;  //allowed |fitted/true - 1|; before the fix, bias was ~10x larger
+  };
+
+  const DetectorCase detectors[] = {
+    { "NaI",  1024, 0.07*std::sqrt(661.657)/2.3548, 2.0E-4 },  //7% FWHM at 662 keV
+    { "HPGe", 8192, 0.03,                           1.0E-5 }   //1.5 keV sigma at 2614 keV
+  };
+
+  for( const DetectorCase &det : detectors )
+  {
+    const shared_ptr<const Measurement> reference = make_spectrum( det.nchannel, 1.0, 1.0, det.sigma_coef );
+
+    for( const double true_gain : { 1.01, 1.03 } )
+    {
+      const shared_ptr<const Measurement> test
+                                = make_spectrum( det.nchannel, true_gain, 0.7, det.sigma_coef );
+
+      double gain = 1.0 + 0.8*(true_gain - 1.0), offset = 0.0;
+      BOOST_REQUIRE_NO_THROW( GainMatchCalc::refine_gain_offset( test, reference, 200.0f, 0.0f,
+                                                                 false, gain, offset ) );
+
+      BOOST_CHECK_MESSAGE( fabs(gain/true_gain - 1.0) < det.tolerance,
+          det.name << ", true gain " << true_gain << ": fitted gain " << gain
+          << " (relative error " << (gain/true_gain - 1.0) << ")" );
+    }//for( loop over true gains )
+  }//for( loop over detector types )
+}//BOOST_AUTO_TEST_CASE( OverflowPastReferenceDoesNotBiasGain )

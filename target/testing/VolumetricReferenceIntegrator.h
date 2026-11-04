@@ -136,6 +136,12 @@ struct ReferenceModel
   double walk_origin_dist = 0.0;      //PU: how far behind a point the walk's detector-side origin is put
   double emission_scale = 1.0;        //1/V, A/norm, or 1 (see emission())
 
+  /** A source beside or behind the detector (the calculator's line cache is extended): the air runs
+   to where the ray enters the detector's outer envelope - there is no face plane between such a
+   source and the side or back it is seen through. */
+  bool envelope_air = false;
+  ceelo::ConvexSolid enclosure;  //assembly frame, cm
+
   explicit ReferenceModel( const DistributedSrcCalcT<double> &c )
     : calc( c ), resp( *c.m_effResponse ), geom( c.m_effResponse->geometry() )
   {
@@ -170,6 +176,25 @@ struct ReferenceModel
     walk_origin_dist = 4.0*(det_dist + od[0] + od[1] + od[2]) + 100.0*cm;
 
     emission_scale = compute_emission_scale();
+
+    envelope_air = (c.m_lineCache && c.m_lineCache->extended);
+    if( envelope_air )
+    {
+      const ceelo::GeometryDescriptor::Envelope env = resp.descriptor.outer_envelope();
+      const Eigen::Vector3d env_centre_c( 0.0, 0.0, 0.5*(env.z_min_cm + env.z_max_cm) );
+      double ca[3];
+      dir_to_assembly( (env_centre_c - r0)*cm, ca );
+      const Eigen::Vector3d centre( (c.m_detector.position[0] + ca[0])/cm, (c.m_detector.position[1] + ca[1])/cm,
+                                    (c.m_detector.position[2] + ca[2])/cm );
+      Eigen::Matrix3d rot;
+      for( int i = 0; i < 3; ++i )
+        for( int j = 0; j < 3; ++j )
+          rot(i,j) = M[i][j];
+      const double half_len = 0.5*(env.z_max_cm - env.z_min_cm);
+      enclosure = (env.shape == ceelo::DetectorShape::Cylinder)
+                    ? ceelo::ConvexSolid::cylinder( centre, rot.col(2), env.radius_cm, half_len )
+                    : ceelo::ConvexSolid::box( centre, Eigen::Vector3d( env.half_x_cm, env.half_y_cm, half_len ), rot );
+    }//if( envelope_air )
   }
 
   /** Crystal-frame position (cm) of an assembly-frame point (PU). */
@@ -357,7 +382,15 @@ struct ReferenceModel
                                                  : shell.fep_trans_len_coef;
     }
 
-    if( calc.m_attenuateForAir && (calc.m_airTransLenCoef > 0.0) )
+    if( calc.m_attenuateForAir && (calc.m_airTransLenCoef > 0.0) && envelope_air )
+    {
+      const double cm = PhysicalUnits::cm;
+      const double entry = ceelo::convex_entry_distance( enclosure, Eigen::Vector3d( p[0]/cm, p[1]/cm, p[2]/cm ),
+                                                        Eigen::Vector3d( u[0], u[1], u[2] ) ) * cm;
+      const double t_exit = S - path.air;
+      if( std::isfinite( entry ) )
+        tau += calc.m_airTransLenCoef * std::max( 0.0, entry - t_exit );
+    }else if( calc.m_attenuateForAir && (calc.m_airTransLenCoef > 0.0) )
     {
       // Air from the outermost shell's exit to the endcap-face plane through the detector point.
       const double *det = calc.m_detector.position;
@@ -778,6 +811,7 @@ inline McRefResult reference_random( const DistributedSrcCalcT<double> &calc, co
     {
       const size_t nb = std::min( batch, n_hi - done );
       q.rays.assign( nb, ceelo::KernelRay() );
+      q.segments.clear();   //the rays below append theirs, in ray order
       q.n_rays_total = static_cast<int>( nb );
 
       for( size_t i = 0; i < nb; ++i )
@@ -901,7 +935,7 @@ inline McRefResult reference_random( const DistributedSrcCalcT<double> &calc, co
             if( s.is_scoring )
               active += len;
             if( s.material )
-              kr.segs.push_back( { s.material, static_cast<float>(len), s.is_scoring } );
+              q.add_segment( kr, s.material, static_cast<float>(len), s.is_scoring );
           }
           kr.active_len = static_cast<float>( active );
         }

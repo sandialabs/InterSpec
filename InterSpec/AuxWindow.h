@@ -254,6 +254,12 @@ public:
 
   /** Returns the JavaScript #resizeScaledWindow will execute. */
   std::string resizeScaledWindowJs( double xRatio, double yRatio ) const;
+
+  /** For a full-screen phone window (see #isPhone), re-fits it to the current browser window size,
+   e.g., after the device is rotated; full-screen phone windows are otherwise sized only once, when
+   created.  A no-op for any other window.
+   */
+  void refitPhoneFullScreen();
   
   //contents() is actually hiding WDialog::contents(), not overiding it, so
   //  dont expect a call from a WDialog pointer to give you what you want.

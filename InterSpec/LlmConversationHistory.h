@@ -31,6 +31,7 @@
 #include <string>
 #include <chrono>
 #include <optional>
+#include <string_view>
 
 #include <Wt/WSignal.h>
 
@@ -88,6 +89,12 @@ struct LlmToolCall
 
     int widthPx = 0;
     int heightPx = 0;
+
+    /** Sets `mimeType`, and the size when it can be found, from the image's content `bytes` (never
+     from what a client or file says it is).
+     @returns false if `bytes` is not a PNG, JPEG, GIF, or WebP image.
+     */
+    bool setTypeFromContent( std::string_view bytes );
   };//struct ImageContent
 
   std::optional<ImageContent> imageContent;
@@ -131,6 +138,11 @@ struct LlmToolCall
   // For sub-agent tool calls (invoke_*), this holds the sub-agent's conversation
   std::shared_ptr<LlmInteraction> sub_agent_conversation;
 
+  /** An async tool was started for this call in this session, and has not called back yet - so a
+   conversation interrupted and then resumed within the session waits for its result.  Runtime-only.
+   */
+  bool asyncRunning = false;
+
   LlmToolCall( const std::string &name, const std::string &id, const nlohmann::json &params )
     : status(CallStatus::Pending), toolName(name), invocationId(id), toolParameters(params)
   {
@@ -166,7 +178,11 @@ protected:
   std::string m_thinkingSignature;  // Encrypted signature for Claude thinking blocks (must be passed back unmodified)
   std::string m_reasoningContent;   // reasoning_content field (must be passed back during tool calls) - untested with models that require it
   std::string m_reasoningDetails;   // OpenRouter reasoning_details JSON array (must be passed back unmodified)
-  std::optional<std::chrono::milliseconds> m_callDuration;  // Duration of API call or tool execution
+  /** For a turn sent to the LLM (InitialRequest, ToolResult, AutoReply): the round-trip time of the
+   API request that carried it.  For a ToolCall turn: the wall-clock time to run its tools.  Unset
+   for other turns, or until the request/tools have finished.
+   */
+  std::optional<std::chrono::milliseconds> m_callDuration;
   std::string m_rawContent;  // Raw content: JSON sent to LLM for tool results, or JSON received from LLM
   bool m_exclude_from_history;  // If true, exclude this turn from conversation history sent to LLM
 
@@ -276,6 +292,7 @@ protected:
   std::string m_errorMessage;
   ErrorType m_errorType;
   bool m_retryAttempted;  // True if JavaScript automatic retry was attempted
+  bool m_skippedByUser;   // True if the user chose Skip (or Cancel Agent) on it; runtime only
 
 public:
   LlmInteractionError( const std::string &errorMsg,
@@ -284,7 +301,8 @@ public:
     : LlmInteractionTurn(Type::Error, convo),
       m_errorMessage(errorMsg),
       m_errorType(type),
-      m_retryAttempted(false)
+      m_retryAttempted(false),
+      m_skippedByUser(false)
   {
   }
 
@@ -296,6 +314,11 @@ public:
 
   bool retryAttempted() const { return m_retryAttempted; }
   void setRetryAttempted( bool attempted ) { m_retryAttempted = attempted; }
+
+  /** If the user chose to move on from this error - Skip for the main agent, or Cancel Agent for a
+   sub-agent (whose invoking agent is then told the user cancelled it) - rather than Retry. */
+  bool skippedByUser() const { return m_skippedByUser; }
+  void setSkippedByUser( bool skipped ) { m_skippedByUser = skipped; }
 
   /** Returns true if this error supports automatic retry (timeout/network errors) */
   bool supportsAutomaticRetry() const
@@ -500,6 +523,44 @@ struct LlmInteraction
   /** Time when this conversation finished (completed or errored). Empty if still in progress. */
   std::optional<std::chrono::system_clock::time_point> finishTime;
 
+  /** Why, and when, a conversation was cut off while the LLM or its tools still owed it something; see
+   #interruption.
+   */
+  struct Interruption
+  {
+    enum class Cause : int
+    {
+      /** InterSpec was closed, or the app ended (e.g., iOS stopping it while in the background). */
+      SessionEnded,
+
+      /** The user closed the LLM Assistant. */
+      AssistantClosed,
+
+      /** The user showed a different spectrum, so a different conversation history. */
+      SpectrumChanged
+    };//enum class Cause
+
+    /** When it was cut off; for one read back from a file, the latest it is known to have been running. */
+    std::chrono::system_clock::time_point time;
+
+    Cause cause = Cause::SessionEnded;
+
+    /** If the user cut it off, so it is only resumed when they ask. */
+    bool byUser() const { return (cause != Cause::SessionEnded); }
+  };//struct Interruption
+
+  /** Set when this conversation was cut off mid-work - the LLM Assistant was closed, another spectrum
+   shown, or the session ended - so it can be picked back up when it is next shown (see
+   LlmInterface::resumeInterrupted()).  Cleared when it is resumed or abandoned.  Its #finishTime stays
+   unset meanwhile.
+   */
+  std::optional<Interruption> interruption;
+
+  /** If the last turn still waits on the LLM or on tools (an InitialRequest, ToolCall, ToolResult, or
+   AutoReply), rather than having ended the conversation (a final response, error, or summary).
+   */
+  bool isAwaitingWork() const;
+
   // Token usage tracking from LLM API responses
   // Using optional<size_t> because some models/APIs don't provide token usage information,
   // making it clear when this data is unavailable rather than defaulting to 0
@@ -517,7 +578,10 @@ struct LlmInteraction
   // but nothing was served from cache.
   std::optional<size_t> cachedTokens;        // Prompt tokens served from cache (cache reads; all providers)
   std::optional<size_t> cacheCreationTokens; // Prompt tokens written to cache (Anthropic cache writes)
-  
+  // Provider-reported cost in USD (e.g. OpenRouter), accumulated like promptTokens (API calls +
+  // sub-agents); nullopt means the provider did not report cost.
+  std::optional<double> cost;
+
   /** The conversation turns sent to, or recieved from the LLM.
 
    The first entry is the initial prompt sent to the LLM to start the conversation, with following entries being
@@ -556,10 +620,31 @@ struct LlmInteraction
    */
   Wt::Signal<std::shared_ptr<LlmInteractionTurn>, std::shared_ptr<LlmInteraction>> subAgentFinished;
 
-  /** Signal emitted when this conversation finishes (no more tool calls to process).
-   Can be used by the GUI to re-enable input.
+  /** Signal emitted when this conversation finishes (no more tool calls to process), or is ended
+   early by a cancel, timeout, or settings change (after finishTime is set; a compaction conversation
+   also emits it when its response arrives, even if the summary was empty).  Can be used by the GUI
+   to re-enable input.
    */
   Wt::Signal<> conversationFinished;
+
+  /** Signal emitted when this conversation's tool round is stopped (true) - it waits only on
+   sub-agents paused on an error (their request failed, or the user pressed Stop), until the user
+   picks Retry or Cancel Agent on one - or put back in flight (false).  See
+   LlmInterface::stopIdleRounds().
+   */
+  Wt::Signal<bool> stoppedChanged;
+
+  /** Signal emitted when #interruption is set while the conversation is shown (see
+   LlmInterface::interruptInFlight()), and when it is cleared by the conversation being resumed or
+   abandoned (LlmInterface::resumeInterrupted(), LlmInterface::abandonInterrupted()).
+   */
+  Wt::Signal<> interruptionChanged;
+
+  /** Signal emitted when an API request is sent to the LLM for this conversation.
+   Emits the turn the LLM is now responding to (the last InitialRequest, ToolResult, or AutoReply
+   turn), or nullptr if the last turn is not one of those (e.g., a retry after a failed tool round).
+   */
+  Wt::Signal<std::shared_ptr<LlmInteractionTurn>> llmRequestSent;
 
   /** Factory method to create a new LlmInteraction with an initial message.
 
@@ -618,6 +703,13 @@ class LlmConversationHistory {
 public:
   /** Construct empty conversation history */
   LlmConversationHistory();
+
+  /** Whether the XML written for a history includes the images a user sent with their messages
+   (they are always read, if present).  On by default only for the MCP agent server, so an exported
+   analysis resumes with its photos; other builds' files are unchanged.
+   */
+  static void setSaveUserImages( const bool save );
+  static bool saveUserImages();
   
   /** Add a user message - this is a message that the user typed in, and will cause a new `LlmInteraction` to be created, with all the
    LLM responses, and tool-call results being stored in that newly created object.  The newly created object will be added to `m_conversations` and returned.
@@ -646,10 +738,12 @@ public:
   /** Add tool call requests (potentially multiple) as a follow-up to the last message.
 
    This creates a single LlmToolRequest containing all the tool calls.
+   `callDuration`, if given (the tools have all run already), is set before the turn is announced.
    */
   std::shared_ptr<LlmToolRequest> addToolCalls( std::vector<LlmToolCall> &&toolCalls,
                                                const std::string &rawResponseContent,
-                     const std::shared_ptr<LlmInteraction> &convo );
+                     const std::shared_ptr<LlmInteraction> &convo,
+                     const std::optional<std::chrono::milliseconds> &callDuration = std::nullopt );
 
   /** Add tool call results (potentially multiple) as a follow-up to the last message.
 
@@ -671,13 +765,14 @@ public:
                        const std::shared_ptr<LlmInteraction> &convo );
 
 
-  /** Add token usage to a specific conversation by conversation ID (accumulates across API calls) */
+  /** Add token usage (and provider-reported cost, in USD) to a conversation; accumulates across API calls */
   static void addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                      std::optional<int> promptTokens,
                      std::optional<int> completionTokens,
                      std::optional<int> totalTokens,
                      std::optional<int> cachedTokens = std::nullopt,
-                     std::optional<int> cacheCreationTokens = std::nullopt );
+                     std::optional<int> cacheCreationTokens = std::nullopt,
+                     std::optional<double> cost = std::nullopt );
   
   /** Find a conversation start by conversation ID */
   std::shared_ptr<LlmInteraction> findConversationByConversationId(const std::string& conversationId);
@@ -712,9 +807,15 @@ public:
   /** Load from XML when loading SpecMeas */
   void fromXml(const rapidxml::xml_node<char>* node);
   
-  /** Static function to serialize conversations to XML */
+  /** Static function to serialize conversations to XML.
+
+   @param include_raw_content Whether to include each turn's raw JSON (the requests sent to, and
+          responses from, the LLM API - each request repeating the system prompt and conversation so
+          far); used only by the assistant's raw-JSON view, not to continue a conversation.
+   */
   static void toXml(const std::vector<std::shared_ptr<LlmInteraction>>& conversations,
-                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc);
+                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc,
+                    const bool include_raw_content = true);
 
   /** Static function to deserialize conversations from XML */
   static void fromXml(const rapidxml::xml_node<char>* node,
@@ -738,10 +839,15 @@ public:
    The file is written to a temporary file first and then renamed into place, so a failure mid-write
    does not leave a truncated log.
 
+   @param include_raw_content Whether to include each turn's raw request/response JSON; see toXml().
+          Each request repeats the whole conversation so far, so leaving it out keeps logs of long
+          conversations from growing quadratically.
+
    Throws std::exception on failure.
    */
   void writeLogFile( const std::string &path,
-                     const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const;
+                     const std::vector<std::pair<std::string,std::string>> &rootAttribs,
+                     const bool include_raw_content = true ) const;
 
   /** Build the messages array for a MainAgent conversation, including all prior
    history and the system prompt.

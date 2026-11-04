@@ -60,7 +60,9 @@
 /// XML: to_xml_string()/from_xml_string() -- ONE codec shared by the
 /// generator and by InterSpec (which embeds the fragment in its DRF XML).
 
+#include "geometry/ConvexSeparation.h"
 #include "geometry/Geometry.h"
+#include "geometry/GeometryDescriptor.h"
 #include "io/Pchip.h"
 #include "io/ResponseKernel.h"
 #include "materials/Material.h"
@@ -183,7 +185,31 @@ namespace model_sigma {
     /// missing back structure, which this measurement cannot see.
     ///
     /// The query also raises ResponseFlag::NeedsMc, so a host can decline rather than use it.
+    ///
+    /// Since back structure can be described (a layer's z_end past the envelope inside it - see
+    /// LayerSpec), this applies only where that measurement does not reach: a source behind the
+    /// crystal's BACK plane on a detector whose descriptor describes nothing there.  Beside the
+    /// detector, and behind one with a described back, the terms below apply instead.
     constexpr double behind_plane = 0.30;
+
+    /// Behind the face plane (cos_theta < 0), on a response whose angular tables stop at the
+    /// grazing node and are not angle-flat: the eta and near-field corrections are the grazing
+    /// node's, extrapolated.  ResponseFlag::OutOfRangeClamped.
+    ///
+    /// Measured (2026-11, InterSpec's test_BackIncidence BackEnvelopeMeasure) against CeeLo MC
+    /// beside and behind two HPGe and two NaI detectors (2332 points, 40-1332 keV, contact to far
+    /// field; NeedsMc points excluded): 0.05 leaves every region's RMS pull at or below 0.77, the
+    /// same coverage 0.08 gave.
+    constexpr double behind_extrapolation = 0.05;
+
+    /// Behind the crystal's back plane on a detector whose back structure IS described: the
+    /// description is approximate (a couple of layers where a real detector has a cryostat, a
+    /// PMT, electronics), and this is what that costs for a REASONABLE description.  No constant
+    /// covers a materially wrong one: in the same measurements, leaving out 2 cm of steel behind
+    /// an HPGe changed the efficiency directly behind it 30-fold at 122 keV, while a NaI PMT
+    /// described as 3 mm of steel rather than its real layers was within ~1% at median but
+    /// 60-80% off at 40-60 keV.  Hosts should say so when a source is behind the back plane.
+    constexpr double back_structure_approx = 0.10;
 
     /// A response with no NearFieldModel queried inside the near-field gate: the kernel-only
     /// near-field error, i.e. the near-field boost a ray-traced kernel cannot know.
@@ -355,178 +381,9 @@ namespace model_sigma {
 }  // namespace model_sigma
 
 // ---------------------------------------------------------------------------
-// Geometry descriptor (storable; rebuilds the ray-trace Geometry)
+// Geometry descriptor: geometry/GeometryDescriptor.h (always built). Its XML
+// codec (to_xml_string / from_xml_string) is defined with this file's.
 // ---------------------------------------------------------------------------
-
-/// Full material definition so the stored response is self-contained
-/// (user-defined materials round-trip; nothing resolves by name at load).
-struct MaterialSpec {
-    std::string name;
-    double density_g_per_cm3 = 0.0;
-    std::vector<MaterialComponent> composition;  ///< {Z, mass_fraction}
-
-    static MaterialSpec from(const Material& m);
-    Material to_material() const { return Material(name, density_g_per_cm3, composition); }
-};
-
-/// One concentric cup-shaped layer (endcap, window, housing, wrap...).
-/// Multiple layers are supported, ordered innermost -> outermost; each maps
-/// to one Geometry::add_attenuator call. NOTE: CeeLo attenuators cover front
-/// + side; dedicated back layers are not modeled (deferred with theta > 90).
-struct LayerSpec {
-    int material_index = -1;      ///< into GeometryDescriptor::materials
-    double front_thickness_cm = 0.0;
-    double side_thickness_cm = 0.0;
-    double z_start_cm = 0.0;      ///< axial extent (crystal front face = 0)
-    double z_end_cm = 0.0;
-};
-
-/// Side-only collimator tube (maps to Geometry::add_collimator).
-struct CollimatorSpec {
-    int material_index = -1;
-    double side_thickness_cm = 0.0;
-    double z_start_cm = 0.0;      ///< typically negative (extends past the face)
-    double z_end_cm = 0.0;
-};
-
-enum class ResponseSymmetry : uint8_t {
-    Axial,     ///< cylinders: no phi axis
-    Quadrant   ///< boxes: phi axis over one quadrant (reflect by symmetry)
-};
-
-/// Which plane a caller's `dist_cm` is measured FROM. Distances and the kernel
-/// must share one origin -- a mismatch silently corrupts everything (master
-/// plan sec 3.2 warning) rather than failing.
-///
-/// Both data below are planes perpendicular to the axis, and BOTH are measured
-/// to the source, so a larger value always means further away:
-///
-///   CrystalFace  -- the front face of the CRYSTAL SOLID, z = 0 in the crystal
-///                   frame. NOT the front of the active volume: with a dead
-///                   layer the active volume starts a further t_front behind
-///                   this plane (see Geometry::set_dead_layer).
-///   EndcapFront  -- the outermost front surface of the attenuator stack, i.e.
-///                   the face a user can physically touch. This is InterSpec's
-///                   user-facing convention. It sits
-///                   endcap_front_offset_cm() in FRONT of CrystalFace.
-///
-/// The conversion between them is GeometryDescriptor::endcap_front_offset_cm(),
-/// applied in DetectorResponse::query_position(). Nothing else should be doing
-/// that arithmetic by hand.
-enum class ReferencePoint : uint8_t {
-    CrystalFace,
-    EndcapFront
-};
-
-/// Ways a GeometryDescriptor violates a Geometry/RayTrace precondition.
-///
-/// Those preconditions are asserts, so they vanish in a release build and a
-/// violating descriptor traces silent garbage instead of failing. Every
-/// descriptor must therefore be run through GeometryDescriptor::problems()
-/// before it reaches a Geometry.
-enum class GeometryProblem : uint8_t {
-    DimensionsMissing,     ///< dimensions_cm too short for the shape
-    BulletOnNonCylinder,   ///< fillet requested on a box
-    BulletNotFinite,       ///< NaN / inf / negative
-    BulletTooWide,         ///< bullet_radius_cm >= crystal radius (rho_c <= 0)
-    BulletTooLong,         ///< bullet_radius_cm >= crystal length
-    BulletNoDeadLayerRoom, ///< dead layer leaves no active fillet
-    DeadLayerTooThick,     ///< dead layer consumes the whole crystal
-    BoreOnNonCylinder,
-    BoreNotFinite,
-    BoreTooWide,           ///< bore radius >= crystal radius
-    BoreTooDeep,           ///< bore depth >= crystal length
-    BoreTipTooBlunt,       ///< rounded_tip && radius > depth
-    BoreOutsideFillet,     ///< bore_fits() fails against the fillet
-    BoreInsideDeadLayer    ///< bore radius >= (crystal radius - side dead layer)
-};
-
-/// Short English description of `p`; for developer-facing messages (InterSpec
-/// maps the enum onto its own localized strings).
-const char* to_string(GeometryProblem p);
-
-/// The storable geometry: shape, dimensions, bore, dead layer, layers,
-/// collimator, symmetry, reference point + the material table they index.
-struct GeometryDescriptor {
-    DetectorShape shape = DetectorShape::Cylinder;
-    /// The serialized crystal dimensions, in cm: Cylinder {radius, FULL length};
-    /// Box {half_x, half_y, FULL length}.  See CRYSTAL DIMENSION CONVENTION in
-    /// geometry/Geometry.h -- and prefer set_dimensions() / cylinder_dims() /
-    /// box_dims() below, which name the fields, over indexing this by hand.
-    ///
-    /// This layout is written into every response file; it does not change.
-    std::vector<double> dimensions_cm;
-    /// Cylinder only: quarter-torus fillet radius on the outer FRONT edge
-    /// ("bulletization", ANGLE's `bulletizingRadius`), cm. 0 = a sharp
-    /// 90-degree edge -- the default, and bit-for-bit the pre-feature trace.
-    /// Must be < radius and < length; see problems().
-    double bullet_radius_cm = 0.0;
-    int crystal_material_index = -1;
-    std::optional<BoreHoleConfig> bore;          ///< coax HPGe finger
-    std::optional<DeadLayerConfig> dead_layer;   ///< cm, crystal material
-    std::vector<LayerSpec> layers;               ///< innermost -> outermost
-    std::optional<CollimatorSpec> collimator;
-    ResponseSymmetry symmetry = ResponseSymmetry::Axial;
-    ReferencePoint reference_point = ReferencePoint::CrystalFace;
-    std::vector<MaterialSpec> materials;
-
-    /// Set `shape` and `dimensions_cm` together, so a Box can never end up
-    /// declared with two numbers.  See CRYSTAL DIMENSION CONVENTION.
-    void set_dimensions(const CylinderDims& dims);
-    void set_dimensions(const BoxDims& dims);
-
-    /// Named read-back of `dimensions_cm`.  Asserts the shape matches and the
-    /// vector is long enough; consult problems() first for untrusted input.
-    CylinderDims cylinder_dims() const;
-    BoxDims box_dims() const;
-
-    /// Build the ray-trace geometry. The returned Geometry references the
-    /// Material instances appended to `owned` -- keep them alive as long as
-    /// the Geometry (DetectorResponse holds both).
-    Geometry build_geometry(std::vector<std::unique_ptr<Material>>& owned) const;
-
-    /// Transverse half-extent `a` -- the near/far regime SCALE PARAMETER
-    /// (cylinder: outer radius; box: half-diagonal), not a physical dimension.
-    ///
-    /// It intentionally includes the side dead layer, even though the dead
-    /// layer is internal to the crystal (Geometry::set_dead_layer), so it runs
-    /// slightly large. That is harmless and must stay: `a` is computed from the
-    /// descriptor at BOTH generation time (ResponseGenerator picks its far
-    /// reference distance as far_distance_a * a) and query time (the
-    /// near-regime test is d < near_regime_a * a). Changing the value would
-    /// desynchronise every already-generated response from the code that made
-    /// it. Contrast endcap_front_offset_cm(), which is query-time only and so
-    /// could be -- and was -- corrected in place.
-    ///
-    /// If you need a true physical outer radius, sum the layer side
-    /// thicknesses onto dimensions_cm yourself; do not use this.
-    double transverse_half_extent() const;
-
-    /// |z_min| of the outermost front surface: the (positive) offset from the
-    /// endcap front to the CRYSTAL SOLID's face (z = 0), i.e. the summed front
-    /// thicknesses of the attenuator shells. The dead layer is deliberately
-    /// excluded -- it is carved out of the inside of the crystal, so it sets
-    /// where the ACTIVE volume starts, not where the crystal face is.
-    double endcap_front_offset_cm() const;
-
-    /// Crystal K-edges within (e_min, e_max) keV -- the mandatory segment
-    /// breaks for any ln-eta(E) interpolation (both flanks become nodes).
-    std::vector<double> crystal_k_edges(double e_min_keV,
-                                        double e_max_keV) const;
-
-    /// Every Geometry/RayTrace precondition this descriptor violates; empty
-    /// means it is safe to build. See GeometryProblem.
-    std::vector<GeometryProblem> problems() const;
-
-    /// Standalone XML for JUST the geometry, so a host can store a detector's
-    /// shape before (or without) any response having been generated for it.
-    ///
-    /// The payload is the same <Detector> element DetectorResponse's own codec
-    /// writes -- shared code, so the two cannot drift -- wrapped in a
-    /// <CeeLoGeometry> root. Round-trips through from_xml_string().
-    std::string to_xml_string() const;
-    static GeometryDescriptor from_xml_string(const std::string& xml);
-};
 
 /// True when the crystal is CdTe-class (CdTe, CZT): Cd + Te carry more than half the
 /// crystal's mass.  Keyed on COMPOSITION rather than on the material's name, because names
@@ -537,41 +394,6 @@ struct GeometryDescriptor {
 /// make_transfer_response).  It selects model_sigma::tot_far_floor_cdte, which is an
 /// empirical patch over a modelling gap that is not understood, so this is expected to be
 /// DELETED along with that constant rather than extended.
-/// Declare a descriptor's detector side - crystal, fillet, bore, dead layer, attenuator
-/// layers, collimator - onto `sink`.
-///
-/// ONE definition, used by all three paths that build a detector from a descriptor:
-/// GeometryDescriptor::build_geometry (the query-time kernel), ResponseGenerator's per-node
-/// setup, and ResponseGenerator::configure_calculator.  `Geometry` and `EfficiencyCalculator`
-/// expose the same setter signatures, so both are valid sinks.
-///
-/// Keep it that way.  The eta table is measured through a calculator configured here while
-/// the query-time kernel K traces a Geometry configured here; if the two ever declare
-/// different solids the response is internally inconsistent, and the generator's own probe
-/// banks cannot detect it because they route through the same path.
-///
-/// `mat` maps a descriptor material index to an instantiated Material the caller owns and
-/// keeps alive for as long as the sink is used.
-template <class Sink, class MatFn>
-void apply_detector_side(Sink& sink, const GeometryDescriptor& gd, MatFn mat) {
-    sink.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
-                                             gd.dimensions_cm);
-    // set_detector() clears the fillet/bore/dead layer, so declare them after it; fillet
-    // first, so bore_fits() sees the final crystal profile.
-    if (gd.bullet_radius_cm > 0.0) sink.set_bullet_radius(gd.bullet_radius_cm);
-    if (gd.bore)
-        sink.set_bore_hole(gd.bore->radius, gd.bore->depth, gd.bore->rounded_tip);
-    if (gd.dead_layer)
-        sink.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side, gd.dead_layer->back);
-    for (const LayerSpec& l : gd.layers)
-        sink.add_attenuator(mat(l.material_index), l.front_thickness_cm,
-                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-    if (gd.collimator)
-        sink.add_collimator(mat(gd.collimator->material_index),
-                            gd.collimator->side_thickness_cm, gd.collimator->z_start_cm,
-                            gd.collimator->z_end_cm);
-}
-
 bool crystal_is_cdte_class(const GeometryDescriptor& gd);
 
 
@@ -639,6 +461,10 @@ public:
     /// ln eta at (E, ct, phi); clamps and reports it via `clamped`.
     double eval_ln(double energy_keV, double cos_theta, double phi_deg,
                    bool& clamped) const;
+
+    /// True when every cos-theta column holds the same values - an angle-flat table (curve and
+    /// flat transfers), whose clamp in cos-theta loses nothing.
+    bool is_angle_flat() const;
 
     /// Interpolated fractional MC sigma at the query point (bilinear in
     /// (lnE, ct) at the nearest phi node).
@@ -860,12 +686,34 @@ enum class ProductionMethod : int {
 
 const char* to_string(ProductionMethod m);
 
+/// Per-node MC precision policy (the D0 speedup dial). Uniform reproduces the
+/// historical single-target behaviour bit-for-bit; RelaxMild installs the
+/// energy-graded map measured in the D0 policy memo (~2-2.5x cheaper high-E
+/// nodes at a bounded p95 cost).
+enum class PrecisionProfile : uint8_t {
+    Uniform,    ///< node_fep_precision everywhere (default; unchanged)
+    RelaxMild   ///< graded target precision by (stage, energy) -- see relax_mild_precision_map
+};
+
+const char* to_string(PrecisionProfile p);
+
+/// Side and back incidence scanned at generation (GenerationOptions::back_coverage).
+enum class BackCoverage : uint8_t { None, Coarse, Fine };
+
+const char* to_string(BackCoverage b);
+
 struct ResponseProvenance {
     ProductionMethod method = ProductionMethod::FullMc;
     std::string ceelo_version;        ///< library version string
     std::string created_utc;          ///< ISO-8601, informational
     ResponseProfile profile = ResponseProfile::General;
     double node_fep_precision = 0.003;///< per-node MC precision target
+    /// The remaining generation choices, so a host can offer the same run again.  Set by
+    /// ResponseGenerator::generate() (back_coverage on the full-MC grid, n_anchor_angles in
+    /// transfer mode); empty for a response made otherwise, or saved before they were recorded.
+    std::optional<PrecisionProfile> precision_profile;
+    std::optional<BackCoverage> back_coverage;
+    std::optional<int> n_anchor_angles;
     /// Half-width (keV) of the full-energy-peak window this response's FEP was
     /// scored with (physics/FepWindow.h).  A model that credits in-window
     /// Compton must use the SAME window, or it is calibrated against the wrong
@@ -1142,10 +990,11 @@ public:
     std::string to_xml_string() const;
     static std::shared_ptr<DetectorResponse> from_xml_string(const std::string& xml);
 
-    /// FNV-1a hash of the canonical XML payload (stable content identity;
-    /// grounding and grid changes change it). INVARIANT to the accuracy
-    /// certificate (which is metadata about the response, not content), so a
-    /// response hashes the same with or without one.
+    /// FNV-1a hash of the stored content - exactly what to_xml_string() saves,
+    /// hashed from the members (stable content identity; grounding and grid
+    /// changes change it, and a save/load round trip does not). INVARIANT to the
+    /// accuracy certificate (which is metadata about the response, not
+    /// content), so a response hashes the same with or without one.
     uint64_t content_hash() const;
 
 private:

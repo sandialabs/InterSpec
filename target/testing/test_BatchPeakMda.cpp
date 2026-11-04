@@ -24,6 +24,7 @@
 #include <cmath>
 #include <deque>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -39,7 +40,9 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchInfoLog.h"
@@ -240,6 +243,39 @@ BatchPeak::BatchPeakFitResult run_fit( const vector<double> &exemplar_energies,
   return BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", measurement,
                                        {}, options );
 }//BatchPeak::BatchPeakFitResult run_fit(...)
+
+
+/** A Poisson replica of a spectrum with a 661 keV peak of `area` counts on `continuum_per_channel`
+ counts per channel; Knuth's product method on `std::mt19937`, so the draw is the same on every platform. */
+shared_ptr<SpecMeas> sparse_spec_meas( const double area, const double continuum_per_channel, const unsigned seed )
+{
+  const shared_ptr<SpecMeas> noise_free = make_spec_meas( { { 661.0, area } } );
+  const shared_ptr<const SpecUtils::Measurement> m0 = noise_free->measurements().front();
+
+  std::mt19937 rng( seed );
+  auto counts = make_shared<vector<float>>( *m0->gamma_counts() );
+  for( float &c : *counts )
+  {
+    const double mean = (c - sm_continuum_cps*sm_live_time) + continuum_per_channel;
+    const double limit = std::exp( -mean );
+    double product = 1.0;
+    int n = 0;
+    for( ; n < 100000; ++n )
+    {
+      product *= (static_cast<double>( rng() ) + 0.5) / 4294967296.0;
+      if( product <= limit )
+        break;
+    }
+    c = static_cast<float>( n );
+  }//for( float &c : *counts )
+
+  auto m = make_shared<SpecUtils::Measurement>( *m0 );
+  m->set_gamma_counts( counts, sm_live_time, sm_live_time );
+  auto answer = make_shared<SpecMeas>();
+  answer->add_measurement( m, false );
+  answer->cleanup_after_load();
+  return answer;
+}//sparse_spec_meas(...)
 }//namespace
 
 
@@ -1605,3 +1641,34 @@ BOOST_AUTO_TEST_CASE( InjaStringCallbacks )
   BOOST_CHECK_EQUAL( env.render( "{{ removeExtension(Filename) }}_{{ nuclideUpper(Nuclide) }}", data ),
                      string("input_CS-137") );
 }//BOOST_AUTO_TEST_CASE( InjaStringCallbacks )
+
+
+
+
+// A weak real peak in sparse data is fit by Poisson likelihood, so its shape test (`peak_hypothesis_threshold`)
+//  must judge it by Poisson deviance.  Judged by modified-Neyman chi2 instead, the null's least-squares
+//  refit beats the likelihood fit on that statistic: this draw (one of ~3% at this area) was dropped.
+BOOST_AUTO_TEST_CASE( SparsePeakShapeTestUsesDeviance )
+{
+  set_data_dir();
+  const shared_ptr<SpecMeas> meas = sparse_spec_meas( 22.0, 0.6, 24 );
+  const shared_ptr<const SpecUtils::Measurement> data = meas->measurements().front();
+  const shared_ptr<SpecMeas> exemplar = make_exemplar( { 661.0 } );
+
+  // The fitted peak without the shape test: in a sparse ROI; the Neyman test rejects it, the deviance test keeps it.
+  BatchPeak::BatchPeakFitOptions no_shape_test = default_options();
+  no_shape_test.peak_hypothesis_threshold = 0.0;
+  const BatchPeak::BatchPeakFitResult untested
+                 = BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", meas, {}, no_shape_test );
+  BOOST_REQUIRE_EQUAL( untested.fit_peaks.size(), 1 );
+  const PeakDef &peak = *untested.fit_peaks.front();
+  BOOST_CHECK( PeakFitLM::is_sparse_roi( { untested.fit_peaks.front() }, data ) );
+  BOOST_CHECK( !chi2_significance_test( peak, 0.0, 1.0, {}, data, false ) );
+  BOOST_CHECK( chi2_significance_test( peak, 0.0, 1.0, {}, data, true ) );
+
+  // With the default thresholds the peak is kept.
+  const BatchPeak::BatchPeakFitResult result
+                 = BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", meas, {}, default_options() );
+  BOOST_REQUIRE_EQUAL( result.fit_peaks.size(), 1 );
+  BOOST_CHECK_CLOSE( result.fit_peaks.front()->mean(), 661.0, 1.0 );
+}//BOOST_AUTO_TEST_CASE( SparsePeakShapeTestUsesDeviance )

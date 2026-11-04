@@ -122,6 +122,100 @@ double doppler_t_max(double energy_keV, double cos_theta, double U_keV) {
            / std::sqrt(denom2);
 }
 
+double doppler_energy_bin_probability(
+    double energy_keV,
+    double cos_theta,
+    int Z,
+    double lower_keV,
+    double upper_keV)
+{
+    if (!(energy_keV > 0.0) || !(upper_keV > lower_keV))
+        return 0.0;
+    cos_theta = std::max(-1.0, std::min(1.0, cos_theta));
+
+    const double free_energy =
+        compton_scattered_energy(energy_keV, cos_theta);
+    const auto contains_free_line = [&]() {
+        return (lower_keV <= free_energy && free_energy < upper_keV)
+            ? 1.0 : 0.0;
+    };
+    if (Z <= 0)
+        return contains_free_line();
+
+    const ElementData& elem = CrossSectionData::instance().element(Z);
+    if (elem.num_compton_shells == 0)
+        return contains_free_line();
+
+    double eligible_occupancy = 0.0;
+    for (int shell = 0; shell < elem.num_compton_shells; ++shell) {
+        if (elem.shell_binding_keV[shell] < energy_keV)
+            eligible_occupancy += elem.shell_occupancy[shell];
+    }
+    if (!(eligible_occupancy > 0.0))
+        return contains_free_line();
+
+    // Invert E'(t) without root finding. This is the same longitudinal
+    // momentum relation used by doppler_t_max(), generalized from
+    // E'=E-U to an arbitrary scattered energy.
+    const auto t_at_energy =
+        [&](double scattered_energy_keV) {
+            const double Ep = scattered_energy_keV;
+            const double one_minus_cosine = 1.0 - cos_theta;
+            const double denominator2 =
+                energy_keV * energy_keV + Ep * Ep
+                - 2.0 * energy_keV * Ep * cos_theta;
+            if (!(denominator2 > 0.0))
+                return 0.0;
+            return (
+                energy_keV * Ep * one_minus_cosine
+                    / kElectronMassKeV
+                - (energy_keV - Ep))
+                / std::sqrt(denominator2);
+        };
+
+    double probability = 0.0;
+    for (int shell = 0; shell < elem.num_compton_shells; ++shell) {
+        const double binding_keV = elem.shell_binding_keV[shell];
+        if (binding_keV >= energy_keV)
+            continue;
+        const double shell_weight =
+            elem.shell_occupancy[shell] / eligible_occupancy;
+        const double maximum_energy = energy_keV - binding_keV;
+        const double J0 = elem.shell_J0[shell];
+        const double t_max =
+            doppler_t_max(energy_keV, cos_theta, binding_keV);
+        const double F_max =
+            compton_profile_cdf(J0, t_max / kAlphaFS);
+
+        if (!(F_max > 1e-12)) {
+            const double capped_free =
+                std::min(free_energy, maximum_energy);
+            if (lower_keV <= capped_free && capped_free < upper_keV)
+                probability += shell_weight;
+            continue;
+        }
+
+        const auto energy_cdf = [&](double boundary_keV) {
+            // The sampler clamps the final energy to [0,E-U], so the CDF
+            // includes the tiny negative-momentum tail at the lower bound
+            // and is exactly one at the binding-energy cap.
+            if (boundary_keV <= 0.0)
+                return 0.0;
+            if (boundary_keV >= maximum_energy)
+                return 1.0;
+            const double t = t_at_energy(boundary_keV);
+            const double F =
+                compton_profile_cdf(J0, t / kAlphaFS);
+            return std::max(0.0, std::min(1.0, F / F_max));
+        };
+        const double shell_probability =
+            energy_cdf(upper_keV) - energy_cdf(lower_keV);
+        probability +=
+            shell_weight * std::max(0.0, shell_probability);
+    }
+    return std::max(0.0, std::min(1.0, probability));
+}
+
 double klein_nishina_total(double energy_keV) {
     double alpha = energy_keV / kElectronMassKeV;
 
@@ -424,6 +518,7 @@ ComptonScatterResult finish_compton_at_angle(
     // Doppler-broadened by the bound electron's momentum.
     double scattered_energy = compton_scattered_energy(energy_keV, cos_theta);
     double binding_keV = 0.0;
+    int shell_index = -1;
 
     const ElementData* elem = (doppler && Z > 0)
         ? &CrossSectionData::instance().element(Z) : nullptr;
@@ -466,6 +561,7 @@ ComptonScatterResult finish_compton_at_angle(
             scattered_energy =
                 std::max(0.0, std::min(scattered_energy, energy_keV - U));
             binding_keV = U;
+            shell_index = shell;
         }
         // No eligible shell (E below every binding energy): free-line fallback.
     }
@@ -483,7 +579,7 @@ ComptonScatterResult finish_compton_at_angle(
         new_dir = rotate_direction(direction, cos_theta, phi);
     }
 
-    return {scattered_energy, deposited, cos_theta, new_dir, binding_keV};
+    return {scattered_energy, deposited, cos_theta, new_dir, binding_keV, shell_index};
 }
 
 } // namespace ceelo

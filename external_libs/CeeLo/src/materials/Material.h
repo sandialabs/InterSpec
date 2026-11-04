@@ -203,4 +203,9 @@ Material make_Cellulose();
 /// Composition: N(75.53%), O(23.18%), Ar(1.28%), C(0.01%) by mass.
 Material make_Air();
 
+/// Ordinary (Portland) concrete, density 2.3 g/cm³ — NIST/ICRU "concrete,
+/// ordinary" composition. Used for building floors/walls/ceilings in
+/// environment-scatter geometries.
+Material make_Concrete();
+
 } // namespace ceelo

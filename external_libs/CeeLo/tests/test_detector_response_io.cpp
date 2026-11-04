@@ -39,6 +39,10 @@
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 #include <cmath>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -1314,6 +1318,232 @@ BOOST_AUTO_TEST_CASE(certificate_invariant_content_hash) {
     BOOST_CHECK_EQUAL(reload->content_hash(), h_bare);
 }
 
+namespace {
+
+// Every optional part of the stored response populated at once (bullet, rounded bore, dead
+// layer, endcap reference, eta_tot table + its near field, scatter-in recapture, model transfer,
+// grounding with points, near field), so content_hash_tracks_every_serialized_field sees them all.
+std::shared_ptr<DetectorResponse> make_kitchen_sink_response() {
+    auto r = make_synthetic_nai(0.5, /*with_grounding=*/true);
+    GeometryDescriptor& gd = r->descriptor;
+    gd.bullet_radius_cm = 0.4;
+    gd.bore = BoreHoleConfig{0.5, 4.0, true};
+    gd.dead_layer = DeadLayerConfig{0.07, 0.05, 0.03};
+    gd.reference_point = ReferencePoint::EndcapFront;
+
+    r->tot_eff.tier = TotEffTier::EtaTotTable;
+    r->tot_eff.eta_tot = r->eta_fep;
+    r->scatter_in_recapture = 0.8;
+    r->model_transfer = SigmaTransferModel{};
+    r->floors.fep_far = 0.012;
+    r->grounding.curve_derived = true;
+
+    ResponseProvenance& p = r->provenance;
+    p.ceelo_version = "test-version";
+    p.created_utc = "2026-11-01T00:00:00Z";
+    p.min_distance_cm = 2.5;
+    p.method = ProductionMethod::CurveTransfer;
+    p.generation_seed = 1234;
+    p.precision_profile = PrecisionProfile::RelaxMild;
+    p.back_coverage = BackCoverage::Fine;
+    p.n_anchor_angles = 3;
+
+    r->finalize();
+    add_near_field_table(*r);
+    r->tot_eff.near_field = r->near_field;
+    r->tot_eff.finalize();
+    return r;
+}
+
+// A box crystal with quadrant symmetry: the only layout whose eta table has a phi axis, and the
+// "not characterized" total tier.
+std::shared_ptr<DetectorResponse> make_quadrant_box_response() {
+    auto r = std::make_shared<DetectorResponse>();
+    r->descriptor.set_dimensions(BoxDims{1.0, 1.0, 1.5});
+    r->descriptor.symmetry = ResponseSymmetry::Quadrant;
+    r->descriptor.crystal_material_index = 0;
+    r->descriptor.materials = {MaterialSpec::from(make_CZT())};
+    r->mu_tables.push_back(MuTable::sample(make_CZT(), 0));
+
+    EtaTable& t = r->eta_fep;
+    t.energies_keV = {40.0, 662.0, 3000.0};
+    t.cos_thetas = {0.02, 0.5, 1.0};
+    t.phis_deg = {0.0, 45.0};
+    t.ln_eta.assign(3 * 3 * 2, std::log(0.6));
+    t.frac_sigma.assign(3 * 3 * 2, 0.004);
+    r->tot_eff.tier = TotEffTier::NotCharacterized;
+    r->provenance.kernel_n_rays = 1024;
+    r->finalize();
+    return r;
+}
+
+struct XmlEdit {
+    std::string what;
+    std::string xml;
+};
+
+// Every single edit of `xml` that content_hash_tracks_every_serialized_field makes: each attribute
+// value and each element's text changed - the first, middle and last token of a list, a number
+// scaled by (1 + 1e-6) and, separately, incremented by one (which is what moves an integer field),
+// a string with a character appended - and each element removed whole.
+std::vector<XmlEdit> single_edit_variants(const std::string& xml) {
+    std::vector<XmlEdit> out;
+
+    const auto edit_span = [&](const size_t begin, const size_t end, const std::string& context) {
+        const std::string text = xml.substr(begin, end - begin);
+        std::vector<std::pair<size_t, size_t>> toks;  // [start, end) within `text`
+        for (size_t i = 0; i < text.size();) {
+            while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+            const size_t s = i;
+            while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+            if (i > s) toks.emplace_back(s, i);
+        }
+
+        if (toks.empty()) {  // an empty attribute value
+            std::string x = xml;
+            x.insert(begin, "x");
+            out.push_back({context + " '' -> 'x'", std::move(x)});
+            return;
+        }
+
+        std::vector<size_t> picks{0, toks.size() / 2, toks.size() - 1};
+        picks.erase(std::unique(picks.begin(), picks.end()), picks.end());
+        for (const size_t k : picks) {
+            const std::string tok = text.substr(toks[k].first, toks[k].second - toks[k].first);
+            char* parse_end = nullptr;
+            const double v = std::strtod(tok.c_str(), &parse_end);
+            std::vector<std::string> replacements;
+            if (parse_end && (*parse_end == '\0')) {
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "%.17g", (v != 0.0) ? v * (1.0 + 1e-6) : 1e-6);
+                replacements.push_back(buf);
+                std::snprintf(buf, sizeof(buf), "%.17g", v + 1.0);
+                replacements.push_back(buf);
+            } else {
+                replacements.push_back(tok + "x");
+            }
+
+            for (const std::string& rep : replacements) {
+                std::string x = xml;
+                x.replace(begin + toks[k].first, toks[k].second - toks[k].first, rep);
+                out.push_back({context + " token " + std::to_string(k) + " '" + tok + "' -> '"
+                                   + rep + "'", std::move(x)});
+            }
+        }
+    };
+
+    // Attribute values.
+    for (size_t pos = xml.find("=\""); pos != std::string::npos; pos = xml.find("=\"", pos + 2)) {
+        const size_t name_begin = xml.find_last_of(" \t\n<", pos) + 1;
+        const size_t value_end = xml.find('"', pos + 2);
+        edit_span(pos + 2, value_end, "attribute " + xml.substr(name_begin, pos - name_begin));
+    }
+
+    // Element text (and, for each element, its removal).
+    for (size_t lt = xml.find('<'); lt != std::string::npos; lt = xml.find('<', lt + 1)) {
+        if ((xml[lt + 1] == '/') || (xml[lt + 1] == '?') || (xml[lt + 1] == '!')) continue;
+        const size_t name_end = xml.find_first_of(" \t\n/>", lt + 1);
+        const std::string name = xml.substr(lt + 1, name_end - lt - 1);
+        const size_t gt = xml.find('>', lt);
+
+        const size_t text_end = xml.find('<', gt);
+        if ((xml[gt - 1] != '/') && (text_end != std::string::npos)
+            && (xml.find_first_not_of(" \t\n", gt + 1) < text_end))
+            edit_span(gt + 1, text_end, "text of <" + name + ">");
+
+        // This schema never nests an element inside one of the same name, so the first closing tag
+        // is the matching one.
+        size_t elem_end = gt + 1;
+        if (xml[gt - 1] != '/') {
+            const size_t close = xml.find("</" + name + ">", gt);
+            if (close == std::string::npos) continue;
+            elem_end = close + name.size() + 3;
+        }
+        std::string x = xml;
+        x.erase(lt, elem_end - lt);
+        out.push_back({"remove <" + name + "> at " + std::to_string(lt), std::move(x)});
+    }
+
+    return out;
+}
+
+}  // namespace
+
+BOOST_AUTO_TEST_CASE(content_hash_tracks_every_serialized_field) {
+    // content_hash identifies a response by its stored content: two responses must hash alike
+    // exactly when they serialize alike.  Checked by editing each value (its first, middle and last
+    // token) and removing each element of the XML, one at a time, re-loading it, and asking both
+    // questions - so a field added to the XML but left out of the hash (or hashed but not stored,
+    // which breaks the save/load identity) fails here without this test having to list the fields,
+    // as long as one of the responses below populates it.
+    const std::vector<std::pair<std::string, std::shared_ptr<DetectorResponse>>> responses{
+        {"synthetic NaI", make_synthetic_nai(0.5, true)},
+        {"collimated NaI", make_collimated_nai()},
+        {"kitchen sink", make_kitchen_sink_response()},
+        {"quadrant box", make_quadrant_box_response()}};
+
+    for (const auto& named : responses) {
+        const std::string& name = named.first;
+        const DetectorResponse& base = *named.second;
+        BOOST_REQUIRE(base.certificate.empty());  // so to_xml_string() is exactly the hashed content
+
+        const std::string base_xml = base.to_xml_string();
+        const uint64_t base_hash = base.content_hash();
+        BOOST_CHECK_EQUAL(DetectorResponse::from_xml_string(base_xml)->content_hash(), base_hash);
+
+        size_t num_loaded = 0, num_changed = 0;
+        for (const XmlEdit& edit : single_edit_variants(base_xml)) {
+            std::shared_ptr<DetectorResponse> edited;
+            try {
+                edited = DetectorResponse::from_xml_string(edit.xml);
+            } catch (const std::exception&) {
+                continue;  // an edit the reader rejects says nothing about the hash
+            }
+            ++num_loaded;
+
+            const bool content_changed = (edited->to_xml_string() != base_xml);
+            const bool hash_changed = (edited->content_hash() != base_hash);
+            num_changed += content_changed;
+            BOOST_CHECK_MESSAGE(hash_changed == content_changed,
+                                name + ": " + edit.what + (content_changed
+                                    ? " changes the content but not content_hash"
+                                    : " changes content_hash but not the content"));
+        }
+
+        BOOST_TEST_MESSAGE(name + ": " + std::to_string(num_loaded) + " edits loaded, "
+                           + std::to_string(num_changed) + " changed the content");
+        BOOST_CHECK_MESSAGE(num_changed > 50, name + ": too few edits changed anything ("
+                                                  + std::to_string(num_changed) + ")");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(provenance_generation_choices_optional) {
+    // The recorded generation choices round-trip.  A response saved before they were recorded has
+    // none of the attributes: it loads with them empty, and hashes as it always did.
+    const auto r = make_synthetic_nai(0.5, true);
+    const std::string bare_xml = r->to_xml_string();
+    BOOST_CHECK(bare_xml.find("precisionProfile") == std::string::npos);
+    BOOST_CHECK(bare_xml.find("backCoverage") == std::string::npos);
+    BOOST_CHECK(bare_xml.find("anchorAngles") == std::string::npos);
+    const auto bare = DetectorResponse::from_xml_string(bare_xml);
+    BOOST_CHECK(!bare->provenance.precision_profile);
+    BOOST_CHECK(!bare->provenance.back_coverage);
+    BOOST_CHECK(!bare->provenance.n_anchor_angles);
+    BOOST_CHECK_EQUAL(bare->content_hash(), r->content_hash());
+
+    r->provenance.precision_profile = PrecisionProfile::RelaxMild;
+    r->provenance.back_coverage = BackCoverage::None;  // recorded None differs from not recorded
+    r->provenance.n_anchor_angles = 3;
+    const auto rt = DetectorResponse::from_xml_string(r->to_xml_string());
+    BOOST_REQUIRE(rt->provenance.precision_profile && rt->provenance.back_coverage
+                  && rt->provenance.n_anchor_angles);
+    BOOST_CHECK(*rt->provenance.precision_profile == PrecisionProfile::RelaxMild);
+    BOOST_CHECK(*rt->provenance.back_coverage == BackCoverage::None);
+    BOOST_CHECK_EQUAL(*rt->provenance.n_anchor_angles, 3);
+    BOOST_CHECK_EQUAL(rt->content_hash(), r->content_hash());
+    BOOST_CHECK_NE(rt->content_hash(), bare->content_hash());
+}
+
 // --- GeometryDescriptor standalone XML --------------------------------------
 //
 // A host can store a detector's shape before (or without) any response having
@@ -1606,4 +1836,192 @@ BOOST_AUTO_TEST_CASE(descriptor_declares_the_same_solid_to_every_sink) {
         BOOST_CHECK_CLOSE(active_len(kernel_solid, src, dir),
                           active_len(g, src, dir), 1e-9);
     }
+}
+
+
+// ---------------------------------------------------------------------------
+// Back structure: a layer whose z_end reaches past the envelope inside it has a back plate, and
+// the descriptor's helpers agree with what the ray tracer actually builds.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(back_structure_helpers_match_the_trace) {
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{3.0, 6.0});
+    gd.materials = {MaterialSpec::from(make_HPGe()), MaterialSpec::from(make_Aluminum())};
+    MaterialSpec vac;
+    vac.name = "Vacuum";
+    vac.density_g_per_cm3 = 1.0e-25;
+    vac.composition.push_back(MaterialComponent{1, 1.0});
+    gd.materials.push_back(vac);
+    gd.crystal_material_index = 0;
+
+    LayerSpec gap;                       // 0.4 cm front gap, 0.3 cm side gap
+    gap.material_index = 2;
+    gap.front_thickness_cm = 0.4;
+    gap.side_thickness_cm = 0.3;
+    gap.z_end_cm = 6.0;
+    LayerSpec can;                       // 0.1 cm Al endcap
+    can.material_index = 1;
+    can.front_thickness_cm = 0.1;
+    can.side_thickness_cm = 0.1;
+    can.z_end_cm = 6.0;
+    gd.layers = {gap, can};
+
+    // Nothing behind the crystal yet.
+    BOOST_CHECK_EQUAL(gd.layer_back_thickness_cm(0), 0.0);
+    BOOST_CHECK_EQUAL(gd.layer_back_thickness_cm(1), 0.0);
+    BOOST_CHECK_EQUAL(gd.back_structure_extent_cm(), 0.0);
+
+    // A 1.5 cm vacuum gap behind the crystal, then a 0.2 cm Al back plate.
+    gd.set_layer_back_thickness_cm(0, 1.5);
+    gd.set_layer_back_thickness_cm(1, 0.2);
+    BOOST_CHECK_CLOSE(gd.layer_back_thickness_cm(0), 1.5, 1e-9);
+    BOOST_CHECK_CLOSE(gd.layer_back_thickness_cm(1), 0.2, 1e-9);
+    BOOST_CHECK_CLOSE(gd.back_structure_extent_cm(), 1.7, 1e-9);
+
+    // Re-sizing the inner gap keeps the outer plate's own thickness.
+    gd.set_layer_back_thickness_cm(0, 1.0);
+    BOOST_CHECK_CLOSE(gd.layer_back_thickness_cm(1), 0.2, 1e-9);
+    BOOST_CHECK_CLOSE(gd.back_structure_extent_cm(), 1.2, 1e-9);
+
+    // The front-side quantities do not move.
+    BOOST_CHECK_CLOSE(gd.endcap_front_offset_cm(), 0.5, 1e-9);
+
+    const GeometryDescriptor::Envelope env = gd.outer_envelope();
+    BOOST_CHECK_CLOSE(env.radius_cm, 3.4, 1e-9);
+    BOOST_CHECK_CLOSE(env.z_min_cm, -0.5, 1e-9);
+    BOOST_CHECK_CLOSE(env.z_max_cm, 7.2, 1e-9);
+
+    // Clearance coordinates: straight back exits at z_max, straight sideways at the radius, and
+    //  straight forward at the endcap front.
+    BOOST_CHECK_CLOSE(env.exit_distance_cm(Eigen::Vector3d(0.0, 0.0, 1.0)), 7.2, 1e-9);
+    BOOST_CHECK_CLOSE(env.exit_distance_cm(Eigen::Vector3d(1.0, 0.0, 0.0)), 3.4, 1e-9);
+    BOOST_CHECK_CLOSE(env.exit_distance_cm(Eigen::Vector3d(0.0, 0.0, -1.0)), 0.5, 1e-9);
+    BOOST_CHECK_CLOSE(env.exit_distance_cm(Eigen::Vector3d(0.6, 0.0, 0.8)), 3.4/0.6, 1e-9);
+
+    // A ray along the axis from behind: Al back plate, vacuum gap, then the crystal.
+    std::vector<std::unique_ptr<Material>> owned;
+    const Geometry geom = gd.build_geometry(owned);
+    const std::vector<PathSegment> segs = geom.trace_ray(Eigen::Vector3d(0.0, 0.0, 20.0),
+                                                         Eigen::Vector3d(0.0, 0.0, -1.0));
+    double al_back = 0.0, crystal = 0.0;
+    for (const PathSegment& s : segs) {
+        if (s.is_scoring)
+            crystal += s.length();
+        else if ((s.material == owned.at(1).get()) && (s.t_start < 15.0))
+            al_back += s.length();   // the back plate; the front window is further along
+    }
+    BOOST_CHECK_CLOSE(al_back, 0.2, 1e-6);
+    BOOST_CHECK_CLOSE(crystal, 6.0, 1e-6);
+
+    // Hash and XML round trip carry it (z_end is already serialized and hashed).
+    const GeometryDescriptor back = GeometryDescriptor::from_xml_string(gd.to_xml_string());
+    BOOST_CHECK_CLOSE(back.back_structure_extent_cm(), 1.2, 1e-9);
+}
+
+
+BOOST_AUTO_TEST_CASE(back_plates_cleared_in_place_leave_no_back) {
+    // Setting and clearing back plates in place shifts every outer layer's z_end; the rounding that
+    //  leaves (about 2e-16 cm) must not read as a back structure - a source behind a detector with
+    //  nothing described there is NeedsMc, not "approximate back".
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{3.0, 6.0});
+    gd.materials = {MaterialSpec::from(make_HPGe()), MaterialSpec::from(make_Aluminum())};
+    gd.crystal_material_index = 0;
+    for (int i = 0; i < 4; ++i) {
+        LayerSpec l;
+        l.material_index = 1;
+        l.front_thickness_cm = 0.1;
+        l.side_thickness_cm = 0.1;
+        l.z_end_cm = 6.0;
+        gd.layers.push_back(l);
+    }
+
+    uint64_t state = 12345;
+    const auto next = [&state]() {   // a small LCG: reproducible, and enough to hit the residue
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<double>(state >> 11) / 9007199254740992.0;
+    };
+    for (int trial = 0; trial < 2000; ++trial) {
+        for (int j = 0; j < 6; ++j)
+            gd.set_layer_back_thickness_cm(static_cast<size_t>(4 * next()) % 4, 2.0 * next());
+        for (size_t k = gd.layers.size(); k-- > 0;)
+            gd.set_layer_back_thickness_cm(k, 0.0);
+        for (size_t k = 0; k < gd.layers.size(); ++k)
+            BOOST_REQUIRE_EQUAL(gd.layer_back_thickness_cm(k), 0.0);
+        BOOST_REQUIRE_EQUAL(gd.back_structure_extent_cm(), 0.0);
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Behind the face plane: the response answers beside the detector, and behind a described back;
+// only behind an undescribed back is the answer refuse-grade.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(behind_face_plane_policy) {
+    const double deg = kPi / 180.0;
+
+    // Angle-flat tables (the synthetic NaI's eta is constant): beside the detector is a plain
+    //  answer, and nothing jumps across the face plane.
+    auto flat = make_synthetic_nai();
+    BOOST_REQUIRE(flat->eta_fep.is_angle_flat());
+    const EffResult beside = flat->eps_fep(662.0, 100.0 * deg, 0.0, 20.0);   // z = +3.5 < L
+    BOOST_CHECK(beside.flag == ResponseFlag::Ok);
+    BOOST_CHECK_GT(beside.value, 0.0);
+    const EffResult just_front = flat->eps_fep(662.0, 89.9 * deg, 0.0, 20.0);
+    const EffResult just_behind = flat->eps_fep(662.0, 90.1 * deg, 0.0, 20.0);
+    BOOST_CHECK_CLOSE(just_front.value, just_behind.value, 1.0);
+    BOOST_CHECK_CLOSE(just_front.sigma / just_front.value, just_behind.sigma / just_behind.value, 1.0);
+
+    // Behind the crystal's back plane with nothing described there: refuse-grade, as before.
+    const EffResult behind_bare = flat->eps_fep(662.0, 170.0 * deg, 0.0, 30.0);
+    BOOST_CHECK(behind_bare.flag == ResponseFlag::NeedsMc);
+
+    // Tables that vary with angle but stop at the grazing node: extrapolated, with an envelope.
+    auto tilted = make_synthetic_nai();
+    {
+        EtaTable& t = tilted->eta_fep;
+        for (size_t e = 0; e < t.energies_keV.size(); ++e)
+            for (size_t c = 0; c < t.cos_thetas.size(); ++c)
+                t.ln_eta[t.index(e, c, 0)] = std::log(0.5) + 0.1 * (1.0 - t.cos_thetas[c]);
+        tilted->finalize();
+    }
+    BOOST_REQUIRE(!tilted->eta_fep.is_angle_flat());
+    const EffResult extrap = tilted->eps_fep(662.0, 100.0 * deg, 0.0, 20.0);
+    BOOST_CHECK(extrap.flag == ResponseFlag::OutOfRangeClamped);
+    BOOST_CHECK_GE(extrap.sigma_model / extrap.value, model_sigma::behind_extrapolation - 1e-12);
+
+    // A described back: behind it is answered, carrying what approximating the back costs.
+    auto backed = make_synthetic_nai();
+    {
+        LayerSpec back;
+        back.material_index = 1;   // Al
+        back.z_end_cm = 7.62;
+        backed->descriptor.layers.push_back(back);
+        backed->descriptor.set_layer_back_thickness_cm(1, 0.5);
+        backed->finalize();
+    }
+    BOOST_REQUIRE_GT(backed->descriptor.back_structure_extent_cm(), 0.0);
+    const EffResult behind_backed = backed->eps_fep(662.0, 170.0 * deg, 0.0, 30.0);
+    BOOST_CHECK(behind_backed.flag != ResponseFlag::NeedsMc);
+    BOOST_CHECK_GE(behind_backed.sigma_model / behind_backed.value,
+                   model_sigma::back_structure_approx - 1e-12);
+    // ...and the back plate attenuates: less than the bare back at 60 keV.
+    BOOST_CHECK_LT(backed->eps_fep(60.0, 170.0 * deg, 0.0, 30.0).value,
+                   flat->eps_fep(60.0, 170.0 * deg, 0.0, 30.0).value);
+
+    // Behind the face plane a response without side & back nodes is shadow-gated on whatever the
+    //  direct path crosses: beside a collimated detector that is the collimator's wall, which
+    //  leaves the scatter the removal-only kernel does not count to dominate...
+    auto col = make_collimated_nai();
+    const EffResult col_beside = col->eps_fep(200.0, 100.0 * deg, 0.0, 30.0);
+    BOOST_CHECK((col_beside.flag == ResponseFlag::Shadowed) || (col_beside.flag == ResponseFlag::NeedsMc));
+    // ...while beside a bare can the direct path is clear.
+    const EffResult flat_beside = flat->eps_fep(200.0, 100.0 * deg, 0.0, 30.0);
+    BOOST_CHECK(flat_beside.flag != ResponseFlag::Shadowed);
+    BOOST_CHECK(flat_beside.flag != ResponseFlag::NeedsMc);
+
+    // The transfer envelope saturates past 90 degrees rather than falling back toward on-axis.
+    const SigmaTransferModel m;
+    BOOST_CHECK_CLOSE(m.components(20.0, -0.5, 662.0).offaxis, m.components(20.0, 0.0, 662.0).offaxis, 1e-9);
+    BOOST_CHECK_CLOSE(m.components(20.0, -1.0, 662.0).offaxis, m.components(20.0, 0.0, 662.0).offaxis, 1e-9);
 }

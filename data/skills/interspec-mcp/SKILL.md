@@ -16,6 +16,10 @@ metadata:
 
 InterSpec is a nuclear radiation spectral analysis application. The MCP server exposes tools for programmatic spectrum analysis, nuclide identification, activity fitting, isotopics, and nuclear data queries.
 
+If the server has a `create_session` tool, it is a multi-session analysis server: see the [interspec-mcp-agent](../interspec-mcp-agent/SKILL.md) skill for sessions, file exchange, and working with its built-in assistant.
+
+If the server is `InterSpec-mcp-stdio` (launched by your MCP client, rather than reached over HTTP), it has a single session of its own, with no window and no browser: load spectra with `load_spectrum_file` and an absolute `path`, and there is no `userSession` argument. The spectrum and time-chart images are drawn by the server itself (PNG or JPEG; labels are always in English). InterSpec's built-in assistant (`assistant_submit_prompt`) is only offered if the user's `llm_config.xml` configures an LLM provider and allows MCP clients to use it.
+
 ## Core Principles
 
 1. **Tool-first**: Always use tools to access spectrum data and nuclear information. Tool calls are cheap; assumptions are expensive.
@@ -40,13 +44,13 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 ### Spectrum Management
 - `get_loaded_spectra` - List currently loaded spectrum types (Foreground, Background, Secondary)
 - `get_spectrum_info` - Detailed metadata: live time, energy range, calibration, detector type. Pass `fileInfo: true` for full file details.
-- `load_spectrum_file` - Load a spectrum file from the filesystem. Load foreground first if loading a pair (background may be cleared when foreground changes).
+- `load_spectrum_file` - Load a spectrum file from the filesystem (on a multi-session server, a path like `input/<file>` in the session directory), the way the GUI opens it: for a file with several samples it picks one (and may also load the file's background sample as the background); the result's `summary` and `displayed` say which samples and detectors are shown, and `samplesNotDisplayed` lists the others. Choose with `sampleNumbers` (and `detectors` for a foreground). Load foreground first if loading a pair (background may be cleared when foreground changes). `conversation` (`keep`/`resume`/`new`) controls what happens to the assistant conversation on a foreground load.
 - `get_counts_in_energy_range` - Photon counts in an energy range with statistical foreground/background comparison.
 
 ### Peak Detection and Management
 - `get_peaks` - Peaks in a spectrum, grouped by ROI. `filter` selects the subset: `all` (default, automated search + analysis peaks), `analysis` (internal analysis state - user-selected or agent-added), `unidentified` (foreground peaks without source assignments, elevated over background, sorted by amplitude), or `elevated_above_background`.
 - `get_identified_sources` - Unique sources currently assigned to analysis peaks.
-- `add_analysis_peak` - Fit and add a single peak at a specified energy, optionally assigning a source.
+- `add_analysis_peak` - Fit and add a peak near a specified energy, optionally assigning a source. Give `energy` as an array to fit several peaks together in one ROI (optionally with the ROI range and continuum type); nearby existing peaks are refit with them or replaced, so check `removedPeaks` and `warnings` in the result.
 - `add_analysis_peaks_for_source` - Fit all detectable peaks for one or more sources at once. Much better than fitting individually for multi-line sources. Use `options: ["FitNormPeaks"]` with `source: null` for NORM background. By default, existing peaks for the same source are replaced and new ROIs are trimmed to avoid other sources' ROIs. Use `options: ["RefitInterferingAnalysisPeaks"]` when a source gamma overlaps an existing ROI from a different source (e.g., U-235/Ra-226 at 186 keV). Use `options: ["DoNotUseExistingRois"]` to skip source gammas that overlap any existing ROI.
 - `edit_analysis_peak` - Everyday peak edits in one call (centroid, fwhm, amplitude, fit-for flags, ROI bounds, source, color, label, usage flags), with automatic refit. Also supports structural actions (delete, split, merge).
 - `set_peak_shape` - Expert peak-shape surgery: skew type/params, continuum type/coefficients, uncertainty overrides.
@@ -64,13 +68,14 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 - `get_automated_id_results` - Results from on-board and GADRAS automated ID algorithms (may be wrong/incomplete).
 
 ### Peak Validation
-- `escape_peak_check` - Check if a peak is a single/double escape peak of a higher-energy parent.
-- `sum_peak_check` - Check if a peak is a cascade-sum or random-sum (pile-up) peak.
+- `escape_peak_check` - Check if a peak is a single/double escape peak of a higher-energy parent (parents below 1022 keV cannot pair-produce), or a detector K x-ray escape peak (Ge for HPGe, I for NaI, ...).
+- `sum_peak_check` - Check if a peak is a cascade-sum (gamma-gamma, or EC/IC x-ray + gamma), random-sum (pile-up), or both; gives the expected random-sum rate when the pile-up rate can be measured.
+- `compton_scatter_peak_check` - Check if a peak, or a broad feature with no fitted peak, is a backscatter peak or Compton edge of a higher-energy peak.
 - `beta_continuum_check` - Deterministic check for a pure-beta-emitter (bremsstrahlung) continuum; background-subtracts the foreground and grades the net continuum shape (requires a background loaded). Returns candidate pure-beta nuclides consistent with the observed termination energy.
 - `peak_based_relative_efficiency` - Validate source ID by checking if peak areas are consistent with a smooth relative efficiency curve. Run on one nuclide at a time. See [interspec-nuclide-id](../interspec-nuclide-id/SKILL.md).
 
 ### Detection and Dose
-- `currie_mda_calc` - Minimum Detectable Activity using Currie/ISO 11929 methodology. Also checks if a peak appears present.
+- `currie_mda_calc` - Minimum Detectable Activity using Currie/ISO 11929 methodology. Also checks if a peak appears present; a `continuumWarning` means that check is unreliable there (curved continuum, Compton edge).
 - `photopeak_detection_efficiency` - Fraction of photons that contribute to a peak, accounting for shielding, distance, and detector efficiency.
 - `calculate_dose` - Gamma dose rate from a nuclide at a distance (ANSI/ANS-6.1.1-1991, AP orientation).
 
@@ -84,7 +89,7 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 - `get_material_info` - Material properties (density, atomic number, composition).
 
 ### Activity and Shielding Fitting
-- `activity_fit` - Fit activities using current GUI configuration (`from_app_state` mode).
+- `activity_fit` - Fit activities using the current GUI configuration, and the peaks marked for fitting (no arguments).
 - `activity_fit_one_off` - Custom fit with full specification (distance, geometry, shielding, peaks). Does not modify GUI state.
 - `get_shielding_source_config` - Current fit configuration from app state.
 - `modify_shielding_source_config` - Modify fit configuration (add/remove shielding, set distance/geometry, source ages).
@@ -111,7 +116,6 @@ See the [interspec-energy-cal](../interspec-energy-cal/SKILL.md) sub-skill for d
 
 ### Relative Efficiency
 - `peak_based_relative_efficiency` - Validate source IDs by checking peak area consistency.
-- `get_rel_act_manual_state` - Current relative efficiency configuration state.
 
 ## Quick-Start Workflows
 

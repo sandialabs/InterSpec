@@ -17,13 +17,10 @@
   height: 100%;
 }
 
-/* Menu icon positioned in upper-right corner.  Reserve room for Windows' native vertical
-   scrollbar, which occupies layout space and can otherwise cover the right edge of the button. */
-.LlmMenuIcon {
-  position: absolute;
-  top: 2px;
-  right: 20px;
-  z-index: 100;
+/* Details only of use when developing the assistant (raw JSON menus, invocation IDs, raw tool
+   parameters and results); LlmToolGui adds .LlmHideDebug to itself unless the user asked to see them. */
+.LlmHideDebug .LlmDebugOnly {
+  display: none !important;
 }
 
 /* Scroll area for conversations */
@@ -51,12 +48,13 @@
 /* Floating input area (overlays the scroll area) */
 /* ============================================ */
 
-/* Horizontal row pinned to the bottom of the scroll wrapper, floating over the conversation.  The
-   text-area column grows on the left; the icon submit/stop button stays pinned bottom-right. */
+/* Horizontal row pinned to the bottom of the scroll wrapper, floating over the conversation: the
+   conversation menu icon (unless it is in a header), the growing text-area column, and the icon
+   submit/stop button pinned bottom-right. */
 .LlmInputArea {
   position: absolute;
   left: 8px;
-  right: 22px;   /* leave room for the scrollbar / menu icon */
+  right: 22px;   /* leave room for the scrollbar */
   bottom: 8px;
   z-index: 50;
   display: flex;
@@ -68,6 +66,17 @@
   border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+/* The conversation menu icon leads the input bar (unless it is in the side panel's header); centered
+   against the 34px send button, as the row aligns its items to the bottom. */
+.LlmInputArea > button.LlmMenuIcon,
+.LlmInputArea > button.LlmMenuIcon:hover {
+  position: static;
+  flex-shrink: 0;
+  min-width: 24px;
+  margin: 0 0 5px 0;
+  padding: 0;
 }
 
 /* Auto-growing text area */
@@ -102,6 +111,7 @@
    (higher specificity than a bare class) can't shrink it on mouseover. */
 .llm-send-button,
 .llm-send-button:hover {
+  position: relative;   /* positions the .LlmWorkingRing */
   flex-shrink: 0;
   min-width: 0;
   width: 34px;
@@ -122,12 +132,60 @@
   background: var(--interspec-menubar-hover-color);
 }
 
-/* The icon <img> Wt renders inside the button (override the global .Wt-icon margin/padding). */
-.llm-send-button img {
+/* The icon <img> Wt renders inside the button (override the global .Wt-icon margin/padding, and
+   the theme's `.Wt-btn.with-label img` padding, as the ring markup counts as a label).
+   Dark themes invert just the glyph (like .InvertInDark), leaving the ring's colors alone. */
+.llm-send-button img,
+.llm-send-button.Wt-btn.with-label img {
   width: 18px;
   height: 18px;
   margin: 0;
   padding: 0;
+  filter: var(--interspec-icon-filter);
+}
+
+/* "Working" ring: a short dash travelling around the rounded-square stop icon, shown only while the
+   button is a Stop button.  Accent color while waiting on the LLM; warning color while only tools
+   are running.  The dash lengths are fractions of the rect's perimeter (~93.7). */
+.LlmWorkingRing {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -14px;   /* centered on the button (and so on the icon); the ring is 28x28 */
+  margin-top: -14px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.llm-send-button.llm-stop-button .LlmWorkingRing {
+  display: block;
+}
+
+.LlmWorkingRing rect {
+  fill: none;
+  stroke: var(--interspec-accent-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 20 73.7;
+  animation: LlmWorkingRingTrace 1.6s linear infinite;
+}
+
+.llm-send-button.llm-tools-running .LlmWorkingRing rect {
+  stroke: var(--interspec-warning-color);
+}
+
+@keyframes LlmWorkingRingTrace {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -93.7; }
+}
+
+/* No motion: a solid, colored outline still shows the working state. */
+@media (prefers-reduced-motion: reduce) {
+  .LlmWorkingRing rect {
+    animation: none;
+    stroke-dasharray: none;
+  }
 }
 
 /* Disabled submit button (JS sets the native `disabled` attribute when there is nothing to send):
@@ -167,6 +225,11 @@
   flex-shrink: 1;
 }
 
+/* The timer (the second status text) sits at the right, next to the menu icon. */
+.LlmInteractionDisplay.Wt-panel > .titlebar .LlmStatusIndicator + .LlmStatusIndicator {
+  flex: 0 0 auto;
+}
+
 .LlmInteractionDisplay.Wt-panel > .titlebar .RoundMenuIcon {
   margin-left: auto;
   flex-shrink: 0;
@@ -185,14 +248,21 @@
   margin-left: 8px;
 }
 
-/* Summary section at top of interaction */
+/* Summary section, after the turns; hidden while the conversation runs. */
 .LlmInteractionSummary {
   padding: 8px 12px;
   background-color: var(--interspec-background-color);
   border-bottom: 1px solid var(--interspec-border-color);
   font-size: 12px;
   color: var(--interspec-label-color);
+  margin-top: 10px;
   margin-bottom: 10px;
+}
+
+/* The gap below the last turn belongs to the summary, so a running conversation's newest turn isn't
+   followed by empty space. */
+.LlmTurnContainer > :last-child {
+  margin-bottom: 0;
 }
 
 .LlmSummaryItem {
@@ -200,11 +270,51 @@
   margin-right: 10px;
 }
 
-/* Sub-agent nesting indentation */
+/* Sub-agent nesting indentation (phones; see .LlmSubAgentFlat for desktop) */
 .LlmSubAgentNesting {
   margin-left: 20px;
   margin-top: 10px;
   border-left: 3px solid var(--interspec-border-color);
+}
+
+/* Desktop: a sub-agent's conversation sits in its tool round's (blue-bordered) result item, which
+   already sets it apart, so it is not drawn as a panel of its own.  Its title bar (status, total
+   time, menu) is only shown with debug options on. */
+.LlmInteractionDisplay.LlmSubAgentFlat {
+  margin: 4px 0 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Grows to fit its text (InterSpec.css fixes .titlebar at 25px, which the other panels' padding
+   leaves room for), as the sub-agent's "question" usually wraps. */
+.LlmInteractionDisplay.LlmSubAgentFlat.Wt-panel > .titlebar {
+  height: auto;
+  min-height: 24px;
+  padding: 4px 0;
+  font-size: 13px;
+  border-bottom: none;
+  background-color: transparent !important;
+}
+
+.LlmInteractionDisplay.LlmSubAgentFlat.Wt-panel > .body {
+  padding: 0;
+  background-color: transparent;
+}
+
+/* A sub-agent's "question" is the whole task prompt it was given; limited to a few lines until
+   clicked. */
+.LlmSubAgentPrompt {
+  cursor: pointer;
+}
+
+.LlmSubAgentPrompt:not(.LlmExpanded) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .LlmUserQuestion {
@@ -264,6 +374,34 @@
 .Wt-panel.LlmInteractionTurnDisplay .titlebar .RoundMenuIcon {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* A turn's title (e.g., the tools called) is limited to two lines, with an ellipsis, so it does not
+   overflow the title bar when the conversation is narrow (e.g., in the side panel). */
+.LlmInteractionTurnDisplay.Wt-panel > .titlebar .LlmTurnTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+/* Status at the right of a turn's title: a live "Pending LLM response... 5s" counter, or the call
+   duration once done.  It takes over the auto margin from the menu icon that follows it. */
+.LlmTurnStatus {
+  margin-left: auto;
+  padding: 0 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--interspec-label-color);
+}
+
+.Wt-panel.LlmInteractionTurnDisplay .titlebar .LlmTurnStatus + .RoundMenuIcon {
+  margin-left: 0;
 }
 
 .LlmInteractionTurnDisplay.Wt-panel > .body {
@@ -381,6 +519,44 @@
   color: var(--interspec-text-color);
 }
 
+/* ============================================ */
+/* LlmToolRoundDisplay - a tool-call turn and its results, in one panel (it also has the
+   .LlmInteractionTurnDisplay class, for the common turn styling) */
+/* ============================================ */
+
+.LlmToolRoundDisplay.Wt-panel > .titlebar {
+  border-bottom: 1px solid var(--interspec-border-color);
+}
+
+.LlmToolRoundDisplay.LlmToolRoundError.Wt-panel > .titlebar .LlmTurnTitle {
+  color: var(--interspec-error-color);
+}
+
+/* The request and results panels inside: only debug options show their title bars (with their
+   menus), and the results are drawn flat, as part of the round. */
+.LlmToolRoundBody > .LlmInteractionTurnDisplay.Wt-panel > .titlebar {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.LlmToolRoundBody > .LlmToolRequestDisplay {
+  margin-bottom: 8px;
+}
+
+.LlmToolRoundBody > .LlmToolResultsDisplay {
+  margin-bottom: 0;
+  border: none;
+  background: transparent;
+}
+
+.LlmToolRoundBody > .LlmToolResultsDisplay.Wt-panel > .body {
+  padding: 0;
+}
+
+.LlmToolRoundBody .LlmToolResultItem:last-child {
+  margin-bottom: 0;
+}
+
 .LlmToolResultItem {
   margin-bottom: 12px;
   padding: 10px;
@@ -469,6 +645,7 @@
   margin: 6px 8px;
 }
 
+/* Phones only; on desktop the sub-agent is in a tool-round panel titled "X agent". */
 .LlmSubAgentLabel {
   display: block;
   margin-top: 12px;
@@ -476,6 +653,16 @@
   font-weight: 600;
   font-size: 13px;
   color: var(--interspec-text-color);
+}
+
+/* While a sub-agent runs, its result item is the newest content, so drop the margins stacked below
+   it; they return (with the result text) once it finishes.  Specific enough to beat the phone rules. */
+.LlmToolResultItem.LlmSubAgentRunning > .LlmInteractionDisplay {
+  margin-bottom: 0;
+}
+
+.LlmToolResultItem.LlmSubAgentRunning:last-child {
+  margin-bottom: 0;
 }
 
 /* ============================================ */
@@ -540,6 +727,28 @@
   font-size: 13px;
   margin-top: 12px;
   font-style: italic;
+}
+
+/* A conversation cut off when the assistant, or InterSpec, was closed; see
+   LlmInteractionDisplay::showInterruptedPanel(). */
+.LlmInterruptedPanel {
+  color: var(--interspec-text-color);
+  background-color: var(--interspec-input-background);
+  border-left: 4px solid var(--interspec-warning-color);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.LlmInterruptedMessage {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.LlmResumeButton {
+  margin-right: 8px;
+  cursor: pointer;
 }
 
 /* ============================================ */
@@ -611,6 +820,25 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Optional per-provider banner (llm_config.xml <Banner>), above the text area.  Clamped to two
+   lines; the full text is in its tooltip. */
+.LlmInputBanner {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 2px 6px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  border-left: 3px solid var(--interspec-accent-color);
+  background: var(--interspec-highlight-background);
+  color: var(--interspec-text-color);
 }
 
 /* Horizontal strip showing staged image thumbnails */
@@ -846,3 +1074,307 @@
 .LlmMarkdownBody .katex-error {
   color: var(--interspec-error-color) !important;
 }
+
+
+/* ============================================ */
+/* Side panel (InterSpec's LlmSidePanel)        */
+/* ============================================ */
+
+/* The panel, right of the charts and tool tabs, with a draggable splitter to its left.  Opaque, as
+   Wt's full-width splitter between the charts and the tool tabs is underneath it. */
+.LlmSidePanel {
+  box-sizing: border-box;
+  background-color: var(--interspec-background-color);
+  border-left: 1px solid var(--interspec-border-color);
+}
+
+/* Title, then the move-out-of-the-panel button, the conversation menu icon (desktop), and the close icon.
+   Wt's layout leaves a 5px gap right of the panel (it reserves 10px for the splitter, but uses 5px);
+   the gap shows the app background, same as the panel, so only the header bar needs extending -
+   with a shadow, as changing the panels size or position would upset Wt's measuring of it. */
+.LlmSidePanelHeader {
+  box-shadow: 5px 0 0 0 var(--interspec-titlebar-background);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  background: var(--interspec-titlebar-background);
+  color: var(--interspec-button-text-color);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.LlmSidePanelTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.LlmSidePanelHeader > button.LlmSidePanelBtn,
+.LlmSidePanelHeader > button.LlmSidePanelBtn:hover {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 18px 18px;
+  cursor: pointer;
+}
+
+.LlmSidePanelHeader > button.LlmSidePanelBtn { opacity: 0.7; }
+.LlmSidePanelHeader > button.LlmSidePanelBtn:hover { opacity: 1; }
+
+.LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToTabs { background-image: url('images/llm_dock_bottom.svg'); }
+.LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToWindow { background-image: url('images/llm_dock_window.svg'); }
+.LlmSidePanelHeader > button.LlmSidePanelBtn.LlmSideToFullScreen { background-image: url('images/llm_expand.svg'); }
+
+/* Desktop: the conversation menu icon, moved here from the input bar (LlmToolGui::setMenuIconHost). */
+.LlmSidePanelMenuSlot {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.LlmSidePanelMenuSlot:empty {
+  display: none;
+}
+
+.LlmSidePanelMenuSlot > button.LlmMenuIcon,
+.LlmSidePanelMenuSlot > button.LlmMenuIcon:hover {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin: 0;
+  padding: 0;
+  background-position: center;
+  background-size: 20px 20px;
+}
+
+/* The glyph is thin-stroked, so it needs more opacity than the other header buttons to match them. */
+.LlmSidePanelMenuSlot > button.LlmMenuIcon { opacity: 0.9; }
+.LlmSidePanelMenuSlot > button.LlmMenuIcon:hover { opacity: 1; }
+
+.LlmSidePanelHeader > .LlmSidePanelClose,
+.LlmSidePanelHeader > .LlmSidePanelClose:hover {
+  flex-shrink: 0;
+  margin: 0 0 0 2px;
+  cursor: pointer;
+}
+
+/* Phones (landscape): the panel header has the full-screen button, so the input rows one is not
+   needed.  As when docked in the tool tabs, the menu icon is only shown when full-screen. */
+.LlmSidePanel .LlmDocked .LlmExpandBtn,
+.LlmSidePanel .LlmDocked .LlmExpandBtn:hover {
+  display: none;
+}
+
+
+/* ============================================ */
+/* Phones (LlmToolGui adds .LlmPhone to itself)  */
+/* ============================================ */
+
+/* On phones, when full-screen, the dock button and conversation menu sit at the right of the windows
+   header bar (see LlmToolGui::setPhoneWindowHeader).  The generic phone-header button rules would
+   otherwise strip their icons (background:none). */
+.PhoneAuxWindowFooter > .LlmHeaderTools {
+  float: right;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-right: 6px;
+}
+
+.LlmHeaderTools > button.LlmHeaderMenuIcon,
+.LlmHeaderTools > button.LlmHeaderMenuIcon:hover,
+.LlmHeaderTools > button.LlmDockBtn,
+.LlmHeaderTools > button.LlmDockBtn:hover {
+  position: static;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-repeat: no-repeat;
+}
+
+.LlmHeaderTools > button.LlmHeaderMenuIcon,
+.LlmHeaderTools > button.LlmHeaderMenuIcon:hover {
+  background-image: url('images/more_menu_icon.svg');
+  background-position: 0.25px;
+}
+
+.LlmHeaderTools > button.LlmDockBtn,
+.LlmHeaderTools > button.LlmDockBtn:hover {
+  background-image: url('images/llm_shrink.svg');
+  background-position: center;
+  background-size: 20px 20px;
+  opacity: 0.7;
+}
+
+/* Phones, docked in the tools tab strip: an "expand to full-screen" button leads the input row (and
+   sits under the "not configured" message), and the menu icon is hidden (it is in the full-screen
+   windows header). */
+.LlmExpandBtn,
+.LlmExpandBtn:hover {
+  display: none;
+}
+
+.LlmDocked .LlmExpandBtn,
+.LlmDocked .LlmExpandBtn:hover {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.LlmExpandBtn img {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.LlmDocked .LlmMenuIcon { display: none; }
+
+.LlmPhone .LlmConversationContainer {
+  padding: 4px;
+  padding-bottom: 56px;
+}
+
+.LlmPhone .LlmInputArea {
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+}
+
+/* iOS zooms the page in when a text input with a font smaller than 16px gets focus. */
+.LlmPhone .llm-input-edit { font-size: 16px; }
+
+.LlmPhone .LlmWelcome { margin: 12px auto; }
+
+.LlmPhone .LlmInteractionDisplay { margin-bottom: 10px; }
+
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .titlebar,
+.LlmPhone .LlmInteractionTurnDisplay.Wt-panel > .titlebar {
+  padding: 6px 8px;
+}
+
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .body,
+.LlmPhone .LlmInteractionTurnDisplay.Wt-panel > .body {
+  padding: 6px;
+}
+
+.LlmPhone .LlmInteractionSummary { padding: 6px 8px; }
+
+/* Panel title bars have a fixed height, so on a narrow screen long titles must be cut short, rather
+   than wrapping out of the bar.  For a question, the timer stays visible and the status text gives. */
+.LlmPhone .LlmInteractionTurnDisplay.Wt-panel > .titlebar > span:not(.Wt-collapse-button),
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .titlebar > .LlmStatusIndicator {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .titlebar > .LlmStatusIndicator + .LlmStatusIndicator {
+  flex: 0 0 auto;
+}
+
+/* Sub-agents are already nested inside their parents' padding, so only a small extra indent. */
+.LlmPhone .LlmSubAgentNesting,
+.LlmPhone .LlmNestLevel1,
+.LlmPhone .LlmNestLevel2,
+.LlmPhone .LlmNestLevel3 {
+  margin-left: 4px;
+}
+
+/* The inline width a tool may suggest is capped to the screen. */
+.LlmPhone .LlmToolVisualChart {
+  width: 100%;
+  max-width: 100%;
+}
+
+.LlmPhone .LlmToolResultImageThumb { max-width: 100%; }
+
+/* The single row the tool-call/-result turns of a question are folded into. */
+.LlmPhoneToolSummary {
+  margin-bottom: 8px;
+  border: 1px solid var(--interspec-border-color);
+  border-radius: 4px;
+  background-color: var(--interspec-background-color);
+}
+
+.LlmPhoneToolSummary.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color) !important;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--interspec-label-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+}
+
+/* The tool names give way (ellipsized) to the status at the right. */
+.LlmPhoneToolSummary.Wt-panel > .titlebar > :not(.Wt-collapse-button):not(.LlmTurnStatus) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.LlmPhoneToolSummary.Wt-panel > .titlebar > .LlmTurnStatus {
+  flex: 0 0 auto;
+}
+
+.LlmPhoneToolSummary.Wt-panel > .body {
+  padding: 4px 6px;
+  border-top: 1px solid var(--interspec-border-color);
+}
+
+/* A tool-results turn inside the summary row: just its per-tool lines. */
+.LlmPhoneCompact.LlmInteractionTurnDisplay {
+  margin-bottom: 0;
+  border: none;
+  background: transparent;
+}
+
+.LlmPhoneCompact.LlmInteractionTurnDisplay.Wt-panel > .body { padding: 0; }
+
+.LlmPhoneCompact .LlmToolResultItem {
+  margin-bottom: 4px;
+  padding: 4px 6px;
+}
+
+.LlmPhoneCompact .LlmToolName { font-size: 13px; }
+
+.LlmPhoneAutoReply {
+  display: block;
+  padding: 2px 6px 4px 6px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--interspec-label-color);
+}
+
+.LlmPhoneVisuals > .LlmToolVisual { margin: 0 0 8px 0; }

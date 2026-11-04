@@ -54,7 +54,6 @@
   <message id="ssd-cb-atten-for-air">Atenuasi untuk udara</message>
   <message id="ssd-tt-atten-for-air">Ketika dicentang, atenuasi karena udara antara sumber, atau perisai luar, dan detektor akan diperhitungkan dalam perhitungan.</message>
   <message id="ssd-cb-sub-back-peaks">Kurangi puncak latar belakang</message>
-  <message id="ssd-tt-sub-back-peaks">Ini memaksa isotop dari suatu unsur untuk semua memiliki usia yang sama dalam pencocokan.</message>
   <message id="ssd-cb-same-el-same-age">Z sama usia sama</message>
   <message id="ssd-tt-same-el-same-age">Terapkan isotop untuk unsur yang sama semuanya harus memiliki usia yang sama.</message>
   <message id="ssd-cb-corr-for-decay">Koreksi untuk peluruhan selama pengukuran</message>
@@ -84,23 +83,6 @@
     latar depan, identifikasi puncak yang berpotensi dikurangkan, lalu beralih kembali ke kombinasi
     latar depan/latar belakang Anda saat ini.
   </message>
-  <message id="ssd-missing-back-peaks-title">Puncak Latar Belakang Hilang</message>
-  <message id="ssd-missing-back-peaks-msg">
-    Spektrum latar belakang tidak memiliki puncak yang ditambahkan pada energi {1}, tetapi
-    kemungkinan ada puncak nyata di spektrum latar belakang pada energi tersebut -
-    apakah Anda ingin menambahkan puncak tersebut ke spektrum latar belakang?
-  </message>
-  <message id="ssd-btn-no-dont-add">Tidak</message>
-  <message id="ssd-btn-add-peaks">Tambah Puncak...</message>
-  <message id="ssd-btn-add-all-detectable">Tambah semua puncak auto-fit</message>
-  <message id="ssd-back-peak-preview-title">Pratinjau Puncak Latar Belakang</message>
-  <message id="ssd-back-peak-preview-msg">Puncak berikut akan ditambahkan ke spektrum latar belakang:</message>
-  <message id="ssd-no-new-back-peaks">Tidak ditemukan puncak tambahan di spektrum latar belakang pada energi yang ditunjukkan.</message>
-  <message id="ssd-back-peaks-all-fit">{1} puncak kandidat telah disesuaikan ke latar belakang.</message>
-  <message id="ssd-back-peaks-some-fit">{1} dari {2} puncak kandidat signifikan dan disesuaikan ke latar belakang.</message>
-  <message id="ssd-back-peaks-manual-hint">(Anda juga dapat menyesuaikan puncak latar belakang secara manual dengan tombol Alt (mac: tombol Option) plus klik<br />
-  ganda pada spektrum, atau dengan memuat latar belakang sebagai latar depan)</message>
-  <message id="ssd-err-adding-back-peaks">Kesalahan menambahkan puncak ke latar belakang: {1}</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Ketebalan perisai telah diskalakan agar kurang dari jarak detektor.</message>
   <message id="ssd-err-fit-only-one-an">Anda hanya dapat menyesuaikan nomor atom dari satu perisai umum pada satu waktu.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Chi2 yang tidak valid dihitung untuk {1} keV, hasil lain mungkin tidak valid</message>

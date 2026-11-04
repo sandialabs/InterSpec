@@ -44,6 +44,8 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "geometry/ConvexSeparation.h"   //CeeLo
+
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
@@ -245,6 +247,46 @@ double transmission_coefficient_air( double energy, double length );
 double transmission_length_coefficient_air( double energy );
 
 
+/** The factor background peak areas are multiplied by to put them on the foreground's footing.
+
+ The user-chosen `user_scale_factor` (the background's display scale factor) is used when it is a
+ positive finite number; otherwise the live-time ratio `fore_live_time / back_live_time`.
+ */
+double background_peak_scale( const double user_scale_factor, const double fore_live_time,
+                              const double back_live_time );
+
+/** Returns the Gaussian peaks of `peaks`, with their areas and area uncertainties multiplied by `scale`.
+
+ Non-Gaussian peaks are left out - subtracting them isnt supported - and, if
+ `skipped_non_gaus_energies` is non-null, their means are appended to it.
+ */
+std::vector<PeakDef> scale_background_peaks( const std::vector<PeakDef> &peaks, const double scale,
+                                             std::vector<double> *skipped_non_gaus_energies );
+
+/** The summed area (`counts`) and area variance (`uncert2`) of the background peaks that overlap a
+ foreground peak.
+ */
+struct BackgroundOverlap
+{
+  double counts = 0.0;
+  double uncert2 = 0.0;
+};
+
+/** How close, in units of the foreground peaks sigma, a background peak must be to count as the same
+ peak, for background-peak subtraction.
+ */
+const double sm_background_peak_nsigma_near = 1.0;
+
+/** Sums the background peaks whose mean is within #sm_background_peak_nsigma_near sigma of `fore`'s
+ mean (for a non-Gaussian `fore`, a quarter of its ROI width is used as sigma).
+
+ @param scaled_back_peaks Background peaks already put on the foreground's footing; see
+        #scale_background_peaks.
+ */
+BackgroundOverlap overlapping_background( const PeakDef &fore,
+                                          const std::vector<PeakDef> &scaled_back_peaks );
+
+
 //Returned in units of [Length]^2/[mass], so that
 //  exp( -mass_attenuation_coef * areal_density )
 //  gives you the probability a gamma of given energy will go through the
@@ -379,6 +421,61 @@ bool rectangle_intersections( const double half_width, const double half_height,
 double distance( const double point_a[3], const double point_b[3] );
 
 
+/** How far the detector face's centre is from the outside of a source/shielding assembly: the
+ distance to the nearest point of the assembly's outer volume, or minus the depth when the face
+ centre is INSIDE it, for any geometry and source offsets.  The closest-approach estimate the
+ cascade-summing gates use; whether an assembly is allowed at all is
+ #detector_face_plane_clearance.
+
+ @param geometry The assembly geometry.
+ @param outer_dims The outermost shell's cumulative dimensions (PhysicalUnits), as the shieldings
+        accumulate them: sphere radius; cylinder radius and half-length (along the cylinder axis);
+        box half-width, half-height and half-depth.  Unused entries are ignored.
+ @param distance Assembly centre to detector face, along the detector axis (PhysicalUnits).
+ @param offset_x, offset_y The source offsets perpendicular to the detector axis (see
+        ShieldSourceConfig::source_offsets).
+ */
+double detector_face_clearance( const GeometryType geometry, const double outer_dims[3],
+                                const double distance, const double offset_x, const double offset_y );
+
+
+/** How far a source/shielding assembly stays in front of the plane of the detector face: the
+ distance along the detector axis less the assembly's outer extent along it - negative when some of
+ the assembly reaches beside or behind the face, whatever the offsets.  An assembly is only modelled
+ when this is not negative: the line path drops the lines that would reach the detector from behind
+ its face plane and has no response there, and the flat-disk element path treats every element as
+ looking straight into the face - so an assembly reaching beside the detector is not modelled, even
+ when it is clear of the detector itself.
+
+ @param geometry, outer_dims As for #detector_face_clearance.
+ @param distance Assembly centre to the detector-face plane, along the detector axis (PhysicalUnits).
+ */
+double detector_face_plane_clearance( const GeometryType geometry, const double outer_dims[3],
+                                      const double distance );
+
+
+/** The solid of a source/shielding assembly's outermost shell in the assembly frame, in cm: a
+ sphere, a cylinder along z (both cylinder orientations - only the detector moves for side-on), or
+ a box.  `outer_dims` as for #detector_face_clearance (PhysicalUnits). */
+ceelo::ConvexSolid assembly_outer_solid( const GeometryType geometry, const double outer_dims[3] );
+
+/** The detector's outer envelope - crystal, housing layers, collimator and any described back
+ structure (ceelo::GeometryDescriptor::outer_envelope) - placed where a fit puts the detector
+ (#detector_geom_from_config, crystal frame rotated as the line path rotates it), in the assembly
+ frame, in cm. */
+ceelo::ConvexSolid detector_enclosure_solid( const ceelo::GeometryDescriptor &gd,
+                                             const GeometryType geometry, const double distance,
+                                             const double offset_x, const double offset_y );
+
+/** How far a source/shielding assembly - its outermost shell, or the bare source point when
+ `outer_dims` is null - stays clear of the detector's outside (PhysicalUnits); 0 when it touches or
+ overlaps.  A fit with a detector response may place a source beside or behind the detector only
+ while this is positive; flat-disk fits keep #detector_face_plane_clearance. */
+double detector_enclosure_clearance( const ceelo::GeometryDescriptor &gd, const GeometryType geometry,
+                                     const double *outer_dims, const double distance,
+                                     const double offset_x, const double offset_y );
+
+
 /*
  *The following functions are depreciated, but left commented out since I will
  *likely need to refer to them later - wcjohns 20121127
@@ -509,6 +606,9 @@ struct PeakDetail
   double energy, decayParticleEnergy, fwhm;
   /** counts=peak.peakArea(); countsUncert=peak.peakAreaUncert();  cps=peak.peakArea()/LiveTime*/
   double counts, countsUncert, cps, cpsUncert;
+
+  /** Live time (seconds) of the spectrum the peak is from. */
+  double liveTime = 0.0;
   double expectedCounts, observedCounts, observedUncert, numSigmaOff;
   double observedOverExpected, observedOverExpectedUncert;
   //float modelInto4Pi, modelInto4PiCps;
@@ -1191,7 +1291,7 @@ public:
    #expected_observed_chis would include (i.e., peaks with a decay particle or
    annihilation gamma), in that same order, with derivative information
    propagated through shielding transmission, volumetric-source integration
-   (via #DistributedSrcCalcT and #self_shielding_integration_imp - NOT Cuhre),
+   (via #DistributedSrcCalcT and #self_shielding_integration_imp),
    and - by numeric differencing re-seeded into the Jet - nuclide age.
 
    No logging; unlike #DoEval, exceptions (including CancelException) propagate.
@@ -1529,6 +1629,16 @@ public:
    azimuth of the source offsets, and the straight-line source-to-detector-face distance. */
   void pointSourceEvalGeometry( double &theta, double &phi, double &true_dist ) const;
 
+  /** The crystal the model #pointSourceEffModel names places behind the detector face (both
+   PhysicalUnits): the resolved response's crystal disk at its endcap offset
+   (#PointEffModel::Response), else the DRF's stated diameter and setback (the flat-disk model);
+   zero for a fixed geometry.  The two need not agree (see
+   DetectorPeakResponse::modeledCrystalSetback), so anything that splits this fit's efficiency into
+   "intrinsic x solid angle" takes the crystal from here.  (The volumetric cascade-summing partner
+   legs deliberately do NOT - see DistributedSrcCalcT::cascade_correction_factor.)
+   */
+  void modelCrystalPlacement( double &diameter, double &setback ) const;
+
   double distance() const;
 
   double liveTime() const;
@@ -1559,6 +1669,22 @@ public:
    Reported so a fit that silently fell back (e.g. to flat-disk) is visible in the results.
    */
   ShieldingSourceFitCalc::VolumetricEffMethod resolvedVolumetricEffMethod() const;
+
+  /** Whether the scene, as the fit starts, reaches beside or behind the detector - past the
+   detector-face plane.  Such a scene needs a detector response with a modelled geometry, and the
+   detector's outside (#detector_enclosure_clearance), not the face plane, is what limits it.
+   Decided once, in #create, from the starting dimensions: a fit that starts in front of the face
+   keeps the face plane as its limit. */
+  bool extendedScene() const;
+
+  /** For an extended scene: throws if the assembly's outermost shell (or the bare point source),
+   at `params`, touches or overlaps the detector's outside. */
+  void checkExtendedSceneClearance( const std::vector<double> &params ) const;
+
+  /** For an extended scene: whether the assembly's outermost shell (or the bare point source), at
+   `params`, reaches past the plane of the crystal's back face - where the efficiency rests on the
+   housing the detector response describes behind the crystal. */
+  bool reachesBehindCrystal( const std::vector<double> &params ) const;
 
   /** Human-readable note on how #resolvedVolumetricEffMethod was arrived at (e.g.
    "Auto -> MC transfer", or a fallback reason); empty when the request was used as-is.
@@ -1610,6 +1736,47 @@ public:
    */
   double fepWindowKeV( const double energy,
                        const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** The optical depth of a material shielding layer, for a point source's full-energy peak at
+   `energy` (keV): `chord` times the FEP survival-removal coefficient (in-window Compton credit and
+   Rayleigh deflection loss; see #fep_survival_removal_coefficient), with the window from
+   #fepWindowKeV.  The ONE rule the fit, the cascade functors, and the reported per-peak values
+   (#energy_chi_contributions) all use, so what is reported is what was minimised.
+   */
+  template<typename T>
+  T pointLayerOpticalDepth( const Material *material, const double energy, const T &chord,
+                            const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** Whether point sources take their efficiency from #pointFanFepEfficiencies: an extended scene
+   (see #extendedScene) on the response model. */
+  bool usePointFan() const;
+
+  /** For an extended scene's point sources: the full-energy-peak efficiency at each of `energies`
+   with the shielding and the air taken ray by ray over the response's fan - in place of the
+   central-ray shield chords, the air path to the face centre, and #pointSourceFepEff, none of which
+   describes a source beside or behind the detector, whose photons reach the crystal from a wide
+   spread of directions.
+
+       eff(E) = P(E) sum_i w_i(E) exp( -sum_l mu_l(E) c_l,i - tau_generic(E) - mu_air(E) a_i )
+
+   P the response's prefactor and w_i its per-ray kernel weights at the source position (their
+   sum is the unshielded kernel, so with nothing in the way this IS #pointSourceFepEff); c_l,i ray
+   i's chord through shell l and a_i its air path from the outermost shell to the detector's
+   outside; mu_l the shell's FEP removal coefficient (#pointLayerOpticalDepth) at its chord along
+   the fan's mean direction.  Defined in GammaInteractionCalc_imp.hpp. */
+  template<typename T>
+  std::vector<T> pointFanFepEfficiencies( const std::vector<T> &params,
+                                          const std::vector<double> &energies,
+                                          const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** #pointFanFepEfficiencies, or with `total` the any-deposit efficiency: the response's total
+   prefactor and total-kernel weights, each ray attenuated by the plain total coefficient (a
+   scattered photon still deposits). */
+  template<typename T>
+  std::vector<T> pointFanEfficiencies( const std::vector<T> &params,
+                                       const std::vector<double> &energies,
+                                       const std::vector<std::pair<double,double>> &energie_widths,
+                                       const bool total ) const;
 
   /** Fallback FEP half-window when neither a fitted peak nor a detector resolution is available. */
   static constexpr double sm_default_fep_window_keV = 1.0;
@@ -1707,6 +1874,13 @@ protected:
    #ShieldSourceConfig::source_offsets.  Set by #create; never fit.
    */
   double m_sourceOffsets[2] = { 0.0, 0.0 };
+
+  /** The outermost material shell's cumulative dimensions at `params` (as #detector_face_clearance
+   takes them); false, with zeros, when there is no material shell. */
+  bool outerShellDims( const std::vector<double> &params, double outer[3] ) const;
+
+  /** See #extendedScene. */
+  bool m_extendedScene = false;
   double m_liveTime;
 
   std::vector<PeakDef> m_peaks;
@@ -1753,6 +1927,11 @@ protected:
    MakeFixedGeomResponse::perDecayFepScale).  Set in #create when #m_cascadeCalc is.
    */
   double m_cascadeFepScale = 1.0;
+
+  /** The air attenuation coefficient at every #m_cascadeCalc partner energy (`allPartnerEnergies()`
+   order), tabulated once in #create rather than per evaluation.  Empty when #m_cascadeCalc is null.
+   */
+  std::vector<double> m_cascadePartnerAirMu;
 
   /** One nuclide's point-source cascade correction, reduced to scalars.  See #m_cascadeCorrCache. */
   struct CascadeCorrEntry
@@ -1935,6 +2114,11 @@ public:
   {
     std::vector<std::function<T(double)>> att_fcns;
     T air_dist = T(0.0);        //length units
+
+    /** Extended scenes (#usePointFan): the absolute FEP and total efficiencies - shields, air and
+     detector together, ray by ray - which the partner legs take instead of the central-ray chords.
+     Empty otherwise. */
+    std::function<T(double)> fan_fep_abs, fan_tot_abs;
     T total_ad_gcm2 = T(0.0);   //along-ray areal density, g/cm2
     T eff_an = T(0.0);          //AD-weighted effective atomic number
 

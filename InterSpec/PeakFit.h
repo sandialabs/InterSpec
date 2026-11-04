@@ -263,7 +263,8 @@ void combine_peaks_to_roi( PeakShrdVec &coFitPeaks,
 bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
                                   const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                   const bool lowstatregion,
-                                  const bool automated );
+                                  const bool automated,
+                                  std::string *reject_reason = nullptr );
 
 void get_candidate_peak_estimates_for_user_click(
                                                  double &sigma0, double &mean0, double &area0,
@@ -283,6 +284,8 @@ void get_candidate_peak_estimates_for_user_click(
 //The peaks are chosen by chi2 trial fits; for a user click (pixelPerKev > 0) the returned ROI is then
 //  refit by the default fit, while an automated caller that delivers the peaks should refit them itself
 //  (ExperimentalAutomatedPeakSearch::refit_sparse_rois).
+//If no peak is found, and `reject_reason` is non-null, it is set to a short description of why (e.g.,
+//  the candidate's significance was below the required value), intended for users or an LLM.
 std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                             double pixelPerKev,
                             const std::shared_ptr<const SpecUtils::Measurement> &data,
@@ -290,7 +293,8 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                             std::shared_ptr<const DetectorPeakResponse> drf,
                             const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &auto_search_peaks,
                             std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
-                            std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
+                            std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr,
+                            std::string *reject_reason = nullptr );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modify the ROI range.

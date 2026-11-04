@@ -131,7 +131,23 @@ beyond the Z=98 photon tables; electron tables stop at Z=92.
 - Mean excitation energies retained for lower-level models: **ICRU Report 49**
   (1993), Table 5.1.
 
-### 2.5 Material compositions — `src/materials/BuiltinMaterials.cpp`
+### 2.5 Electron elastic scattering — `src/cross_sections/electron_elastic_data.cpp`
+
+First and second elastic transport cross sections (sigma_1 and sigma_2/sigma_1)
+for Z=1–92 on a 36-node log grid from 1 keV to 20 MeV, used only by the
+Detailed (spectrum-fidelity) electron walk.
+
+- Direct **EPICS2023 EEDL** MF=23/MF=26 MT=525 (large-angle elastic cross
+  section and angular distributions) — S.T. Perkins, D.E. Cullen and
+  S.M. Seltzer, UCRL-50400 Vol. 31, distributed by IAEA Nuclear Data Services;
+  the same locked `EEDL2023.ALL` the bremsstrahlung validation uses. No Geant4
+  extraction layer is used.
+- The moments are integrated from the tabulated angular distributions and
+  interpolated between them as ratios to the analytic screened-Rutherford
+  moments (Molière screening); `generate_eedl_elastic.py` documents the
+  transformation.
+
+### 2.6 Material compositions — `src/materials/BuiltinMaterials.cpp`
 
 - Dry air at sea level: **ICRU Report 37** / NIST standard composition.
 - Soil and other reference compositions: **IAEA-TECDOC-1011** (1998), Table 1,
@@ -139,7 +155,7 @@ beyond the Z=98 photon tables; electron tables stop at Z=92.
 - Atomic weights: IUPAC standard atomic weights (via xraylib; IUPAC 2021
   fallback table).
 
-### 2.6 Nuclear decay data (optional cascade-summing path)
+### 2.7 Nuclear decay data (optional cascade-summing path)
 
 Cascade summing corrections use **SandiaDecay**, whose `sandia.decay.xml` is
 derived from the **ENSDF** (Evaluated Nuclear Structure Data File) datasheets
@@ -147,7 +163,7 @@ maintained by NNDC/BNL, with manual corrections applied. SandiaDecay is not
 vendored here and the cascade adapter is off by default. See
 <https://www.nndc.bnl.gov/ensdf/>.
 
-### 2.7 GEANT4 reference results — validation fixtures
+### 2.8 GEANT4 reference results — validation fixtures
 
 Efficiency fixtures under `tests/data/geant4_reference/` and aggregate spectra,
 rates, CDFs, and histograms under `validation/` are results produced by running
@@ -170,6 +186,7 @@ Implemented from the cited publications, not ported from any implementation.
 | Pair-production opening angle | `src/transport/PhotonTransport.cpp` | Koch & Motz, *Rev. Mod. Phys.* **31** (1959) 920 (modified Tsai form) |
 | Multiple scattering (condensed history) | `src/physics/ElectronCsda.cpp` | Highland, *Nucl. Instrum. Meth.* **129** (1975) 497; Molière; Goudsmit & Saunderson, *Phys. Rev.* **57** (1940) 24. Background: Nelson et al., EGS4 (SLAC-265, 1985); Ivanchenko et al., GEANT4 EM physics (2010) |
 | Radiation length | `src/physics/ElectronCsda.cpp` | Tsai, *Rev. Mod. Phys.* **46** (1974) 815 |
+| Mixed (class II) elastic scattering with a moment-matched Wentzel model and random-hinge soft deflections; hard Møller collisions with delta-ray transport and the artificial soft energy-loss distribution (Detailed electron walk) | `src/physics/ElectronCsda.cpp` | Baró, Sempau, Fernández-Varea & Salvat, *Nucl. Instrum. Meth. B* **100** (1995) 31 (PENELOPE); Fernández-Varea, Mayol, Baró & Salvat, *Nucl. Instrum. Meth. B* **73** (1993) 447 |
 | Monotone cubic interpolation (PCHIP) | `src/io/Pchip.cpp` | Fritsch & Carlson, *SIAM J. Numer. Anal.* **17** (1980) 238. Derivative rule follows `scipy.interpolate.PchipInterpolator` (SciPy, BSD 3-clause) |
 | log Γ(z) via Lanczos approximation | `src/cascade/BetaSpectrum.cpp` | Lanczos, *J. SIAM Numer. Anal. Ser. B* **1** (1964) 86. The g=7, n=9 coefficients are Godfrey's openly published set (also in Boost.Math) |
 | 32-point Gauss-Legendre quadrature | `src/transport/ComptonScatter.cpp` | Abramowitz & Stegun, *Handbook of Mathematical Functions* (NBS, 1964), Table 25.4 — public domain |

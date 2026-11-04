@@ -30,6 +30,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 using namespace ceelo;
@@ -144,6 +146,69 @@ BOOST_AUTO_TEST_CASE(atomic_weights_reasonable) {
     BOOST_CHECK_CLOSE(xs.atomic_weight(32), 72.630, 1.0);  // Germanium
     BOOST_CHECK_CLOSE(xs.atomic_weight(53), 126.904, 1.0); // Iodine
     BOOST_CHECK_CLOSE(xs.atomic_weight(82), 207.2, 1.0);   // Lead
+}
+
+BOOST_AUTO_TEST_CASE(seltzer_berger_grid_covers_source_electron_range) {
+    const auto& xs = CrossSectionData::instance();
+    BOOST_CHECK_EQUAL(kSB_n_kappa, 32u);
+    // 27 nodes, 10 keV - 20 MeV: the NIST EPQ BergerSeltzerBrem grid.
+    BOOST_CHECK_EQUAL(kSB_n_energy, 27u);
+    BOOST_CHECK_CLOSE(std::pow(10.0, kSB_log_E_keV[0]), 10.0, 0.02);
+    BOOST_CHECK_GT(
+        std::pow(10.0, kSB_log_E_keV[kSB_n_energy - 1]), 12000.0);
+
+    // The SB tables are electron-side data (Z <= 92); Np-Cf share uranium's
+    // table (actinide_element_support_is_present).
+    for (int Z = 1; Z <= kMaxElectronTableZ; ++Z) {
+        const auto& element = xs.element(Z);
+        BOOST_REQUIRE(element.sb_chi_quantized != nullptr);
+        BOOST_CHECK(std::isfinite(kSB_chi_scale[Z - 1]));
+        BOOST_CHECK_GT(kSB_chi_scale[Z - 1], 0.0f);
+        std::uint16_t maximum_code = 0;
+        for (std::size_t index = 0;
+             index < kSB_n_energy * kSB_n_kappa; ++index) {
+            BOOST_CHECK_GT(element.sb_chi_quantized[index], 0u);
+            maximum_code = std::max(
+                maximum_code, element.sb_chi_quantized[index]);
+        }
+        BOOST_CHECK_EQUAL(
+            maximum_code, std::numeric_limits<std::uint16_t>::max());
+    }
+
+    for (int Z : {6, 26, 48, 92}) {
+        const double chi_50 = xs.sb_chi(Z, 50.0, 0.25);
+        const double chi_150 = xs.sb_chi(Z, 150.0, 0.25);
+        const double chi_200 = xs.sb_chi(Z, 200.0, 0.25);
+        BOOST_CHECK(std::isfinite(chi_50));
+        BOOST_CHECK(std::isfinite(chi_150));
+        BOOST_CHECK_GT(chi_50, 0.0);
+        BOOST_CHECK_GT(chi_150, 0.0);
+        BOOST_CHECK_NE(chi_50, chi_200);
+        BOOST_CHECK_NE(chi_150, chi_200);
+    }
+
+    struct Reference {
+        int Z;
+        std::size_t energy_index;
+        std::size_t kappa_index;
+        double chi;
+    };
+    const Reference references[] = {
+        {1, 0, 1, 11.3968},
+        {6, 5, 5, 9.33307},
+        {26, 10, 10, 5.89929},
+        {48, 16, 20, 2.09431},
+        {82, 22, 31, 1.52612},
+        {92, 25, 17, 4.62281},
+    };
+    for (const auto& reference : references) {
+        const double energy_keV =
+            std::pow(10.0, kSB_log_E_keV[reference.energy_index]);
+        const double actual = xs.sb_chi(
+            reference.Z, energy_keV,
+            kSB_kappa[reference.kappa_index]);
+        BOOST_CHECK_CLOSE(actual, reference.chi, 1.0);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(actinide_atomic_weights_are_the_xraylib_conventions) {

@@ -26,10 +26,13 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <chrono>
 #include <memory>
 #include <string>
+#include <vector>
 #include <functional>
 
+#include <Wt/WText.h>
 #include <Wt/WPanel.h>
 #include <Wt/WContainerWidget.h>
 
@@ -38,19 +41,21 @@
 // Forward declarations
 namespace Wt
 {
-  class WText;
   class WWidget;
+  class WMenuItem;
   class WTextArea;
   class WPushButton;
   class WApplication;
 }
 class PopupDivMenu;
+class LlmInterface;
 struct LlmInteraction;
 class LlmInteractionTurn;
 class LlmToolRequest;
 class LlmToolResults;
 class LlmInteractionError;
 class LlmInteractionFinalResponse;
+class LlmToolRoundDisplay;
 
 
 /** Client-side rendering of LLM-authored text as Markdown + LaTeX.
@@ -83,16 +88,83 @@ namespace LlmMarkdown
 }//namespace LlmMarkdown
 
 
+/** A container whose contents are made client-side, by JavaScript (rendered Markdown, charts, event
+ listeners, ...).
+
+ Wt re-creates a widget's DOM element whenever the widget is moved to a new parent - as the LLM
+ assistant is when moved between the tool-tab strip and a window - and anything a one-off
+ doJavaScript() call put into the old element is lost.  So instead the JavaScript given here is
+ re-run every time the element is (re-)created.
+ */
+class LlmJsRenderedDiv : public Wt::WContainerWidget
+{
+public:
+  /** Sets the JavaScript that creates the contents; also runs it now, if already rendered. */
+  void setRenderJs( const std::string &js );
+
+  /** Sets JavaScript that re-applies client-side state to the contents (e.g., raw vs rendered
+   Markdown); it runs after the #setRenderJs script, and now, if already rendered.
+   */
+  void setStateJs( const std::string &js );
+
+protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
+
+private:
+  std::string m_renderJs;
+  std::string m_stateJs;
+};//class LlmJsRenderedDiv
+
+
+/** A text showing a client-side, once-a-second "label Ns" elapsed-time counter (no server round trips),
+ until replaced by a final text, e.g. the duration measured in C++.
+
+ Like LlmJsRenderedDiv, the counter is restarted - from the time already elapsed - whenever the DOM
+ element is re-created.
+ */
+class LlmElapsedText : public Wt::WText
+{
+public:
+  LlmElapsedText();
+
+  /** Starts counting up from `alreadyElapsed`, shown after `label` (if not empty). */
+  void start( const Wt::WString &label,
+              const std::chrono::milliseconds alreadyElapsed = std::chrono::milliseconds(0) );
+
+  /** Stops any counter, and shows `text` instead.  Use this rather than setText(). */
+  void setFinalText( const Wt::WString &text );
+
+protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
+
+private:
+  /** Issues the JS to start the client-side counter from the current elapsed time. */
+  void startClientCounter();
+
+  bool m_counting;
+  std::string m_format;  // The counter's text, with "{1}" for the whole seconds elapsed
+  std::chrono::steady_clock::time_point m_start;
+};//class LlmElapsedText
+
+
 /** Base class for displaying a single LLM interaction turn (response, tool call, result, or error).
  *
  * Each turn is displayed as a WPanel with:
  * - A title bar with summary and menu icon
  * - A body with detailed content (created lazily on first expand)
+ *
+ * Details only of use when developing the assistant (the menu of raw JSON, invocation IDs, raw tool
+ * parameters and results) are marked with the "LlmDebugOnly" style class, which CSS hides unless the
+ * "LlmShowDebugOptions" user preference is set (see LlmToolGui::setShowDebugOptions).
  */
 class LlmInteractionTurnDisplay : public Wt::WPanel
 {
 public:
-  LlmInteractionTurnDisplay( std::shared_ptr<LlmInteractionTurn> turn );
+  /** @param round The tool-round panel this turn is shown in (desktop tool calls and results), or
+   null if it is shown on its own.
+   */
+  LlmInteractionTurnDisplay( std::shared_ptr<LlmInteractionTurn> turn,
+                             LlmToolRoundDisplay *round = nullptr );
 
   virtual ~LlmInteractionTurnDisplay();
 
@@ -108,13 +180,24 @@ protected:
   /** Get the title text for this turn - derived classes should override */
   virtual Wt::WString getTitleText() const = 0;
 
+  /** Sets the panel title (i.e., from #getTitleText), marking its text so CSS can limit it to two
+   lines with an ellipsis - a list of tool names can otherwise overflow the title bar, especially
+   in the narrow LLM side panel.
+   */
+  void setTurnTitle( const Wt::WString &title );
+
   /** Create and show a dialog displaying JSON content */
   void showJsonDialog( const Wt::WString &title,
                       const std::string &jsonStr,
                       bool allowDownload = true );
 
-  /** Create the menu icon in the title bar and wire it to lazily show the menu. */
+  /** Create the menu icon in the title bar and wire it to lazily show the menu.  Unless
+   #menuAlwaysShown, the icon is only shown with debug options on.
+   */
   virtual void createMenuIcon();
+
+  /** Whether the menu has items for users (not just debug items), so its icon is always shown. */
+  virtual bool menuAlwaysShown() const;
 
   /** Lazily build (first open only) and show the title-bar popup menu.
    *
@@ -128,11 +211,25 @@ protected:
    */
   void showMenu();
 
-  /** Populate the (lazily-created) menu; derived classes override to add items. */
+  /** Populate the (lazily-created) menu; derived classes override to add items.  Items only of use
+   with debug options on should be added to #m_debugMenuItems.
+   */
   virtual void addMenuItems( PopupDivMenu *menu );
+
+  /** Shows or hides the menu items according to the current debug-options preference; called each
+   time the menu pops up.
+   */
+  virtual void updateMenuItemsShown();
 
   /** Handle panel expansion - creates body content if not yet created */
   void handleExpansion( bool expanded );
+
+public:
+  /** The status text at the right of the title bar (e.g., a "Pending LLM response... 5s" counter, or
+   the call duration), created on first call.  Returns nullptr if this panel has no title bar.
+   For a turn in a tool round, this is the rounds status text.
+   */
+  LlmElapsedText *statusText();
 
 protected:
   std::shared_ptr<LlmInteractionTurn> m_turn;
@@ -140,6 +237,20 @@ protected:
   PopupDivMenu *m_menu;
   Wt::WContainerWidget *m_bodyContainer;
   bool m_bodyCreated;
+  LlmElapsedText *m_statusText;
+
+  /** The tool-round panel this turn is shown in; null if none. */
+  LlmToolRoundDisplay * const m_round;
+
+  /** Menu items only shown with debug options on; shown or hidden each time the menu pops up, as the
+   menu is only built once, but the preference may change.
+   */
+  std::vector<Wt::WMenuItem *> m_debugMenuItems;
+
+  /** If the user is on a phone; phones get a pared-down display, without the developer-oriented
+   menus (raw request/response JSON, etc).
+   */
+  const bool m_phoneLayout;
 };//class LlmInteractionTurnDisplay
 
 
@@ -155,6 +266,8 @@ protected:
   virtual void createBodyContent() override;
   virtual Wt::WString getTitleText() const override;
   virtual void addMenuItems( PopupDivMenu *menu ) override;
+  virtual bool menuAlwaysShown() const override;
+  virtual void updateMenuItemsShown() override;
 
 private:
   std::shared_ptr<LlmInteractionFinalResponse> m_response;
@@ -164,14 +277,21 @@ private:
 
   /** Whether the user has asked to see the raw Markdown source instead of the rendered output. */
   bool m_showRawText;
+
+  /** The menu item toggling #m_showRawText (null until the menu is built); owned by the menu. */
+  Wt::WMenuItem *m_rawTextItem;
 };//class LlmInteractionFinalResponseDisplay
 
 
-/** Display for LLM tool call requests */
+/** Display for LLM tool call requests.  In a tool round (see LlmToolRoundDisplay), it is only shown
+ with debug options on (for its menu of the raw JSON), and leaves out the parameters, which the
+ rounds results display shows.
+ */
 class LlmToolRequestDisplay : public LlmInteractionTurnDisplay
 {
 public:
-  LlmToolRequestDisplay( std::shared_ptr<LlmToolRequest> request );
+  LlmToolRequestDisplay( std::shared_ptr<LlmToolRequest> request,
+                         LlmToolRoundDisplay *round = nullptr );
 
   virtual ~LlmToolRequestDisplay();
 
@@ -188,11 +308,23 @@ private:
 class LlmToolResultsDisplay : public LlmInteractionTurnDisplay
 {
 public:
+  /** @param phoneVisuals If non-null (phones only), this display is a compact entry in its
+   interaction's tool-summary row: no title bar, menu, invocation IDs, or raw tool results; and any
+   visuals (charts, spectra, reports) are placed into `phoneVisuals` instead, so they stay visible
+   while the summary row is collapsed.  See LlmInteractionDisplay::m_phoneToolSummary.
+   @param round The tool-round panel this display is shown in (desktop); its title bar (with the
+   menu) is then only shown with debug options on, and it can not be collapsed on its own.
+   */
   LlmToolResultsDisplay( std::shared_ptr<LlmToolResults> results,
                         std::weak_ptr<class LlmInterface> llmInterface,
-                        int nestingLevel = 0 );
+                        int nestingLevel = 0,
+                        Wt::WContainerWidget *phoneVisuals = nullptr,
+                        LlmToolRoundDisplay *round = nullptr );
 
   virtual ~LlmToolResultsDisplay();
+
+  /** If any result has visuals or an image, or is from a sub-agent, so it should be shown expanded. */
+  bool wantsExpanded() const;
 
 protected:
   virtual void createBodyContent() override;
@@ -222,12 +354,70 @@ private:
   std::vector<class LlmInteractionDisplay*> m_subAgentDisplays;
   int m_nestingLevel;  // For passing to nested sub-agent displays
 
+  /** Where visuals go for the compact phone display; null otherwise.  See constructor. */
+  Wt::WContainerWidget *m_phoneVisuals;
+
   // Map from sub-agent conversation to its result container div
   std::map<std::shared_ptr<LlmInteraction>, Wt::WContainerWidget*> m_subAgentResultDivs;
+
+  // Map from sub-agent conversation to the tool-name text of its result (updated if it fails)
+  std::map<std::shared_ptr<LlmInteraction>, Wt::WText*> m_subAgentNameTexts;
 
   // Map from invocationId to result container div (for async tool updates)
   std::map<std::string, Wt::WContainerWidget*> m_asyncToolResultDivs;
 };//class LlmToolResultsDisplay
+
+
+/** On desktop, the tools the LLM asked for in one response and their results, shown together as one
+ collapsible panel.
+
+ The title lists the tools (a sub-agent "invoke_X" is shown as "X agent"), and its right side has the
+ rounds status: a live "Running tools..." (sub-agents and async tools) or "Pending LLM response..."
+ counter, and then how long the LLM took to respond to the results, and how long the tools took.
+ The body holds the LlmToolRequestDisplay (only shown with debug options on) and the
+ LlmToolResultsDisplay (whose own title bar, with its menu, is only shown with debug options on); the
+ turn displays keep their own logic, this panel only groups them.
+ */
+class LlmToolRoundDisplay : public Wt::WPanel
+{
+public:
+  /** @param request The tool calls; may be null for results without a preceding request turn. */
+  explicit LlmToolRoundDisplay( std::shared_ptr<LlmToolRequest> request );
+
+  virtual ~LlmToolRoundDisplay();
+
+  /** Adds the display of the request (passed to the constructor), if not null; call once. */
+  LlmToolRequestDisplay *addRequestDisplay();
+
+  /** Adds the display of the results of the requested calls; call once. */
+  LlmToolResultsDisplay *addResultsDisplay( std::shared_ptr<LlmToolResults> results,
+                                            std::weak_ptr<class LlmInterface> llmInterface,
+                                            int nestingLevel );
+
+  /** The status text at the right of the title bar, shared by the request and results turns. */
+  LlmElapsedText *statusText();
+
+  /** If `turn` is this rounds request or results turn. */
+  bool hasTurn( const std::shared_ptr<LlmInteractionTurn> &turn ) const;
+
+  /** Shows (in #statusText) how long the LLM took to respond to the results, and the tools took to
+   run, for whichever of these are known.
+   */
+  void showFinalDurations();
+
+  /** Sets the title from the tools called, marking if any failed. */
+  void updateTitle();
+
+  /** Expands the panel if the results have something the user should see (visuals, a sub-agent). */
+  void expandIfWanted();
+
+private:
+  std::shared_ptr<LlmToolRequest> m_request;
+  std::shared_ptr<LlmToolResults> m_results;
+  LlmToolResultsDisplay *m_resultsDisplay;
+  Wt::WContainerWidget *m_body;
+  LlmElapsedText *m_status;
+};//class LlmToolRoundDisplay
 
 
 /** Display for interaction errors (timeouts, API errors, etc.) */
@@ -252,6 +442,17 @@ protected:
   void handleRetry();
   void handleContinueAnyway();
 
+  /** If this error is of a sub-agent that has since ended - its failure handed to the agent that
+   invoked it, or it was cancelled or timed out with that agent - says so, disables the buttons, and
+   returns true: there is no tool round left for Retry or Continue Anyway to resume.
+   */
+  bool refuseIfEndedSubAgent();
+
+  /** As refuseIfEndedSubAgent(), for a sub-agent no tool round is waiting on - after the interrupted
+   conversation it belongs to is resumed, if it was interrupted (see LlmInterface::resumeInterruptedFor).
+   */
+  bool refuseIfSubAgentNotAwaited();
+
 private:
   std::shared_ptr<LlmInteractionError> m_error;
   std::weak_ptr<class LlmInterface> m_llmInterface;
@@ -271,9 +472,14 @@ private:
 class LlmInteractionDisplay : public Wt::WPanel
 {
 public:
+  /** @param phoneVisuals For a sub-agent display on a phone, the container its tool visuals should
+   go into (i.e., the top-level interaction's), so they are not hidden away in a collapsed summary
+   row.  If null, the display makes its own when needed.  Unused when not on a phone.
+   */
   LlmInteractionDisplay( std::shared_ptr<LlmInteraction> interaction,
                         std::weak_ptr<class LlmInterface> llmInterface,
-                        int nestingLevel = 0 );
+                        int nestingLevel = 0,
+                        Wt::WContainerWidget *phoneVisuals = nullptr );
 
   virtual ~LlmInteractionDisplay();
 
@@ -291,16 +497,72 @@ protected:
   /** Handle the conversation finishing */
   void handleConversationFinished();
 
+  /** Its tool round was stopped (waiting only on sub-agents paused on an error, so nothing is running
+   for it), or put back in flight; see LlmInteraction::stoppedChanged.
+   */
+  void handleStoppedChanged( const bool stopped );
+
+  /** For a conversation cut off mid-work (see LlmInteraction::interruption) that can be resumed, adds
+   #m_interruptedPanel, which says so, with buttons to Resume or Dismiss it.
+   */
+  void showInterruptedPanel();
+
+  /** The conversation was resumed, or abandoned; see LlmInteraction::interruptionChanged. */
+  void handleInterruptionChanged();
+
   /** Update the status indicator text and timer */
   void updateStatus();
+
+  /** An API request was sent for this conversation; `turn` is the turn it carried (null if the last
+   turn was not one sent to the LLM - e.g., a retry after a failed tool round).  Reopens a finished
+   display, as the conversation is running again (a Retry, or an auto-reply after a final response).
+   */
+  void handleRequestSent( std::shared_ptr<LlmInteractionTurn> turn );
+
+  /** The interface went idle, so stops the live turn counter (if any) - a backstop for a request or
+   tool round ending without a turn or signal that finalizes it.
+   */
+  void handleActivityIdle();
+
+  /** Subscribes to the interface's activityChanged() only while m_activeStatus is counting, so
+   conversations with nothing in flight (all of history) dont listen.
+   */
+  void updateIdleListener();
+
+  /** Starts the "live" counter `status` (finalizing any other first), from `alreadyElapsed`, labeled
+   as waiting on tools (sub-agents, async tools) if `runningTools`, or else on the LLM; its final text
+   will be the callDuration() of `turn`.  `status` may be null; the conversations title still shows
+   what is being waited on.
+   */
+  void startActiveStatus( LlmElapsedText *status, const bool runningTools,
+                          std::shared_ptr<LlmInteractionTurn> turn,
+                          const std::chrono::milliseconds alreadyElapsed = std::chrono::milliseconds(0) );
+
+  /** Where the "Pending LLM response" counter for a request carrying `turn` goes; null if it has no
+   panel (e.g., the InitialRequest, whose wait the conversation's title already shows).
+   */
+  LlmElapsedText *requestStatusText( const std::shared_ptr<LlmInteractionTurn> &turn );
+
+  /** Starts the live counter for whatever `llm` has in flight for this conversation; for a display
+   made mid-flight, whose replayed turns got no counters.
+   */
+  void resumeActiveStatus( const LlmInterface &llm );
+
+  /** Replaces the live counter (if any) with the duration of its turn. */
+  void finalizeActiveStatus();
+
+  /** Shows the saved duration of `turn` (restored history, or an already finished call) in `status`,
+   labeled as LLM or tool time; for a turn in a tool round, the round shows both its durations.
+   */
+  void showFinalDuration( LlmElapsedText *status, const std::shared_ptr<LlmInteractionTurn> &turn );
+
+  /** The tool round `turn` is shown in; null if none. */
+  LlmToolRoundDisplay *toolRound( const std::shared_ptr<LlmInteractionTurn> &turn ) const;
 
   /** Update the summary section with start time, duration, and tokens */
   void updateSummary();
 
-  /** Start JavaScript timer for status display */
-  void startStatusTimer();
-
-  /** Stop JavaScript timer and show final time */
+  /** Stop the conversation's total-time counter and show the final time */
   void stopStatusTimer();
 
   /** Create the title text with status */
@@ -326,21 +588,78 @@ protected:
                       const std::string &jsonStr,
                       bool allowDownload = true );
 
+  /** Creates `m_phoneToolSummary` (and `m_phoneVisuals`, if needed) the first time a tool or
+   auto-reply turn shows up; phones only. */
+  void ensurePhoneToolSummary();
+
+  /** Sets the title of `m_phoneToolSummary` from the tools used so far. */
+  void updatePhoneToolSummaryTitle();
+
 private:
   std::shared_ptr<LlmInteraction> m_interaction;
   std::weak_ptr<class LlmInterface> m_llmInterface;
   Wt::WContainerWidget *m_turnContainer;
   Wt::WContainerWidget *m_summaryDiv;
   Wt::WText *m_statusText;
-  Wt::WText *m_timerText;  // Separate widget for timer display
+  LlmElapsedText *m_timerText;  // The conversation's total-time counter, in the title bar
   Wt::WPushButton *m_menuIcon;
   PopupDivMenu *m_menu;
 
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;
-  std::string m_timerId;  // Unique ID for JavaScript timer
 
-  static int s_nextTimerId;
+  /** See showInterruptedPanel(); hidden once the conversation is resumed or abandoned.  Null if none. */
+  Wt::WContainerWidget *m_interruptedPanel;
+
+  /** If its tool round is stopped (see handleStoppedChanged()); shown in the title, even once the
+   conversation is ended (a new question was asked instead of resuming it). */
+  bool m_isStopped;
+
+  /** True once the constructor has replayed the conversation's existing turns; turns added after that
+   are "live", and get running counters (replayed ones only show their saved durations).
+   */
+  bool m_isLive;
+
+  /** The single counter in this conversation's turns that is currently running (null if none), and
+   the turn whose callDuration() becomes its final text.  See startActiveStatus().
+   */
+  LlmElapsedText *m_activeStatus;
+  std::shared_ptr<LlmInteractionTurn> m_activeStatusTurn;
+
+  /** If tools (sub-agents, async tools) are what is being waited on, rather than the LLM; for the
+   title.  Set by startActiveStatus(), and cleared by finalizeActiveStatus().
+   */
+  bool m_waitingOnTools;
+
+  /** Desktop: each tool-call turn, and the tool-result turn following it, are shown in one panel. The
+   round awaiting its results (null if none), and all rounds, in order.
+   */
+  LlmToolRoundDisplay *m_openToolRound;
+  std::vector<LlmToolRoundDisplay *> m_toolRounds;
+
+  /** Our connection to LlmInterface::activityChanged(); see updateIdleListener(). */
+  Wt::Signals::connection m_idleConnection;
+
+  /** The most recent turn that is sent to the LLM (a ToolResult or AutoReply) and its panel; when a
+   request carrying it goes out, its panel shows the "Pending LLM response" counter.
+   */
+  std::shared_ptr<LlmInteractionTurn> m_lastRequestTurn;
+  LlmInteractionTurnDisplay *m_lastRequestDisplay;
+
+  /** On phones, the tool-call, tool-result, and auto-reply turns of the interaction are folded into
+   a single collapsed row (`m_phoneToolSummary`, whose body is `m_phoneToolList`), titled with the
+   tools used; any tool visuals are shown just after it, in `m_phoneVisuals`.  Not used otherwise.
+   */
+  const bool m_phoneLayout;
+  Wt::WPanel *m_phoneToolSummary;
+  Wt::WContainerWidget *m_phoneToolList;
+  Wt::WContainerWidget *m_phoneVisuals;
+  std::vector<std::string> m_phoneToolNames;  // Unique, in order of first use
+  int m_phoneOpenToolRequests;                // Tool-call turns still awaiting their results
+  bool m_phoneToolErrors;
+
+  /** Phones: the counter at the right of m_phoneToolSummary's title, for whatever is being waited on. */
+  LlmElapsedText *m_phoneStatus;
 };//class LlmInteractionDisplay
 
 

@@ -53,7 +53,6 @@
   <message id="ssd-cb-atten-for-air">空气衰减</message>
   <message id="ssd-tt-atten-for-air">选中时，计算中将考虑源或外部屏蔽与探测器之间空气的衰减。</message>
   <message id="ssd-cb-sub-back-peaks">减除本底峰</message>
-  <message id="ssd-tt-sub-back-peaks">这将强制元素的同位素在拟合中都具有相同年龄。</message>
   <message id="ssd-cb-same-el-same-age">相同Z相同年龄</message>
   <message id="ssd-tt-same-el-same-age">强制同一元素的同位素都应具有相同年龄。</message>
   <message id="ssd-cb-corr-for-decay">测量期间衰变校正</message>
@@ -80,22 +79,6 @@
     前景，识别可能要减除的峰，然后切换回当前的
     前景/本底组合。
   </message>
-  <message id="ssd-missing-back-peaks-title">缺失的本底峰</message>
-  <message id="ssd-missing-back-peaks-msg">
-    本底谱在能量 {1} 处没有添加峰，但在这些能量处
-    本底谱中可能存在真实峰 - 您是否要将这些峰添加到本底谱中？
-  </message>
-  <message id="ssd-btn-no-dont-add">否</message>
-  <message id="ssd-btn-add-peaks">添加峰...</message>
-  <message id="ssd-btn-add-all-detectable">添加所有自动拟合峰</message>
-  <message id="ssd-back-peak-preview-title">本底峰预览</message>
-  <message id="ssd-back-peak-preview-msg">以下峰将被添加到本底谱中：</message>
-  <message id="ssd-no-new-back-peaks">在指定能量处的本底谱中未找到额外的峰。</message>
-  <message id="ssd-back-peaks-all-fit">{1} 个候选峰已拟合到本底。</message>
-  <message id="ssd-back-peaks-some-fit">{2} 个候选峰中有 {1} 个显著并已拟合到本底。</message>
-  <message id="ssd-back-peaks-manual-hint">（您也可以通过 Alt 键（mac：Option 键）加双击<br />
-  谱图来手动拟合本底峰，或将本底加载为前景）</message>
-  <message id="ssd-err-adding-back-peaks">向本底添加峰时出错：{1}</message>
   <message id="ssd-scaled-shield-to-be-less-dist">屏蔽厚度已缩放为小于探测器距离。</message>
   <message id="ssd-err-fit-only-one-an">您一次只能拟合一个通用屏蔽的原子序数。</message>
   <message id="ssd-warn-invalid-chi2-for-energy">为{1} keV计算了无效的chi2，其他结果可能无效</message>

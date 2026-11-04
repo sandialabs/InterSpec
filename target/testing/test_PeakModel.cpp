@@ -490,6 +490,6 @@ BOOST_AUTO_TEST_CASE( peakCsvReadsSourcesAsWritten )
   check_peak( peaks[0], "Th232",  PeakDef::SingleEscapeGamma, "Tl208->Pb208", 2103.53 );
   check_peak( peaks[1], "Th232",  PeakDef::DoubleEscapeGamma, "Tl208->Pb208", 1592.54 );
   check_peak( peaks[2], "H(n,g)", PeakDef::SingleEscapeGamma, "none",         1712.25 );
-  check_peak( peaks[3], "Pb",     PeakDef::NormalGamma,       "none",         75.0 );
+  check_peak( peaks[3], "Pb",     PeakDef::NormalGamma,       "none",         74.97 ); //rounded 75.00 snaps to Pb Ka1
   check_peak( peaks[4], "Annihilation", PeakDef::NormalGamma, "none",         511.0 );
 }//BOOST_AUTO_TEST_CASE( peakCsvReadsSourcesAsWritten )

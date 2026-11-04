@@ -72,5 +72,22 @@
   Changer naïvement le type d'asymétrie à {1} a rendu le pic insignifiant.<br />
   Veuillez utiliser l'<b>Éditeur de pics</b> pour effectuer ce changement.
   </message>
-  
+  <message id="psgu-missing-back-peaks-title">Pics d'arrière-plan manquants</message>
+  <message id="psgu-missing-back-peaks-msg">
+    Le spectre d'arrière-plan ne contient pas de pics ajoutés aux énergies {1}, mais il
+    y a probablement des pics réels dans le spectre d'arrière-plan à ces énergies -
+    souhaitez-vous ajouter ces pics au spectre d'arrière-plan ?
+  </message>
+  <message id="psgu-btn-no-dont-add">Non</message>
+  <message id="psgu-btn-add-peaks">Ajouter des pics...</message>
+  <message id="psgu-btn-add-all-detectable">Ajouter tous les pics auto-ajustés</message>
+  <message id="psgu-back-peak-preview-title">Aperçu des pics d'arrière-plan</message>
+  <message id="psgu-back-peak-preview-msg">Les pics suivants seraient ajoutés au spectre d'arrière-plan :</message>
+  <message id="psgu-no-new-back-peaks">Aucun pic supplémentaire n'a été trouvé dans le spectre d'arrière-plan aux énergies indiquées.</message>
+  <message id="psgu-back-peaks-all-fit">{1} pics candidats ont été ajustés à l'arrière-plan.</message>
+  <message id="psgu-back-peaks-some-fit">{1} sur {2} pics candidats étaient significatifs et ajustés à l'arrière-plan.</message>
+  <message id="psgu-back-peaks-manual-hint">(vous pouvez également ajuster manuellement les pics d'arrière-plan avec la touche Alt (mac : touche Option) plus double<br />
+  clic sur le spectre, ou en chargeant l'arrière-plan comme premier plan)</message>
+  <message id="psgu-err-adding-back-peaks">Erreur lors de l'ajout de pics à l'arrière-plan : {1}</message>
+  <message id="psgu-warn-no-back-spec">Il n'y a pas de spectre d'arrière-plan chargé, il n'est donc pas possible de soustraire les aires des pics d'arrière-plan du premier plan.</message>
 </messages>

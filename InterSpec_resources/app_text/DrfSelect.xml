@@ -128,7 +128,7 @@
   <message id="ds-modify-btn">Modify...</message>
   <message id="ds-chip-far-field">Far-field</message>
   <message id="ds-chip-fixed-geom">Fixed geometry</message>
-  <message id="ds-chip-tt-far-field">Efficiency is intrinsic (per gamma striking the detector face); solid-angle corrections are applied for the source distance.</message>
+  <message id="ds-chip-tt-far-field">Efficiency is intrinsic (per gamma striking the detector crystal); solid-angle corrections are applied for the source distance from the detector face.</message>
   <message id="ds-chip-tt-fixed-geom">Efficiency is for one specific source/detector geometry - distances do not apply.</message>
   <message id="ds-chip-fwhm">FWHM</message>
   <message id="ds-chip-tt-fwhm">Detector energy-resolution (FWHM) information.</message>
@@ -141,7 +141,7 @@
   <message id="ds-chip-tt-total-eff">Total efficiency (probability of depositing any energy) - the input needed for cascade-summing corrections. This detector has none, so cascade-summing corrections are unavailable.</message>
   <message id="ds-chip-tt-total-eff-curve">Total-efficiency curve (probability of depositing any energy; input for cascade-summing corrections).</message>
   <message id="ds-chip-tt-total-eff-mc">Total efficiency (probability of depositing any energy; input for cascade-summing corrections), supplied by this detector's Monte-Carlo response rather than by a separate curve.</message>
-  <message id="ds-chip-tt-total-eff-grid">Total efficiency (probability of depositing any energy; input for cascade-summing corrections), from a Monte Carlo of this detector's geometry, grounded to its imported efficiency grid.</message>
+  <message id="ds-chip-tt-total-eff-grid">Total efficiency (probability of depositing any energy; input for cascade-summing corrections): the imported grid's full-energy-peak efficiency times the total-to-peak ratio of a Monte Carlo of this detector's geometry.</message>
   <message id="ds-chip-points">Measured points</message>
   <message id="ds-chip-tt-points">The raw per-peak efficiency measurements this DRF was made from (kept for provenance, and to anchor a Monte-Carlo characterization).</message>
   <message id="ds-chip-mc">MC response</message>
@@ -149,6 +149,12 @@
   <message id="ds-chip-tt-grid">Full-energy-peak efficiency from the grid this detector was imported with (a .par detector-characterization file; valid {1}-{2} keV): off-axis and near-field efficiencies as the file tabulates them.  A total efficiency, for cascade-summing corrections, can be added by Monte Carlo ("Modify...", Geom &amp; MC tab).</message>
   <message id="ds-chip-tt-grid-geom-edited">Full-energy-peak efficiency from the grid this detector was imported with (a .par detector-characterization file; valid {1}-{2} keV).  The detector geometry was edited after import; the grid&apos;s efficiencies are unchanged, and the edited geometry is used for Monte-Carlo calculations such as the total efficiency.</message>
   <message id="ds-chip-tt-mc">Full Monte-Carlo-parameterized response ({1} profile; valid {2}-{3} keV): off-axis and near-field efficiencies with honest uncertainties.</message>
+  <message id="ds-chip-tt-mc-precision"> Generated at {1} Monte-Carlo precision per node.</message>
+  <message id="ds-chip-tt-mc-precision-balanced"> Generated at {1} Monte-Carlo precision per node, relaxed at high energies (Balanced).</message>
+  <message id="ds-chip-tt-mc-back-none"> Side &amp; back incidence: not characterized - efficiencies for sources beside or behind the detector are extrapolated.</message>
+  <message id="ds-chip-tt-mc-back-yes"> Side &amp; back incidence: characterized.</message>
+  <message id="ds-chip-tt-mc-back-coarse"> Side &amp; back incidence: characterized (Coarse).</message>
+  <message id="ds-chip-tt-mc-back-fine"> Side &amp; back incidence: characterized (Fine).</message>
   <message id="ds-chip-tt-no-mc">No Monte-Carlo parameterization - efficiencies are on-axis far-field only. Use "Characterize by MC..." to add one.</message>
   <message id="ds-chip-transfer">Transfer</message>
   <message id="ds-chip-tt-transfer">Efficiency-transfer response (an anchored efficiency curve carried to other distances/angles through the exact ray-traced detector geometry; valid {1}-{2} keV). Best accuracy on-axis at distances beyond {3}; closer or well off-axis queries are flagged and carry an honestly inflated uncertainty. For the best near-field / off-axis accuracy run a Full MC characterization ("Modify...", Geom &amp; MC tab).</message>
@@ -208,7 +214,7 @@
   <message id="dsi-characterize">Characterize...</message>
   <message id="dsi-building">Building the detector response...</message>
   <message id="dsi-need-diameter">Enter the detector diameter.</message>
-  <message id="dsi-need-distance">Enter the source-to-detector distance the efficiencies are for.</message>
+  <message id="dsi-need-distance">Enter the source-to-detector-face distance the efficiencies are for.</message>
   <message id="dsi-geometry-only">This file describes the detector, but not its efficiency; characterize it with Monte Carlo to use it.</message>
   <message id="dsi-parse-error">Could not use '{1}' as a detector efficiency file: {2}</message>
   <message id="dsi-build-error">Could not create the detector response: {1}</message>

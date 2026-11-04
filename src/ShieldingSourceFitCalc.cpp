@@ -53,6 +53,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/CeresUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -2134,18 +2135,9 @@ static void assemble_included_observed( const GammaInteractionCalc::ShieldingSou
 
     double observed_counts = peak.peakArea();
     double observed_uncertainty = peak.peakAreaUncert();
-    double backCounts = 0.0, backUncert2 = 0.0;
-    const double nsigmaNear = 1.0;
-
-    for( const PeakDef &backPeak : back_peaks )
-    {
-      const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
-      if( fabs(backPeak.mean() - peak.mean()) < (nsigmaNear*sigma) )
-      {
-        backCounts += backPeak.peakArea();
-        backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
-      }
-    }//for( const PeakDef &backPeak : back_peaks )
+    const GammaInteractionCalc::BackgroundOverlap back_overlap
+                              = GammaInteractionCalc::overlapping_background( peak, back_peaks );
+    const double backCounts = back_overlap.counts, backUncert2 = back_overlap.uncert2;
 
     if( backCounts > 0.0 )
     {
@@ -2316,6 +2308,22 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
       " counting (statistical) uncertainty only." );
   }
 
+  // A source behind the plane of the crystal's back face sees the detector through what the
+  //  response describes there - typically an approximation: an undescribed preamplifier or
+  //  cold-finger mass can change the efficiency there several-fold (2 cm of steel behind an HPGe:
+  //  30x at 122 keV, CeeLo MC 2026-11).
+  try
+  {
+    if( chi2Fcn.reachesBehindCrystal( params ) )
+      results.warnings.push_back( "The source reaches behind the detector's crystal, where the"
+        " efficiency depends on the housing the detector response describes behind it (Modify"
+        " Detector Response, Geom and MC tab).  That description is usually approximate, and"
+        " material it leaves out - a preamplifier, cold finger, or photomultiplier - can change the"
+        " efficiency there several-fold, most at low energies." );
+  }catch( std::exception & )
+  {
+  }
+
   // Detector-efficiency validity flags: a MC/transfer-parameterized response reports when a
   //  query fell outside its validated regime (near-field below the validity floor, refuse-grade
   //  off-axis, collimator shadowing, energy clamping).  One message per flag kind, listing the
@@ -2363,8 +2371,10 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
         case EffFlag::NeedsMc:
           results.warnings.push_back( "The detector-efficiency queries for the peaks at "
             + flag_list.second + " keV are outside the regime the detector response can represent"
-            " (e.g. far off-axis); the fitted results should not be trusted - run a full MC"
-            " characterization for this geometry." );
+            " (e.g. far off-axis, or behind a crystal the response describes nothing behind); the"
+            " fitted results should not be trusted - run a full MC characterization for this"
+            " geometry (for a source behind the detector, describe the housing behind the crystal"
+            " and keep side & back incidence on)." );
           break;
       }//switch( flag_list.first )
     }//for( each flag kind present )
@@ -3655,7 +3665,7 @@ namespace
    @param cov_counts If non-null and sized to match, the EXPECTED (model) counts used to scale the
                correlated detector-efficiency covariance (the driver's iterated-GLS loop supplies
                these from the previous solution); null bootstraps the covariance from `observed`.
-   @returns the chi2 (=2*final_cost) at the solution.
+   @returns the chi2 (=2x the Ceres cost) at the solution.
    */
   double run_ceres_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                           const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
@@ -3789,8 +3799,9 @@ namespace
         std::cout << "}" << std::endl;
       }//if( INTERSPEC_DEBUG_CERES_FIT )
 
-      const double this_chi2 = 2.0*summary.final_cost;
-      const bool improved = (this_chi2 < best_chi2);
+      // Not `summary.final_cost`, which can be the cost of a rejected trial step, not of `u`
+      const double this_chi2 = 2.0*CeresUtils::cost_at_solution( summary );
+      const bool improved = std::isfinite( this_chi2 ) && (this_chi2 < best_chi2);
       if( improved )
       {
         best_chi2 = this_chi2;
@@ -3844,10 +3855,19 @@ namespace
     }//for( int attempt = 0; attempt < max_attempts; ++attempt )
 
     // If no solve attempt got a valid cost, the problem is unevaluatable at/near the
-    //  starting parameters - report it rather than returning garbage.
+    //  starting parameters - report it rather than returning garbage.  A cancel or time-out
+    //  before the first evaluation looks the same (the cost functor returns false), so report
+    //  that as the cancel it is.
     if( best_chi2 == std::numeric_limits<double>::max() )
+    {
+      using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+      const ShieldingSourceChi2Fcn::CalcStatus cancel_status = chi2Fcn->currentCancelStatus();
+      if( cancel_status != ShieldingSourceChi2Fcn::CalcStatus::NotCanceled )
+        throw ShieldingSourceChi2Fcn::CancelException( cancel_status );
+
       throw std::runtime_error( "The optimizer could not evaluate the model"
                                 " (check starting values and limits)." );
+    }//if( no attempt got a valid cost )
 
     // Surface non-convergence (e.g. hit the iteration cap, or a numeric failure) so the
     //  user gets a "fit may not be reliable" signal.  A
@@ -3990,7 +4010,14 @@ namespace
     //  restart exactly at a bound would just re-stall.  Offset inward by min( ~0.5 g/cm2 of the
     //  shell material, 0.5% of the range ); 0.5 g/cm2 is sub-mm for dense shields, and the 0.5%
     //  cap handles a near-void shell (tiny density) whose 0.5 g/cm2 thickness would be enormous.
-    const double distance = chi2Fcn->distance();
+    // The physical scale restarts are drawn within: the distance to the face, or - beside or behind
+    //  the detector, where that can be zero or negative and the caps come from the detector's
+    //  outside instead - the distance to the face centre.
+    const double *offsets = chi2Fcn->createInput().config.source_offsets;
+    const double distance = chi2Fcn->extendedScene()
+                              ? std::sqrt( chi2Fcn->distance()*chi2Fcn->distance()
+                                           + offsets[0]*offsets[0] + offsets[1]*offsets[1] )
+                              : chi2Fcn->distance();
     const size_t nnuc = chi2Fcn->numNuclides();
     const double half_gcm2 = 0.5 * PhysicalUnits::g_per_cm2;
 
@@ -4332,6 +4359,8 @@ void fit_model( const std::string wtsession,
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
   results->distance = chi2Fcn->distance();
   results->geometry = chi2Fcn->geometry();
+  results->source_offsets[0] = chi2Fcn->sourceOffsetX();
+  results->source_offsets[1] = chi2Fcn->sourceOffsetY();
   results->foreground_peaks = chi2Fcn->peaks();
   results->background_peaks = chi2Fcn->backgroundPeaks();
   results->background_normalization_factor = chi2Fcn->backgroundNormalizationFactor();

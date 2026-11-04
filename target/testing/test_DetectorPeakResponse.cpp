@@ -61,6 +61,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/AppUtils.h"
@@ -1498,7 +1499,7 @@ BOOST_AUTO_TEST_CASE( test_angle_detector_types )
     ceelo::GeometryDescriptor gd;
     BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
 
-    // The three behind-the-crystal pieces are dropped, and each says so.
+    // The two behind-the-crystal plates become back plates and the PMT wall is dropped; each says so.
     size_t n_behind_warnings = 0;
     for( const string &w : warnings )
       n_behind_warnings += (w.find("behind the") != string::npos) ? 1u : 0u;
@@ -1514,6 +1515,17 @@ BOOST_AUTO_TEST_CASE( test_angle_detector_types )
 
     // Reflecting layer 1.6 + vacuum 0.5 + end cap 0.5 mm.
     BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.26, 1.0e-3 );
+
+    // Optical coupling 2 + PMT window 2 mm, directly behind the crystal; the housing's walls run
+    //  on past them.
+    BOOST_CHECK_CLOSE( gd.back_structure_extent_cm(), 0.4, 1.0e-6 );
+    BOOST_REQUIRE( gd.layers.size() >= 3 );
+    BOOST_CHECK_CLOSE( gd.layer_back_thickness_cm( 0 ), 0.2, 1.0e-6 );
+    BOOST_CHECK_CLOSE( gd.layer_back_thickness_cm( 1 ), 0.2, 1.0e-6 );
+    BOOST_CHECK_EQUAL( gd.layers[0].front_thickness_cm, 0.0 );
+    BOOST_CHECK_EQUAL( gd.layers[0].side_thickness_cm, 0.0 );
+    BOOST_CHECK_CLOSE( gd.layers.back().z_end_cm, gd.dimensions_cm.back() + 0.4, 1.0e-6 );
+    BOOST_CHECK( gd.problems().empty() );
   }
 
   cout << "ANGLE detector types handled (planar, well refusal, NaI light path)" << endl;
@@ -5148,3 +5160,91 @@ BOOST_AUTO_TEST_CASE( test_n42_embeds_drf_with_measured_points )
 
   cout << "N42 DRF embedding passed" << endl;
 }//test_n42_embeds_drf_with_measured_points
+
+
+// DetectorPeakResponse::convertFixedGeometryType: a per-area (or per-mass) efficiency is the
+//  total-activity efficiency times the area (or mass) of the source, in those units.  Converting
+//  *to* total activity used to assert (and in release builds, divide by the area in mm2).
+BOOST_AUTO_TEST_CASE( test_convert_fixed_geometry_type )
+{
+  typedef DetectorPeakResponse::EffGeometryType GeomType;
+
+  auto total = make_shared<DetectorPeakResponse>( "FixedGeomTotal", "fixed geometry" );
+  total->setIntrinsicEfficiencyFormula( "0.01", 2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                        0.0f, 0.0f, GeomType::FixedGeomTotalAct );
+  BOOST_REQUIRE( total->isValid() );
+
+  const float energy = 661.66f;
+  const double dist = 1.0*PhysicalUnits::meter;  //not used for fixed geometry
+  const double area = 250.0*PhysicalUnits::cm2;
+  const double mass = 100.0*PhysicalUnits::gram;
+  const double tol_percent = 1.0E-4;
+
+  const double eff_total = total->efficiency( energy, dist );
+  BOOST_CHECK_CLOSE( eff_total, 0.01, tol_percent );
+
+  // From total activity (the direction DrfImport uses) - unchanged behavior
+  const shared_ptr<DetectorPeakResponse> per_cm2 = total->convertFixedGeometryType( area, GeomType::FixedGeomActPerCm2 );
+  BOOST_REQUIRE( per_cm2 && (per_cm2->geometryType() == GeomType::FixedGeomActPerCm2) );
+  BOOST_CHECK_CLOSE( per_cm2->efficiency( energy, dist ), 0.01*250.0, tol_percent );
+
+  const shared_ptr<DetectorPeakResponse> per_m2 = total->convertFixedGeometryType( area, GeomType::FixedGeomActPerM2 );
+  BOOST_REQUIRE( per_m2 && (per_m2->geometryType() == GeomType::FixedGeomActPerM2) );
+  BOOST_CHECK_CLOSE( per_m2->efficiency( energy, dist ), 0.01*0.025, tol_percent );
+
+  const shared_ptr<DetectorPeakResponse> per_gram = total->convertFixedGeometryType( mass, GeomType::FixedGeomActPerGram );
+  BOOST_REQUIRE( per_gram && (per_gram->geometryType() == GeomType::FixedGeomActPerGram) );
+  BOOST_CHECK_CLOSE( per_gram->efficiency( energy, dist ), 0.01*100.0, tol_percent );
+
+  // Back to total activity
+  const shared_ptr<DetectorPeakResponse> from_cm2 = per_cm2->convertFixedGeometryType( area, GeomType::FixedGeomTotalAct );
+  BOOST_REQUIRE( from_cm2 && (from_cm2->geometryType() == GeomType::FixedGeomTotalAct) );
+  BOOST_CHECK_CLOSE( from_cm2->efficiency( energy, dist ), eff_total, tol_percent );
+
+  const shared_ptr<DetectorPeakResponse> from_m2 = per_m2->convertFixedGeometryType( area, GeomType::FixedGeomTotalAct );
+  BOOST_CHECK_CLOSE( from_m2->efficiency( energy, dist ), eff_total, tol_percent );
+
+  const shared_ptr<DetectorPeakResponse> from_gram = per_gram->convertFixedGeometryType( mass, GeomType::FixedGeomTotalAct );
+  BOOST_CHECK_CLOSE( from_gram->efficiency( energy, dist ), eff_total, tol_percent );
+
+  // Between the two per-area types the area doesnt matter - any valid value gives the same answer
+  const shared_ptr<DetectorPeakResponse> cm2_to_m2 = per_cm2->convertFixedGeometryType( 1.0, GeomType::FixedGeomActPerM2 );
+  BOOST_REQUIRE( cm2_to_m2 && (cm2_to_m2->geometryType() == GeomType::FixedGeomActPerM2) );
+  BOOST_CHECK_CLOSE( cm2_to_m2->efficiency( energy, dist ), per_m2->efficiency( energy, dist ), tol_percent );
+
+  const shared_ptr<DetectorPeakResponse> m2_to_cm2 = per_m2->convertFixedGeometryType( 1.0, GeomType::FixedGeomActPerCm2 );
+  BOOST_CHECK_CLOSE( m2_to_cm2->efficiency( energy, dist ), per_cm2->efficiency( energy, dist ), tol_percent );
+
+  // Between per-area and per-mass needs both the area and the mass, so isnt allowed
+  BOOST_CHECK_THROW( per_m2->convertFixedGeometryType( mass, GeomType::FixedGeomActPerGram ), std::exception );
+  BOOST_CHECK_THROW( per_gram->convertFixedGeometryType( area, GeomType::FixedGeomActPerCm2 ), std::exception );
+
+  // Same type is an unchanged copy
+  const shared_ptr<DetectorPeakResponse> same = total->convertFixedGeometryType( area, GeomType::FixedGeomTotalAct );
+  BOOST_REQUIRE( same && (same.get() != total.get()) );
+  BOOST_CHECK_EQUAL( same->efficiency( energy, dist ), eff_total );
+
+  // Far-field types, and invalid quantities, are rejected
+  BOOST_CHECK_THROW( total->convertFixedGeometryType( area, GeomType::FarFieldIntrinsic ), std::exception );
+  BOOST_CHECK_THROW( total->convertFixedGeometryType( 0.0, GeomType::FixedGeomActPerCm2 ), std::exception );
+
+  // An embedded Monte Carlo scene's FepScale (how the FEP curve relates to per-decay efficiency) follows
+  //  the curve there and back.
+  {
+    auto embedded = make_shared<DetectorPeakResponse>( *total );
+    MakeFixedGeomResponse::Setup setup;
+    setup.distance = 10.0*PhysicalUnits::cm;
+    setup.fep_scale = 1.0;
+    embedded->setFixedGeometrySetupXml( setup.toXmlString() );
+
+    const shared_ptr<DetectorPeakResponse> embedded_gram
+                         = embedded->convertFixedGeometryType( mass, GeomType::FixedGeomActPerGram );
+    BOOST_CHECK_CLOSE( MakeFixedGeomResponse::perDecayFepScale( *embedded_gram ), 100.0, 1.0E-4 );
+
+    const shared_ptr<DetectorPeakResponse> embedded_back
+                         = embedded_gram->convertFixedGeometryType( mass, GeomType::FixedGeomTotalAct );
+    MakeFixedGeomResponse::Setup back_setup;
+    back_setup.fromXmlString( embedded_back->fixedGeometrySetupXml() );
+    BOOST_CHECK_CLOSE( back_setup.fep_scale, 1.0, 1.0E-4 );
+  }
+}//test_convert_fixed_geometry_type

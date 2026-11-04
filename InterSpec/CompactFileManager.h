@@ -77,7 +77,7 @@ public:
 
   void handleUserChangeSampleNum( SpecUtils::SpectrumType spectrum_type );
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType spectrum_type, bool increment );
-  static void handleUserIncrementSampleNum( SpecUtils::SpectrumType spectrum_type, bool increment, InterSpec *hostViewer, SpectraFileModel *files, CompactFileManager* cfm);
+  static void handleUserIncrementSampleNum( SpecUtils::SpectrumType spectrum_type, bool increment, InterSpec *hostViewer, CompactFileManager* cfm );
     
   static void changeToSampleNum( int sampleNum, SpecUtils::SpectrumType spectrum_type, InterSpec *hostViewer, CompactFileManager* cfm );
 

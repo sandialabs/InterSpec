@@ -1,0 +1,165 @@
+name: Linux dependency prefix
+description: >
+  Builds (or restores from cache) the Linux dependency prefix - boost, zlib, Wt 4.13.2 (with libwttest),
+  Eigen, Abseil and Ceres, all static - inside the manylinux container, and verifies it is usable.
+
+# ------------------------------------------------------------------------------------------------
+# The Linux counterpart of .github/actions/macos_deps_prefix, following the same rules (see there):
+# cache the prefix, never a build directory; key over every input and assert the hashed files exist;
+# no restore-keys; split restore/save so only a verified prefix is saved; verify on a hit too.
+#
+# Being a composite action is what makes the Linux app (build_linux.yml) and the stdio MCP server
+# (build_mcp_stdio.yml) compute the same key, so they share one prefix.
+#
+# The prefix is built and used inside the manylinux container, always mounted at /deps_prefix: Wt bakes
+# absolute paths into its installed CMake files, so it must be used at the path it was built at.  And
+# it is ABI-bound to the image's gcc-toolset, so whatever compiles against it must use this action's
+# `image` output rather than naming an image of its own.
+# ------------------------------------------------------------------------------------------------
+
+inputs:
+  image:
+    description: >
+      The manylinux image to build in.  Pinned by tag and digest, so the toolchain can not change under
+      a cached prefix; it is part of the cache key, so changing it is a deliberate prefix rebuild.
+      glibc 2.28 (AlmaLinux 8) is the floor the Electron app needs, and so what we advertise.
+    required: false
+    default: 'quay.io/pypa/manylinux_2_28_x86_64:2026.10.10-1@sha256:4131ddd7acb9c6c966af02fe7e71edc51e078c2d41f475966697676430bfa2ae'
+
+outputs:
+  prefix-dir:
+    description: Absolute path of the dependency prefix on the runner (mount it at /deps_prefix).
+    value: ${{ steps.paths.outputs.prefix-dir }}
+  image:
+    description: The image the prefix was built in, which everything compiled against it must use.
+    value: ${{ steps.deps-key.outputs.image }}
+  cache-hit:
+    description: "'true' when the prefix was restored from cache rather than built."
+    value: ${{ steps.cache-linux-deps.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Define dependency paths
+      id: paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        BUILD_DIR="${RUNNER_TEMP}/linux_deps_build"
+        PREFIX_DIR="${RUNNER_TEMP}/linux_deps_prefix"
+        mkdir -p "${BUILD_DIR}" "${PREFIX_DIR}"
+        echo "build-dir=${BUILD_DIR}" >> "${GITHUB_OUTPUT}"
+        echo "prefix-dir=${PREFIX_DIR}" >> "${GITHUB_OUTPUT}"
+
+    - name: Compute the dependency cache key
+      id: deps-key
+      shell: bash
+      env:
+        DEPS_HASH: ${{ hashFiles('target/dep_build/dep_build_linux.sh', 'target/dep_build/patches/**', 'target/electron/build_linux_deps_from_docker.sh') }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        # hashFiles() silently ignores patterns that match nothing, so check each input exists.
+        # This list must stay in sync with the DEPS_HASH patterns above.
+        for f in target/dep_build/dep_build_linux.sh \
+                 target/dep_build/patches \
+                 target/electron/build_linux_deps_from_docker.sh ; do
+          if [ ! -e "${f}" ]; then
+            echo "::error::${f} does not exist, so the cache key does not cover what it claims to."
+            exit 1
+          fi
+        done
+        if [ -z "${DEPS_HASH}" ]; then
+          echo "::error::hashFiles() matched nothing; the dependency cache key would be constant."
+          exit 1
+        fi
+        # `wt4-v1` keeps master's (Wt 3.7.1) `linux-deps-v1-...` prefix from ever being restored here;
+        # bump it when the prefix layout changes in a way the hash can not see.  The image tag (not
+        # the whole reference - its digest is long, and a tag is only ever re-pinned along with it)
+        # is in the key because the prefix is ABI-bound to the image's toolchain.
+        IMAGE_TAG="${IMAGE##*/}"
+        IMAGE_TAG="${IMAGE_TAG%%@*}"
+        IMAGE_TAG=$(printf '%s' "${IMAGE_TAG}" | tr -c 'A-Za-z0-9._-' '_')
+        KEY="linux-deps-wt4-v1-${IMAGE_TAG}-${DEPS_HASH}"
+        echo "key=${KEY}" >> "${GITHUB_OUTPUT}"
+        echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+        echo "Dependency cache key: ${KEY}"
+
+    - name: Restore the dependency prefix
+      id: cache-linux-deps
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.paths.outputs.prefix-dir }}
+        key: ${{ steps.deps-key.outputs.key }}
+        # Deliberately no restore-keys.
+
+    - name: Build the dependency prefix in Docker
+      # Never add `continue-on-error` here - it would make a failed build "succeed" and the save step
+      # below would cache a broken prefix.
+      if: steps.cache-linux-deps.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        BUILD_DIR: ${{ steps.paths.outputs.build-dir }}
+        PREFIX_DIR: ${{ steps.paths.outputs.prefix-dir }}
+      run: |
+        set -euo pipefail
+        df -h /
+        time docker run --rm \
+          -v "${GITHUB_WORKSPACE}:/interspec:ro" \
+          -v "${BUILD_DIR}:/deps_build" \
+          -v "${PREFIX_DIR}:/deps_prefix" \
+          "${IMAGE}" \
+          bash -lc '/interspec/target/electron/build_linux_deps_from_docker.sh /interspec /deps_build /deps_prefix'
+        # The container runs as root; the cache save, and later read-only mounts, want the runner
+        # user to own this.
+        sudo chown -R "$(id -u):$(id -g)" "${PREFIX_DIR}"
+
+    # Runs on a cache hit as well as a miss, so a bad *restore* is caught too.  Also prints the
+    # prefix's provenance, so "which prefix am I linking against?" is answerable from the run log.
+    - name: Verify the dependency prefix
+      shell: bash
+      env:
+        PREFIX_DIR: ${{ steps.paths.outputs.prefix-dir }}
+      run: |
+        set -euo pipefail
+        SENTINEL="${PREFIX_DIR}/.interspec_deps_complete"
+        if [ ! -f "${SENTINEL}" ]; then
+          echo "::error::${PREFIX_DIR} has no completion sentinel - it is not a usable prefix."
+          ls -la "${PREFIX_DIR}" || true
+          exit 1
+        fi
+        echo "### prefix provenance ###"
+        cat "${SENTINEL}"
+
+        # It is always built, and used, mounted at /deps_prefix in the container.
+        RECORDED_PREFIX=$(sed -n 's/^prefix_path=//p' "${SENTINEL}")
+        if [ "${RECORDED_PREFIX}" != "/deps_prefix" ]; then
+          echo "::error::prefix was built at '${RECORDED_PREFIX}', but is mounted at /deps_prefix."
+          exit 1
+        fi
+
+        for f in lib/libwt.a lib/libwthttp.a lib/libwttest.a lib/libwtdbo.a lib/libwtdbosqlite3.a \
+                 lib/libceres.a lib/libboost_system.a lib/libz.a include/Wt/WObject.h ; do
+          if [ ! -e "${PREFIX_DIR}/${f}" ]; then
+            echo "::error::${f} is missing from the dependency prefix."
+            exit 1
+          fi
+        done
+        du -sh "${PREFIX_DIR}"
+
+    - name: Save the dependency prefix
+      # Implicitly `if: success()`, so a failed build or verification is never cached.  If another
+      # job sharing this key saved first, this only warns.
+      if: steps.cache-linux-deps.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.paths.outputs.prefix-dir }}
+        key: ${{ steps.deps-key.outputs.key }}
+
+    # Several GB of boost/Wt/Ceres build trees that nothing downstream reads; packaging and the smoke
+    # tests later in the job want the disk back.
+    - name: Reclaim the dependency build directory
+      if: always() && steps.cache-linux-deps.outputs.cache-hit != 'true'
+      shell: bash
+      run: sudo rm -rf "${{ steps.paths.outputs.build-dir }}"

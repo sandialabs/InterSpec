@@ -57,6 +57,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
@@ -64,7 +65,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/DrfSelect.h"
-#include "InterSpec/DrfModifyCalc.h"
+#include "InterSpec/FluxToolCalc.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
@@ -75,6 +76,9 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 #if( USE_QR_CODES )
 #include <Wt/Utils.h>
@@ -181,10 +185,36 @@ namespace FluxToolImp
   };//struct index_compare
   
   
+  /** Whether a column is shown, in the table and the CSV/clipboard output alike.
+
+   @param bkgSub Whether background peaks are being subtracted (see
+          FluxToolWidget::backgroundSubtractionActive).
+   */
   bool showFluxColumn( FluxToolWidget::DisplayInfoLevel disptype,
                       const FluxToolWidget::FluxColumns col,
-                      const shared_ptr<const DetectorPeakResponse> &det )
+                      const shared_ptr<const DetectorPeakResponse> &det,
+                      const bool bkgSub )
   {
+    // A fixed-geometry efficiency describes the whole source-detector setup: there is no distance,
+    //  and so no flux at the detector, or solid angle, to give.
+    const bool fixed_geom = (det && det->isFixedGeometry());
+    switch( col )
+    {
+      case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
+      case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+      case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
+      case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
+        if( fixed_geom )
+          return false;
+        break;
+
+      case FluxToolWidget::FluxColumns::FluxBackgroundCpsCol:
+        return bkgSub && (disptype != FluxToolWidget::DisplayInfoLevel::Simple);
+
+      default:
+        break;
+    }//switch( col )
+
     switch( disptype )
     {
       case FluxToolWidget::DisplayInfoLevel::Simple:
@@ -199,6 +229,7 @@ namespace FluxToolImp
           case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
           case FluxToolWidget::FluxColumns::FluxPeakCpsCol:
+          case FluxToolWidget::FluxColumns::FluxBackgroundCpsCol:
           case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
           case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
           case FluxToolWidget::FluxColumns::FluxNumColumns:
@@ -225,6 +256,9 @@ namespace FluxToolImp
           case FluxToolWidget::FluxColumns::FluxNumColumns:
             return false;
             break;
+
+          case FluxToolWidget::FluxColumns::FluxBackgroundCpsCol:
+            return bkgSub;
         }//switch( col )
         
         break;
@@ -238,13 +272,13 @@ namespace FluxToolImp
           case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
           case FluxToolWidget::FluxColumns::FluxNuclideCol:
           case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
-            return true;
-            break;
-            
           case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
-            return (!det || !det->isFixedGeometry());
+            return true;  //Fixed-geometry DRFs were taken care of above
             break;
+
+          case FluxToolWidget::FluxColumns::FluxBackgroundCpsCol:
+            return bkgSub;
             
           case FluxToolWidget::FluxColumns::FluxNumColumns:
             return false;
@@ -264,13 +298,14 @@ namespace FluxToolImp
     int nsigfigs = 6;
     char buffer[256] = { '\0' };
     
+    // Negative values are possible once background is subtracted, so the size is what matters
     const bool haveUncert = ((uncert > std::numeric_limits<double>::epsilon())
-                             && (value > 0.0) && !(std::isinf)(value) && !(std::isnan)(value) );
+                             && (value != 0.0) && !(std::isinf)(value) && !(std::isnan)(value) );
     if( haveUncert )
     {
       //We'll be conservative and add at least one extra sig fig by using the nsigfigs to be
       //  number of digits after the decimal when printed in scientific notation.
-      nsigfigs = static_cast<int>( std::round( std::log10( value / uncert ) + 0.5 ) );
+      nsigfigs = static_cast<int>( std::round( std::log10( std::fabs(value) / uncert ) + 0.5 ) );
       nsigfigs = std::min( std::max( nsigfigs, 3 ), 9 ); //clamp num sig figs between 3 and 9
     }//if( haveUncert )
     
@@ -283,7 +318,7 @@ namespace FluxToolImp
   std::string print_uncert( const double value, const double uncert, const bool uncertAsPercent )
   {
     const bool haveUncert = ((uncert > std::numeric_limits<double>::epsilon())
-                             && (value > 0.0) && !(std::isinf)(value) && !(std::isnan)(value) );
+                             && (value != 0.0) && !(std::isinf)(value) && !(std::isnan)(value) );
     
     if( !haveUncert )
       return "";
@@ -294,12 +329,12 @@ namespace FluxToolImp
     
     //We'll be conservative and add at least one extra sig fig by using the nsigfigs to be
     //  number of digits after the decimal when printed in scientific notation.
-    nsigfigs = static_cast<int>( std::round( std::log10( value / uncert ) + 0.5 ) );
+    nsigfigs = static_cast<int>( std::round( std::log10( std::fabs(value) / uncert ) + 0.5 ) );
     nsigfigs = std::min( std::max( nsigfigs, 3 ), 9 ); //clamp num sig figs between 3 and 9
     
     if( uncertAsPercent )
     {
-      const double percentUncert = 100.0 * uncert / value;
+      const double percentUncert = 100.0 * uncert / std::fabs(value);
       
       if( percentUncert > 10 )
         snprintf( buffer, sizeof(buffer), "%.1f%%", percentUncert );
@@ -319,14 +354,14 @@ namespace FluxToolImp
   /** An uncertainty split into its statistical and systematic (detector efficiency) parts, like
    "0.401 (stat) +- 0.112 (syst)", as the exports and the table's tooltips give it.  The systematic
    part is only given when there is one (the note under the table says when the detector states
-   none); peak CPS never has one, and intrinsic efficiency has no statistical part.
-   Empty when `value` is not a positive, finite number.
+   none); peak (and background) CPS never has one, and intrinsic efficiency has no statistical part.
+   Empty when `value` is zero, or not a finite number.
    */
   std::string print_stat_syst( const FluxToolWidget::FluxColumns col, const double value,
                                const double stat, const double syst, const bool asPercent,
                                const std::string &plus_minus )
   {
-    if( !(value > 0.0) || (std::isinf)(value) || (std::isnan)(value) )
+    if( (value == 0.0) || (std::isinf)(value) || (std::isnan)(value) )
       return "";
 
     const auto part = [=]( const double uncert ) -> std::string {
@@ -337,11 +372,26 @@ namespace FluxToolImp
     std::string answer;
     if( col != FluxToolWidget::FluxColumns::FluxIntrinsicEffCol )
       answer = part( stat ) + " (stat)";
-    if( (col != FluxToolWidget::FluxColumns::FluxPeakCpsCol) && (syst > std::numeric_limits<double>::epsilon()) )
+    if( (col != FluxToolWidget::FluxColumns::FluxPeakCpsCol)
+       && (col != FluxToolWidget::FluxColumns::FluxBackgroundCpsCol)
+       && (syst > std::numeric_limits<double>::epsilon()) )
       answer += (answer.empty() ? "" : (" " + plus_minus + " ")) + part( syst ) + " (syst)";
 
     return answer;
   }//print_stat_syst(...)
+
+
+  /** The energy range the DRF states it is valid for, like "50-3000", for messages; empty if it states
+   none (see FluxToolCalc::outside_energy_range).
+   */
+  std::string drf_energy_range_txt( const shared_ptr<const DetectorPeakResponse> &det )
+  {
+    if( !det || !(det->upperEnergy() > det->lowerEnergy()) )
+      return "";
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.6g-%.6g", det->lowerEnergy(), det->upperEnergy() );
+    return buffer;
+  }//drf_energy_range_txt(...)
 
 
   /** Returns, for each entry of `peaks`, whether any of `energies` names that peak.
@@ -515,6 +565,25 @@ namespace FluxToolImp
       if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
         return Wt::cpp17::any();
 
+      // Rows outside the DRFs stated energy range get their energy flagged
+      if( col == FluxToolWidget::FluxColumns::FluxEnergyCol )
+      {
+        const vector<bool> &out_of_range = m_fluxtool->m_rowOutOfRange;
+        if( (realind >= out_of_range.size()) || !out_of_range[realind] )
+          return Wt::cpp17::any();
+
+        if( role == Wt::ItemDataRole::StyleClass )
+          return Wt::cpp17::any( WString::fromUTF8("FluxOutOfRange") );
+
+        if( role == Wt::ItemDataRole::ToolTip )
+        {
+          const string range = drf_energy_range_txt( m_fluxtool->m_detector->detector() );
+          return Wt::cpp17::any( WString::tr("ftw-tt-outside-range").arg( range ) );
+        }
+
+        return Wt::cpp17::any();
+      }//if( col == FluxToolWidget::FluxColumns::FluxEnergyCol )
+
       const double stat = stat_uncerts[realind][col], syst = syst_uncerts[realind][col];
       const double total = std::sqrt( stat*stat + syst*syst );
       const bool has_uncert = (total > std::numeric_limits<double>::epsilon());
@@ -607,6 +676,18 @@ namespace FluxToolImp
             return Wt::cpp17::any( WString::tr("ftw-tt-hdr-intrinsic-eff") );
           case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
             return Wt::cpp17::any( WString::tr("ftw-tt-hdr-geom-eff") );
+          case FluxToolWidget::FluxColumns::FluxBackgroundCpsCol:
+            return Wt::cpp17::any( WString::tr("ftw-tt-hdr-bkg-cps") );
+          case FluxToolWidget::FluxColumns::FluxFluxOnDetCol:
+            return Wt::cpp17::any( WString::tr("ftw-tt-hdr-flux-on-det") );
+          case FluxToolWidget::FluxColumns::FluxFluxPerCm2PerSCol:
+            return Wt::cpp17::any( WString::tr("ftw-tt-hdr-flux-cm") );
+          case FluxToolWidget::FluxColumns::FluxGammasInto4PiCol:
+          {
+            const shared_ptr<const DetectorPeakResponse> det = m_fluxtool->m_detector->detector();
+            const bool fixed_geom = (det && det->isFixedGeometry());
+            return Wt::cpp17::any( WString::tr( fixed_geom ? "ftw-tt-hdr-fixed-geom-rate" : "ftw-tt-hdr-flux-4pi") );
+          }
           default:
             return Wt::cpp17::any();
         }//switch( section )
@@ -770,6 +851,9 @@ namespace FluxToolImp
       const auto tooltip = model->data( index.row(), index.column(), Wt::ItemDataRole::ToolTip );
       oldwidget->setToolTip( Wt::cpp17::any_has_value(tooltip) ? Wt::asString(tooltip) : WString() );
 
+      const auto style = model->data( index.row(), index.column(), Wt::ItemDataRole::StyleClass );
+      oldwidget->toggleStyleClass( "FluxOutOfRange", Wt::cpp17::any_has_value(style) );
+
       return newWidget;
     }//std::unique_ptr<WWidget> update(...)
   };//class FluxRenderDelegate
@@ -811,13 +895,31 @@ namespace FluxToolImp
         strm << "<table border=\"1\" cellpadding=\"2\" style=\"border-collapse: collapse\">" << eol_char;
       
       const shared_ptr<const DetectorPeakResponse> det = tool->m_detector->detector();
+      const bool bkgSub = tool->backgroundSubtractionActive();
+
+      // Rows that will be output; when the user is picking rows, only the checked ones.
+      //  m_rowSelected parallels m_data, both in un-sorted order, so it indexes straight off the row.
+      //  The size check is just belt-and-braces (refreshPeakTable() keeps the two the same size,
+      //  including on its early-returns, where both end up empty).
+      assert( tool->m_rowSelected.size() == tool->m_data.size() );
+      const auto output_row = [tool]( const size_t row ) -> bool {
+        return !tool->m_selectRows
+               || (row >= tool->m_rowSelected.size())
+               || tool->m_rowSelected[row];
+      };
+
+      // A "Notes" column is added only when some row output needs one.
+      bool any_notes = false;
+      for( size_t row = 0; row < tool->m_data.size(); ++row )
+        any_notes |= (output_row(row) && (row < tool->m_rowOutOfRange.size()) && tool->m_rowOutOfRange[row]);
+      const string range_note = any_notes ? ("outside DRF energy range (" + drf_energy_range_txt(det) + " keV)") : string();
       
       for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
           col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
       {
         const WString &colname = tool->m_colnamesCsv[col];
         
-        if( !FluxToolImp::showFluxColumn(disptype, col, det) )
+        if( !FluxToolImp::showFluxColumn(disptype, col, det, bkgSub) )
           continue;
         
         if( html )
@@ -836,6 +938,7 @@ namespace FluxToolImp
             
           case FluxToolWidget::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxPeakCpsCol:
+          case FluxToolWidget::FluxBackgroundCpsCol:
           case FluxToolWidget::FluxFluxOnDetCol:
           case FluxToolWidget::FluxFluxPerCm2PerSCol:
           case FluxToolWidget::FluxGammasInto4PiCol:
@@ -860,6 +963,9 @@ namespace FluxToolImp
             break;
         }//switch( col )
       }//for( loop over columns )
+
+      if( any_notes )
+        strm << (html ? "</th><th>" : ",") << "Notes";
       
       if( html )
         strm << "</th></tr>";
@@ -867,17 +973,8 @@ namespace FluxToolImp
       
       for( size_t row = 0; row < tool->m_data.size(); ++row )
       {
-        // When the user is picking rows, only the checked ones get output.  m_rowSelected
-        //  parallels m_data, both in un-sorted order, so it indexes straight off `row`.
-        //  The size check is just belt-and-braces (refreshPeakTable() keeps the two the
-        //  same size, including on its early-returns, where both end up empty).
-        assert( tool->m_rowSelected.size() == tool->m_data.size() );
-        if( tool->m_selectRows
-           && (row < tool->m_rowSelected.size())
-           && !tool->m_rowSelected[row] )
-        {
+        if( !output_row(row) )
           continue;
-        }
 
         if( html )
           strm << "\\t<tr>";
@@ -885,7 +982,7 @@ namespace FluxToolImp
         for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
             col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
         {
-          if( !FluxToolImp::showFluxColumn(disptype, col, det) )
+          if( !FluxToolImp::showFluxColumn(disptype, col, det, bkgSub) )
             continue;
           
           const double data = tool->m_data[row][col];
@@ -913,6 +1010,7 @@ namespace FluxToolImp
               break;
               
             case FluxToolWidget::FluxPeakCpsCol:
+            case FluxToolWidget::FluxBackgroundCpsCol:
             case FluxToolWidget::FluxIntrinsicEffCol:
             case FluxToolWidget::FluxGeometricEffCol:
             case FluxToolWidget::FluxFluxOnDetCol:
@@ -943,6 +1041,7 @@ namespace FluxToolImp
               
             case FluxToolWidget::FluxIntrinsicEffCol:
             case FluxToolWidget::FluxPeakCpsCol:
+            case FluxToolWidget::FluxBackgroundCpsCol:
             case FluxToolWidget::FluxFluxOnDetCol:
             case FluxToolWidget::FluxFluxPerCm2PerSCol:
             case FluxToolWidget::FluxGammasInto4PiCol:
@@ -956,6 +1055,12 @@ namespace FluxToolImp
             }//case CPS, FluxOnDet, FluxPerArea, GammasInto 4pi
           }//switch( col )
         }//for( loop over columns )
+
+        if( any_notes )
+        {
+          const bool out_of_range = (row < tool->m_rowOutOfRange.size()) && tool->m_rowOutOfRange[row];
+          strm << (html ? "</td><td>" : ",") << (out_of_range ? range_note : string());
+        }
         
         if( html )
           strm << "</td></tr>";
@@ -1126,6 +1231,13 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer )
     m_narrowLayout( false ),
     m_msg( nullptr ),
     m_drfUncertNote( nullptr ),
+    m_calcNote( nullptr ),
+    m_rangeWarning( nullptr ),
+    m_airAttenCb( nullptr ),
+    m_attenuateForAir( true ),
+    m_backgroundPeakSub( nullptr ),
+    m_subtractBackground( false ),
+    m_skipBackgroundPeakCheck( false ),
     m_distance( nullptr ),
     m_prevDistance(),
     m_table( nullptr ),
@@ -1173,20 +1285,36 @@ void FluxToolWidget::handleAppUrl( std::string query_str )
     Wt::log("warn") << "No 'VER' field in Flux Tool URI.";
   else if( ver_iter->second != "1" && !SpecUtils::starts_with(ver_iter->second, "1.") )
     throw runtime_error( "Can not read Flux Tool URI version '" + ver_iter->second + "'" );
+
+  // URIs before version 1.2 predate the air-attenuation option, so had none applied.
+  const bool pre_ver_1_2 = (ver_iter == end(parts))
+                           || (ver_iter->second == "1")
+                           || (ver_iter->second == "1.0")
+                           || (ver_iter->second == "1.1");
   
   const auto dist_iter = parts.find( "DIST" );
   if( dist_iter == end(parts) )
     throw runtime_error( "URL is invalid Flux Tool URI = no 'DIST' component" );
   
+  // encodeStateToUrl() writes an empty distance when the distance box held an invalid one (which
+  //  for a fixed-geometry DRF isnt used, so may be left that way); keep the current distance then,
+  //  so the rest of the state - e.g., when undoing closing the tool - still gets restored.
   string dist = dist_iter->second;
-  try
+  SpecUtils::trim( dist );
+  if( dist.empty() )
   {
-    PhysicalUnits::stringToDistance( dist );
-  }catch( std::exception & )
+    dist = m_distance->text().toUTF8();
+  }else
   {
-    Wt::log("warn") << "FluxToolWidget URI had invalid distance: '" << dist << "'";
-    throw std::runtime_error( "Invalid Flux Tool distance specified in URI" );
-  }
+    try
+    {
+      PhysicalUnits::stringToDistance( dist );
+    }catch( std::exception & )
+    {
+      Wt::log("warn") << "FluxToolWidget URI had invalid distance: '" << dist << "'";
+      throw std::runtime_error( "Invalid Flux Tool distance specified in URI" );
+    }
+  }//if( dist.empty() ) / else
   
   
   DisplayInfoLevel level = DisplayInfoLevel::Normal;
@@ -1252,6 +1380,19 @@ void FluxToolWidget::handleAppUrl( std::string query_str )
     }
   }//if( sel_iter != end(parts) )
 
+  // "AIR" and "BKGSUB" were added in URI version 1.2; see the default for an absent "AIR" above.
+  bool attenuateForAir = !pre_ver_1_2;
+  const auto air_iter = parts.find( "AIR" );
+  if( air_iter != end(parts) )
+    attenuateForAir = (air_iter->second == "1") || SpecUtils::iequals_ascii(air_iter->second, "true");
+
+  bool subtractBackground = false;
+  const auto bkgsub_iter = parts.find( "BKGSUB" );
+  if( bkgsub_iter != end(parts) )
+    subtractBackground = (bkgsub_iter->second == "1") || SpecUtils::iequals_ascii(bkgsub_iter->second, "true");
+
+  applyAttenuateForAir( attenuateForAir );
+  applySubtractBackground( subtractBackground );
   setDisplayInfoLevel( level, true );
   applySelectionState( selectRows, deselected );
   m_prevDistance = WString::fromUTF8(dist);
@@ -1273,7 +1414,7 @@ std::string FluxToolWidget::encodeStateToUrl() const
     dist = "";
   }
   
-  string answer = "VER=1.1&DIST=" + dist + "&DISPLAY=";
+  string answer = "VER=1.2&DIST=" + dist + "&DISPLAY=";
 
   switch( displayInfoLevel() )
   {
@@ -1281,6 +1422,13 @@ std::string FluxToolWidget::encodeStateToUrl() const
     case DisplayInfoLevel::Normal:   answer += "NORMAL";   break;
     case DisplayInfoLevel::Extended: answer += "EXTENDED"; break;
   }//switch( displayInfoLevel() )
+
+  // Only written when not the default (on), to keep the URI short.
+  if( !m_attenuateForAir )
+    answer += "&AIR=0";
+
+  if( m_subtractBackground )
+    answer += "&BKGSUB=1";
 
   if( m_selectRows )
     answer += "&SELROWS=1";
@@ -1348,45 +1496,7 @@ void FluxToolWidget::init()
     m_narrowLayout = ((w > 100) && (w < 500));
   }//if( phone )
   
-  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
-  {
-    switch( col )
-    {
-      case FluxEnergyCol:
-        m_colnames[col] = WString::tr( m_narrowLayout ? "Energy" : "Energy (keV)" );
-        m_colnamesCsv[col] = WString::fromUTF8("Energy (keV)");
-        break;
-      case FluxNuclideCol:
-        m_colnames[col] = WString::tr( m_narrowLayout ? "Nuc." : "Nuclide");
-        m_colnamesCsv[col] = WString::fromUTF8("Nuclide");
-        break;
-      case FluxPeakCpsCol:
-        m_colnames[col] = WString("{1} {2}").arg(WString::tr("Peak")).arg(WString::tr("CPS"));
-        m_colnamesCsv[col] = WString::fromUTF8("Peak CPS");
-        break;
-      case FluxIntrinsicEffCol:
-        m_colnames[col] = WString::tr("ftw-hdr-intrinsic-eff");
-        m_colnamesCsv[col] = WString::fromUTF8("Intrinsic Efficiency");
-        break;
-      case FluxGeometricEffCol:
-        m_colnames[col] = WString::tr("ftw-hdr-geom-eff");
-        m_colnamesCsv[col] = WString::fromUTF8("Geometric Efficiency");
-        break;
-      case FluxFluxOnDetCol:
-        m_colnames[col] = WString::tr("ftw-hdr-flux-on-det");
-        m_colnamesCsv[col] = WString::fromUTF8("Flux on Detector (gammas/s)");
-        break;
-      case FluxFluxPerCm2PerSCol:
-        m_colnames[col] = WString::tr("ftw-hdr-flux-cm");
-        m_colnamesCsv[col] = WString::fromUTF8("Flux (gammas/cm2/s)");
-        break;
-      case FluxGammasInto4PiCol:
-        m_colnames[col] = WString::tr("ftw-hdr-flux-4pi");
-        m_colnamesCsv[col] = WString::fromUTF8("gammas/4pi/s");
-        break;
-      case FluxNumColumns:        break;
-    }//switch( col )
-  }//for( loop over columns )
+  updateColumnLabels();
   
   
   wApp->useStyleSheet( "InterSpec_resources/FluxTool.css" );
@@ -1439,6 +1549,50 @@ void FluxToolWidget::init()
   m_interspec->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
   m_interspec->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
 
+  // The calculation options, and the notes on how the numbers were computed, go under the table (and
+  //  under the row of output options right below it)
+  WContainerWidget *optsAndNotesDiv = nullptr;
+  {
+    auto optsAndNotesOwned = std::make_unique<WContainerWidget>();
+    optsAndNotesDiv = optsAndNotesOwned.get();
+    optsAndNotesDiv->addStyleClass( "FluxCalcOptsAndNotes" );
+    layout->addWidget( std::move(optsAndNotesOwned), 3, 0, 1, 2 );
+  }
+
+  WContainerWidget *calcOptsDiv = optsAndNotesDiv->addNew<WContainerWidget>();
+  calcOptsDiv->addStyleClass( "FluxCalcOpts" );
+
+  m_airAttenCb = calcOptsDiv->addNew<WCheckBox>( WString::tr( m_narrowLayout ? "ftw-cb-air-narrow" : "ftw-cb-air" ) );
+  m_airAttenCb->addStyleClass( "CbNoLineBreak FluxAirCb" );
+  m_airAttenCb->setChecked( m_attenuateForAir );
+  HelpSystem::attachToolTipOn( m_airAttenCb, WString::tr("ftw-tt-air"), showToolTips );
+  m_airAttenCb->checked().connect( this, [this](){ setAttenuateForAir( true ); } );
+  m_airAttenCb->unChecked().connect( this, [this](){ setAttenuateForAir( false ); } );
+
+  m_backgroundPeakSub = calcOptsDiv->addNew<WCheckBox>( WString::tr( m_narrowLayout ? "ftw-cb-bkg-sub-narrow" : "ftw-cb-bkg-sub" ) );
+  m_backgroundPeakSub->addStyleClass( "CbNoLineBreak FluxBkgSubCb" );
+  m_backgroundPeakSub->setChecked( m_subtractBackground );
+  m_backgroundPeakSub->setHidden( true );  //see updateBackgroundSubVisibility()
+  HelpSystem::attachToolTipOn( m_backgroundPeakSub, WString::tr("ftw-tt-bkg-sub"), showToolTips );
+  m_backgroundPeakSub->checked().connect( this, [this](){ setSubtractBackground( true ); } );
+  m_backgroundPeakSub->unChecked().connect( this, [this](){ setSubtractBackground( false ); } );
+
+  // A new foreground means new peaks, so it is worth offering missing background peaks again.
+  m_interspec->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType type,
+                                                        std::shared_ptr<SpecMeas>, std::set<int>,
+                                                        std::vector<std::string> ){
+    if( type == SpecUtils::SpectrumType::Foreground )
+      m_skipBackgroundPeakCheck = false;
+    setTableNeedsUpdating();
+  } );
+  m_interspec->spectrumScaleFactorChanged().connect( this, [this]( SpecUtils::SpectrumType, double ){
+    setTableNeedsUpdating();
+  } );
+  m_interspec->hintPeaksSet().connect( this, [this]( SpecUtils::SpectrumType type ){
+    if( type == SpecUtils::SpectrumType::Background )
+      setTableNeedsUpdating();  //can change whether background subtraction is offered
+  } );
+
 
   const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
   assert( peakmodel );
@@ -1446,15 +1600,26 @@ void FluxToolWidget::init()
   peakmodel->rowsRemoved().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   peakmodel->rowsInserted().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   peakmodel->layoutChanged().connect( this, &FluxToolWidget::setTableNeedsUpdating );
+  peakmodel->backgroundPeaksChanged().connect( this, &FluxToolWidget::setTableNeedsUpdating );
 
-  auto msgCell = distDetRow->elementAt( m_narrowLayout ? 2 : 1,0);
+  // Why the table is empty, if it is, stays prominent at the top
+  auto msgCell = distDetRow->elementAt( m_narrowLayout ? 2 : 1, 0 );
   msgCell->setColumnSpan( 2 );
   msgCell->addStyleClass( "FluxMsgCell" );
   m_msg = msgCell->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
   m_msg->addStyleClass( "FluxMsg" );
-  m_drfUncertNote = msgCell->addNew<WText>( WString::fromUTF8("") );
+
+  WContainerWidget *notesDiv = optsAndNotesDiv->addNew<WContainerWidget>();
+  notesDiv->addStyleClass( "FluxNotes" );
+  m_rangeWarning = notesDiv->addNew<WText>( WString::fromUTF8("") );
+  m_rangeWarning->addStyleClass( "FluxRangeWarn" );
+  m_rangeWarning->setInline( false );
+  m_drfUncertNote = notesDiv->addNew<WText>( WString::fromUTF8("") );
   m_drfUncertNote->addStyleClass( "FluxDrfUncertNote" );
   m_drfUncertNote->setInline( false );
+  m_calcNote = notesDiv->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
+  m_calcNote->addStyleClass( "FluxDrfUncertNote FluxCalcNote" );
+  m_calcNote->setInline( false );
   
   
   m_selectColName = WString::tr("ftw-hdr-use");
@@ -1501,14 +1666,46 @@ void FluxToolWidget::init()
 
   layout->setRowStretch( 1, 1 );
 
-  WContainerWidget *buttonBox = nullptr;
+  // Immediately under the table: row selection on the left, copying in the middle, and how much
+  //  detail to show on the right - wrapping onto more lines if there isnt room (e.g., phones).
+  WContainerWidget *outputOptsDiv = nullptr;
   {
-    auto buttonBoxOwned = std::make_unique<WContainerWidget>();
-    buttonBox = buttonBoxOwned.get();
-    buttonBox->addStyleClass( "FluxInfoAmount" );
-    layout->addWidget( std::move(buttonBoxOwned), 2, 1,
-                       AlignmentFlag::Right | AlignmentFlag::Middle );
+    auto outputOptsOwned = std::make_unique<WContainerWidget>();
+    outputOptsDiv = outputOptsOwned.get();
+    outputOptsDiv->addStyleClass( "FluxOutputOpts" );
+    layout->addWidget( std::move(outputOptsOwned), 2, 0, 1, 2 );
   }
+
+  m_selectRowsCb = outputOptsDiv->addNew<WCheckBox>( WString::tr( m_narrowLayout ? "ftw-select-rows-narrow"
+                                                              : "ftw-select-rows") );
+  m_selectRowsCb->addStyleClass( "CbNoLineBreak FluxSelectRowsCb" );
+  HelpSystem::attachToolTipOn( m_selectRowsCb, WString::tr("ftw-tt-select-rows"), showToolTips );
+  m_selectRowsCb->checked().connect( this, [this](){ setSelectRows( true ); } );
+  m_selectRowsCb->unChecked().connect( this, [this](){ setSelectRows( false ); } );
+
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
+
+  m_copyBtn = outputOptsDiv->addNew<WPushButton>( WString::tr("ftw-copy-btn-narrow") );
+  m_copyBtn->setIcon( "InterSpec_resources/images/copy_small.svg" );
+  m_copyBtn->setStyleClass( "LinkBtn FluxCopyBtn" );
+  HelpSystem::attachToolTipOn( m_copyBtn, WString::tr("ftw-tt-copy-btn"), showToolTips );
+
+  // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
+  //"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showMsg-info-' );"
+
+  m_copyBtn->clicked().connect( "function(s,e){ "
+    "var success = Wt.WT.CopyFluxDataTextToClipboard(s,e,'" + m_copyBtn->id() + "'); "
+    "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
+  "}" );
+
+  m_infoCopied.connect( this, [this]( const int copied ){
+    tableCopiedToCliboardCallback( copied );
+  } );
+#endif
+
+  WContainerWidget *buttonBox = outputOptsDiv->addNew<WContainerWidget>();
+  buttonBox->addStyleClass( "FluxInfoAmount" );
 
   WRadioButton *simpleInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-simple") );
   WRadioButton *standardInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-standard") );
@@ -1529,43 +1726,8 @@ void FluxToolWidget::init()
 
     setDisplayInfoLevel( level, false );
   } );
-  
-  
-  WContainerWidget *outputOptsDiv = nullptr;
-  {
-    auto outputOptsOwned = std::make_unique<WContainerWidget>();
-    outputOptsDiv = outputOptsOwned.get();
-    outputOptsDiv->addStyleClass( "FluxOutputOpts" );
-    layout->addWidget( std::move(outputOptsOwned), 2, 0,
-                       AlignmentFlag::Left | AlignmentFlag::Middle );
-  }
 
-#if( FLUX_USE_COPY_TO_CLIPBOARD )
-  LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
-
-  m_copyBtn = outputOptsDiv->addNew<WPushButton>(
-                     WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
-
-  // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
-  //"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showMsg-info-' );"
-
-  m_copyBtn->clicked().connect( "function(s,e){ "
-    "var success = Wt.WT.CopyFluxDataTextToClipboard(s,e,'" + m_copyBtn->id() + "'); "
-    "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
-  "}" );
-
-  m_infoCopied.connect( this, [this]( const bool success ){
-    tableCopiedToCliboardCallback( success );
-  } );
-#endif
-
-  m_selectRowsCb = outputOptsDiv->addNew<WCheckBox>( WString::tr( m_narrowLayout ? "ftw-select-rows-narrow"
-                                                              : "ftw-select-rows") );
-  m_selectRowsCb->addStyleClass( "FluxSelectRowsCb" );
-  HelpSystem::attachToolTipOn( m_selectRowsCb, WString::tr("ftw-tt-select-rows"), showToolTips );
-  m_selectRowsCb->checked().connect( this, [this](){ setSelectRows( true ); } );
-  m_selectRowsCb->unChecked().connect( this, [this](){ setSelectRows( false ); } );
-
+  updateForDrf();
   setDisplayInfoLevel( m_narrowLayout ? DisplayInfoLevel::Simple : DisplayInfoLevel::Normal, true );
 }//void init()
 
@@ -1573,7 +1735,12 @@ void FluxToolWidget::init()
 void FluxToolWidget::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   if( m_needsTableRefresh )
+  {
+    // Can change which columns are shown, which itself asks for a refresh - that we are doing now.
+    updateBackgroundSubVisibility();
+    m_needsTableRefresh = false;
     refreshPeakTable();
+  }
   
   WContainerWidget::render( flags );
 }//void render( Wt::WFlags<Wt::RenderFlag> flags );
@@ -1630,6 +1797,7 @@ void FluxToolWidget::refreshPeakTable()
   m_data.clear();
   m_statUncerts.clear();
   m_systUncerts.clear();
+  m_rowOutOfRange.clear();
 
   // Note that m_deselectedEnergies is deliberately *not* touched here - it is keyed by
   //  energy exactly so it can outlive the table.  Several of the early-returns below leave
@@ -1639,6 +1807,8 @@ void FluxToolWidget::refreshPeakTable()
 
   m_msg->setText( "" );
   m_drfUncertNote->setText( "" );
+  m_calcNote->setText( "" );
+  m_rangeWarning->setText( "" );
 
   // Shared tail for the cases below where there is nothing to compute.  The table is left
   //  empty, so the clipboard text is refreshed to match, rather than leaving the button
@@ -1651,36 +1821,94 @@ void FluxToolWidget::refreshPeakTable()
     m_tableUpdated.emit();
   };
 
-  double distance = 1.0*PhysicalUnits::meter;
-  try
-  {
-    distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
-  }catch(...)
-  {
-    showMessageForEmptyTable( "ftw-invalid-dist" );
-    return;
-  }
-
-  auto det = m_detector->detector();
+  const shared_ptr<const DetectorPeakResponse> det = m_detector->detector();
   if( !det || !det->isValid() )
   {
     showMessageForEmptyTable( "ftw-no-drf" );
     return;
   }
 
-  auto spec = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  // A fixed-geometry efficiency already describes the whole source-detector setup, so the distance
+  //  isnt used - or even parsed, so an invalid one doesnt blank the table.
+  const bool fixed_geom = det->isFixedGeometry();
+
+  double distance = 1.0*PhysicalUnits::meter;
+  if( !fixed_geom )
+  {
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+    }catch(...)
+    {
+      distance = -1.0;
+    }
+
+    // e.g., "1e305 km" parses, but overflows to infinity
+    if( !(distance >= 0.0) || std::isinf(distance) )
+    {
+      showMessageForEmptyTable( "ftw-invalid-dist" );
+      return;
+    }
+  }//if( !fixed_geom )
+
+  // The displayed histogram (not the spectrum file), so the live time is that of the samples shown.
+  const shared_ptr<const SpecUtils::Measurement> spec = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   if( !spec )
   {
     showMessageForEmptyTable( "ftw-no-foreground" );
     return;
   }
 
-  const float live_time = spec->gamma_live_time();
-  if( live_time <= 0.0f )
+  const float live_time = spec->live_time();
+  if( !(live_time > 0.0f) || std::isinf(live_time) )
   {
     showMessageForEmptyTable( "ftw-invalid-livetime" );
     return;
   }
+
+  // Background peaks to subtract, put on the foregrounds footing - the same way the
+  //  Activity/Shielding fit does it.
+  const bool bkg_sub = backgroundSubtractionActive();
+  vector<PeakDef> scaled_back_peaks;
+  double back_scale = 0.0, back_live_time_ratio = 0.0;
+  size_t num_non_gaus_back = 0;
+  if( bkg_sub )
+  {
+    const shared_ptr<const SpecUtils::Measurement> back = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks
+                                      = peakmodel->peaks( SpecUtils::SpectrumType::Background );
+    if( back && back_peaks && !back_peaks->empty() )
+    {
+      vector<PeakDef> peaks;
+      for( const shared_ptr<const PeakDef> &p : *back_peaks )
+      {
+        if( p )
+          peaks.push_back( *p );
+      }
+
+      const float back_live_time = back->live_time();
+      if( (back_live_time > 0.0f) && !std::isinf(back_live_time) )
+        back_live_time_ratio = static_cast<double>(live_time) / back_live_time;
+
+      // The displayed scale factor (the live-time ratio, unless the user has changed it), falling back
+      //  to the live-time ratio - so a background with no live time still uses the display scale.
+      const double scale = GammaInteractionCalc::background_peak_scale(
+                              m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background),
+                              live_time, back_live_time );
+      if( (scale > 0.0) && !std::isinf(scale) && !std::isnan(scale) )
+      {
+        back_scale = scale;
+        vector<double> skipped_energies;
+        scaled_back_peaks = GammaInteractionCalc::scale_background_peaks( peaks, back_scale, &skipped_energies );
+        num_non_gaus_back = skipped_energies.size();
+      }
+    }//if( we have background peaks )
+  }//if( bkg_sub )
+
+  FluxToolCalc::Options options;
+  options.distance = distance;
+  options.correct_for_air = m_attenuateForAir;
+  options.scaled_background_peaks = bkg_sub ? &scaled_back_peaks : nullptr;
 
   const vector<PeakDef> peaks = peakmodel->peakVec();
   
@@ -1689,14 +1917,15 @@ void FluxToolWidget::refreshPeakTable()
   m_data.resize( npeaks );
   m_statUncerts.resize( npeaks );
   m_systUncerts.resize( npeaks );
-  
-  const bool fixed_geom = det->isFixedGeometry();
+  m_rowOutOfRange.resize( npeaks, false );
 
   // The range of detector-efficiency uncertainty folded into the rows, for the note below.
   double min_eff_uncert = std::numeric_limits<double>::infinity(), max_eff_uncert = 0.0;
   bool eff_uncert_from_model_only = false;
+  size_t num_back_subtracted = 0;
+  vector<string> out_of_range_energies;
 
-  for( int i = 0; i < static_cast<int>(npeaks); ++i )
+  for( size_t i = 0; i < npeaks; ++i )
   {
     m_data[i].fill( 0.0 );
     m_statUncerts[i].fill( 0.0 );
@@ -1704,73 +1933,67 @@ void FluxToolWidget::refreshPeakTable()
     
     const PeakDef &peak = peaks[i];
     
-    const double energy = peak.mean();
-    
-    const double amp = peak.peakArea();  //ToDO: make sure this works for non-Gaussian peaks
-    const double ampUncert = peak.peakAreaUncert();
-    const double cps = amp / live_time;
-    const double cpsUncert = ampUncert / live_time;
-    const double geomEff = fixed_geom ? 1.0 : det->fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
-    const double totaleff = det->efficiency( energy, distance );  //distance ignored for fixed geometry
-
-    // The intrinsic efficiency at this distance - per gamma crossing the face - so the intrinsic and
-    //  geometric columns multiply to the efficiency used.  Exactly the far-field curve unless the DRF
-    //  has a geometry-modeled response (which accounts for where in the crystal gammas interact).
-    const double intrinsic = (geomEff > 0.0) ? (totaleff / geomEff) : 0.0;
-
-    // The efficiency uncertainty the DRF states, plus any geometry-model part (never an assumed one).
-    const DrfModifyCalc::UncertSummary drf_uncert = DrfModifyCalc::uncertSummary( *det, energy, distance );
-    const double eff_uncert = drf_uncert.usedFrac( false );
-    min_eff_uncert = std::min( min_eff_uncert, eff_uncert );
-    max_eff_uncert = std::max( max_eff_uncert, eff_uncert );
-    eff_uncert_from_model_only |= !drf_uncert.statesOwn;
-    
-    
     if( peak.parentNuclide() )
       m_nucNames[i] = peak.parentNuclide()->symbol;
     else if( peak.xrayElement() )
       m_nucNames[i] = peak.xrayElement()->symbol;
     else if( peak.reaction() )
       m_nucNames[i] = peak.reaction()->name();
-    
-    m_data[i][FluxColumns::FluxEnergyCol] = energy;
-    m_data[i][FluxColumns::FluxPeakCpsCol] = cps;
-    m_statUncerts[i][FluxColumns::FluxPeakCpsCol] = cpsUncert;
-    
-    m_data[i][FluxColumns::FluxGeometricEffCol] = geomEff;
-    m_data[i][FluxColumns::FluxIntrinsicEffCol] = intrinsic;
-    m_systUncerts[i][FluxColumns::FluxIntrinsicEffCol] = intrinsic * eff_uncert;
-    
-    if( totaleff <= 0.0 || intrinsic <= 0.0 )
+
+    //ToDO: make sure peakArea() works for non-Gaussian peaks
+    FluxToolCalc::PeakFlux flux;
+    try
     {
-      m_data[i][FluxColumns::FluxFluxOnDetCol]      = std::numeric_limits<double>::infinity();
-      m_data[i][FluxColumns::FluxFluxPerCm2PerSCol] = std::numeric_limits<double>::infinity();
-      m_data[i][FluxColumns::FluxGammasInto4PiCol]  = std::numeric_limits<double>::infinity();
-    }else
+      flux = FluxToolCalc::peak_flux( peak, *det, *spec, options );
+    }catch( std::exception &e )
     {
-      // Statistical (peak area) and systematic (detector efficiency) parts, kept apart
-      const double fluxOnDet = cps / intrinsic;
+      // The inputs were checked above, so this shouldnt happen - but this runs from render(), where an
+      //  exception would end the session, so show an empty table instead.
+      Wt::log("error") << "FluxToolWidget::refreshPeakTable: " << e.what();
+      m_nucNames.clear();
+      m_data.clear();
+      m_statUncerts.clear();
+      m_systUncerts.clear();
+      m_rowOutOfRange.clear();
+      showMessageForEmptyTable( "ftw-err-calc" );
+      return;
+    }//try / catch
 
-      //gammas into 4pi
-      const double gammaInto4pi = cps / totaleff;
+    min_eff_uncert = std::min( min_eff_uncert, flux.eff_uncert_frac );
+    max_eff_uncert = std::max( max_eff_uncert, flux.eff_uncert_frac );
+    eff_uncert_from_model_only |= !flux.eff_uncert_states_own;
+    num_back_subtracted += flux.background_subtracted ? 1 : 0;
 
-      //Flux in g/cm2/s
-      const double distance_cm = distance / PhysicalUnits::cm;
-      const double area_4pi = 4*M_PI*distance_cm*distance_cm;
-      const double flux = gammaInto4pi / area_4pi;
+    m_rowOutOfRange[i] = flux.outside_drf_energy_range;
+    if( flux.outside_drf_energy_range )
+    {
+      char buffer[32] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.2f", flux.energy );
+      out_of_range_energies.push_back( buffer );
+    }
+    
+    m_data[i][FluxColumns::FluxEnergyCol] = flux.energy;
+    m_data[i][FluxColumns::FluxPeakCpsCol] = flux.cps;
+    m_statUncerts[i][FluxColumns::FluxPeakCpsCol] = flux.cps_stat;
 
-      m_data[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet;
-      m_statUncerts[i][FluxColumns::FluxFluxOnDetCol] = cpsUncert / intrinsic;
-      m_systUncerts[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet * eff_uncert;
+    m_data[i][FluxColumns::FluxBackgroundCpsCol] = flux.background_cps;
+    m_statUncerts[i][FluxColumns::FluxBackgroundCpsCol] = flux.background_cps_stat;
+    
+    m_data[i][FluxColumns::FluxGeometricEffCol] = flux.geom_eff;
+    m_data[i][FluxColumns::FluxIntrinsicEffCol] = flux.intrinsic_eff;
+    m_systUncerts[i][FluxColumns::FluxIntrinsicEffCol] = flux.intrinsic_syst;
 
-      m_data[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux;
-      m_statUncerts[i][FluxColumns::FluxFluxPerCm2PerSCol] = cpsUncert / totaleff / area_4pi;
-      m_systUncerts[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux * eff_uncert;
+    m_data[i][FluxColumns::FluxFluxOnDetCol] = flux.flux_on_det;
+    m_statUncerts[i][FluxColumns::FluxFluxOnDetCol] = flux.flux_on_det_stat;
+    m_systUncerts[i][FluxColumns::FluxFluxOnDetCol] = flux.flux_on_det_syst;
 
-      m_data[i][FluxColumns::FluxGammasInto4PiCol] = gammaInto4pi;
-      m_statUncerts[i][FluxColumns::FluxGammasInto4PiCol] = cpsUncert / totaleff;
-      m_systUncerts[i][FluxColumns::FluxGammasInto4PiCol] = gammaInto4pi * eff_uncert;
-    }//if( eff > 0 ) / else
+    m_data[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux.flux_per_cm2;
+    m_statUncerts[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux.flux_per_cm2_stat;
+    m_systUncerts[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux.flux_per_cm2_syst;
+
+    m_data[i][FluxColumns::FluxGammasInto4PiCol] = flux.gammas_4pi;
+    m_statUncerts[i][FluxColumns::FluxGammasInto4PiCol] = flux.gammas_4pi_stat;
+    m_systUncerts[i][FluxColumns::FluxGammasInto4PiCol] = flux.gammas_4pi_syst;
   }//for( const PeakDef &peak : peaks )
 
   // Say whether the uncertainties include the detector efficiency's, and what kind.
@@ -1787,6 +2010,45 @@ void FluxToolWidget::refreshPeakTable()
     else
       m_drfUncertNote->setText( WString::tr("ftw-drf-uncert-stated").arg( range ) );
   }//if( npeaks > 0 )
+
+  // Short notes on how the numbers were arrived at
+  vector<string> notes;
+  if( fixed_geom )
+  {
+    const string &postfix = DetectorPeakResponse::det_eff_geom_type_postfix( det->geometryType() );
+    notes.push_back( WString::tr("ftw-note-fixed-geom").arg( postfix ).toUTF8() );
+  }//if( fixed_geom )
+
+  if( bkg_sub && (npeaks > 0) )
+  {
+    // The scale is only worth pointing out when it isnt the live-time ratio
+    if( (num_back_subtracted > 0) && !(back_live_time_ratio > 0.0) )
+      notes.push_back( WString::tr("ftw-note-bkg-scale-no-lt").arg( SpecUtils::printCompact(back_scale, 4) ).toUTF8() );
+    else if( (num_back_subtracted > 0)
+       && (fabs(back_scale - back_live_time_ratio) > 1.0E-4*back_live_time_ratio) )
+      notes.push_back( WString::tr("ftw-note-bkg-scale").arg( SpecUtils::printCompact(back_scale, 4) )
+                                    .arg( SpecUtils::printCompact(back_live_time_ratio, 4) ).toUTF8() );
+
+    if( num_back_subtracted == 0 )
+      notes.push_back( WString::tr("ftw-note-bkg-none").toUTF8() );
+
+    if( num_non_gaus_back > 0 )
+      notes.push_back( WString::tr("ftw-note-bkg-non-gaus").arg( static_cast<int>(num_non_gaus_back) ).toUTF8() );
+  }//if( bkg_sub )
+
+  string note_txt;
+  for( const string &note : notes )
+    note_txt += (note_txt.empty() ? "" : "<br />") + note;
+  m_calcNote->setText( WString::fromUTF8( note_txt ) );
+
+  if( !out_of_range_energies.empty() )
+  {
+    string energies;
+    for( size_t i = 0; i < out_of_range_energies.size(); ++i )
+      energies += (i ? ", " : "") + out_of_range_energies[i];
+    m_rangeWarning->setText( WString::tr("ftw-warn-outside-range").arg( energies )
+                                                         .arg( FluxToolImp::drf_energy_range_txt(det) ) );
+  }//if( !out_of_range_energies.empty() )
 
   syncRowSelectionFromEnergies( peaks );
 
@@ -1855,11 +2117,287 @@ void FluxToolWidget::handleDrfChange( std::shared_ptr<DetectorPeakResponse> drf 
   //  (i.e., FluxToolWidget::handleDrfChange()) before DetectorDisplay::setDetector, so
   //  the following calls would use the wrong DRF, unless we explicitly set it here.
   m_detector->setDetector( drf );
-  
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // For a DRF with a geometry-modeled response, the geometric efficiency uses the responses crystal
+  //  (see DetectorPeakResponse::modeledCrystalDiameter) - note when the DRFs own stated values say otherwise.
+  if( drf && drf->ceeloResponse() && !drf->isFixedGeometry() )
+  {
+    const double crystal_diam = drf->modeledCrystalDiameter();
+    const double crystal_setback = drf->modeledCrystalSetback();
+    if( (fabs( drf->detectorDiameter() - crystal_diam ) > 0.01*crystal_diam)
+       || (fabs( drf->detectorSetback() - crystal_setback ) > 0.01*crystal_diam) )
+    {
+      const string msg = "Flux Tool: DRF '" + drf->name() + "' states a diameter of "
+                         + PhysicalUnits::printToBestLengthUnits( drf->detectorDiameter(), 3 )
+                         + " and setback of " + PhysicalUnits::printToBestLengthUnits( drf->detectorSetback(), 3 )
+                         + ", but its geometry-modeled response has a crystal diameter of "
+                         + PhysicalUnits::printToBestLengthUnits( crystal_diam, 3 ) + " at "
+                         + PhysicalUnits::printToBestLengthUnits( crystal_setback, 3 )
+                         + " behind the face; the response's values are used for the geometric efficiency.";
+      log_developer_error( __func__, msg.c_str() );
+    }
+  }//if( a geometry-modeled response )
+#endif
+
+  updateForDrf();
   setDisplayInfoLevel( level, true );
   
   setTableNeedsUpdating();
 }//void handleDrfChange()
+
+
+void FluxToolWidget::updateForDrf()
+{
+  const shared_ptr<const DetectorPeakResponse> det = m_detector->detector();
+  const bool fixed_geom = (det && det->isFixedGeometry());
+
+  // A fixed-geometry efficiency describes the whole source-detector setup, so has no distance, or air
+  //  between source and detector, to account for.
+  m_distance->setDisabled( fixed_geom );
+  m_airAttenCb->setDisabled( fixed_geom );
+
+  updateColumnLabels();
+}//void updateForDrf()
+
+
+void FluxToolWidget::updateColumnLabels()
+{
+  const shared_ptr<const DetectorPeakResponse> det = m_detector ? m_detector->detector() : nullptr;
+  const bool fixed_geom = (det && det->isFixedGeometry());
+  const bool bkg_sub = backgroundSubtractionActive();
+
+  for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
+  {
+    switch( col )
+    {
+      case FluxEnergyCol:
+        m_colnames[col] = WString::tr( m_narrowLayout ? "Energy" : "Energy (keV)" );
+        m_colnamesCsv[col] = WString::fromUTF8("Energy (keV)");
+        break;
+      case FluxNuclideCol:
+        m_colnames[col] = WString::tr( m_narrowLayout ? "Nuc." : "Nuclide");
+        m_colnamesCsv[col] = WString::fromUTF8("Nuclide");
+        break;
+      case FluxPeakCpsCol:
+        if( bkg_sub )
+        {
+          m_colnames[col] = WString::tr("ftw-hdr-net-cps");
+          m_colnamesCsv[col] = WString::fromUTF8("Background-subtracted Peak CPS");
+        }else
+        {
+          m_colnames[col] = WString("{1} {2}").arg(WString::tr("Peak")).arg(WString::tr("CPS"));
+          m_colnamesCsv[col] = WString::fromUTF8("Peak CPS");
+        }
+        break;
+      case FluxBackgroundCpsCol:
+        m_colnames[col] = WString::tr("ftw-hdr-bkg-cps");
+        m_colnamesCsv[col] = WString::fromUTF8("Background Peak CPS (scaled to foreground)");
+        break;
+      case FluxIntrinsicEffCol:
+        m_colnames[col] = WString::tr("ftw-hdr-intrinsic-eff");
+        m_colnamesCsv[col] = WString::fromUTF8("Intrinsic Efficiency");
+        break;
+      case FluxGeometricEffCol:
+        m_colnames[col] = WString::tr("ftw-hdr-geom-eff");
+        m_colnamesCsv[col] = WString::fromUTF8("Geometric Efficiency");
+        break;
+      case FluxFluxOnDetCol:
+        m_colnames[col] = WString::tr("ftw-hdr-flux-on-det");
+        m_colnamesCsv[col] = WString::fromUTF8("Flux on Detector (gammas/s)");
+        break;
+      case FluxFluxPerCm2PerSCol:
+        m_colnames[col] = WString::tr("ftw-hdr-flux-cm");
+        m_colnamesCsv[col] = WString::fromUTF8("Flux (gammas/cm2/s)");
+        break;
+      case FluxGammasInto4PiCol:
+        if( fixed_geom )
+        {
+          // The sources emission rate - per cm2, m2, or gram, for those geometry types
+          const string &postfix = DetectorPeakResponse::det_eff_geom_type_postfix( det->geometryType() );
+          m_colnames[col] = WString::tr("ftw-hdr-fixed-geom-rate").arg( postfix );
+          m_colnamesCsv[col] = WString::fromUTF8( "gammas/s" + postfix );
+        }else
+        {
+          m_colnames[col] = WString::tr("ftw-hdr-flux-4pi");
+          m_colnamesCsv[col] = WString::fromUTF8("gammas/4pi/s");
+        }
+
+        // The Simple level has no CPS column to say so
+        if( bkg_sub )
+          m_colnamesCsv[col] = WString::fromUTF8( "Background-subtracted " + m_colnamesCsv[col].toUTF8() );
+        break;
+      case FluxNumColumns:        break;
+    }//switch( col )
+  }//for( loop over columns )
+
+  // Not a model reset, which under Wt4 leaves duplicate headers behind - see handleFluxToolWidgetUpdated
+  if( m_fluxModel )
+    m_fluxModel->headerDataChanged().emit( Wt::Orientation::Horizontal, 0, sm_selectColumn );
+}//void updateColumnLabels()
+
+
+bool FluxToolWidget::backgroundSubtractionActive() const
+{
+  return m_subtractBackground && m_backgroundPeakSub && !m_backgroundPeakSub->isHidden();
+}//bool backgroundSubtractionActive() const
+
+
+void FluxToolWidget::updateBackgroundSubVisibility()
+{
+  bool available = false;
+
+  const shared_ptr<const SpecUtils::Measurement> back_hist
+                     = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+  const shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
+  if( back_hist && peakmodel )
+  {
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks
+                                    = peakmodel->peaks( SpecUtils::SpectrumType::Background );
+
+    // Only what the automated search already found - never wait on a search here.
+    const shared_ptr<const SpecMeas> back_meas = m_interspec->measurment( SpecUtils::SpectrumType::Background );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = back_meas
+              ? back_meas->automatedSearchPeaks( m_interspec->displayedSamples(SpecUtils::SpectrumType::Background) )
+              : nullptr;
+
+    // Whether any background peak is close enough to `fore` to be subtracted from it; the same
+    //  test as GammaInteractionCalc::overlapping_background.
+    const auto overlaps = []( const PeakDef &fore, const shared_ptr<const deque<shared_ptr<const PeakDef>>> &back ) -> bool {
+      if( !back )
+        return false;
+      const double sigma = fore.gausPeak() ? fore.sigma() : 0.25*fore.roiWidth();
+      for( const shared_ptr<const PeakDef> &b : *back )
+      {
+        // Only Gaussian background peaks are subtracted (see GammaInteractionCalc::scale_background_peaks)
+        if( b && b->gausPeak()
+           && (fabs(b->mean() - fore.mean()) < (GammaInteractionCalc::sm_background_peak_nsigma_near*sigma)) )
+          return true;
+      }
+      return false;
+    };//overlaps lambda
+
+    for( const PeakDef &fore : peakmodel->peakVec() )
+    {
+      if( overlaps( fore, back_peaks ) || overlaps( fore, auto_peaks ) )
+      {
+        available = true;
+        break;
+      }
+    }//for( const PeakDef &fore : peakmodel->peakVec() )
+  }//if( back_hist && peakmodel )
+
+  const bool was_active = backgroundSubtractionActive();
+  m_backgroundPeakSub->setHidden( !available );
+
+  if( was_active != backgroundSubtractionActive() )
+  {
+    updateColumnLabels();
+    setDisplayInfoLevel( m_displayInfoLevel, true );  //shows/hides the background CPS column
+  }
+}//void updateBackgroundSubVisibility()
+
+
+void FluxToolWidget::setAttenuateForAir( const bool attenuate )
+{
+  if( attenuate == m_attenuateForAir )
+    return;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo_redo = [attenuate]( const bool is_undo ){
+      InterSpec *viewer = InterSpec::instance();
+      FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
+      FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
+      if( tool )
+        tool->applyAttenuateForAir( is_undo ? !attenuate : attenuate );
+    };
+    auto undo = [=](){ undo_redo(true); };
+    auto redo = [=](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change flux tool air attenuation." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+
+  applyAttenuateForAir( attenuate );
+}//void setAttenuateForAir( const bool attenuate )
+
+
+void FluxToolWidget::applyAttenuateForAir( const bool attenuate )
+{
+  m_attenuateForAir = attenuate;
+  if( m_airAttenCb->isChecked() != attenuate )
+    m_airAttenCb->setChecked( attenuate );
+
+  setTableNeedsUpdating();
+}//void applyAttenuateForAir( const bool attenuate )
+
+
+void FluxToolWidget::setSubtractBackground( const bool subtract )
+{
+  if( subtract == m_subtractBackground )
+    return;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo_redo = [subtract]( const bool is_undo ){
+      InterSpec *viewer = InterSpec::instance();
+      FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
+      FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
+      if( tool )
+        tool->applySubtractBackground( is_undo ? !subtract : subtract );
+    };
+    auto undo = [=](){ undo_redo(true); };
+    auto redo = [=](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change flux tool background subtraction." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+
+  applySubtractBackground( subtract );
+
+  // Offer to fit background peaks the user hasnt, under foreground peaks - as the
+  //  Activity/Shielding fit does.  Adding them is its own undo/redo step (InterSpec::setPeaks).
+  //  Only when the backgrounds automated search has already finished: the prompt would otherwise
+  //  wait on it, freezing the session.
+  const shared_ptr<const SpecMeas> back_meas = m_interspec->measurment( SpecUtils::SpectrumType::Background );
+  const bool have_auto_peaks = back_meas
+      && back_meas->automatedSearchPeaks( m_interspec->displayedSamples(SpecUtils::SpectrumType::Background) );
+  if( subtract && !m_skipBackgroundPeakCheck && have_auto_peaks )
+  {
+    const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
+    const shared_ptr<const deque<PeakModel::PeakShrdPtr>> fore_peaks = peakmodel ? peakmodel->peaks() : nullptr;
+    if( fore_peaks && !fore_peaks->empty() )
+    {
+      const vector<shared_ptr<const PeakDef>> peaks( begin(*fore_peaks), end(*fore_peaks) );
+
+      // Tied to `this`, so not called if this tool is closed before the user answers.
+      const auto on_done = [this]( const PeakSearchGuiUtils::MissingBackPeaksOutcome outcome ){
+        if( outcome == PeakSearchGuiUtils::MissingBackPeaksOutcome::Declined )
+          m_skipBackgroundPeakCheck = true;
+        setTableNeedsUpdating();
+      };
+
+      PeakSearchGuiUtils::prompt_to_add_missing_background_peaks( m_interspec, peaks, this, on_done );
+    }//if( fore_peaks && !fore_peaks->empty() )
+  }//if( subtract && !m_skipBackgroundPeakCheck )
+}//void setSubtractBackground( const bool subtract )
+
+
+void FluxToolWidget::applySubtractBackground( const bool subtract )
+{
+  const bool was_active = backgroundSubtractionActive();
+
+  m_subtractBackground = subtract;
+  if( m_backgroundPeakSub->isChecked() != subtract )
+    m_backgroundPeakSub->setChecked( subtract );
+
+  if( was_active != backgroundSubtractionActive() )
+  {
+    updateColumnLabels();
+    setDisplayInfoLevel( m_displayInfoLevel, true );  //shows/hides the background CPS column
+  }
+
+  setTableNeedsUpdating();
+}//void applySubtractBackground( const bool subtract )
 
 
 void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const bool force )
@@ -1890,10 +2428,11 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const
   setTableNeedsUpdating();
   
   const shared_ptr<const DetectorPeakResponse> det = m_detector->detector();
+  const bool bkgSub = backgroundSubtractionActive();
   
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
   {
-    const bool show = FluxToolImp::showFluxColumn(m_displayInfoLevel, col, det);
+    const bool show = FluxToolImp::showFluxColumn(m_displayInfoLevel, col, det, bkgSub);
     m_table->setColumnHidden( col, !show );
     
     WLength length;
@@ -1908,6 +2447,10 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const
         break;
         
       case FluxPeakCpsCol:        
+        length = WLength(7.5, WLength::Unit::FontEm);
+        break;
+
+      case FluxBackgroundCpsCol:
         length = WLength(7.5, WLength::Unit::FontEm);
         break;
         

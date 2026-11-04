@@ -26,8 +26,10 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <vector>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -42,6 +44,7 @@ namespace Wt
 
 class InterSpec;
 struct ColorTheme;
+class SimpleDialog;
 class ColorThemeWidget;
 
 /** This widget is a window that displays the default and database saved color
@@ -75,6 +78,18 @@ public:
   /** Returns JSON for current theme. */
   std::string currentThemeJson();
   
+  /** Opens a modal dialog previewing `theme` and asking the user if they want to import it; if they
+   do, it is saved to the database and selected in this window.  Used when a color theme JSON file
+   is drag-n-dropped (or otherwise opened) onto the app.
+   */
+  void confirmThemeImport( std::shared_ptr<ColorTheme> theme );
+  
+  /** If closing this window left a "Save changes?" prompt pending, removes it, so the window can be
+   shown again (the edits are kept, so the next close will ask again).  Without this, answering the
+   stale prompt would delete the window out from under the user.
+   */
+  void dismissSaveChangesPrompt();
+  
 protected:
   // Constructor is protected; use AuxWindow::make<ColorThemeWindow>() to create.
   /** ColorThemeWindow constructor
@@ -102,6 +117,14 @@ protected:
   void removeThemeCallback();
   void uploadThemeCallback();
   
+  /** Adds the import preview, and a "Yes" button that saves the theme to the database and selects
+   it, to `window`; renames `theme` first if its name is already in use.
+   */
+  void populateImportConfirm( AuxWindow *window, std::shared_ptr<ColorTheme> theme );
+  
+  /** Returns `name` if no listed theme has it, otherwise "{name} (imported)", "{name} (imported 2)", ... */
+  Wt::WString uniqueThemeName( const Wt::WString &name ) const;
+  
   /** To work around Wt (at least <=3.3.4) bug where user had to click on the
    text of the menu item; this fixes to anywhere on the menu item.
    */
@@ -116,6 +139,18 @@ private:
   
   Wt::WContainerWidget *m_removeIcn;
   Wt::WContainerWidget *m_addIcn;
+  
+  /** Shown above the editor for built-in themes, which cant be edited, pointing users to cloning. */
+  Wt::WContainerWidget *m_readOnlyNote;
+  
+  /** The upload, import-confirm, and delete-confirm dialogs this window opened; they are owned by
+   wApp, so we delete any still open when this window goes away, or their buttons would act on a
+   deleted window.
+   */
+  std::vector<Wt::Core::observing_ptr<AuxWindow>> m_childDialogs;
+  
+  /** The "Save changes?" prompt shown when closing with unsaved edits, while it is pending. */
+  Wt::Core::observing_ptr<SimpleDialog> m_savePrompt;
   
   Wt::WPushButton  *m_close;
   Wt::WPushButton  *m_save;

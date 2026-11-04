@@ -1,0 +1,167 @@
+<!--
+    InterSpec Wt configuration: the multi-session MCP analysis server
+    (target/mcp_http; installed as data/config/wt_config_mcp_http.xml).
+
+    Derived from wt_config_desktop.xml.  Differences:
+      - Sessions are opened only by the server's own headless browser (with
+        tokens it issued), and McpSessionManager ends them; the session
+        timeout is just a backstop (3600 s, rather than none).
+      - The request-size cap matches the default MaxUploadBytes (256 MiB),
+        plus room for multipart framing.
+      - More worker threads, as several sessions run at once; unlike the
+        desktop builds, the server uses this num-threads value as given.
+      - WebSockets on, with a larger max-memory-request-size (see below).
+  -->
+<server>
+
+    <application-settings location="*">
+
+        <session-management>
+            <shared-process>
+                <num-processes>1</num-processes>
+            </shared-process>
+
+            <tracking>URL</tracking>
+            <reload-is-new-session>true</reload-is-new-session>
+
+            <!-- Only a backstop: McpSessionManager ends sessions when their tab or
+                 the browser goes away, when idle (<SessionIdleTimeoutSeconds>), and at
+                 their maximum lifetime.  It must be longer than any calculation a
+                 tool may run on the session's thread, since the browser's keep-alives
+                 can not be handled meanwhile, and Wt expires the session after. -->
+            <timeout>3600</timeout>
+            <!-- idle-timeout omitted: there is no user to be idle. -->
+
+            <bootstrap-timeout>10</bootstrap-timeout>
+            <server-push-timeout>50</server-push-timeout>
+        </session-management>
+
+        <connector-fcgi>
+            <valgrind-path></valgrind-path>
+            <run-directory>/var/run/wt</run-directory>
+        </connector-fcgi>
+
+        <connector-isapi>
+            <!-- (Read from here by InterSpecServer for the HTTP connector, too.)  With
+                 WebSockets (below) it also caps each message from the browser - a
+                 captured chart image is ~100 KB or more of base64 - so it is well above
+                 the 128 KiB of the other configs.  Larger HTTP bodies are spooled to disk. -->
+            <max-memory-request-size>16384</max-memory-request-size>
+        </connector-isapi>
+
+        <debug>false</debug>
+        <debug-level>framework</debug-level>
+
+        <log-file></log-file>
+        <!-- Suppress info/debug noise but keep errors/warnings/secure. The
+             previous osx/electron configs used "-*" which silenced everything
+             including errors - that was too quiet. -->
+        <log-config>-* -debug -info +error +warning +secure</log-config>
+
+        <!-- 260 MiB cap on request bodies (KiB); <MaxUploadBytes> limits the
+             files themselves. -->
+        <max-request-size>266240</max-request-size>
+
+        <max-formdata-size>5120</max-formdata-size>
+        <max-pending-events>1000</max-pending-events>
+
+        <!-- num-threads: controls Wt's own WIOService pool. This pool
+             handles HTTP requests, WServer::post() callbacks, reentrant
+             WDialog::exec() event loops, and WResource handlers. It does
+             NOT run peak fits or RelAct fits - those use their own private
+             boost::asio::thread_pool sized to physical cores (see
+             PeakFitLM.cpp, RelActCalcAuto.cpp), independent of this value
+             on every platform.
+             The MCP server uses this value as given (the desktop builds'
+             override in InterSpecServer::startWebServer() is skipped); a
+             request waiting on a long tool call or assistant turn does not
+             hold a thread. -->
+        <num-threads>8</num-threads>
+
+        <session-id-length>16</session-id-length>
+
+        <plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
+        <sessions-threshold-for-dos-protection>100</sessions-threshold-for-dos-protection>
+        <ajax-puzzle>false</ajax-puzzle>
+
+        <strict-event-serialization>false</strict-event-serialization>
+
+        <!-- Added in Wt 4.13.  cache-form-data is OFF (on by default until 4.13.4) to dodge a Wt 4.13.2 race:
+             a focus event queued while a request is in flight carries the field's old value, the
+             server handles the batch's change events first, and with the cache on it then re-applies
+             that stale value on every later event - silently discarding the user's edit.  Off, every
+             request resends all form values (~3x larger), so a stale value cannot persist.
+             form-data-resend-ratio-limit only matters when the cache is on.  InterSpecApp.cpp warns
+             when built against a newer Wt, as a reminder to re-check this. -->
+        <cache-form-data>false</cache-form-data>
+        <form-data-resend-ratio-limit>0.5</form-data-resend-ratio-limit>
+
+        <!-- WebSockets, unlike the other configs (see wt_config_web.xml): the only
+             client is the server's own headless browser, on loopback.  With long-polling,
+             a session held for minutes by a synchronous tool (e.g., an isotopics fit on a
+             2-CPU container) can lose sync with its tab - the browser's aborted requests
+             are answered late, its update acknowledgements fall behind, and after three
+             Wt refuses every later request from the tab ("invalid ackId", 403) - so the
+             session's turn never completes.  A WebSocket delivers in order, with no
+             acknowledgements to fall behind. -->
+        <web-sockets>true</web-sockets>
+
+        <webgl-detection>true</webgl-detection>
+
+        <redirect-message>Load basic HTML</redirect-message>
+
+        <!-- Leave trusted-proxy-config empty so X-Forwarded-* headers are ignored. -->
+        <trusted-proxy-config>
+            <original-ip-header>X-Forwarded-For</original-ip-header>
+            <trusted-proxies>
+            </trusted-proxies>
+        </trusted-proxy-config>
+
+        <inline-css>true</inline-css>
+
+        <indicator-timeout>500</indicator-timeout>
+        <double-click-timeout>200</double-click-timeout>
+
+        <user-agents type="ajax" mode="black-list">
+        </user-agents>
+
+        <!-- Bot list intentionally empty: sessions are only opened by our own
+             browser (others are refused, as they have no valid token). -->
+        <user-agents type="bot">
+        </user-agents>
+
+        <UA-Compatible></UA-Compatible>
+
+        <progressive-bootstrap>false</progressive-bootstrap>
+        <delay-load-at-boot>true</delay-load-at-boot>
+        <session-id-cookie>false</session-id-cookie>
+        <cookie-checks>true</cookie-checks>
+
+        <!-- No <http-headers> block: only the servers own headless browser renders
+             the app, and MCP clients are back-ends, not browsers. -->
+
+        <x-frame-same-origin>true</x-frame-same-origin>
+
+        <use-script-nonce>false</use-script-nonce>
+
+        <serve-private-resources-to-bots>false</serve-private-resources-to-bots>
+        <bot-resources-path>wt-temp</bot-resources-path>
+        <max-auto-removable-public-resources>1000</max-auto-removable-public-resources>
+
+        <allowed-origins>
+        </allowed-origins>
+
+        <properties>
+            <property name="resourcesURL">resources/</property>
+
+            <property name="favicon">InterSpec_resources/favicon.ico</property>
+
+            <!-- <property name="leafletJSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.js</property> -->
+            <!-- <property name="leafletCSSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.css</property> -->
+
+            <!-- <property name="google_api_key"></property> -->
+        </properties>
+
+    </application-settings>
+
+</server>

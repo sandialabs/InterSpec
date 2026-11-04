@@ -1,3 +1,8 @@
+# InterSpec as a multi-session MCP analysis server
+The container that runs InterSpec as a multi-session MCP server is now built from
+[target/mcp_http](../mcp_http/README.md) (`docker build -t interspec-mcp-agent -f target/mcp_http/Containerfile .`).
+
+
 # Instructions 20250422 for building InterSpec using FetchContent for serving over the web
 Please note that security is not consided at all (e.g., InterSpec is currently running as root in container), and no testing has been done for the web-deployment build.
 
@@ -69,6 +74,20 @@ cmake --build build_alpine -j8
 
 cmake --install ./build_alpine --prefix ./InterSpec
 ./InterSpec/bin/InterSpec --config src/data/config/wt_config_web.xml --http-address 0.0.0.0 --http-port 8078 --docroot InterSpec/share/interspec/ --userdatadir /tmp
+```
+
+
+## Dev containers
+[alpine_devcontainer.dockerfile](alpine_devcontainer.dockerfile) and [debian_devcontainer.dockerfile](debian_devcontainer.dockerfile) are starting points for a VS Code dev container.  The repository does not ship a `.devcontainer/` (it is gitignored), so each developer can keep their own; to use one of these, create `.devcontainer/devcontainer.json` at the repository root along the lines of:
+```json
+{
+  "name": "InterSpec (Alpine)",
+  "build": {
+    "dockerfile": "../target/docker/alpine_devcontainer.dockerfile",
+    "context": ".."
+  },
+  "forwardPorts": [8078]
+}
 ```
 
 

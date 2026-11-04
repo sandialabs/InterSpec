@@ -412,3 +412,27 @@ BOOST_AUTO_TEST_CASE( test_apply_prefs_skew_handling )
     BOOST_CHECK( !peaks[0]->fitFor(PeakDef::CoefficientType::SkewPar0) );
   }
 }//test_apply_prefs_skew_handling
+
+
+// The spectrum-file metadata search for detector-type keywords must match whole words; "Original"
+//  (as in "Original file by ...", which InterSpec writes to N42 files) used to match "Nal", making
+//  HPGe files be classified as NaI.
+BOOST_AUTO_TEST_CASE( test_contains_keyword )
+{
+  using PeakFitUtils::contains_keyword;
+
+  BOOST_CHECK( !contains_keyword( "Original file by .", "Nal" ) );
+  BOOST_CHECK( !contains_keyword( "Original Software", "NaI" ) );
+  BOOST_CHECK( !contains_keyword( "Unicsi", "CsI" ) );
+
+  BOOST_CHECK( contains_keyword( "3x3 NaI", "NaI" ) );
+  BOOST_CHECK( contains_keyword( "3x3NaI(Tl)", "NaI" ) );
+  BOOST_CHECK( contains_keyword( "nai", "NaI" ) );
+  BOOST_CHECK( contains_keyword( "Detector: HPGe-50%", "HPGe" ) );
+  BOOST_CHECK( contains_keyword( "LaBr3 probe", "LaBr" ) );
+  BOOST_CHECK( contains_keyword( "Coaxial Germanium", "germanium" ) );
+  BOOST_CHECK( contains_keyword( "a sodium iodide crystal", "sodium iodide" ) );
+
+  BOOST_CHECK( !contains_keyword( "", "NaI" ) );
+  BOOST_CHECK( !contains_keyword( "NaI", "" ) );
+}//test_contains_keyword

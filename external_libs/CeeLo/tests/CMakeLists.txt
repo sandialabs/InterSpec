@@ -42,6 +42,7 @@ add_ceelo_test(test_cross_sections test_cross_sections.cpp)
 add_ceelo_test(test_compton test_compton.cpp)
 add_ceelo_test(test_efficiency test_efficiency.cpp)
 add_ceelo_test(test_transport_physics test_transport_physics.cpp)
+add_ceelo_test(test_spectrum_fidelity test_spectrum_fidelity.cpp)
 add_ceelo_test(test_extended_source test_extended_source.cpp)
 add_ceelo_test(test_spherical_source test_spherical_source.cpp)
 add_ceelo_test(test_cascade_correction test_cascade_correction.cpp)
@@ -51,11 +52,19 @@ add_ceelo_test(test_analytic_cascade_regression test_analytic_cascade_regression
 add_ceelo_test(test_csda test_csda.cpp)
 add_ceelo_test(test_transmission test_transmission.cpp)
 add_ceelo_test(test_solid_angle test_solid_angle.cpp)
+add_ceelo_test(test_env_scatter test_env_scatter.cpp)
+add_ceelo_test(test_env_fit_archive test_env_fit_archive.cpp)
+add_ceelo_test(test_env_fit_block_builder test_env_fit_block_builder.cpp)
+add_ceelo_test(test_env_fit_payload test_env_fit_payload.cpp)
+add_ceelo_test(test_env_variance_reduction test_env_variance_reduction.cpp)
 add_ceelo_test(test_dimension_convention test_dimension_convention.cpp)
 # Detector-response payload tests (gated with the payload itself).
 if(CEELO_BUILD_RESPONSE)
     add_ceelo_test(test_response_kernel test_response_kernel.cpp)
     add_ceelo_test(test_bounding_cone test_bounding_cone.cpp)
+    add_ceelo_test(test_convex_separation test_convex_separation.cpp)
+    add_ceelo_test(test_general_cone test_general_cone.cpp)
+    add_ceelo_test(test_back_coverage test_back_coverage.cpp)
     add_ceelo_test(test_detector_etendue test_detector_etendue.cpp)
     add_ceelo_test(test_detector_response_io test_detector_response_io.cpp)
     add_ceelo_test(test_efficiency_transfer test_efficiency_transfer.cpp)
@@ -70,6 +79,7 @@ if(CEELO_BUILD_RESPONSE)
     if(CEELO_RUN_MC_TESTS)
         # The MC-vs-transfer consistency case is guarded by this define.
         target_compile_definitions(test_efficiency_transfer PRIVATE CEELO_RUN_MC_TESTS)
+        target_compile_definitions(test_env_scatter PRIVATE CEELO_RUN_MC_TESTS)
         add_ceelo_test(test_response_generator_smoke test_response_generator_smoke.cpp)
     else()
         # Still build it (compile coverage); just not registered with ctest.
@@ -93,6 +103,8 @@ add_ceelo_test(test_marinelli_beaker test_marinelli_beaker.cpp)
 add_ceelo_test(test_position_bias test_position_bias.cpp)
 add_ceelo_test(test_biasing_consistency test_biasing_consistency.cpp)
 add_ceelo_test(test_virtual_depth test_virtual_depth.cpp)
+add_ceelo_test(test_full_spectrum test_full_spectrum.cpp)
+add_ceelo_test(test_arrival_response test_arrival_response.cpp)
 add_ceelo_test(test_beta_spectrum test_beta_spectrum.cpp)
 # Hollow-box (crate shell) and pipe source geometries: analytic path +
 # sampling cases are MC-free; the expensive MC-consistency cases are guarded
@@ -153,6 +165,17 @@ endif()
 add_executable(bench_precision bench_precision.cpp)
 target_link_libraries(bench_precision PRIVATE CeeLo)
 
+# FullSpecApprox performance reporter (not a ctest: timing gates are recorded
+# on a pinned warm core by the campaign runner).
+add_executable(bench_full_spectrum bench_full_spectrum.cpp)
+target_link_libraries(bench_full_spectrum PRIVATE CeeLo)
+
+if(CEELO_BUILD_CERES_TESTS)
+    find_package(Ceres REQUIRED)
+    add_ceelo_test(test_full_spectrum_ceres test_full_spectrum_ceres.cpp)
+    target_link_libraries(test_full_spectrum_ceres PRIVATE Ceres::ceres)
+endif()
+
 # FEP-only stage-3 unbiasedness/FOM bench (not a ctest; run manually --
 # real MC, minutes). Gate for enabling fep_only on the near-field scan.
 if(CEELO_BUILD_RESPONSE)
@@ -161,4 +184,3 @@ if(CEELO_BUILD_RESPONSE)
     target_include_directories(bench_fep_only_stage3 PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../tools)
 endif()
-

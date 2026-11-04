@@ -42,6 +42,12 @@ table.PeakSelectorTable td.NewNucCell{
   padding-right: 3px;
 }
 
+/* A percentage width lets the table shrink this column when space is tight, so long source labels
+   (ex., "Th232 (Ac228, 1588.2 keV), I=3.2%") truncate rather than overflowing the dialog. */
+table.PeakSelectorTable td.NewNucCell select{
+  width: 100%;
+}
+
 table.PeakSelectorTable td.NewNucCell .DontAssignCb{
   margin-top: 10px;
   float: right;

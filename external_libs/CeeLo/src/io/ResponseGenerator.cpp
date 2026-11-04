@@ -82,6 +82,26 @@ void apply_node_budget(SimulationConfig& cfg, const GenerationOptions& opts,
         2000, opts.min_events_per_node / std::max(1u, threads));
 }
 
+/// A back node whose MC relative uncertainty exceeds this is treated as unmeasured (held from a
+/// neighbour, 100% sigma) - see the side & back stage of generate().
+constexpr double kMaxBackNodeRelSigma = 0.5;
+
+/// Stage id of the back-incidence scan (see GenerationOptions::back_coverage).
+constexpr uint32_t kBackStage = 4;
+
+/// The back-incidence angles (degrees past the axis, so > 90) of a coverage level.
+std::vector<double> back_coverage_thetas(const GenerationOptions::BackCoverage level) {
+    switch (level) {
+        case GenerationOptions::BackCoverage::None:
+            return {};
+        case GenerationOptions::BackCoverage::Coarse:
+            return {93.0, 100.0, 115.0, 135.0, 155.0, 180.0};
+        case GenerationOptions::BackCoverage::Fine:
+            return {92.0, 96.0, 100.0, 107.0, 115.0, 125.0, 135.0, 145.0, 155.0, 167.0, 180.0};
+    }
+    return {};
+}
+
 // Per-node target FEP precision: the graded map when set, else the scalar.
 // Null map => exactly the historical scalar path (bit-identical goldens).
 double resolve_node_precision(const GenerationOptions& opts, uint32_t stage,
@@ -163,11 +183,17 @@ struct Runner {
         configure(calc);
         calc.set_point_source(src);
         calc.enable_fep_only_mode(fep_only);
+        // Back-incidence nodes (stage 4) sit beside or behind the detector, where only the
+        //  general cone avoids sampling the full sphere; they are allowed a looser precision.
+        const bool back_stage = (stage == kBackStage);
+        if (back_stage)
+            calc.enable_general_cone_sampling(true);
         SimulationConfig cfg;
         cfg.energy_keV = energy_keV;
         apply_node_budget(cfg, opts,
-                          resolve_node_precision(opts, stage, energy_keV));
-        if (opts.scans_stop_on_total && (stage == 2 || stage == 3)) {
+                          resolve_node_precision(opts, stage, energy_keV)
+                              * (back_stage ? opts.back_precision_scale : 1.0));
+        if (opts.scans_stop_on_total && (stage == 2 || stage == 3 || back_stage)) {
             cfg.termination.target_total_rel_precision =
                 cfg.termination.target_fep_rel_precision;
             cfg.termination.target_fep_rel_precision = 0.0;
@@ -424,6 +450,39 @@ struct ShapeInterp {
     }
 };
 
+// frac_sigma of a node held from a neighbour rather than measured (the MC scored
+// no counts there); the near-field tables use the same value, and InterSpec's
+// .par grid comparison skips nodes at or above it.
+constexpr double kHeldFracSigma = 0.75;
+
+// Extend an eta table's energy axis out to [e_lo, e_hi] by repeating its end
+// rows at `held_sigma` -- for backbone energies dropped for a zero FEP. The
+// attenuation that zeroed the MC is in the kernel K, so the held eta still
+// evaluates to eps ~ 0 there, inside the declared valid range rather than as an
+// out-of-range clamp. A no-op when the table already spans the range.
+// Keep the row an EXACT copy: it can land across a K-edge from its source, where
+// EtaTable::finalize() merges a lone node into the next segment, and only equal
+// values make that merged interpolant flat (both PCHIP end slopes 0) rather than
+// fabricating structure across the edge.
+void hold_eta_table_ends(EtaTable& t, double e_lo, double e_hi,
+                         double held_sigma) {
+    if (t.empty()) return;
+    const size_t stride =
+        t.cos_thetas.size() * (t.phis_deg.empty() ? 1 : t.phis_deg.size());
+    if (e_lo < t.energies_keV.front()) {
+        const std::vector<double> row(t.ln_eta.begin(), t.ln_eta.begin() + stride);
+        t.ln_eta.insert(t.ln_eta.begin(), row.begin(), row.end());
+        t.frac_sigma.insert(t.frac_sigma.begin(), stride, held_sigma);
+        t.energies_keV.insert(t.energies_keV.begin(), e_lo);
+    }
+    if (e_hi > t.energies_keV.back()) {
+        const std::vector<double> row(t.ln_eta.end() - stride, t.ln_eta.end());
+        t.ln_eta.insert(t.ln_eta.end(), row.begin(), row.end());
+        t.frac_sigma.insert(t.frac_sigma.end(), stride, held_sigma);
+        t.energies_keV.push_back(e_hi);
+    }
+}
+
 // One eps_tot sample at a FEP node: (E, eps_tot, frac_sigma, K_noRayleigh, K).
 struct TotPoint { double E, tot, tot_sig, k_nors, k_tot; };
 
@@ -594,9 +653,15 @@ bool insert_eta_ct_node(DetectorResponse& resp, Runner& run,
             cpu_used += r.cpu_time_seconds;
             const ApertureQuadrature q = resp.make_quadrature(src);
             const double K = resp.kernel_K(E, q, MuChoice::Total);
-            const double eps = std::max(r.full_energy_peak_efficiency, 1e-300);
-            col_ln[e * np + p] = std::log(eps / std::max(K, 1e-300));
-            col_sig[e * np + p] = (r.full_energy_peak_efficiency > 0.0)
+            // No count (e.g. a held low-energy row behind a thick dead layer):
+            // nothing new to insert, so keep the current model's value rather
+            // than a ln(1e-300) that would wreck the column.
+            const bool measured = (r.full_energy_peak_efficiency > 0.0 && K > 0.0);
+            bool clamped = false;
+            col_ln[e * np + p] = measured
+                ? std::log(r.full_energy_peak_efficiency / K)
+                : t.eval_ln(E, ct_star, phip, clamped);
+            col_sig[e * np + p] = measured
                 ? r.fep_uncertainty / r.full_energy_peak_efficiency : 0.5;
         }
     }
@@ -1098,6 +1163,7 @@ ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
         const int nd = (o.profile == ResponseProfile::Contact) ? 9 : 8;
         plan.n_near_positions = 9 * nd;
     }
+    plan.n_back_cos_theta = static_cast<int>(back_coverage_thetas(o.back_coverage).size());
     return plan;
 }
 
@@ -1110,6 +1176,10 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     // D-b: opt-in closed-loop refinement. FALSE (default) falls through to the
     // fixed-grid path below VERBATIM (goldens bit-identical); the loop only runs
     // when explicitly enabled.
+    if ((opts_in.closed_loop || opts_in.transfer_mode)
+        && (opts_in.back_coverage != GenerationOptions::BackCoverage::None))
+        throw std::runtime_error("ResponseGenerator: side & back coverage needs the fixed-grid"
+                                 " full characterization (not closed_loop or transfer_mode)");
     if (opts_in.closed_loop)
         return generate_closed_loop(gd, opts_in);
 
@@ -1151,8 +1221,10 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     // cos_theta_min is the grazing END of a scan that always reaches 1.0, so at 1.0 or above the
     // scan stops ascending and the cos-theta table has duplicate nodes. Pchip does catch this,
     // but only as "x must be strictly ascending", which never names the option at fault.
-    if (!(opts.cos_theta_min < 1.0))
-        throw std::runtime_error("ResponseGenerator: cos_theta_min must be < 1");
+    // > 0 as well: the front grid must stay in front of the face plane - the eta tables tell a back
+    //  node (side & back coverage) from a front one by its sign.
+    if (!(opts.cos_theta_min > 0.0) || !(opts.cos_theta_min < 1.0))
+        throw std::runtime_error("ResponseGenerator: cos_theta_min must be in (0, 1)");
     // Boxes scan azimuth too. plan_nodes() already reports max(1, n_phi_nodes), so clamp rather
     // than reject and the plan and the run agree; left alone, phi_nodes is empty and np == 0
     // makes every stage-2/3 tensor row zero-length.
@@ -1170,6 +1242,12 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
                                                  : ProductionMethod::FullMc;
     resp->provenance.profile = opts.profile;
     resp->provenance.node_fep_precision = opts.node_fep_precision;
+    if (!opts_in.node_precision)  // a caller's own precision map is neither profile
+        resp->provenance.precision_profile = opts.precision_profile;
+    if (opts.transfer_mode)
+        resp->provenance.n_anchor_angles = std::max(1, opts.n_anchor_angles);
+    else
+        resp->provenance.back_coverage = opts.back_coverage;
     resp->provenance.generation_seed = opts.base_seed;
     resp->provenance.kernel_n_rays = opts.kernel_n_rays;
     // Record the window the FEP tallies were actually scored with, so a consumer
@@ -1195,33 +1273,33 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
 
     // ---- 1. energy backbone (on-axis, far field) ---------------------------
     // The grid is shared with plan_nodes(), so a host's per-stage plan is what runs.
-    const std::vector<double> scan_E = backbone_scan_energies(gd, opts);
+    std::vector<double> scan_E = backbone_scan_energies(gd, opts);
+    const double scan_e_lo = scan_E.front(), scan_e_hi = scan_E.back();
 
     const Eigen::Vector3d far_pos(0.0, 0.0, -d_far);
     const ApertureQuadrature q_far = resp->make_quadrature(far_pos);
 
     std::vector<double> bb_ln_eta(scan_E.size()), bb_sig(scan_E.size());
     std::vector<double> bb_tot(scan_E.size()), bb_tot_sig(scan_E.size());
+    std::vector<bool> bb_measured(scan_E.size(), false);
     for (size_t i = 0; i < scan_E.size(); ++i) {
         const EfficiencyResult r =
             run.run_node(scan_E[i], far_pos, /*stage=*/1, static_cast<uint32_t>(i));
         const double K = resp->kernel_K(scan_E[i], q_far, MuChoice::Total);
-        if (r.full_energy_peak_efficiency <= 0.0 || K <= 0.0)
-            throw std::runtime_error("ResponseGenerator: zero FEP at backbone node");
-        bb_ln_eta[i] = std::log(r.full_energy_peak_efficiency / K);
-        bb_sig[i] = r.fep_uncertainty / r.full_energy_peak_efficiency;
+        bb_measured[i] = (r.full_energy_peak_efficiency > 0.0 && K > 0.0);
+        if (bb_measured[i]) {
+            bb_ln_eta[i] = std::log(r.full_energy_peak_efficiency / K);
+            bb_sig[i] = r.fep_uncertainty / r.full_energy_peak_efficiency;
+        }
         bb_tot[i] = r.total_efficiency;
         bb_tot_sig[i] = r.total_uncertainty / std::max(r.total_efficiency, 1e-300);
         run.tick("Energy backbone");
     }
 
-    const std::vector<size_t> e_nodes = greedy_energy_nodes(
-        scan_E, bb_ln_eta, bb_sig, edges, static_cast<size_t>(opts.n_energy_nodes),
-        opts.node_interp_tol, opts.node_noise_k);
-
     // Backbone eps_tot points -- needed by the tier auto-choice in BOTH the
     // transfer-flat path (which returns before the angular scan) and the full
-    // path (whose angular loop appends more below).
+    // path (whose angular loop appends more below). Over the whole scan, before
+    // zero-FEP energies are dropped: a total can register where no FEP does.
     std::vector<TotPoint> tot_points;
     for (size_t i = 0; i < scan_E.size(); ++i) {
         const double K_nors =
@@ -1229,6 +1307,35 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         const double K_tot = resp->kernel_K(scan_E[i], q_far, MuChoice::Total);
         tot_points.push_back({scan_E[i], bb_tot[i], bb_tot_sig[i], K_nors, K_tot});
     }
+
+    // A zero FEP is a real answer where the endcap and dead layer pass ~1e-10 of
+    // the photons (10-20 keV behind ~1.5 mm Al + 0.6 mm Ge), but it has no ln eta.
+    // Drop those energies from the backbone: the attenuation that zeroed the MC is
+    // in K, so the nearest measured eta -- held out to the range ends by
+    // hold_eta_table_ends() -- still gives eps ~ 0 there.
+    bool bb_dropped = false;
+    {
+        size_t n = 0;
+        for (size_t i = 0; i < scan_E.size(); ++i) {
+            if (!bb_measured[i]) continue;
+            scan_E[n] = scan_E[i];
+            bb_ln_eta[n] = bb_ln_eta[i];
+            bb_sig[n] = bb_sig[i];
+            bb_tot[n] = bb_tot[i];
+            bb_tot_sig[n] = bb_tot_sig[i];
+            ++n;
+        }
+        if (n == 0)
+            throw std::runtime_error("ResponseGenerator: zero full-energy-peak efficiency"
+                                     " at every backbone energy");
+        bb_dropped = (n < scan_E.size());
+        for (std::vector<double>* v : {&scan_E, &bb_ln_eta, &bb_sig, &bb_tot, &bb_tot_sig})
+            v->resize(n);
+    }
+
+    const std::vector<size_t> e_nodes = greedy_energy_nodes(
+        scan_E, bb_ln_eta, bb_sig, edges, static_cast<size_t>(opts.n_energy_nodes),
+        opts.node_interp_tol, opts.node_noise_k);
 
     // ---- EFFTRAN transfer, angle-flat variant ------------------------------
     // MC only the on-axis backbone; two identical sentinel cos-theta nodes make
@@ -1249,6 +1356,7 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
                 t.frac_sigma[t.index(e, c, 0)] = bs;
             }
         }
+        hold_eta_table_ends(t, scan_e_lo, scan_e_hi, kHeldFracSigma);
         if (decide_tot_tier(*resp, tot_points, opts) == TotDecision::NeedTable)
             resp->tot_eff.tier = TotEffTier::BCurve;  // no angular data -> b(E)
         resp->provenance.min_distance_cm = 2.0 * a;  // far-field validity floor
@@ -1261,16 +1369,26 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     }
 
     // ---- 2. angular shape scans --------------------------------------------
-    // Shape energies: log-spaced across the range, snapped to selected nodes.
+    // Shape energies: log-spaced across the range, snapped to selected nodes --
+    // when zero-FEP energies were dropped, to well-measured ones (backbone sigma
+    // <= 10%) where there are any. Behind a thick window the first energy with
+    // counts at all is barely measured, and scans there would be noise
+    // (interpolated up to the next shape energy), each node run to the per-node
+    // cap. Gated so a run with nothing dropped is unchanged.
     std::vector<double> shape_E;
     {
+        std::vector<size_t> shape_cands;
+        for (const size_t n : e_nodes)
+            if (!bb_dropped || bb_sig[n] <= 0.10) shape_cands.push_back(n);
+        if (shape_cands.empty()) shape_cands = e_nodes;
+
         std::set<double> uniq;
         for (int i = 0; i < opts.n_shape_energies; ++i) {
             const double target = opts.e_min_keV *
                 std::pow(opts.e_max_keV / opts.e_min_keV,
                          double(i) / std::max(1, opts.n_shape_energies - 1));
-            double best = scan_E[e_nodes[0]];
-            for (const size_t n : e_nodes)
+            double best = scan_E[shape_cands[0]];
+            for (const size_t n : shape_cands)
                 if (std::fabs(std::log(scan_E[n] / target)) <
                     std::fabs(std::log(best / target)))
                     best = scan_E[n];
@@ -1303,12 +1421,39 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     // used when the tier auto-choice lands on the eta_tot table (HPGe-class -
     // its ANGULAR shape differs from the FEP one via dead-layer scatter-in).
     std::vector<std::vector<double>> ang_ln_tot(nE_s), ang_tot_sig(nE_s);
+
+    // A scan node with no MC count (a grazing path through a thick dead layer, at
+    // the lowest shape energy) has no ln eta: hold the nearest measured node's --
+    // nearest cos-theta, ties toward on-axis, then nearest phi -- since K carries
+    // the attenuation that zeroed it. A scan with nothing measured is angle-flat.
+    // Held nodes carry kHeldFracSigma, so greedy_ct_nodes' noise gate skips them.
+    auto hold_unmeasured = [np](std::vector<double>& ln, std::vector<double>& sig,
+                                const std::vector<bool>& ok) {
+        for (size_t k = 0; k < ln.size(); ++k) {
+            if (ok[k]) continue;
+            const size_t ic = k / np, ip = k % np;
+            size_t best = SIZE_MAX, best_key = SIZE_MAX;
+            for (size_t j = 0; j < ln.size(); ++j) {
+                if (!ok[j]) continue;
+                const size_t jc = j / np, jp = j % np;
+                const size_t dc = (jc > ic) ? (jc - ic) : (ic - jc);
+                const size_t dp = (jp > ip) ? (jp - ip) : (ip - jp);
+                const size_t key = (2 * dc + ((jc < ic) ? 1 : 0)) * np + dp;
+                if (key < best_key) { best = j; best_key = key; }
+            }
+            ln[k] = (best == SIZE_MAX) ? 0.0 : ln[best];
+            sig[k] = kHeldFracSigma;
+        }
+    };
+
     uint32_t ang_node_id = 0;
     for (size_t ie = 0; ie < nE_s; ++ie) {
         ang_ln_eta[ie].resize(scan_ct.size() * np);
         ang_sig[ie].resize(scan_ct.size() * np);
         ang_ln_tot[ie].resize(scan_ct.size() * np);
         ang_tot_sig[ie].resize(scan_ct.size() * np);
+        std::vector<bool> fep_ok(scan_ct.size() * np, false);
+        std::vector<bool> tot_ok(scan_ct.size() * np, false);
         for (size_t ic = 0; ic < scan_ct.size(); ++ic) {
             for (size_t ip = 0; ip < np; ++ip) {
                 const double phi_rad =
@@ -1320,13 +1465,17 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
                 const ApertureQuadrature q = resp->make_quadrature(src);
                 const double K =
                     resp->kernel_K(shape_E[ie], q, MuChoice::Total);
-                const double eps = std::max(r.full_energy_peak_efficiency, 1e-300);
-                ang_ln_eta[ie][ic * np + ip] = std::log(eps / std::max(K, 1e-300));
-                ang_sig[ie][ic * np + ip] =
-                    r.fep_uncertainty / eps;
-                const double tot = std::max(r.total_efficiency, 1e-300);
-                ang_ln_tot[ie][ic * np + ip] = std::log(tot / std::max(K, 1e-300));
-                ang_tot_sig[ie][ic * np + ip] = r.total_uncertainty / tot;
+                const size_t k = ic * np + ip;
+                fep_ok[k] = (r.full_energy_peak_efficiency > 0.0 && K > 0.0);
+                if (fep_ok[k]) {
+                    ang_ln_eta[ie][k] = std::log(r.full_energy_peak_efficiency / K);
+                    ang_sig[ie][k] = r.fep_uncertainty / r.full_energy_peak_efficiency;
+                }
+                tot_ok[k] = (r.total_efficiency > 0.0 && K > 0.0);
+                if (tot_ok[k]) {
+                    ang_ln_tot[ie][k] = std::log(r.total_efficiency / K);
+                    ang_tot_sig[ie][k] = r.total_uncertainty / r.total_efficiency;
+                }
                 if (r.total_efficiency > 0.0) {
                     const double K_nors =
                         resp->kernel_K(shape_E[ie], q, MuChoice::NoRayleigh);
@@ -1337,6 +1486,8 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
                 run.tick("Angular response");
             }
         }
+        hold_unmeasured(ang_ln_eta[ie], ang_sig[ie], fep_ok);
+        hold_unmeasured(ang_ln_tot[ie], ang_tot_sig[ie], tot_ok);
     }
 
     // Greedy shared cos-theta nodes (phi = 0 curves).
@@ -1607,6 +1758,137 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
 
         resp->tot_eff.near_field = std::move(tn);
     }//if( a near-field scan ran )
+
+    // ---- 6. side & back incidence ------------------------------------------
+    // A far-field scan behind the face plane, normalised exactly as the front angular shape is (to
+    //  the on-axis scan point) and added to the eta tables below the grazing node.  EtaTable
+    //  interpolates the front and back node sets separately (see EtaTable::eval_ln), so every front
+    //  value is what a response without coverage gives.
+    const std::vector<double> back_thetas = back_coverage_thetas(opts.back_coverage);
+    if (!back_thetas.empty() && !opts.transfer_mode) {
+        std::vector<double> back_ct;
+        for (auto it = back_thetas.rbegin(); it != back_thetas.rend(); ++it)
+            back_ct.push_back(std::cos(*it * kPi / 180.0));   // ascending (most negative first)
+        const size_t nb = back_ct.size();
+
+        std::vector<std::vector<double>> b_ln_eta(nE_s), b_sig(nE_s), b_ln_tot(nE_s), b_tot_sig(nE_s);
+        std::vector<std::vector<bool>> b_fep_ok(nE_s), b_tot_ok(nE_s);   // the MC measured it
+        // A long detector can reach d_far behind its face: keep each node at least `a` clear of the
+        //  detector's outside (no ordinary detector comes near this).
+        const GeometryDescriptor::Envelope back_env = gd.outer_envelope();
+        uint32_t back_id = 0;
+        for (size_t ie = 0; ie < nE_s; ++ie) {
+            b_ln_eta[ie].resize(nb * np);
+            b_sig[ie].resize(nb * np);
+            b_ln_tot[ie].resize(nb * np);
+            b_tot_sig[ie].resize(nb * np);
+            b_fep_ok[ie].assign(nb * np, false);
+            b_tot_ok[ie].assign(nb * np, false);
+            for (size_t ib = 0; ib < nb; ++ib) {
+                for (size_t ip = 0; ip < np; ++ip) {
+                    const double phi_rad = box ? phi_nodes[ip] * kPi / 180.0 : 0.0;
+                    const Eigen::Vector3d u = source_position(1.0, back_ct[ib], phi_rad);
+                    const double d_node = std::max(d_far, back_env.exit_distance_cm(u) + a);
+                    const Eigen::Vector3d src = source_position(d_node, back_ct[ib], phi_rad);
+                    const EfficiencyResult r =
+                        run.run_node(shape_E[ie], src, kBackStage, back_id++);
+                    const ApertureQuadrature q = resp->make_quadrature(src);
+                    const double K = resp->kernel_K(shape_E[ie], q, MuChoice::Total);
+                    const double eps = std::max(r.full_energy_peak_efficiency, 1e-300);
+                    b_ln_eta[ie][ib * np + ip] = std::log(eps / std::max(K, 1e-300));
+                    b_sig[ie][ib * np + ip] = r.fep_uncertainty / eps;
+                    const double tot = std::max(r.total_efficiency, 1e-300);
+                    b_ln_tot[ie][ib * np + ip] = std::log(tot / std::max(K, 1e-300));
+                    b_tot_sig[ie][ib * np + ip] = r.total_uncertainty / tot;
+                    b_fep_ok[ie][ib * np + ip] = (r.full_energy_peak_efficiency > 0.0)
+                        && (b_sig[ie][ib * np + ip] < kMaxBackNodeRelSigma);
+                    b_tot_ok[ie][ib * np + ip] = (r.total_efficiency > 0.0)
+                        && (b_tot_sig[ie][ib * np + ip] < kMaxBackNodeRelSigma);
+                    run.tick("Side & back response");
+                }
+            }
+        }
+
+        // A node the MC could not measure - no full-energy counts behind a thick back at low
+        //  energy, or too few to mean anything - is not data: it takes the nearest measured node's
+        //  value at the same energy and azimuth (toward the face plane on a tie), or with none the
+        //  on-axis value, with a 100% sigma, rather than ln(1e-300) poisoning the interpolation.
+        const auto hold_unmeasured_back = [&](std::vector<std::vector<double>>& b_ln,
+                                              std::vector<std::vector<double>>& b_s,
+                                              const std::vector<std::vector<bool>>& ok,
+                                              const std::vector<std::vector<double>>& front_ln) {
+            for (size_t ie = 0; ie < nE_s; ++ie)
+                for (size_t ip = 0; ip < np; ++ip)
+                    for (size_t ib = 0; ib < nb; ++ib) {
+                        if (ok[ie][ib * np + ip]) continue;
+                        double held = front_ln[ie][(scan_ct.size() - 1) * np + 0];   // on axis
+                        for (size_t k = 1; k < nb; ++k) {
+                            if ((ib + k < nb) && ok[ie][(ib + k) * np + ip]) { held = b_ln[ie][(ib + k) * np + ip]; break; }
+                            if ((ib >= k) && ok[ie][(ib - k) * np + ip]) { held = b_ln[ie][(ib - k) * np + ip]; break; }
+                        }
+                        b_ln[ie][ib * np + ip] = held;
+                        b_s[ie][ib * np + ip] = 1.0;
+                    }
+        };
+        hold_unmeasured_back(b_ln_eta, b_sig, b_fep_ok, ang_ln_eta);
+        hold_unmeasured_back(b_ln_tot, b_tot_sig, b_tot_ok, ang_ln_tot);
+
+        // Prepends the back columns to `tab`, whose existing columns stay as they are; `front_ref`
+        //  is the on-axis scan value each shape is relative to, `backbone` the table's own on-axis
+        //  value at each of its energies.
+        const auto add_back_columns = [&](EtaTable& tab,
+                                          const std::vector<std::vector<double>>& b_ln,
+                                          const std::vector<std::vector<double>>& b_s,
+                                          const std::vector<std::vector<double>>& front_ln) {
+            const size_t ne = tab.energies_keV.size();
+            const size_t nc_old = tab.cos_thetas.size();
+            const size_t tnp_ = tab.phis_deg.empty() ? 1 : tab.phis_deg.size();
+            EtaTable out = tab;
+            out.cos_thetas = back_ct;
+            out.cos_thetas.insert(out.cos_thetas.end(), tab.cos_thetas.begin(), tab.cos_thetas.end());
+            out.ln_eta.assign(ne * out.cos_thetas.size() * tnp_, 0.0);
+            out.frac_sigma.assign(out.ln_eta.size(), 0.0);
+            // The front columns are copied verbatim.
+            for (size_t e = 0; e < ne; ++e)
+                for (size_t c = 0; c < nc_old; ++c)
+                    for (size_t p = 0; p < tnp_; ++p) {
+                        out.ln_eta[out.index(e, nb + c, p)] = tab.ln_eta[tab.index(e, c, p)];
+                        out.frac_sigma[out.index(e, nb + c, p)] = tab.frac_sigma[tab.index(e, c, p)];
+                    }
+            // The back columns: the table's own on-axis value (its last front column, phi 0) plus
+            //  the measured shape relative to the on-axis scan point, interpolated across shape
+            //  energies exactly as the front's.
+            for (size_t e = 0; e < ne; ++e) {
+                size_t i0, i1;
+                double w;
+                shape_interp.bracket(tab.energies_keV[e], i0, i1, w);
+                const double onaxis = tab.ln_eta[tab.index(e, nc_old - 1, 0)];
+                const double onaxis_s = tab.frac_sigma[tab.index(e, nc_old - 1, 0)];
+                for (size_t ib = 0; ib < nb; ++ib)
+                    for (size_t p = 0; p < tnp_; ++p) {
+                        const double ref0 = front_ln[i0][(scan_ct.size() - 1) * np + 0];
+                        const double ref1 = front_ln[i1][(scan_ct.size() - 1) * np + 0];
+                        const double sh = (1.0 - w) * (b_ln[i0][ib * np + p] - ref0)
+                                          + w * (b_ln[i1][ib * np + p] - ref1);
+                        const double sh_s = std::max(b_s[i0][ib * np + p], b_s[i1][ib * np + p]);
+                        out.ln_eta[out.index(e, ib, p)] = onaxis + sh;
+                        out.frac_sigma[out.index(e, ib, p)] = std::sqrt(onaxis_s * onaxis_s + sh_s * sh_s);
+                    }
+            }
+            tab = std::move(out);
+            tab.finalize();
+        };
+
+        add_back_columns(resp->eta_fep, b_ln_eta, b_sig, ang_ln_eta);
+        if (resp->tot_eff.tier == TotEffTier::EtaTotTable)
+            add_back_columns(resp->tot_eff.eta_tot, b_ln_tot, b_tot_sig, ang_ln_tot);
+    }//if( side & back coverage )
+
+    // Last, so the e_nodes indexing and evaluations above - the side & back columns included - see
+    //  only measured rows, and a held end row is an exact copy of every column, back ones too.
+    hold_eta_table_ends(resp->eta_fep, scan_e_lo, scan_e_hi, kHeldFracSigma);
+    if (resp->tot_eff.tier == TotEffTier::EtaTotTable)
+        hold_eta_table_ends(resp->tot_eff.eta_tot, scan_e_lo, scan_e_hi, kHeldFracSigma);
 
     apply_measured_floors(*resp, gd);
     resp->finalize();

@@ -63,6 +63,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PopupDiv.h"
@@ -88,6 +89,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/FeatureMarkerWidget.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -122,6 +124,55 @@ const vector<Wt::WColor> ReferencePhotopeakDisplay::sm_def_line_colors{
 
 namespace
 {
+  /** Compares only RGB, so e.g. "#0000FF" and "rgb(0,0,255)" are the same color. */
+  bool same_rgb( const WColor &lhs, const WColor &rhs )
+  {
+    return (lhs.red() == rhs.red()) && (lhs.green() == rhs.green()) && (lhs.blue() == rhs.blue());
+  }
+
+
+  /** Returns the color `ref` draws the source of `peak` with, or a default color if `ref` isn't for
+   that source.  Matches by nuclide, x-ray element, or reaction; a component of a nuclide mixture
+   (using the component's color, if it has one); or a NORM nuclide for background lines.
+   */
+  WColor ref_line_color_for_peak( const ReferenceLineInfo &ref, const PeakDef &peak )
+  {
+    if( ref.m_validity != ReferenceLineInfo::InputValidity::Valid )
+      return WColor();
+
+    const SandiaDecay::Nuclide * const nuc = peak.parentNuclide();
+    const SandiaDecay::Element * const el = peak.xrayElement();
+    const ReactionGamma::Reaction * const rctn = peak.reaction();
+
+    if( (nuc && (nuc == ref.m_nuclide))
+       || (el && (el == ref.m_element))
+       || (rctn && ref.m_reactions.count(rctn)) )
+    {
+      return ref.m_input.m_color;
+    }
+
+    if( nuc && ref.m_nuc_mix && (ref.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) )
+    {
+      for( const ReferenceLinePredef::NucMixComp &comp : ref.m_nuc_mix->m_components )
+      {
+        if( comp.m_nuclide == nuc )
+          return comp.m_color.isDefault() ? ref.m_input.m_color : comp.m_color;
+      }
+    }//if( a nuclide mixture )
+
+    if( nuc && (ref.m_source_type == ReferenceLineInfo::SourceType::Background) )
+    {
+      for( const char * const norm : { "U238", "Ra226", "U235", "Th232", "K40" } )
+      {
+        if( nuc->symbol == norm )
+          return ref.m_input.m_color;
+      }
+    }//if( background lines )
+
+    return WColor();
+  }//ref_line_color_for_peak(...)
+
+
   struct UpdateGuard
   {
     bool &m_guard;
@@ -2818,39 +2869,120 @@ Wt::WColor ReferencePhotopeakDisplay::suggestColorForSource( const std::string &
 }//Wt::WColor suggestColorForSource( const std::string &src ) const;
 
 
-Wt::WColor ReferencePhotopeakDisplay::nextGenericSourceColor() const
+Wt::WColor ReferencePhotopeakDisplay::nextGenericSourceColor( const std::vector<Wt::WColor> &also_avoid ) const
 {
-  vector<Wt::WColor> colorcopy = m_lineColors;
-  const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+  // `currentlyUsedPeakColors()` includes the persisted reference lines
+  vector<WColor> used = also_avoid;
+  for( const auto &p : currentlyUsedPeakColors() )
+    used.insert( end(used), begin(p.second), end(p.second) );
 
-  for( const auto &p : usedColors )
-  {
-    for( const auto &c : p.second )
-    {
-      auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-        return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-      } );
-      if( pos != end(colorcopy) )
-        colorcopy.erase(pos);
-    }
-  }//for( loop over colors used for peaks already )
+  return firstUnusedColor( m_lineColors, used, m_persisted.size() + also_avoid.size() );
+}//Wt::WColor nextGenericSourceColor( const std::vector<Wt::WColor> &also_avoid ) const
 
-  for( const auto &p : m_persisted )
+
+Wt::WColor ReferencePhotopeakDisplay::firstUnusedColor( const std::vector<Wt::WColor> &palette,
+                                                        const std::vector<Wt::WColor> &used,
+                                                        const size_t fallback_index )
+{
+  if( palette.empty() )
+    return WColor();
+
+  for( const WColor &c : palette )
   {
-    const WColor &c = p.m_input.m_color;
-    auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-      return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+    const bool is_used = std::any_of( begin(used), end(used), [&c]( const WColor &u ){
+      return !u.isDefault() && same_rgb( c, u );
     } );
 
-    if( pos != end(colorcopy) )
-      colorcopy.erase(pos);
-  }//for( const auto &p : m_persisted )
+    if( !is_used )
+      return c;
+  }//for( const WColor &c : palette )
 
-  if( colorcopy.empty() )
-    return m_lineColors[m_persisted.size() % m_lineColors.size()];
+  return palette[fallback_index % palette.size()];
+}//firstUnusedColor(...)
 
-  return colorcopy[0];
-}//Wt::WColor nextGenericSourceColor() const
+
+Wt::WColor ReferencePhotopeakDisplay::colorForNewPeak( const PeakDef &peak,
+                                                       std::map<std::string,Wt::WColor> &pending )
+{
+  const string src = peak.sourceName();
+  if( src.empty() || !m_peaksGetAssignedRefLineColor )
+    return WColor();
+
+  const auto pending_pos = pending.find( src );
+  if( pending_pos != end(pending) )
+    return pending_pos->second;
+
+  // Existing peaks of the source come first, so all of a source's peaks share a color, even if its
+  //  reference lines have since been given another color (this also matches `suggestColorForSource`).
+  const map<string,vector<WColor>> used_colors = currentlyUsedPeakColors();
+  const auto used_pos = used_colors.find( src );
+  WColor color = ((used_pos != end(used_colors)) && !used_pos->second.empty()) ? used_pos->second.front() : WColor();
+
+  // Then reference lines being displayed for the source
+  const WColor current_lines_color = ref_line_color_for_peak( m_currentlyShowingNuclide, peak );
+  if( color.isDefault() )
+    color = current_lines_color;
+  for( size_t i = 0; color.isDefault() && (i < m_persisted.size()); ++i )
+    color = ref_line_color_for_peak( m_persisted[i], peak );
+
+  // Colors used by other sources: existing peaks and persisted lines, the currently showing lines,
+  //  and earlier picks for peaks that aren't in the PeakModel yet.
+  vector<WColor> other_src_colors;
+  for( const auto &p : used_colors )
+  {
+    if( p.first != src )
+      other_src_colors.insert( end(other_src_colors), begin(p.second), end(p.second) );
+  }
+
+  const bool current_is_other_src = (m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid)
+                                    && current_lines_color.isDefault();
+  if( current_is_other_src && !m_currentlyShowingNuclide.m_input.m_color.isDefault() )
+    other_src_colors.push_back( m_currentlyShowingNuclide.m_input.m_color );
+
+  vector<WColor> pending_colors;
+  for( const auto &p : pending )
+    pending_colors.push_back( p.second );
+  other_src_colors.insert( end(other_src_colors), begin(pending_colors), end(pending_colors) );
+
+  const auto used_by_other = [&other_src_colors]( const WColor &c ) -> bool {
+    return std::any_of( begin(other_src_colors), end(other_src_colors), [&c]( const WColor &u ){
+      return !u.isDefault() && same_rgb( c, u );
+    } );
+  };
+
+  if( color.isDefault() )
+  {
+    const auto prev_pos = m_previouslyPickedSourceColors.find( src );
+    if( (prev_pos != end(m_previouslyPickedSourceColors))
+       && !prev_pos->second.isDefault()
+       && !used_by_other( prev_pos->second ) )
+    {
+      color = prev_pos->second;
+    }
+  }//if( color.isDefault() )
+
+  if( color.isDefault() )
+  {
+    const auto specific_pos = m_specificSourcelineColors.find( src );
+    if( (specific_pos != end(m_specificSourcelineColors)) && !specific_pos->second.isDefault() )
+      color = specific_pos->second;
+  }
+
+  if( color.isDefault() )
+  {
+    vector<WColor> also_avoid = pending_colors;
+    if( current_is_other_src )
+      also_avoid.push_back( m_currentlyShowingNuclide.m_input.m_color );
+
+    color = nextGenericSourceColor( also_avoid );
+    updateColorCacheForSource( src, color );
+  }//if( color.isDefault() )
+
+  if( !color.isDefault() )
+    pending[src] = color;
+
+  return color;
+}//colorForNewPeak(...)
 
 
 Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )

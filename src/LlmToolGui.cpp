@@ -16,10 +16,11 @@
 #include <Wt/WImage.h>
 #include <Wt/WAnchor.h>
 #include <Wt/WRandom.h>
+#include <Wt/WCheckBox.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
 #include <Wt/WPushButton.h>
-#include <Wt/WGridLayout.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/WApplication.h>
 #include <Wt/WStringUtil.h>
 #include <Wt/Utils.h>
@@ -40,12 +41,17 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmInterface.h"
-#include "InterSpec/LlmConfigWindow.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/LlmConfigWindow.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/LlmBenchmarkRunner.h"
 #include "InterSpec/LlmJsSandboxBridge.h"
 #include "InterSpec/LlmInteractionDisplay.h"
 #include "InterSpec/LlmConversationHistory.h"
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
 
 using namespace std;
 using namespace Wt;
@@ -79,10 +85,12 @@ WT_DECLARE_WT_MEMBER
    inputArea   - the floating input area (its height sets the container's bottom padding)
    acceptImages- whether pasted images should be captured
    pasteCb     - function(base64, mimeType, widthPx, heightPx) to stage a pasted image
+   enterNewline- if true, Enter just inserts a newline (phones, whose on-screen keyboards have no
+                 Shift+Enter); the submit button is then the only way to send.
  */
 WT_DECLARE_WT_MEMBER
 (LlmSetupInput, Wt::JavaScriptFunction, "LlmSetupInput",
- function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb )
+ function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb, enterNewline )
 {
   if( !ta )
     return;
@@ -112,7 +120,7 @@ WT_DECLARE_WT_MEMBER
   } );
 
   ta.addEventListener( 'keydown', function( e ){
-    if( e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
+    if( !enterNewline && e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
       e.preventDefault();
       if( btn && !btn.disabled )
         btn.click();
@@ -193,6 +201,16 @@ WT_DECLARE_WT_MEMBER
   obs.observe( container, { childList:true, subtree:true, characterData:true } );
 }
 );
+
+  /** When the settings window is opened from within a (non-modal) window, the click that got us there
+   raises that window to the front after the settings window is shown - which on phones (where both
+   are full-screen) completely hides the settings window.  So, like SimpleDialog does, raise the
+   settings window again on a delay.
+   */
+  void bring_to_front_after_click( AuxWindow *window )
+  {
+    window->doJavaScript( "setTimeout(function(){Wt.WT.AuxWindowBringToFront('" + window->id() + "');},5);" );
+  }
 }//namespace
 
 
@@ -208,15 +226,26 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_menuIcon(nullptr),
     m_layout(nullptr),
     m_isRequestPending(false),
+    m_closedByUser(false),
     m_logFilePath(),
     m_logWriteFailed(false),
     m_imagePreviewContainer(nullptr),
+    m_inputBanner(nullptr),
     m_pasteImageSignal( this, "LlmPasteImage", false ),
     m_benchmarkRunner( nullptr ),
-    m_jsSandboxBridge( nullptr )
+    m_jsSandboxBridge( nullptr ),
+    m_menuIconHome( nullptr ),
+    m_menuIconHost(),
+    m_sideDockItem(),
+    m_debugMenuItems(),
+    m_phoneHeaderTools()
 {
   if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
+
+  // Phone styling is keyed off this class (on us, rather than m_root, so it survives UI rebuilds).
+  if( m_viewer->isPhone() )
+    addStyleClass( "LlmPhone" );
 
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   // The "not configured" panel and the settings window share styles + strings from these bundles.
@@ -226,19 +255,22 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   // Get marked/KaTeX loading now, so they are ready before the first response comes back.
   LlmMarkdown::load_resources( wApp );
 
-  // A single-cell outer layout holds m_root, which we swap between the configured chat UI and
-  // the "not configured" panel.
-  WGridLayout *outer = setLayout( std::make_unique<WGridLayout>() );
-  outer->setContentsMargins( 0, 0, 0, 0 );
-  outer->setVerticalSpacing( 0 );
-  outer->setHorizontalSpacing( 0 );
-  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-  outer->setRowStretch( 0, 1 );
-  outer->setColumnStretch( 0, 1 );
+  createRoot();
 
   // Connect the clipboard-image paste signal once; it persists across UI rebuilds (the input widgets
   // that emit it are recreated by initializeUI(), but this JSignal belongs to the tool).
   m_pasteImageSignal.connect( this, &LlmToolGui::handlePastedImage );
+
+  // Developer details are hidden unless the user asks for them (the menu has a checkbox for it).
+  try
+  {
+    m_viewer->preferences()->addCallbackWhenChanged( "LlmShowDebugOptions", this,
+                                                     &LlmToolGui::setShowDebugOptions );
+  }catch( std::exception &e )
+  {
+    cerr << "LlmToolGui: failed to watch the LlmShowDebugOptions preference: " << e.what() << endl;
+  }
+  setShowDebugOptions( showDebugOptionsPref() );
 
   std::shared_ptr<const LlmConfig> config;
   try
@@ -252,7 +284,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   bool configured = false;
   try
   {
-    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+    configured = config && config->llmApi.isConfigured();
   }catch( std::exception & )
   {
     configured = false; // e.g. a config with no providers
@@ -266,8 +298,34 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
 
 LlmToolGui::~LlmToolGui()
 {
+  // A conversation cut off mid-work is left to be resumed when the tool is next shown, rather than
+  //  ended - except one an MCP client or a benchmark was driving, which is told below it failed.
+  if( m_llmInterface )
+  {
+    m_llmInterface->interruptInFlight( m_closedByUser ? LlmInteraction::Interruption::Cause::AssistantClosed
+                                                      : LlmInteraction::Interruption::Cause::SessionEnded, false );
+
+    if( m_activeMcpCallback || isBenchmarkRunning() )
+    {
+      if( const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory() )
+      {
+        for( const shared_ptr<LlmInteraction> &convo : history->getConversations() )
+          m_llmInterface->abandonInterrupted( convo, false );
+      }
+    }//if( unattended )
+  }//if( m_llmInterface )
+
   // Final flush of the log, to capture anything since the last completed turn.
   writeConversationLog();
+
+  // Our menu icon may be in the side panels header, and on phones our dock button and menu icon
+  //  live in our windows header; don't leave them there (they would call back into this destroyed
+  //  widget).  A no-op if the header is already gone.
+  removeForeignMenuIcon();
+  if( m_phoneHeaderTools )
+  {
+    const std::unique_ptr<WWidget> doomed = m_phoneHeaderTools->removeFromParent();
+  }
 
   // Fail any outstanding MCP `assistant_submit_prompt` callbacks so a blocked MCP request thread
   //  doesn't hang forever waiting on a turn that can no longer complete.
@@ -307,6 +365,21 @@ void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &conf
     // Connect to LLM interface response signals
     m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
     m_llmInterface->responseError().connect(this, &LlmToolGui::handleResponseError);
+    m_llmInterface->activityChanged().connect( this, [this]( const LlmInterface::ActivityState state ){
+      if( m_sendButton )
+        m_sendButton->toggleStyleClass( "llm-tools-running",
+                                        (state == LlmInterface::ActivityState::RunningTools) );
+
+      // A request not sent through sendMessage() - e.g., Retry on an error - is still work the user
+      //  may want to stop; the terminal signals return the input to idle as usual.  The user started
+      //  it, so is there to answer any error it hits.
+      if( (state != LlmInterface::ActivityState::Idle) && !m_isRequestPending )
+      {
+        m_isRequestPending = true;
+        setInputEnabled( false );
+        m_llmInterface->setUnattended( false );
+      }
+    } );
 
     // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
     m_spectrumChangedConnection =
@@ -333,6 +406,9 @@ void LlmToolGui::buildUnconfiguredUi()
 
   WPushButton *btn = panel->addNew<WPushButton>( WString::tr("lcw-configure-btn") );
   btn->clicked().connect( this, &LlmToolGui::openConfigWindow );
+
+  if( m_viewer->isPhone() )
+    addPhoneExpandButton( panel );
 }
 
 
@@ -347,7 +423,8 @@ void LlmToolGui::showWelcomeMessage()
   WText *title = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-title") );
   title->addStyleClass( "LlmWelcomeTitle" );
 
-  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-summary") );
+  const char * const summaryKey = m_viewer->isPhone() ? "lcw-welcome-summary-phone" : "lcw-welcome-summary";
+  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr(summaryKey) );
   summary->addStyleClass( "LlmWelcomeSummary" );
 
   // Empty WLink => an <a> with no href, so the browser does nothing on click while the
@@ -387,10 +464,30 @@ void LlmToolGui::clearConversationDisplays()
 }//clearConversationDisplays()
 
 
+void LlmToolGui::createRoot()
+{
+  // A single-item outer layout holds m_root, which we swap between the configured chat UI and
+  // the "not configured" panel.  A box layout, rather than a WGridLayout, as Wt4 implements box
+  // layouts with CSS flex, while grid layouts use its JavaScript layout engine - whose bookkeeping
+  // is left with stale entries when we are moved out of the tool-tab strip on phones (see
+  // InterSpec::setLlmToolDocked), causing a client-side exception.
+  //
+  // When swapping UIs, the whole outer layout is replaced, rather than just m_root or m_root's
+  // contents: Wt's flex layout only sizes things right when a layout and its contents are rendered
+  // together.  Adding m_root to an already-rendered layout left its item without `overflow: hidden`
+  // (so the chat UI grew past the tab), and setting a layout on an already-rendered m_root made it
+  // `height: fit-content` (so it did not fill the tab) - either way the input field was not at the
+  // bottom of the tab after the user first configured a provider.
+  m_root = nullptr;
+  WVBoxLayout *outer = setLayout( std::make_unique<WVBoxLayout>() );  // deletes any previous layout
+  outer->setContentsMargins( 0, 0, 0, 0 );
+  outer->setSpacing( 0 );
+  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
+}//void createRoot()
+
+
 void LlmToolGui::resetRoot()
 {
-  WGridLayout *outer = dynamic_cast<WGridLayout *>( layout() );
-
   // Tear down the configured-UI state.  The spectrum-changed slot must be disconnected here (not
   // just reassigned in buildConfiguredUi) - boost::signals2 reassignment drops the handle without
   // disconnecting, which would leave an orphaned slot firing into a rebuilt widget.
@@ -400,31 +497,26 @@ void LlmToolGui::resetRoot()
   // next conversation after a reconfigure.
   m_stagedImages.clear();
 
-  if( m_root )
-  {
-    // m_root is layout-managed, so its owning unique_ptr lives in the layouts WWidgetItem;
-    //  removeWidget() hands it back and destroying it here takes all child widgets with it.
-    //  (`delete m_root` would be a double-free.)
-    const std::unique_ptr<WWidget> doomed = m_root->removeFromParent();
-    m_root = nullptr;
-  }
+  // The menu icon may live in a header (phone window, or side panel), so would not go away with
+  //  m_root; it is recreated, and put back there, by initializeUI().
+  removeForeignMenuIcon();
+
+  // Replace the whole outer layout (which deletes m_root and all its children).
+  createRoot();
 
   // Child widgets owned by the old root are now gone; clear dangling pointers.
   m_layout = nullptr;
+  m_menuIconHome = nullptr;
   m_conversationContainer = nullptr;
   m_welcomeMessage = nullptr;
   m_inputEdit = nullptr;
   m_sendButton = nullptr;
-  m_menuIcon = nullptr;
+  m_menuIcon.reset();
+  m_sideDockItem.reset();
+  m_debugMenuItems.clear();
   m_imagePreviewContainer = nullptr;
+  m_inputBanner = nullptr;
   m_jsSandboxBridge = nullptr;
-
-  if( outer )
-  {
-    m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-    outer->setRowStretch( 0, 1 );
-    outer->setColumnStretch( 0, 1 );
-  }
 }
 
 
@@ -437,7 +529,136 @@ void LlmToolGui::openConfigWindow()
                                         std::bind( &LlmToolGui::handleConfigSaved, this ),
                                         std::bind( &LlmToolGui::hasConversationHistory, this ) );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
+  bring_to_front_after_click( m_configWindow.get() );
 }
+
+
+void LlmToolGui::refitPhoneWindows()
+{
+  if( m_configWindow )
+    m_configWindow->refitPhoneFullScreen();
+}//void refitPhoneWindows()
+
+
+void LlmToolGui::setPhoneWindowHeader( WContainerWidget *header )
+{
+  // Take down the controls in any previous windows header, bringing the menu icon back to the
+  //  input bar.
+  if( m_phoneHeaderTools )
+  {
+    WContainerWidget * const tools = m_phoneHeaderTools.get();
+    m_phoneHeaderTools.reset();
+    placeMenuIcon();
+
+    const std::unique_ptr<WWidget> doomed = tools->removeFromParent();
+  }//if( m_phoneHeaderTools )
+
+  // While docked, CSS hides the menu icon, and shows the expand button.
+  toggleStyleClass( "LlmDocked", !header );
+
+  if( !header )
+    return;
+
+  // Floated right, as a unit, so the dock button stays left of the menu icon even when the icon is
+  //  recreated (see createMenuIcon()).
+  m_phoneHeaderTools = header->addNew<WContainerWidget>();
+  m_phoneHeaderTools->addStyleClass( "LlmHeaderTools" );
+
+  WPushButton * const dockButton = m_phoneHeaderTools->addNew<WPushButton>();
+  dockButton->addStyleClass( "LlmDockBtn InvertInDark" );
+  dockButton->setToolTip( WString::tr("lcw-phone-dock-tt") );
+  dockButton->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( true ); } );
+
+  placeMenuIcon();
+}//void setPhoneWindowHeader( WContainerWidget *header )
+
+
+void LlmToolGui::setMenuIconHost( WContainerWidget *host )
+{
+  m_menuIconHost = host;
+
+  // Already in the side panel, so no point offering to move there.
+  if( m_sideDockItem )
+    m_sideDockItem->setHidden( host != nullptr );
+
+  placeMenuIcon();
+}//void setMenuIconHost( WContainerWidget *host )
+
+
+void LlmToolGui::addPhoneExpandButton( WContainerWidget *parent )
+{
+  WPushButton *expand = parent->addNew<WPushButton>();
+  expand->addStyleClass( "LlmExpandBtn InvertInDark" );
+  expand->setIcon( "InterSpec_resources/images/llm_expand.svg" );
+  expand->setToolTip( WString::tr("lcw-phone-expand-tt") );
+  expand->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( false ); } );
+}//void addPhoneExpandButton( WContainerWidget *parent )
+
+
+void LlmToolGui::placeMenuIcon()
+{
+  if( !m_menuIcon )
+    return;
+
+  WContainerWidget * const target = m_phoneHeaderTools ? m_phoneHeaderTools.get()
+                                    : (m_menuIconHost ? m_menuIconHost.get() : m_menuIconHome);
+  if( !target || (m_menuIcon->parent() == target) )
+    return;
+
+  // The icons popup menu is owned by, and connected to, the button itself, so it comes along.
+  m_menuIcon->toggleStyleClass( "LlmHeaderMenuIcon", (target == m_phoneHeaderTools.get()) );
+  std::unique_ptr<WWidget> icon = m_menuIcon->removeFromParent();
+  if( target == m_menuIconHome )
+    target->insertWidget( 0, std::move(icon) );  // At the left of the input bar
+  else
+    target->addWidget( std::move(icon) );
+}//void placeMenuIcon()
+
+
+void LlmToolGui::removeForeignMenuIcon()
+{
+  if( !m_menuIcon )
+    return;
+
+  const WWidget * const parent = m_menuIcon->parent();
+  if( (m_phoneHeaderTools && (parent == m_phoneHeaderTools.get()))
+      || (m_menuIconHost && (parent == m_menuIconHost.get())) )
+  {
+    const std::unique_ptr<WWidget> doomed = m_menuIcon->removeFromParent();
+  }
+}//void removeForeignMenuIcon()
+
+
+bool LlmToolGui::showDebugOptionsPref() const
+{
+  if( m_viewer->isPhone() )
+    return false;
+
+  try
+  {
+    return UserPreferences::preferenceValue<bool>( "LlmShowDebugOptions", m_viewer );
+  }catch( std::exception & )
+  {
+  }
+  return false;
+}//bool showDebugOptionsPref() const
+
+
+void LlmToolGui::setShowDebugOptions( const bool show )
+{
+  const bool showDebug = show && !m_viewer->isPhone();
+
+  // The conversation displays mark their developer details with the "LlmDebugOnly" class, which CSS
+  //  hides under this one.  On us (not m_root), so it survives UI rebuilds.
+  toggleStyleClass( "LlmHideDebug", !showDebug );
+
+  // The menus popup is not under us in the DOM, so CSS can't reach its items.
+  for( const Wt::Core::observing_ptr<WMenuItem> &item : m_debugMenuItems )
+  {
+    if( item )
+      item->setHidden( !showDebug );
+  }
+}//void setShowDebugOptions( const bool show )
 
 
 void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
@@ -454,6 +675,7 @@ void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
                                         std::bind( &LlmToolGui::hasConversationHistory, this ),
                                         configFilePath );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
+  bring_to_front_after_click( m_configWindow.get() );
 }
 
 
@@ -487,7 +709,7 @@ void LlmToolGui::handleConfigSaved()
   bool configured = false;
   try
   {
-    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+    configured = config && config->llmApi.isConfigured();
   }catch( std::exception & )
   {
     configured = false;
@@ -527,6 +749,7 @@ void LlmToolGui::handleConfigSaved()
         return;
       }
       setInputEnabled( true );
+      updateInputBanner();
     }else
     {
       // Was unconfigured: build the full chat UI now.
@@ -547,7 +770,7 @@ bool LlmToolGui::llmToolIsConfigured()
   try
   {
     shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
-    return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty());
+    return (config && config->llmApi.isConfigured());
   }catch( std::exception &e )
   {
     cerr << "LLM config invalid: " << e.what() << endl;
@@ -563,17 +786,169 @@ LlmInterface *LlmToolGui::llmInterface()
 }
 
 
+void LlmToolGui::noteClosedByUser()
+{
+  m_closedByUser = true;
+}
+
+
+bool LlmToolGui::interruptForSpectrumChange()
+{
+  // The LLM's own tools (e.g., load_spectrum) decide what becomes of the conversation; one an MCP
+  //  client or a benchmark is driving is cancelled, so it is told.
+  if( !m_llmInterface || m_llmInterface->isRunningToolCalls() || m_activeMcpCallback || isBenchmarkRunning() )
+    return false;
+
+  m_llmInterface->interruptInFlight( LlmInteraction::Interruption::Cause::SpectrumChanged, true );
+
+  if( m_isRequestPending )
+  {
+    m_isRequestPending = false;
+    setInputEnabled( true );
+    writeConversationLog();
+  }
+
+  return true;
+}//bool interruptForSpectrumChange()
+
+
+void LlmToolGui::resumeInterruptedConversation()
+{
+  if( !m_llmInterface || m_isRequestPending )
+    return;
+
+  const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+  if( !history || history->getConversations().empty() )
+    return;
+
+  // Only the newest conversation can be resumed; see setConversationHistory().
+  const shared_ptr<LlmInteraction> convo = history->getConversations().back();
+  if( !convo || !convo->interruption.has_value() || convo->interruption->byUser()
+      || !m_llmInterface->canResumeInterrupted( convo ) )
+    return;
+
+  // E.g., the app was only briefly in the background; after longer, the user may have moved on.
+  const std::chrono::system_clock::duration age = std::chrono::system_clock::now() - convo->interruption->time;
+  if( age > sm_autoResumeWindow )
+    return;
+
+  m_llmInterface->resumeInterrupted( convo );
+}//void resumeInterruptedConversation()
+
+
+void LlmToolGui::createMenuIcon( WContainerWidget *inputRow )
+{
+  assert( inputRow && !m_menuIcon );
+
+  m_menuIcon = inputRow->insertNew<WPushButton>( 0 );
+  m_menuIconHome = inputRow;
+  m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmMenuIcon" );
+  // Note: deliberately do NOT preventPropagation() here (doing this lets menu open, but not close when you click the button).
+
+  // Create popup menu
+  PopupDivMenu *menu = makePopupMenu( m_menuIcon.get() );
+
+  // On phones we leave out the items that are only of use when developing the LLM tools (raw JSON,
+  //  re-reading the config XML files, and benchmarks); on desktop they are only shown with debug
+  //  options on (see setShowDebugOptions()).
+  const bool phone = m_viewer->isPhone();
+  if( phone )
+    menu->addPhoneBackItem( nullptr );
+
+  // Add "Clear Conversation" option
+  PopupDivMenuItem *clearItem = menu->addMenuItem( "Clear Conversation" );
+  clearItem->triggered().connect( this, &LlmToolGui::handleClearConversation );
+
+  // Add "Compact Conversation" option - manually trigger context summarization
+  PopupDivMenuItem *compactItem = menu->addMenuItem( "Compact Conversation" );
+  compactItem->triggered().connect( this, &LlmToolGui::handleCompactConversation );
+
+  // Add "Configure LLM Provider…" option - opens the graphical provider/model settings window
+  PopupDivMenuItem *configItem = menu->addMenuItem( WString::tr("lcw-configure-menu") );
+  configItem->triggered().connect( this, &LlmToolGui::openConfigWindow );
+
+  // Not phones: move the assistant to the right of the charts (the side panel has its own button to
+  //  move back).
+  if( !phone )
+  {
+    PopupDivMenuItem * const sideDockItem = menu->addMenuItem( WString::tr("lcw-dock-side-menu"),
+                                                        "InterSpec_resources/images/llm_dock_right.svg" );
+    sideDockItem->triggered().connect( this, [this](){
+      m_viewer->moveLlmTool( InterSpec::LlmToolPlacement::SidePanel, true );
+    } );
+    sideDockItem->setHidden( static_cast<bool>(m_menuIconHost) );
+    m_sideDockItem = sideDockItem;
+  }//if( !phone )
+
+  // Add "Help" option - opens the standard InterSpec help window on the LLM Assistant topic
+  PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
+  helpItem->triggered().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
+
+  if( !phone )
+  {
+    menu->addSeparator();
+
+    // Associated before adding to the menu, so native menus would pick up the right state.
+    WCheckBox * const debugCb = new WCheckBox( WString::tr("lcw-show-debug-options") );
+    try
+    {
+      UserPreferences::associateWidget( "LlmShowDebugOptions", debugCb, m_viewer );
+    }catch( std::exception &e )
+    {
+      cerr << "LlmToolGui: failed to associate the LlmShowDebugOptions preference: " << e.what() << endl;
+    }
+    PopupDivMenuItem * const debugItem = menu->addWidget( debugCb );
+    debugItem->setToolTip( WString::tr("lcw-show-debug-options-tt") );
+
+    // The rest are only of use when developing the assistant.
+    PopupDivMenuItem * const exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
+    exportJsonItem->triggered().connect( this, &LlmToolGui::exportConversationJson );
+    m_debugMenuItems.push_back( exportJsonItem );
+
+    // Re-reads config files and creates a new LlmInterface
+    PopupDivMenuItem * const resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
+    resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
+    m_debugMenuItems.push_back( resetConfigItem );
+
+    // Benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
+    const vector<pair<string,string>> benchmarkFiles = LlmBenchmarkRunner::findAvailableBenchmarks();
+    if( !benchmarkFiles.empty() )
+    {
+      m_debugMenuItems.push_back( menu->addSeparator() );
+
+      PopupDivMenu * const benchmarkSubMenu = menu->addPopupMenuItem( "Benchmarks / Quizzes" );
+      m_debugMenuItems.push_back( benchmarkSubMenu->parentItem() );
+
+      for( const pair<string,string> &benchFile : benchmarkFiles )
+      {
+        const string displayName = benchFile.first;
+        const string filePath = benchFile.second;
+
+        // Connected to us, as the menu may be in a header we dont own (see placeMenuIcon()).
+        PopupDivMenuItem * const item = benchmarkSubMenu->addMenuItem( displayName );
+        item->triggered().connect( this, [this, filePath](){ handleStartBenchmark( filePath ); } );
+      }
+    }//if( !benchmarkFiles.empty() )
+  }//if( !phone )
+
+  // The icon may belong in a header (phone window, or the side panel), rather than the input bar.
+  placeMenuIcon();
+
+  setShowDebugOptions( showDebugOptionsPref() );
+}//void createMenuIcon( WContainerWidget *inputRow )
+
+
 void LlmToolGui::initializeUI()
 {
   m_root->addStyleClass("LlmToolGui");
 
-  // Create the main layout
-  m_layout = m_root->setLayout( std::make_unique<WGridLayout>() );
-  m_layout->setContentsMargins(5, 5, 5, 5);
-  m_layout->setVerticalSpacing(5);
-  m_layout->setHorizontalSpacing(5);
+  // Create the main layout (phones are narrow enough that we keep the margins small)
+  m_layout = m_root->setLayout( std::make_unique<WVBoxLayout>() );  // flex; see createRoot()
+  const int margin = m_viewer->isPhone() ? 2 : 5;
+  m_layout->setContentsMargins( margin, margin, margin, margin );
+  m_layout->setSpacing( 5 );
 
-  // Create wrapper container for scroll area and menu icon
+  // Create wrapper container for the scroll area and the floating input bar
   auto scrollWrapperOwned = std::make_unique<WContainerWidget>();
   WContainerWidget *scrollWrapper = scrollWrapperOwned.get();
   scrollWrapper->setStyleClass( "LlmScrollWrapper" );
@@ -590,102 +965,6 @@ void LlmToolGui::initializeUI()
     m_jsSandboxBridge = nullptr;
   }
 
-  // Create menu icon for conversation-level actions (positioned in upper-right via CSS)
-  m_menuIcon = scrollWrapper->addNew<WPushButton>();
-  m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmMenuIcon" );
-  // Note: deliberately do NOT preventPropagation() here (doing this lets menu open, but not close when you click the button).
-
-  // Create popup menu
-  PopupDivMenu *menu = makePopupMenu( m_menuIcon );
-
-  // Add "Export Conversation as JSON" option
-  PopupDivMenuItem *exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
-  exportJsonItem->triggered().connect( this, &LlmToolGui::exportConversationJson );
-
-  // Add "Clear Conversation" option
-  PopupDivMenuItem *clearItem = menu->addMenuItem( "Clear Conversation" );
-  clearItem->triggered().connect( this, &LlmToolGui::handleClearConversation );
-
-  // Add "Compact Conversation" option - manually trigger context summarization
-  PopupDivMenuItem *compactItem = menu->addMenuItem( "Compact Conversation" );
-  compactItem->triggered().connect( this, &LlmToolGui::handleCompactConversation );
-
-  // Add "Configure LLM Provider…" option - opens the graphical provider/model settings window
-  PopupDivMenuItem *configItem = menu->addMenuItem( WString::tr("lcw-configure-menu") );
-  configItem->triggered().connect( this, &LlmToolGui::openConfigWindow );
-
-  // Add "Reset LLM Config" option - re-reads config files and creates a new LlmInterface
-  PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
-  resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
-
-  // Add "Help" option - opens the standard InterSpec help window on the AI Assistant topic
-  PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
-  helpItem->triggered().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
-
-  // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
-  {
-    // Collect candidate test_datasets directories.  We take the union of benchmarks
-    //  found across all of them (a benchmark may legitimately appear in more than one).
-    vector<string> testDirs;
-
-    // Shipped location: one up from the static data dir, then into test_datasets/
-    testDirs.push_back(
-      SpecUtils::append_path( SpecUtils::parent_path( InterSpec::staticDataDirectory() ),
-                              "test_datasets" ) );
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    // User-writable location: test_datasets/ under the writable data dir.  The getter
-    //  throws when the writable dir hasnt been set, which is a normal condition to skip.
-    try
-    {
-      testDirs.push_back(
-        SpecUtils::append_path( InterSpec::writableDataDirectory(), "test_datasets" ) );
-    }catch( std::exception & )
-    {
-      // writableDataDirectory not set - nothing to add
-    }
-#endif //BUILD_AS_ELECTRON_APP || IOS || ... || BUILD_AS_UNIT_TEST_SUITE
-
-    vector<pair<string,string>> benchmarkFiles;
-    for( string testDir : testDirs )
-    {
-      // Make absolute so the paths handed to handleStartBenchmark(...) are valid
-      //  regardless of the process working directory.
-      SpecUtils::make_canonical_path( testDir );
-      if( !SpecUtils::is_directory( testDir ) )
-        continue;
-
-      const vector<pair<string,string>> found = LlmBenchmarkRunner::findBenchmarkFiles( testDir );
-      benchmarkFiles.insert( benchmarkFiles.end(), found.begin(), found.end() );
-    }
-
-    // Sort the merged list by display name
-    std::sort( benchmarkFiles.begin(), benchmarkFiles.end(),
-      []( const pair<string,string> &a, const pair<string,string> &b ){
-        return a.first < b.first;
-      } );
-
-    if( !benchmarkFiles.empty() )
-    {
-      menu->addSeparator();
-
-      PopupDivMenu *benchmarkSubMenu = menu->addPopupMenuItem( "Benchmarks / Quizzes" );
-
-      for( const pair<string,string> &benchFile : benchmarkFiles )
-      {
-        const string displayName = benchFile.first;
-        const string filePath = benchFile.second;
-
-        PopupDivMenuItem *item = benchmarkSubMenu->addMenuItem( displayName );
-        item->triggered().connect(
-          std::bind( [this]( const string &path ){
-            handleStartBenchmark( path );
-          }, filePath )
-        );
-      }
-    }
-  }
-
   // Create scrollable container for conversation displays.  Wt4 removed WScrollArea; the
   //  replacement is a plain container with overflow:auto.
   WContainerWidget *scrollArea = scrollWrapper->addNew<WContainerWidget>();
@@ -696,18 +975,27 @@ void LlmToolGui::initializeUI()
   m_conversationContainer->addStyleClass("LlmConversationContainer");
 
   // Add scroll wrapper to layout (fills the whole tool; the input area floats over it)
-  m_layout->addWidget(std::move(scrollWrapperOwned), 0, 0);
-  m_layout->setRowStretch(0, 1);    // Make conversation display expand
-  m_layout->setColumnStretch(0, 1);
+  m_layout->addWidget( std::move(scrollWrapperOwned), 1 );  // Make conversation display expand
 
   // Floating input area, laid over the bottom of the scroll wrapper (CSS position:absolute).  It is
   // a horizontal flex row: the input column (image previews + growing text area) on the left, and
   // the icon submit/stop button pinned to the right.
-  WContainerWidget *inputArea = scrollWrapper->addNew<WContainerWidget>();
+  // Its client-side behaviour (see setupInputJavaScript()) is set up whenever its element is created.
+  LlmJsRenderedDiv *inputArea = scrollWrapper->addNew<LlmJsRenderedDiv>();
   inputArea->addStyleClass( "LlmInputArea" );
+
+  // Phones: while docked in the tools tab strip, an "expand to full-screen" button leads the row.
+  if( m_viewer->isPhone() )
+    addPhoneExpandButton( inputArea );
 
   WContainerWidget *inputColumn = inputArea->addNew<WContainerWidget>();
   inputColumn->addStyleClass( "LlmInputColumn" );
+
+  // Optional per-provider banner, directly above the text area (shown by updateInputBanner())
+  m_inputBanner = inputColumn->addNew<WText>();
+  m_inputBanner->setTextFormat( TextFormat::Plain );
+  m_inputBanner->addStyleClass( "LlmInputBanner" );
+  m_inputBanner->hide();
 
   // Image preview strip (hidden by default)
   m_imagePreviewContainer = inputColumn->addNew<WContainerWidget>();
@@ -727,21 +1015,55 @@ void LlmToolGui::initializeUI()
 #endif
 
   // Icon submit/stop button, pinned to the right of the text area.  The button is transparent/
-  // borderless, so the standard "InvertInDark" class inverts just the icon glyph for the dark theme.
+  // borderless; the CSS inverts just the icon glyph for the dark theme (not the whole button, which
+  // would also invert the ring colors).  The ring is an animated "working" outline around the stop
+  // icon, shown only while the button is a Stop button (CSS); its color shows whether the LLM or
+  // tools are being waited on (the "llm-tools-running" class).
   m_sendButton = inputArea->addNew<WPushButton>();
-  m_sendButton->addStyleClass("llm-send-button InvertInDark");
+  m_sendButton->addStyleClass("llm-send-button");
   m_sendButton->setIcon( "InterSpec_resources/images/llm_submit_arrow.svg" );
+  m_sendButton->setTextFormat( TextFormat::XHTML );
+  m_sendButton->setText( "<svg class=\"LlmWorkingRing\" width=\"28\" height=\"28\" viewBox=\"0 0 28 28\">"
+                         "<rect x=\"1\" y=\"1\" width=\"26\" height=\"26\" rx=\"6\" ry=\"6\" /></svg>" );
 
   // Connect signals (Enter-to-submit is handled client-side in setupInputJavaScript)
   m_sendButton->clicked().connect(this, &LlmToolGui::handleSendButton);
 
+  // The conversation menu icon leads the input bar (unless it belongs in a header; see placeMenuIcon).
+  createMenuIcon( inputArea );
+
   // Wire client-side behavior: auto-grow, Enter submit, enable/disable, paste, and auto-scroll.
   setupInputJavaScript();
+
+  updateInputBanner();
 
   // Show the getting-started panel when the conversation area is still empty.  Any subsequent
   // restore of saved history (setConversationHistory) reconciles this away.
   updateWelcomeMessage();
 }
+
+
+void LlmToolGui::updateInputBanner()
+{
+  if( !m_inputBanner )
+    return;
+
+  string banner;
+  try
+  {
+    const shared_ptr<const LlmConfig> config = m_llmInterface ? m_llmInterface->config() : nullptr;
+    if( config )
+      banner = config->llmApi.activeProvider().banner;
+  }catch( std::exception & )
+  {
+    // No active provider - leave the banner hidden
+  }
+
+  // The CSS clamps long text to two lines, so the tooltip carries the full text.
+  m_inputBanner->setText( WString::fromUTF8(banner) );
+  m_inputBanner->setToolTip( WString::fromUTF8(banner) );
+  m_inputBanner->setHidden( banner.empty() );
+}//void updateInputBanner()
 
 
 void LlmToolGui::focusInput()
@@ -777,10 +1099,18 @@ void LlmToolGui::setupInputJavaScript()
      << "var inputArea=btn.parentElement;"
      << "Wt.WT.LlmSetupAutoScroll(scrollArea, container);"
      << "Wt.WT.LlmSetupInput(ta, btn, scrollArea, container, wrapper, inputArea, "
-     << (acceptImages ? "true" : "false") << ", " << pasteCb << ");"
+     << (acceptImages ? "true" : "false") << ", " << pasteCb << ", "
+     << (m_viewer->isPhone() ? "true" : "false") << ");"
      << "})();";
 
-  doJavaScript( js.str() );
+  // Run by the input area whenever its element is (re-)created - the event listeners set up here
+  //  go with the old elements when the tool is moved between the tool tabs and a window.
+  LlmJsRenderedDiv * const inputArea = dynamic_cast<LlmJsRenderedDiv *>( m_sendButton->parent() );
+  assert( inputArea );
+  if( inputArea )
+    inputArea->setRenderJs( js.str() );
+  else
+    doJavaScript( js.str() );
 }//setupInputJavaScript()
 
 
@@ -803,16 +1133,21 @@ void LlmToolGui::updateSendButtonEnabled()
 
 void LlmToolGui::resetInputHeight()
 {
+  // Only call this after `m_inputEdit->setText("")`.
   if( !m_inputEdit )
     return;
 
+  // Queued on the textarea itself so it runs after Wt applies the cleared value; otherwise grow()
+  //  can measure the old (long) text and leave the area expanded.  Clearing `value` here too makes
+  //  this independent of Wt's update ordering.
   ostringstream js;
   js << "(function(){var ta=" << m_inputEdit->jsRef() << ";"
      << "if(!ta) return;"
-     << "ta.style.height='auto';"
+     << "ta.value='';"
+     << "ta.style.height='';"
      << "if(ta._llmGrow) ta._llmGrow();"
      << "})();";
-  doJavaScript( js.str() );
+  m_inputEdit->doJavaScript( js.str() );
 }//resetInputHeight()
 
 
@@ -831,7 +1166,9 @@ void LlmToolGui::clearHistory()
   clearConversationDisplays();
   updateWelcomeMessage();
 
-  // Also clear the LLM interface history
+  // Also clear the LLM interface history (ending any turn stopped on a paused sub-agent)
+  if( m_llmInterface )
+    m_llmInterface->abandonStoppedRounds();
   shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
   if( history )
     history->clear();
@@ -970,11 +1307,11 @@ void LlmToolGui::handleInputSubmit()
 
 void LlmToolGui::handleSendButton()
 {
-  // While a request is in flight the Send button acts as a Stop button.
+  // While a request is in flight the Send button acts as a Stop button.  (cancelCurrentRequest() also
+  //  returns the input to idle if nothing turns out to be outstanding.)
   if( m_isRequestPending )
   {
-    if( m_llmInterface )
-      m_llmInterface->cancelAll();
+    cancelCurrentRequest();
     return;
   }
 
@@ -994,17 +1331,17 @@ void LlmToolGui::handleSendButton()
   sendMessage(message);
 }
 
-void LlmToolGui::sendMessage(const std::string& message)
+bool LlmToolGui::sendMessage(const std::string& message)
 {
   if (!m_llmInterface) {
     cout << "Error: LLM interface not available" << endl;
-    return;
+    return false;
   }
 
   // Don't allow sending if a request is already pending
   if (m_isRequestPending) {
     cout << "Warning: Request already pending, ignoring new message" << endl;
-    return;
+    return false;
   }
 
   try {
@@ -1025,6 +1362,10 @@ void LlmToolGui::sendMessage(const std::string& message)
       images.push_back( std::move( img ) );
     }
     clearStagedImages();
+
+    // An MCP client or benchmark cant answer a sub-agent's error panel, so have the agent that invoked
+    //  it carry on instead.
+    m_llmInterface->setUnattended( static_cast<bool>( m_activeMcpCallback ) || isBenchmarkRunning() );
 
     // Send message to LLM - this creates a new LlmInteraction in the history
     shared_ptr<LlmInteraction> convo = m_llmInterface->sendUserMessage( message, std::move( images ) );
@@ -1070,12 +1411,20 @@ void LlmToolGui::sendMessage(const std::string& message)
     setInputEnabled(true);
     m_isRequestPending = false;
 
-    // Show error in a dialog
-    SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
-    WText *errorText = errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
-    WPushButton *okBtn = errorDialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
-    okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
+    // Show error in a dialog - except to a benchmark, which handles (and logs) the failure itself,
+    //  and may be running with no one to dismiss the dialog.
+    if( !isBenchmarkRunning() )
+    {
+      SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
+      errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
+      WPushButton *okBtn = errorDialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
+      okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
+    }
+
+    return false;
   }
+
+  return true;
 }
 
 /*
@@ -1424,7 +1773,7 @@ void LlmToolGui::handleResetLlmConfig()
       return;
     }
 
-    if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint().empty() )
+    if( !config || !config->llmApi.isConfigured() )
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
       errDialog->contents()->addNew<WText>( "LLM API is not enabled in the configuration." );
@@ -1452,6 +1801,7 @@ void LlmToolGui::handleResetLlmConfig()
     }
 
     setInputEnabled( true );
+    updateInputBanner();
   }));
 
   noBtn->clicked().connect( dialog, &SimpleDialog::accept );
@@ -1534,8 +1884,18 @@ void LlmToolGui::writeConversationLog()
 
     if( m_logFilePath.empty() )
     {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+      // A session of an MCP agent server logs into its own directory, which goes away with it.
+      const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+      const std::optional<McpSessionManager::SessionInfo> session
+                    = manager ? manager->session( McpSessionManager::currentHandle() ) : std::nullopt;
+      if( !session.has_value() || session->dir.empty() )
+        throw runtime_error( "no session directory to log to" );
+      const string log_dir = SpecUtils::append_path( session->dir, "logs" );
+#else
       const string base_dir = InterSpec::writableDataDirectory(); //throws if not set
       const string log_dir = SpecUtils::append_path( base_dir, "llm_logs" );
+#endif
       if( SpecUtils::create_directory( log_dir ) == 0 ) //-1 already existed, 1 created
         throw runtime_error( "could not create directory '" + log_dir + "'" );
 
@@ -1643,8 +2003,12 @@ void LlmToolGui::handleSpectrumChanged( SpecUtils::SpectrumType specType,
   if( meas && meas->passthrough() )
     return;
 
-  // If there's a pending request, cancel it and re-enable input
-  if( m_isRequestPending )
+  // The user showing another foreground cuts the conversation's work off; it is left to be resumed -
+  //  e.g., when this spectrum is shown again, if setConversationHistory() swaps the conversation out.
+  const bool interrupted = (specType == SpecUtils::SpectrumType::Foreground) && interruptForSpectrumChange();
+
+  // Otherwise, if there's a pending request, cancel it and re-enable input
+  if( !interrupted && m_isRequestPending )
   {
     cout << "Foreground spectrum changed during LLM request - cancelling request" << endl;
     cancelCurrentRequest();
@@ -1661,20 +2025,25 @@ void LlmToolGui::cancelCurrentRequest()
 
   cout << "Cancelling LLM request" << endl;
 
-  // Clear the pending request state
+  if( m_activeMcpCallback )
+    m_activeMcpCancelled = true;
+
+  // Stop the turn itself (in-flight requests and deferred tool rounds), or it would keep calling
+  //  tools and share the history with the next turn; cancelAll() emits conversationFinished, so
+  //  handleConversationFinished() re-enables input and resolves any MCP prompt (as cancelled).
+  if( m_llmInterface && m_llmInterface->hasActiveRequests() )
+  {
+    m_llmInterface->cancelAll();
+    return;
+  }
+
   m_isRequestPending = false;
-
-  // Re-enable the input
   setInputEnabled(true);
-
   writeConversationLog();
 
-  // If an MCP prompt was in flight, resolve it as failed so the SSE stream ends
-  // and the queue can drain to the next entry.
+  // If an MCP prompt was in flight, resolve it so the SSE stream ends and the queue can drain to
+  //  the next entry.
   resolveActiveMcpPrompt( false );
-
-  // Note: We can't actually cancel the HTTP request from C++, but the response will be ignored
-  // when it comes back since we've cleared the pending request state
 }
 
 std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> LlmToolGui::getConversationHistory() const
@@ -1709,11 +2078,33 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
 
   m_logFilePath.clear(); // A restored history is logged to a new file at its next turn end
 
+  // Work on a conversation swapped out here (e.g., the user showed another spectrum) is interrupted, to
+  //  be resumed when it is shown again; or else, a turn stopped on a paused sub-agent is ended.
+  const vector<shared_ptr<LlmInteraction>> &shown = llmHistory->getConversations();
+  const bool swappedOut = std::any_of( begin(shown), end(shown), [&history]( const shared_ptr<LlmInteraction> &c ){
+    return c && (!history || (std::find( begin(*history), end(*history), c ) == end(*history)));
+  } );
+  if( swappedOut && !interruptForSpectrumChange() )
+    m_llmInterface->abandonStoppedRounds();
+
   // Clear current display
   clearConversationDisplays();
 
   if( history && !history->empty() )
   {
+    // Only the newest conversation can be picked back up, so any older one cut off mid-work is ended -
+    //  before its display is made, so it shows as such.
+    shared_ptr<LlmInteraction> newest;
+    for( const std::shared_ptr<LlmInteraction> &conv : *history )
+      newest = conv ? conv : newest;
+
+    for( const std::shared_ptr<LlmInteraction> &conv : *history )
+    {
+      if( conv && conv->interruption.has_value()
+          && ((conv != newest) || !m_llmInterface->canResumeInterrupted( conv )) )
+        m_llmInterface->abandonInterrupted( conv, false );
+    }
+
     // Clear current history and add conversations from saved history
     llmHistory->clear();
     for( const std::shared_ptr<LlmInteraction> &conv : *history )
@@ -1754,10 +2145,10 @@ void LlmToolGui::clearConversationHistory()
 }
 
 
-void LlmToolGui::submitMessageAsUser( const string &message )
+bool LlmToolGui::submitMessageAsUser( const string &message )
 {
   if( !m_inputEdit )
-    return;
+    return false;
 
   // During benchmarks, force-clear any pending/disabled state from previous errors
   if( isBenchmarkRunning() )
@@ -1766,13 +2157,21 @@ void LlmToolGui::submitMessageAsUser( const string &message )
     setInputEnabled( true );
   }
 
-  m_inputEdit->setText( WString::fromUTF8( message ) );
-  handleSendButton();
+  // As handleSendButton() does with what the user typed, but reporting whether it was sent.
+  if( m_isRequestPending || (message.empty() && m_stagedImages.empty()) )
+    return false;
+
+  m_inputEdit->setText( "" );
+  resetInputHeight();
+
+  return sendMessage( message );
 }
 
 
 void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback callback,
-                                    McpProgressCallback progressCallback )
+                                    McpProgressCallback progressCallback,
+                                    vector<LlmToolCall::ImageContent> images,
+                                    const string &id )
 {
   if( !callback )
     return;
@@ -1795,8 +2194,53 @@ void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback call
     return;
   }
 
-  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ) } );
+  if( !images.empty() && !canAcceptImages() )
+  {
+    callback( string( "The configured model does not accept images." ) );
+    return;
+  }
+
+  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ),
+                                                std::move( images ), id } );
   drainMcpPromptQueue();
+}
+
+
+bool LlmToolGui::cancelMcpPrompt( const string &id )
+{
+  if( id.empty() )
+    return false;
+
+  for( auto iter = begin(m_mcpPromptQueue); iter != end(m_mcpPromptQueue); ++iter )
+  {
+    if( iter->id == id )
+    {
+      McpPromptCallback cb = std::move( iter->callback );
+      m_mcpPromptQueue.erase( iter );
+      if( cb )
+        cb( string( "The prompt was cancelled before it ran." ) );
+      return true;
+    }
+  }//for( loop over queued prompts )
+
+  if( m_activeMcpCallback && (m_activeMcpId == id) )
+  {
+    m_activeMcpCancelled = true;
+    cancelCurrentRequest();  //resolves the active prompt, then drains the queue
+
+    // (The queue may have started the next prompt, so check the id.)
+    if( m_activeMcpCallback && (m_activeMcpId == id) )
+      resolveActiveMcpPrompt( false );
+    return true;
+  }
+
+  return false;
+}//bool cancelMcpPrompt( const string &id )
+
+
+bool LlmToolGui::isTurnInProgress() const
+{
+  return m_isRequestPending || static_cast<bool>(m_activeMcpCallback) || !m_mcpPromptQueue.empty();
 }
 
 
@@ -1823,6 +2267,13 @@ void LlmToolGui::drainMcpPromptQueue()
   m_mcpPromptQueue.pop_front();
   m_activeMcpCallback = std::move( next.callback );
   m_activeProgressCallback = std::move( next.progressCallback );
+  m_activeMcpId = next.id;
+  m_activeMcpCancelled = false;
+
+  // Staged right before sending, since sending takes every staged image along.
+  for( const LlmToolCall::ImageContent &img : next.images )
+    stageImage( img.base64Data, img.mimeType, img.caption.empty() ? string("image") : img.caption,
+                img.widthPx, img.heightPx, img.caption );
 
   submitMessageAsUser( next.prompt );
 
@@ -1853,8 +2304,14 @@ void LlmToolGui::resolveActiveMcpPrompt( bool success )
   {
     McpPromptCallback cb = std::move( m_activeMcpCallback );
     m_activeMcpCallback = McpPromptCallback();
+    const bool cancelled = m_activeMcpCancelled;
+    m_activeMcpId.clear();
+    m_activeMcpCancelled = false;
 
-    if( success )
+    // (A cancelled turn ends through conversationFinished, i.e. "success", so check cancelled first.)
+    if( cancelled )
+      cb( string( "The assistant's turn was cancelled." ) );
+    else if( success )
       cb( buildMcpPromptResult() );
     else
       cb( string( "The assistant's turn ended with an error before producing a final response." ) );
@@ -1914,6 +2371,32 @@ nlohmann::json LlmToolGui::buildMcpPromptResult() const
     for( const LlmToolCall &call : req->toolCalls() )
       result["tool_calls"].push_back( call.toolName );
   }
+
+  // Questions the assistant asked the GUI's user (ask_user_question), with their answers, so an
+  //  MCP client can surface them.  (An MCP HTTP server has no such user, nor the tool.)
+  nlohmann::json questions = nlohmann::json::array();
+  for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    if( !turn || (turn->type() != LlmInteractionTurn::Type::ToolResult) )
+      continue;
+
+    const LlmToolResults *results = dynamic_cast<const LlmToolResults *>( turn.get() );
+    if( !results )
+      continue;
+
+    for( const LlmToolCall &call : results->toolCalls() )
+    {
+      if( call.toolName != "ask_user_question" )
+        continue;
+      nlohmann::json entry;
+      entry["question"] = call.toolParameters.value( "question", nlohmann::json("") );
+      entry["answer"] = call.content;
+      questions.push_back( std::move(entry) );
+    }
+  }//for( loop over turns )
+
+  if( !questions.empty() )
+    result["questions_asked"] = std::move( questions );
 
   return result;
 }
@@ -2076,7 +2559,8 @@ void LlmToolGui::disconnectMcpProgress()
 
 
 void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
-                                    McpPromptCallback callback, McpProgressCallback progressCallback )
+                                    McpPromptCallback callback, McpProgressCallback progressCallback,
+                                    const string &id )
 {
   if( !callback )
     return;
@@ -2099,6 +2583,15 @@ void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
     return;
   }
 
+  // Checked here too (not just when the main agent calls the invoke_* tool), so we dont spend a main
+  //  agent LLM round-trip only to have the invocation refused.
+  const std::optional<std::string> prereq_error = m_llmInterface->subAgentPrerequisiteError( agentType );
+  if( prereq_error )
+  {
+    callback( *prereq_error );
+    return;
+  }
+
   if( isBenchmarkRunning() )
   {
     callback( string( "A benchmark is currently running; cannot invoke agent right now." ) );
@@ -2111,7 +2604,7 @@ void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
   const string wrappedPrompt = "Please use the invoke_" + agentName
     + " tool to handle the following request:\n\n" + prompt;
 
-  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ) );
+  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ), {}, id );
 }
 
 
@@ -2123,6 +2616,9 @@ void LlmToolGui::disconnectSpectrumChangedForBenchmark()
 
 void LlmToolGui::reconnectSpectrumChangedForBenchmark()
 {
+  // Assigning over a live connection drops its handle without disconnecting it (see resetRoot()),
+  //  which would leave a second copy of the slot that disconnectSpectrumChangedForBenchmark() can't reach.
+  m_spectrumChangedConnection.disconnect();
   m_spectrumChangedConnection =
     m_viewer->displayedSpectrumChanged().connect( this, &LlmToolGui::handleSpectrumChanged );
 }
@@ -2153,20 +2649,161 @@ void LlmToolGui::handleStartBenchmark( const string &xmlPath )
     return;
   }
 
+  startBenchmark( xmlPath, BenchmarkRunOptions() );
+}
+
+
+bool LlmToolGui::startBenchmark( const string &xmlPath, const BenchmarkRunOptions &options,
+                                 std::function<void(const LlmBenchmarkRunner &)> finished )
+{
+  if( isBenchmarkRunning() || !m_llmInterface )
+    return false;
+
   // Clean up any previous runner
   m_benchmarkRunner.reset();
 
   cout << "[LlmBenchmark] Starting benchmark: " << xmlPath << endl;
 
-  m_benchmarkRunner = std::make_unique<LlmBenchmarkRunner>( m_viewer, this );
+  m_benchmarkRunner = std::make_unique<LlmBenchmarkRunner>( m_viewer, this, options );
+  if( finished )
+  {
+    LlmBenchmarkRunner * const runner = m_benchmarkRunner.get();
+    runner->benchmarkFinished().connect( [runner, finished](){ finished( *runner ); } );
+  }
+
   m_benchmarkRunner->startBenchmark( xmlPath );
-}
+  return true;
+}//startBenchmark(...)
+
+
+void LlmToolGui::cancelBenchmark()
+{
+  if( !isBenchmarkRunning() )
+    return;
+
+  m_benchmarkRunner->cancelBenchmark();
+
+  // Stop the in-flight request too, so its reply does not arrive into a cancelled run.
+  if( m_llmInterface )
+    m_llmInterface->cancelAll();
+}//cancelBenchmark()
 
 
 LlmJsSandboxBridge *LlmToolGui::jsSandboxBridge()
 {
   return m_jsSandboxBridge;
 }
+
+LlmSidePanel::LlmSidePanel( InterSpec *interspec, std::unique_ptr<Wt::WWidget> tool )
+  : WContainerWidget(),
+  m_interspec( interspec ),
+  m_width( 0 ),
+  m_moveOutButton( nullptr ),
+  m_menuIconSlot( nullptr ),
+  m_dragged( this, "dragged" )
+{
+  assert( m_interspec && tool );
+  addStyleClass( "LlmSidePanel" );
+  setLayoutSizeAware( true );
+
+  m_dragged.connect( m_interspec, &InterSpec::llmSidePanelDragged );
+  setJavaScriptMember( "wtLlmDragged", "function(w){" + m_dragged.createCall( {"w"} ) + "}" );
+
+  // A flex box layout, as LlmToolGui uses (see LlmToolGui::createRoot()); the tool is added before
+  //  we are rendered, as Wt's flex layout only sizes items right when rendered together.
+  WVBoxLayout * const layout = setLayout( std::make_unique<WVBoxLayout>() );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+  layout->setSpacing( 0 );
+
+  auto header = std::make_unique<WContainerWidget>();
+  header->addStyleClass( "LlmSidePanelHeader" );
+
+  WText * const title = header->addNew<WText>( WString::tr("app-tab-llm-assistant") );
+  title->addStyleClass( "LlmSidePanelTitle" );
+
+  m_moveOutButton = header->addNew<WPushButton>();
+  m_moveOutButton->addStyleClass( "LlmSidePanelBtn InvertInDark" );
+  m_moveOutButton->clicked().connect( this, &LlmSidePanel::moveOut );
+
+  // Desktop: the assistants conversation menu icon goes here (see LlmToolGui::setMenuIconHost()).
+  m_menuIconSlot = header->addNew<WContainerWidget>();
+  m_menuIconSlot->addStyleClass( "LlmSidePanelMenuSlot" );
+
+  WContainerWidget * const closeIcon = header->addNew<WContainerWidget>();
+  closeIcon->addStyleClass( "closeicon-wtdefault LlmSidePanelClose" );
+  closeIcon->setToolTip( WString::tr("app-llm-side-close-tt") );
+  closeIcon->clicked().connect( m_interspec, &InterSpec::requestLlmToolClose );
+
+  layout->addWidget( std::move(header), 0 );
+
+  tool->setHidden( false );  //A widget taken out of the tool-tab strip comes out still hidden.
+  layout->addWidget( std::move(tool), 1 );
+}//LlmSidePanel constructor
+
+
+WContainerWidget *LlmSidePanel::menuIconSlot()
+{
+  return m_menuIconSlot;
+}//WContainerWidget *menuIconSlot()
+
+
+void LlmSidePanel::updateMoveOutButton()
+{
+  const bool phone = m_interspec->isPhone();
+  const bool tabs = m_interspec->toolTabsVisible();
+
+  m_moveOutButton->toggleStyleClass( "LlmSideToFullScreen", phone );
+  m_moveOutButton->toggleStyleClass( "LlmSideToTabs", !phone && tabs );
+  m_moveOutButton->toggleStyleClass( "LlmSideToWindow", !phone && !tabs );
+
+  const char * const tooltip = phone ? "app-llm-side-to-full-tt"
+                                     : (tabs ? "app-llm-side-to-tabs-tt" : "app-llm-side-to-window-tt");
+  m_moveOutButton->setToolTip( WString::tr(tooltip) );
+}//void LlmSidePanel::updateMoveOutButton()
+
+
+void LlmSidePanel::watchSplitter()
+{
+  doJavaScript( "(function(){"
+    "const host = " + jsRef() + ".parentElement;"
+    "if( !host || host.wtLlmSplitterWatched ) return;"
+    "host.wtLlmSplitterWatched = true;"
+    "const onDown = function(e){"
+      "if( !e.target.classList || !e.target.classList.contains('Wt-vrh2') || (e.target.parentElement !== host) ) return;"
+      "const onUp = function(){"
+        "document.removeEventListener('mouseup', onUp, true);"
+        "document.removeEventListener('touchend', onUp, true);"
+        "setTimeout( function(){"
+          "const panel = host.querySelector(':scope > .LlmSidePanel');"
+          "if( panel && panel.wtLlmDragged ) panel.wtLlmDragged( Math.round(panel.offsetWidth) );"
+        "}, 100 );"
+      "};"
+      "document.addEventListener('mouseup', onUp, true);"
+      "document.addEventListener('touchend', onUp, true);"
+    "};"
+    "host.addEventListener('mousedown', onDown, true);"
+    "host.addEventListener('touchstart', onDown, true);"
+  "})();" );
+}//void LlmSidePanel::watchSplitter()
+
+
+void LlmSidePanel::moveOut()
+{
+  if( m_interspec->isPhone() )
+    m_interspec->setLlmToolDocked( false );
+  else
+    m_interspec->moveLlmTool( InterSpec::LlmToolPlacement::ToolTab, true );
+}//void LlmSidePanel::moveOut()
+
+
+void LlmSidePanel::layoutSizeChanged( int width, int height )
+{
+  if( width == m_width )
+    return;
+
+  m_width = width;
+  m_interspec->llmSidePanelResized( width );
+}//void LlmSidePanel::layoutSizeChanged( int width, int height )
 
 
 #endif // USE_LLM_INTERFACE

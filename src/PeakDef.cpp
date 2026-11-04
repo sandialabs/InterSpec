@@ -3492,9 +3492,12 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         const auto oldprecision = answer.precision();  //probably 6 always
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
         
+        // The lower energy of each channel, and then the upper energy of the last one, so the JS
+        //  knows the extent of every channel in 'continuumCounts' (which has one less entry).
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
+        answer << "," << foreground->gamma_channel_upper(lastbin);
         answer << "]," << q << "continuumCounts" << q << ":[";
         
         /*
@@ -3587,16 +3590,19 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         const size_t nchannel = hist->num_gamma_channels();
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
+        assert( (firstbin <= lastbin) && (lastbin <= (nchannel - 1)) );
         
         //see comments above in FlatStep section
         const auto oldprecision = answer.precision();
         answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
 
+        // As for the step continua above: each channel's lower energy, then the last one's upper.
         answer << "," << q << "continuumEnergies" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_lower(i);
+        answer << "," << hist->gamma_channel_upper(lastbin);
         answer << "]," << q << "continuumCounts" << q << ":[";
         for (size_t i = firstbin; i <= lastbin; ++i)
           answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_content(i);
@@ -4099,7 +4105,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
         answer << "," << q << "decayParent" << q << ":" << q << transistion_parent << q;
         answer << "," << q << "decayChild" << q << ":" << q << decay_child << q;
-        const float energy = (IsInf(decayPart->energy) || IsNan(decayPart->energy)) ? 0.0f : decayPart->energy;
+        // For annihilation, the decay particle is the positron, so use the photon energy
+        float energy = (IsInf(decayPart->energy) || IsNan(decayPart->energy)) ? 0.0f : decayPart->energy;
+        if( p.sourceGammaType() == AnnihilationGamma )
+          energy = 510.9989f;
         answer << "," << q << "energy" << q << ":" << energy << "";
         answer << srcTypeJSON( p.sourceGammaType() );
       }else if( p.sourceGammaType() == AnnihilationGamma )
@@ -5583,8 +5592,14 @@ const char *PeakContinuum::offset_type_str( const PeakContinuum::OffsetType type
     case BiLinearStepCDF:  return "BiLinearStepCDF";
     case External:         return "External";
   }//switch( m_type )
-  
+
   return "InvalidOffsetType";
+}
+
+
+const char *PeakContinuum::offset_type_name( const PeakContinuum::OffsetType type )
+{
+  return (type == Quadratic) ? "Quadratic" : offset_type_str( type );
 }
 
 

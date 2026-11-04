@@ -474,6 +474,69 @@ inline void shell_path_to_point_imp( const GeometryType geometry,
 }//shell_path_to_point_imp(...)
 
 
+/** Distance (cm) from the point `p` inside the detector's outer envelope (crystal frame) along the
+ unit direction `u` to where it leaves the envelope - templated in the direction, whose derivative
+ the air path carries. */
+template<typename T>
+inline T envelope_exit_from_imp( const ceelo::GeometryDescriptor::Envelope &env, const std::array<double,3> &p,
+                                 const T u[3] )
+{
+  T best( std::numeric_limits<double>::max() );
+  const auto take = [&best]( const T &t ) {
+    if( (scalar_of(t) >= 0.0) && (scalar_of(t) < scalar_of(best)) )
+      best = t;
+  };
+  if( scalar_of(u[2]) > 0.0 )
+    take( T(env.z_max_cm - p[2]) / u[2] );
+  else if( scalar_of(u[2]) < 0.0 )
+    take( T(env.z_min_cm - p[2]) / u[2] );
+
+  if( env.shape == ceelo::DetectorShape::Cylinder )
+  {
+    // |p_xy + t u_xy| = R, the positive root (p is inside).
+    const T a = u[0]*u[0] + u[1]*u[1];
+    if( scalar_of(a) > 0.0 )
+    {
+      const T b = T(p[0])*u[0] + T(p[1])*u[1];
+      const double c = p[0]*p[0] + p[1]*p[1] - env.radius_cm*env.radius_cm;
+      const T disc = b*b - a*T(c);
+      if( scalar_of(disc) >= 0.0 )
+        take( (-b + sqrt( disc )) / a );
+    }
+  }else
+  {
+    const double h[2] = { env.half_x_cm, env.half_y_cm };
+    for( int i = 0; i < 2; ++i )
+    {
+      if( scalar_of(u[i]) > 0.0 )
+        take( T(h[i] - p[i]) / u[i] );
+      else if( scalar_of(u[i]) < 0.0 )
+        take( T(-h[i] - p[i]) / u[i] );
+    }
+  }
+  return (scalar_of(best) < 1.0e300) ? best : T(0.0);
+}//envelope_exit_from_imp(...)
+
+
+/** The walk from the emission point `point` toward an arbitrary `target` (both assembly frame) -
+ the crystal, for a source beside or behind the detector (see build_cascade_fields). */
+template<typename T>
+inline void shell_path_toward_imp( const DistributedSrcCalcT<T> &calc, const T point[3],
+                                   const T target[3], ShellPathT<T> &out )
+{
+  T d[3] = { target[0] - point[0], target[1] - point[1], target[2] - point[2] };
+  const T s_end = sqrt( d[0]*d[0] + d[1]*d[1] + d[2]*d[2] );
+  for( int i = 0; i < 3; ++i )
+    d[i] = d[i] / s_end;
+  shell_path_to_point_imp( calc.m_geometry, calc.m_shells, target, d, s_end, out );
+}//shell_path_toward_imp(...)
+
+
+/** Response-based cascade partner legs everywhere a response is attached, not only beside/behind
+ the detector (TEST HOOK: the A/B against the front truth scenes decides whether to adopt them). */
+inline bool sm_cascade_response_legs_front = false;
+
+
 /** The same walk for a calculator's own geometry: from the emission point `point` (assembly frame)
  to the detector position, using the calculator's shells. */
 template<typename T>
@@ -788,6 +851,23 @@ std::vector<CascadeFieldT<T>> build_cascade_fields( const std::vector<Distribute
   frame.shape( n, periodic1 );
   const size_t num_nodes = static_cast<size_t>( n[0]*n[1]*n[2] );
 
+  // Beside or behind the detector the flat-disk, face-on legs are undefined: the partner legs take
+  //  the response's own absolute efficiencies at each node instead, walked toward the crystal.
+  const bool response_legs = lead.m_effResponse && lead.m_cascade && lead.m_lineCache
+                             && (lead.m_lineCache->extended || sm_cascade_response_legs_front);
+  const auto &lc = lead.m_lineCache;   //(the cache type is completed further down this file)
+  T crystal_a[3] = { T(0.0), T(0.0), T(0.0) };
+  if( response_legs )
+  {
+    const double cm = PhysicalUnits::cm;
+    const double half_len = 0.5*lead.m_effResponse->geometry().detector_length();
+    const double rel[3] = { -lc->ref_c[0], -lc->ref_c[1], half_len - lc->ref_c[2] };
+    for( int i = 0; i < 3; ++i )
+      crystal_a[i] = lead.m_detector.position[i]
+                     + T( (lc->M[i][0]*rel[0] + lc->M[i][1]*rel[1] + lc->M[i][2]*rel[2])*cm );
+  }
+  vector<typename DistributedSrcCalcT<T>::CascadeLegs> legs( response_legs ? num_nodes : 0 );
+
   // Node positions, walks and flat-disk factors: once per group.
   vector<ShellPathT<T>> walks( num_nodes );
   vector<T> det_factors( num_nodes );
@@ -804,8 +884,58 @@ std::vector<CascadeFieldT<T>> build_cascade_fields( const std::vector<Distribute
         T p[3];
         frame.point( u, p );
         const size_t idx = static_cast<size_t>( (i0*n[1] + i1)*n[2] + i2 );
-        shell_path_from_point_imp( lead, p, walks[idx] );
-        det_factors[idx] = detector_response_factor( lead.m_detector, p );
+        if( !response_legs )
+        {
+          shell_path_from_point_imp( lead, p, walks[idx] );
+          det_factors[idx] = detector_response_factor( lead.m_detector, p );
+          continue;
+        }
+
+        // Walk toward the crystal; the air ends where that walk enters the detector's outside.
+        shell_path_toward_imp( lead, p, crystal_a, walks[idx] );
+        const double cm = PhysicalUnits::cm;
+        const Eigen::Vector3d ps( scalar_of(p[0]), scalar_of(p[1]), scalar_of(p[2]) );
+        const Eigen::Vector3d cs( scalar_of(crystal_a[0]), scalar_of(crystal_a[1]), scalar_of(crystal_a[2]) );
+        const double s_end = (cs - ps).norm();
+        // Crystal frame (cm): the response's own frame.
+        Eigen::Vector3d pc;
+        {
+          const Eigen::Vector3d dpa = (ps - Eigen::Vector3d( scalar_of(lead.m_detector.position[0]),
+                                                             scalar_of(lead.m_detector.position[1]),
+                                                             scalar_of(lead.m_detector.position[2]) ))/cm;
+          for( int i = 0; i < 3; ++i )
+            pc[i] = lc->ref_c[i] + lc->M[0][i]*dpa[0] + lc->M[1][i]*dpa[1] + lc->M[2][i]*dpa[2];
+        }
+        const Eigen::Vector3d dir_c = (Eigen::Vector3d( 0.0, 0.0, lead.m_effResponse->geometry().detector_length()/2.0 )
+                                       - pc).normalized();
+        const auto &env = lc->envelope;
+        double entry_cm = (cs - ps).norm()/cm;   //fall back to the whole walk
+        {
+          // Entry into the envelope from outside along dir_c: exit of the reversed ray from the
+          //  crystal centre, measured back from the node.
+          const std::array<double,3> centre = { 0.0, 0.0, lead.m_effResponse->geometry().detector_length()/2.0 };
+          const double back[3] = { -dir_c[0], -dir_c[1], -dir_c[2] };
+          const double from_centre = envelope_exit_from_imp<double>( env, centre, back );
+          entry_cm = std::max( 0.0, s_end/cm - from_centre );
+        }
+        walks[idx].air = select_max( walks[idx].air - T(s_end - entry_cm*cm), T(0.0) );
+        det_factors[idx] = T(1.0);
+
+        // The response at the node, every partner energy, on one aperture.
+        typename DistributedSrcCalcT<T>::CascadeLegs &lg = legs[idx];
+        const ceelo::DetectorResponse &resp = *lead.m_effResponse;
+        const ceelo::ApertureQuadrature q = resp.make_quadrature( pc );
+        const std::vector<double> &partners = lead.m_cascade->partner_energies;
+        lg.fep.resize( partners.size() );
+        lg.tot.resize( partners.size() );
+        const bool have_tot = resp.tot_eff.characterized();
+        for( size_t j = 0; j < partners.size(); ++j )
+        {
+          lg.fep[j] = std::max( 0.0, resp.eps_fep_at( partners[j], pc, q ).value );
+          lg.tot[j] = have_tot ? std::max( 0.0, resp.eps_total_at( partners[j], pc, q ).value ) : 0.0;
+        }
+        const T dx = p[0] - crystal_a[0], dy = p[1] - crystal_a[1], dz = p[2] - crystal_a[2];
+        lg.carrier = T(s_end*s_end) / (dx*dx + dy*dy + dz*dz);
       }
     }
   }
@@ -823,7 +953,8 @@ std::vector<CascadeFieldT<T>> build_cascade_fields( const std::vector<Distribute
     for( size_t idx = 0; idx < num_nodes; ++idx )
     {
       record_shell_path_imp( calc, walks[idx] );
-      f.C[idx] = calc.cascade_correction_factor( det_factors[idx], 1.0 );
+      f.C[idx] = calc.cascade_correction_factor( det_factors[idx], 1.0,
+                                                 response_legs ? &legs[idx] : nullptr );
     }
   };
 
@@ -987,7 +1118,9 @@ struct PrefactorGrid
 };//struct PrefactorGrid
 
 
-/** The aperture quadratures a COLLIMATED response's shadow gate needs, on a coarse position grid.
+/** The aperture quadratures a response's shadow gate needs, on a coarse position grid: a COLLIMATED
+ response's in front of the face plane, and - in an extended scene - the gate on the back structure
+ and side walls behind it (see ceelo::DetectorResponse::common_eval).
 
  `DetectorResponse::common_eval` gates a collimated response on the transmitted fraction of an
  aperture quadrature at the query position - below 0.3 it flags Shadowed and inflates sigma, below
@@ -1026,6 +1159,7 @@ struct CollimatorGateGrid
 inline std::shared_ptr<const CollimatorGateGrid> build_collimator_gate_grid( const ceelo::DetectorResponse &resp,
                                                                             const double d_lo_cm,
                                                                             const double d_hi_cm,
+                                                                            const bool with_back = false,
                                                                             const size_t num_d = 6,
                                                                             const size_t num_cos = 5,
                                                                             const size_t num_phi_quadrant = 3,
@@ -1035,7 +1169,8 @@ inline std::shared_ptr<const CollimatorGateGrid> build_collimator_gate_grid( con
   const double lo = std::log( d_lo_cm ), hi = std::log( d_hi_cm );
   for( size_t i = 0; i < num_d; ++i )
     grid->ln_d.push_back( lo + (hi - lo)*static_cast<double>(i)/static_cast<double>(num_d - 1) );
-  for( size_t i = 0; i < num_cos; ++i )
+  const long cos_first = with_back ? -static_cast<long>(num_cos - 1) : 0;
+  for( long i = cos_first; i < static_cast<long>(num_cos); ++i )
     grid->cos_t.push_back( static_cast<double>(i)/static_cast<double>(num_cos - 1) );
   if( resp.descriptor.symmetry == ceelo::ResponseSymmetry::Quadrant )
   {
@@ -1069,7 +1204,8 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
                                                                   const CollimatorGateGrid *gates = nullptr,
                                                                   const size_t num_cos = 33,
                                                                   const size_t num_phi_quadrant = 9,
-                                                                  const int nodes_per_octave = 12 )
+                                                                  const int nodes_per_octave = 12,
+                                                                  const bool with_back = false )
 {
   assert( gates || !resp.descriptor.collimator );
 
@@ -1087,7 +1223,10 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
   const long k_hi = std::max( static_cast<long>( std::ceil( std::log( d_hi_cm )/delta ) ), k_lo + 1 );
   for( long k = k_lo; k <= k_hi; ++k )
     grid->ln_d.push_back( static_cast<double>(k) * delta );
-  for( size_t i = 0; i < num_cos; ++i )
+  // Behind the face plane (extended scenes) the same lattice continues to -1, so every node in
+  //  front keeps its value.
+  const long cos_first = with_back ? -static_cast<long>(num_cos - 1) : 0;
+  for( long i = cos_first; i < static_cast<long>(num_cos); ++i )
     grid->cos_t.push_back( static_cast<double>(i)/static_cast<double>(num_cos - 1) );
   if( resp.descriptor.symmetry == ceelo::ResponseSymmetry::Quadrant )
   {
@@ -1191,31 +1330,17 @@ inline void line_tangent_frame( const Eigen::Vector3d &a, Eigen::Vector3d &e1, E
 }//line_tangent_frame(...)
 
 
-/** Traces one line through the DETECTOR (housing, dead layer, crystal) and fills the CeeLo ray the
- per-energy kernel is evaluated on: the material segments in traversal order, the active-crystal
- chord, and the photon direction.  `x` is the hull point and `w_out` the OUTWARD unit direction
- (toward the source; the photon travels along -w_out).  `scratch` is reused across calls.
-
- Returns false - leaving the ray with no segments and a zero chord, which
- `DetectorResponse::fep_line_probabilities` scores as zero - when the direction points behind the
- face plane or the line misses the active crystal.  Both are decisions a moving line set has to be
- able to make per evaluation, so neither is an assert.
-
- This is `ceelo::append_etendue_line` without the set: same trace, same conventions, but writing
- into a caller-owned ray so the lines can be re-traced as the source dimensions move.  Kept here
- rather than added to CeeLo so the vendored library stays untouched; it uses only its public API
- (Geometry::trace_ray and the two extent queries).  `Geometry::trace_ray` is const and the geometry
- has no mutable state, so concurrent calls with distinct `out`/`scratch` are safe. */
-inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
-                                 const Eigen::Vector3d &w_out, ceelo::KernelRay &out,
-                                 std::vector<ceelo::PathSegment> &scratch )
+/** The segment half of #trace_detector_line: traces the line and appends its segments to `q` as
+ `out`'s (or none, returning false, when it does not reach the active crystal). */
+inline bool trace_detector_line_segments( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
+                                          const Eigen::Vector3d &w_out, ceelo::ApertureQuadrature &q,
+                                          ceelo::KernelRay &out,
+                                          std::vector<ceelo::PathSegment> &scratch,
+                                          const bool allow_behind = false )
 {
-  out.segs.clear();
-  out.active_len = 0.0f;
-  out.omega_w = static_cast<float>( 1.0/(4.0*PhysicalUnits::pi) );
-  out.cos_incidence = static_cast<float>( std::fabs( w_out.z() ) );
-  out.dir = (-w_out).cast<float>();
-  if( !(w_out.z() < 0.0) )
+  // A source wholly in front of the face plane sends no photon along a line pointing behind it;
+  //  one beside or behind the detector does (`allow_behind`, extended scenes).
+  if( !allow_behind && !(w_out.z() < 0.0) )
     return false;   //behind the face plane
 
   // The trace must start outside the outermost shell, on the source side.
@@ -1241,18 +1366,62 @@ inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vecto
     if( seg.is_scoring )
       active += len;
     if( seg.material )
-      out.segs.push_back( { seg.material, static_cast<float>(len), seg.is_scoring } );
+      q.add_segment( out, seg.material, static_cast<float>(len), seg.is_scoring );
   }
 
   out.active_len = static_cast<float>( active );
-  if( !(active > 0.0) || out.segs.empty() )
+  if( !(active > 0.0) || (out.seg_count == 0) )
   {
-    out.segs.clear();
+    q.discard_segments( out );
     out.active_len = 0.0f;
     return false;   //can never contribute
   }
   return true;
+}//trace_detector_line_segments(...)
+
+
+/** Traces one line through the DETECTOR (housing, dead layer, crystal) and fills the CeeLo ray the
+ per-energy kernel is evaluated on: the material segments in traversal order, the active-crystal
+ chord, and the photon direction.  `x` is the hull point and `w_out` the OUTWARD unit direction
+ (toward the source; the photon travels along -w_out).  `scratch` is reused across calls.
+
+ The line is appended to `q` as its next ray (its segments go in `q.segments`), so a set of lines
+ stays aligned with whatever indexes it.  Returns false - leaving that ray with no segments and a
+ zero chord, which `DetectorResponse::fep_line_probabilities` scores as zero - when the direction
+ points behind the face plane or the line misses the active crystal.  Both are decisions a moving
+ line set has to be able to make per evaluation, so neither is an assert.
+
+ This is `ceelo::append_etendue_line` without the set: same trace, same conventions, but writing
+ into a caller-owned quadrature so the lines can be re-traced as the source dimensions move.  Kept here
+ rather than added to CeeLo so the vendored library stays untouched; it uses only its public API
+ (Geometry::trace_ray and the two extent queries).  `Geometry::trace_ray` is const and the geometry
+ has no mutable state, so concurrent calls with distinct `q`/`scratch` are safe. */
+inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
+                                 const Eigen::Vector3d &w_out, ceelo::ApertureQuadrature &q,
+                                 std::vector<ceelo::PathSegment> &scratch,
+                                 const bool allow_behind = false )
+{
+  ceelo::KernelRay out = ceelo::KernelRay();
+  out.seg_begin = static_cast<uint32_t>( q.segments.size() );
+  out.active_len = 0.0f;
+  out.omega_w = static_cast<float>( 1.0/(4.0*PhysicalUnits::pi) );
+  out.cos_incidence = static_cast<float>( std::fabs( w_out.z() ) );
+  out.dir = (-w_out).cast<float>();
+
+  const bool kept = trace_detector_line_segments( geom, x, w_out, q, out, scratch, allow_behind );
+  q.rays.push_back( out );
+  return kept;
 }//trace_detector_line(...)
+
+
+/** Appends an empty ray to `q` - a candidate line not traced at these dimensions - so the rays stay
+ aligned with the candidates. */
+inline void append_dropped_line( ceelo::ApertureQuadrature &q )
+{
+  ceelo::KernelRay ray = ceelo::KernelRay();
+  ray.seg_begin = static_cast<uint32_t>( q.segments.size() );
+  q.rays.push_back( ray );
+}//append_dropped_line(...)
 
 
 /** Sets #sm_line_trace_hold for a scope and restores it on exit. */
@@ -1611,6 +1780,14 @@ struct VolumetricLineCache
   double M[3][3] = { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} };
   std::array<double,3> ref_c = { 0.0, 0.0, 0.0 };
 
+  /** The source reaches beside or behind the detector (ShieldingSourceChi2Fcn::extendedScene): the
+   hull includes the crystal's back face, lines arriving from behind the face plane are kept, the
+   air is measured to where the line leaves the detector's outer envelope rather than to the endcap
+   plane, and the prefactor grids cover cos theta down to -1.  Front scenes never take any of it. */
+  bool extended = false;
+  /** The detector's outer envelope, crystal frame (cm) - the air path's far end in extended scenes. */
+  ceelo::GeometryDescriptor::Envelope envelope;
+
   /** One candidate line: a hull point and a frozen normalised aim point. */
   struct Candidate
   {
@@ -1735,7 +1912,8 @@ struct VolumetricLineCache
    every existing node's value unchanged and the integrand continuous across the extension. */
   mutable double grid_d_lo_cm = 0.0, grid_d_hi_cm = 0.0;
 
-  /** Collimated responses only: the shadow gate's quadratures (see #CollimatorGateGrid). */
+  /** Collimated responses, and extended scenes: the shadow gate's quadratures (see
+   #CollimatorGateGrid). */
   mutable std::shared_ptr<const CollimatorGateGrid> gate_grid;
   mutable std::map<double,std::shared_ptr<const PrefactorGrid>> prefactor_by_energy;
 
@@ -1756,7 +1934,8 @@ struct VolumetricLineCache
     std::shared_ptr<const PrefactorGrid> g = build_prefactor_grid( *response, energy_keV, lo, hi, gates.get(),
                                                                    sm_prefactor_grid_num_cos,
                                                                    sm_prefactor_grid_num_phi_quadrant,
-                                                                   sm_prefactor_grid_nodes_per_octave );
+                                                                   sm_prefactor_grid_nodes_per_octave,
+                                                                   extended );
     std::lock_guard<std::mutex> lock( memo_mutex );
     // Another thread may have widened (and cleared) the range while this grid was building; a grid
     //  built for the narrower range must not be memoised under the wider one.
@@ -1777,8 +1956,8 @@ struct VolumetricLineCache
     grid_d_lo_cm = (grid_d_hi_cm > 0.0) ? std::min( grid_d_lo_cm, lo ) : lo;
     grid_d_hi_cm = std::max( grid_d_hi_cm, hi );
     prefactor_by_energy.clear();
-    if( response->descriptor.collimator )
-      gate_grid = build_collimator_gate_grid( *response, grid_d_lo_cm, grid_d_hi_cm );
+    if( response->descriptor.collimator || extended )
+      gate_grid = build_collimator_gate_grid( *response, grid_d_lo_cm, grid_d_hi_cm, extended );
   }//ensure_prefactor_range(...)
 
   /** The worst response flag the source's chords can meet at `energy_keV` (near-field floor,
@@ -1806,12 +1985,13 @@ struct VolumetricLineCache
                 const std::array<double,3> &det_pos, const std::array<double,3> &axis,
                 const double azimuth, const int n, const double pad_factor,
                 const double surface_fraction, const LineSampleParams &sample_params,
-                const double hemi_fraction ) const
+                const double hemi_fraction, const bool extended_scene = false ) const
   {
     return (response.get() == resp) && (geometry == geom) && (material_index == mat_index)
            && (det_position == det_pos) && (det_axis == axis) && (det_azimuth == azimuth)
            && (num_lines == n) && (pad == pad_factor) && (surface_frac == surface_fraction)
-           && (sample == sample_params) && (hemi_frac_request == hemi_fraction);
+           && (sample == sample_params) && (hemi_frac_request == hemi_fraction)
+           && (extended == extended_scene);
   }
 
   /** The lines traced at the scalar source dims `dims_outer`, with the direction differences when
@@ -1823,6 +2003,8 @@ struct VolumetricLineCache
   /** Fills `q_fd` of a trace (idempotent). */
   void trace_direction_differences( const TracedLines &t, const bool multithread ) const;
 };//struct VolumetricLineCache
+
+
 
 
 /** Direction of candidate line `j` of `cache` at the given (T-valued, floored) source dims:
@@ -1888,6 +2070,15 @@ inline bool line_direction_imp( const VolumetricLineCache &cache, const size_t j
 
   for( int i = 0; i < 3; ++i )
     w_c[i] = T(cache.M[0][i])*w[0] + T(cache.M[1][i])*w[1] + T(cache.M[2][i])*w[2];   //M^T w
+
+  if( cache.extended )
+  {
+    // The line may leave toward the source in any direction; the air begins where it leaves the
+    //  detector's outer envelope.
+    s_endcap = envelope_exit_from_imp( cache.envelope, c.point_c, w_c ) * T(cm);
+    return true;
+  }
+
   if( !(scalar_of(w_c[2]) < 0.0) )
     return false;
 
@@ -2042,11 +2233,12 @@ private:
  `HullSamplerMatchesCeeLo` pins it bit for bit against CeeLo's for the Halton kind. */
 inline void host_sample_hull_points( const ceelo::Geometry &geom, const int n, const Eigen::Vector3d &toward,
                                      const bool have_direction, const LineSampleStream &stream,
-                                     std::vector<ceelo::HullPoint> &out )
+                                     std::vector<ceelo::HullPoint> &out,
+                                     const bool include_back = false )
 {
   const double pi = PhysicalUnits::pi;
   struct Face { int kind; double area; Eigen::Vector3d normal; int axis; double sign; double prob; };
-  enum { FrontDisc, FrontRect, CylSide, BoxSide };
+  enum { FrontDisc, FrontRect, CylSide, BoxSide, BackDisc, BackRect };
   std::vector<Face> faces;
   const double L = geom.detector_length();
   if( geom.shape() == ceelo::DetectorShape::Cylinder )
@@ -2063,6 +2255,15 @@ inline void host_sample_hull_points( const ceelo::Geometry &geom, const int n, c
       faces.push_back( { BoxSide, 2.0*hy*L, { sgn, 0.0, 0.0 }, 0, sgn, 0.0 } );
       faces.push_back( { BoxSide, 2.0*hx*L, { 0.0, sgn, 0.0 }, 1, sgn, 0.0 } );
     }
+  }
+  // The back face, last so the faces before it keep their order: only a source beside or behind
+  //  the detector (an extended scene) can send photons in through it.
+  if( include_back )
+  {
+    if( geom.shape() == ceelo::DetectorShape::Cylinder )
+      faces.push_back( { BackDisc, pi*geom.detector_radius()*geom.detector_radius(), { 0.0, 0.0, 1.0 }, 0, 1.0, 0.0 } );
+    else
+      faces.push_back( { BackRect, 4.0*geom.detector_half_x()*geom.detector_half_y(), { 0.0, 0.0, 1.0 }, 0, 1.0, 0.0 } );
   }
   double norm = 0.0;
   for( Face &f : faces )
@@ -2116,6 +2317,19 @@ inline void host_sample_hull_points( const ceelo::Geometry &geom, const int n, c
       case FrontRect:
         hp.point = Eigen::Vector3d( (2.0*u1 - 1.0)*geom.detector_half_x(), (2.0*u2 - 1.0)*geom.detector_half_y(), 0.0 );
         hp.normal = Eigen::Vector3d( 0.0, 0.0, -1.0 );
+        break;
+      case BackDisc:
+      {
+        const double R = geom.detector_radius();
+        const double r = R*std::sqrt( u1 );
+        const double ph = 2.0*pi*u2;
+        hp.point = Eigen::Vector3d( r*std::cos(ph), r*std::sin(ph), L );
+        hp.normal = Eigen::Vector3d( 0.0, 0.0, 1.0 );
+        break;
+      }
+      case BackRect:
+        hp.point = Eigen::Vector3d( (2.0*u1 - 1.0)*geom.detector_half_x(), (2.0*u2 - 1.0)*geom.detector_half_y(), L );
+        hp.normal = Eigen::Vector3d( 0.0, 0.0, 1.0 );
         break;
       case CylSide:
       {
@@ -2208,7 +2422,8 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
                                           const double pad = 1.5,
                                           const double surface_frac = sm_default_volumetric_line_surface_frac,
                                           const LineSampleParams &sample = LineSampleParams(),
-                                          const double hemi_frac = sm_volumetric_line_hemi_frac )
+                                          const double hemi_frac = sm_volumetric_line_hemi_frac,
+                                          const bool extended = false )
 {
   using namespace std;
   const double cm = PhysicalUnits::cm;
@@ -2232,6 +2447,8 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   cache->pad = pad;
   cache->surface_frac = surface_frac;
   cache->sample = sample;
+  cache->extended = extended;
+  cache->envelope = response->descriptor.outer_envelope();
 
   detector_frame_rotation( det_axis.data(), det_azimuth, cache->M );
   // The assembly's detector placement is measured to the DETECTOR FACE (InterSpec's one distance
@@ -2320,7 +2537,7 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
 
   const LineSampleStream stream( sample, static_cast<size_t>(num_lines) );
   std::vector<ceelo::HullPoint> hull;
-  host_sample_hull_points( geom, num_lines, toward, have_dir, stream, hull );
+  host_sample_hull_points( geom, num_lines, toward, have_dir, stream, hull, extended );
 
   cache->cand.resize( num_lines );
   for( int i = 0; i < num_lines; ++i )
@@ -2414,7 +2631,6 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
   const size_t n = cand.size();
   t->kept.assign( n, 0 );
   t->q.n_rays_total = static_cast<int>( n );
-  t->q.rays.resize( n );
 
   const ceelo::Geometry &geom = response->geometry();
   const std::array<double,3> padded = { pad*dims_outer[0], pad*dims_outer[1], pad*dims_outer[2] };
@@ -2424,22 +2640,31 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
                               ? static_cast<size_t>( std::max( 1, SpecUtilsAsync::num_logical_cpu_cores() ) )
                               : size_t(1);
   std::vector<double> d_min( num_chunks, 1.0e300 ), d_max( num_chunks, 0.0 );
-  std::vector<double> c_min( num_chunks, 1.0 ), c_max( num_chunks, 0.0 );
+  std::vector<double> c_min( num_chunks, 1.0 ), c_max( num_chunks, (extended ? -1.0 : 0.0) );
+
+  // Each chunk traces into a quadrature of its own (a quadrature's segments are one contiguous
+  //  array); they are joined in chunk order below, so t->q.rays[j] is still candidate j's line.
+  std::vector<ceelo::ApertureQuadrature> parts( num_chunks );
 
   const auto do_chunk = [&]( const size_t chunk )
   {
     const size_t lo = (n*chunk)/num_chunks, hi = (n*(chunk + 1))/num_chunks;
+    ceelo::ApertureQuadrature &part = parts[chunk];
+    part.rays.reserve( hi - lo );
     std::vector<ceelo::PathSegment> scratch;
     for( size_t j = lo; j < hi; ++j )
     {
       double w[3], cos_n, w_c[3], s_endcap;
       if( !line_direction_imp<double>( *this, j, dims_outer, det_pos, w, cos_n, w_c, s_endcap ) )
+      {
+        append_dropped_line( part );
         continue;
+      }
       t->kept[j] = 1;
       const Candidate &c = cand[j];
       const Eigen::Vector3d x( c.point_c[0], c.point_c[1], c.point_c[2] );
       const Eigen::Vector3d wc( w_c[0], w_c[1], w_c[2] );
-      trace_detector_line( geom, x, wc, t->q.rays[j], scratch );
+      trace_detector_line( geom, x, wc, part, scratch, extended );
 
       // Distance range of the padded chord from the crystal origin (for the prefactor grids).
       const double x_a[3] = { det_pos[0] + c.x_rel[0], det_pos[1] + c.x_rel[1], det_pos[2] + c.x_rel[2] };
@@ -2456,7 +2681,7 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
         d_max[chunk] = std::max( d_max[chunk], dist );
         if( dist > 0.0 )
         {
-          const double ct = std::max( 0.0, std::min( 1.0, -p_c.z()/dist ) );
+          const double ct = std::max( (extended ? -1.0 : 0.0), std::min( 1.0, -p_c.z()/dist ) );
           c_min[chunk] = std::min( c_min[chunk], ct );
           c_max[chunk] = std::max( c_max[chunk], ct );
         }
@@ -2474,6 +2699,10 @@ inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCac
   {
     do_chunk( 0 );
   }
+
+  for( const ceelo::ApertureQuadrature &part : parts )
+    t->q.append_rays( part );
+  assert( t->q.rays.size() == n );
 
   t->chord_d_lo_cm = *std::min_element( begin(d_min), end(d_min) );
   t->chord_d_hi_cm = *std::max_element( begin(d_max), end(d_max) );
@@ -2506,10 +2735,7 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
   const ceelo::Geometry &geom = response->geometry();
   const size_t n = cand.size();
   for( int s = 0; s < 2; ++s )
-  {
     t.q_fd[s].n_rays_total = static_cast<int>( n );
-    t.q_fd[s].rays.resize( n );
-  }
 
   const std::array<double,3> dims_o = t.key;
   const double det_pos[3] = { det_position[0], det_position[1], det_position[2] };
@@ -2517,14 +2743,22 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
   const size_t num_chunks = (multithread && (n > 4096))
                               ? static_cast<size_t>( std::max( 1, SpecUtilsAsync::num_logical_cpu_cores() ) )
                               : size_t(1);
+  // Traced per chunk and joined in chunk order, as in #traced.
+  std::vector<std::array<ceelo::ApertureQuadrature,2>> parts( num_chunks );
+
   const auto do_chunk = [&]( const size_t chunk )
   {
     const size_t lo = (n*chunk)/num_chunks, hi = (n*(chunk + 1))/num_chunks;
+    std::array<ceelo::ApertureQuadrature,2> &part = parts[chunk];
     std::vector<ceelo::PathSegment> scratch;
     for( size_t j = lo; j < hi; ++j )
     {
       if( !t.kept[j] )
+      {
+        append_dropped_line( part[0] );
+        append_dropped_line( part[1] );
         continue;
+      }
       const Candidate &c = cand[j];
       const Eigen::Vector3d x( c.point_c[0], c.point_c[1], c.point_c[2] );
       // The direction in double (the ray stores it as float, too coarse against fd_delta).
@@ -2535,8 +2769,8 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
       line_tangent_frame( wc, e1, e2 );
       const Eigen::Vector3d w1 = (wc + TracedLines::fd_delta*e1).normalized();
       const Eigen::Vector3d w2 = (wc + TracedLines::fd_delta*e2).normalized();
-      trace_detector_line( geom, x, w1, t.q_fd[0].rays[j], scratch );
-      trace_detector_line( geom, x, w2, t.q_fd[1].rays[j], scratch );
+      trace_detector_line( geom, x, w1, part[0], scratch, extended );
+      trace_detector_line( geom, x, w2, part[1], scratch, extended );
     }
   };
 
@@ -2550,6 +2784,13 @@ inline void VolumetricLineCache::trace_direction_differences( const TracedLines 
   {
     do_chunk( 0 );
   }
+
+  for( const std::array<ceelo::ApertureQuadrature,2> &part : parts )
+  {
+    t.q_fd[0].append_rays( part[0] );
+    t.q_fd[1].append_rays( part[1] );
+  }
+  assert( (t.q_fd[0].rays.size() == n) && (t.q_fd[1].rays.size() == n) );
 
   t.have_fd = true;
 }//VolumetricLineCache::trace_direction_differences(...)
@@ -3176,7 +3417,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
             assert( all_finite_lanes(phi) );
             assert( all_finite_lanes(val) );
             diag[0] += 1;
-            if( scalar_of(cos_t) < 0.0 )
+            if( (scalar_of(cos_t) < 0.0) && !cache->extended )
               diag[1] += 1;
             if( (scalar_of(dist) < std::exp(grids[c]->ln_d.front())) || (scalar_of(dist) > std::exp(grids[c]->ln_d.back())) )
               diag[2] += 1;
@@ -3729,6 +3970,11 @@ VolumetricPartitionT<T> partition_volumetric_calculators(
     {
       if( sm_volumetric_integrator_override == VolumetricIntegrator::Line )
         throw runtime_error( "integrate_volumetric_calculators: line path forced but not applicable" );
+      // The element path assumes the detector is in front of every element (its symmetry shortcuts,
+      //  and the face-on flat disk); a source beside or behind the detector is the line path's only.
+      if( calc->m_lineCache && calc->m_lineCache->extended )
+        throw runtime_error( "A source beside or behind the detector can only be integrated on the"
+                             " volumetric line path." );
       part.element_only.push_back( calc.get() );
       continue;
     }

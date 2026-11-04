@@ -4,5 +4,5 @@ compton,True,"shared float32 log10(argument) pool with uint16 indices, per-curve
 pair_production,True,"shared float32 log10(argument) pool with uint16 indices, per-curve affine uint16 log10(value)",38505,21983,43966,43966,1176,0,192,225.0,239.0,243,0.037135043905252504,0.04999976514326043,0.019631766551775343
 photoelectric,True,"shared float32 log10(argument) pool with uint16 indices, per-curve affine uint16 log10(value)",406218,5588,11176,11176,1176,0,43,57.0,65.0,70,0.07681544751499485,0.09998779666894331,0.04871698460253704
 k_photoelectric,True,"shared float32 log10(argument) pool with uint16 indices, per-curve affine uint16 log10(value)",25061,4677,9354,9354,1176,0,38,48.0,55.0,60,0.08337499734606756,0.09998785265387111,0.049251827191443276
-form_factor,False,generator-only adaptive EPDL curve; not emitted at runtime,106810,0,0,0,0,0,0,0.0,0.0,0,0.07358968526450377,0.0999979189460154,0.03187747288414533
+form_factor,True,"float32 log10(argument), per-curve affine uint16 log10(value)",106810,12334,24668,49336,1176,0,79,127.5,142.14999999999998,148,0.07358968526450377,0.0999979189460154,0.03187747288414533
 scattering_function,True,"float32 log10(argument), per-curve affine uint16 log10(value), linear-value interpolation",17376,9201,18402,36804,1176,0,75,95.0,102.0,103,0.08147705821154298,0.09999616553626467,0.006016665489616546

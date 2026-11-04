@@ -43,13 +43,15 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
+
+#include "io/DetectorResponse.h"
+#include "materials/Material.h"
 
 #include "GeometryReference.h"
 
@@ -1390,3 +1392,152 @@ BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
     }//for( loop over shell thickness )
   }//for( loop over energy )
 }//BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
+
+
+/** The detector face centre's closest approach to an assembly (the cascade-summing gates' estimate),
+ for every geometry and off-axis placements.
+ */
+BOOST_AUTO_TEST_CASE( DetectorFaceClearance )
+{
+  const double cm = PhysicalUnits::cm;
+  const double eps = 1.0E-9 * cm;
+
+  // Sphere: |face| - R, on or off axis.
+  {
+    const double dims[3] = { 5.0*cm, 0.0, 0.0 };
+    BOOST_CHECK_SMALL( detector_face_clearance( GeometryType::Spherical, dims, 15.0*cm, 0.0, 0.0 ) - 10.0*cm, eps );
+    BOOST_CHECK_SMALL( detector_face_clearance( GeometryType::Spherical, dims, 3.0*cm, 4.0*cm, 0.0 ) - 0.0, eps );
+    BOOST_CHECK_LT( detector_face_clearance( GeometryType::Spherical, dims, 3.0*cm, 0.0, 0.0 ), 0.0 );
+  }
+
+  // End-on cylinder, radius 5 cm, half-length 20 cm.
+  {
+    const double dims[3] = { 5.0*cm, 20.0*cm, 0.0 };
+    const GeometryType g = GeometryType::CylinderEndOn;
+
+    // On axis: the old test exactly - distance less half-length.
+    BOOST_CHECK_SMALL( detector_face_clearance( g, dims, 25.0*cm, 0.0, 0.0 ) - 5.0*cm, eps );
+    BOOST_CHECK_LT( detector_face_clearance( g, dims, 15.0*cm, 0.0, 0.0 ), 0.0 );
+
+    // Beside the cylinder (face 10 cm off axis, 15 cm along it): outside, 5 cm from its side.
+    BOOST_CHECK_SMALL( detector_face_clearance( g, dims, 15.0*cm, 10.0*cm, 0.0 ) - 5.0*cm, eps );
+
+    // Off the corner: the distance to the rim.
+    BOOST_CHECK_SMALL( detector_face_clearance( g, dims, 23.0*cm, 9.0*cm, 0.0 ) - 5.0*cm, eps );
+  }
+
+  // Side-on cylinder: the detector is along +x, the cylinder axis along z.
+  {
+    const double dims[3] = { 5.0*cm, 20.0*cm, 0.0 };
+    const GeometryType g = GeometryType::CylinderSideOn;
+    BOOST_CHECK_SMALL( detector_face_clearance( g, dims, 15.0*cm, 0.0, 0.0 ) - 10.0*cm, eps );
+    BOOST_CHECK_LT( detector_face_clearance( g, dims, 4.0*cm, 0.0, 0.0 ), 0.0 );
+  }
+
+  // Box, half-extents (50, 50, 20) cm: the detector face 15 cm out along z and 15 cm across is
+  //  INSIDE it.
+  {
+    const double dims[3] = { 50.0*cm, 50.0*cm, 20.0*cm };
+    const GeometryType g = GeometryType::Rectangular;
+    BOOST_CHECK_LT( detector_face_clearance( g, dims, 15.0*cm, 15.0*cm, 0.0 ), 0.0 );
+    BOOST_CHECK_SMALL( detector_face_clearance( g, dims, 25.0*cm, 0.0, 0.0 ) - 5.0*cm, eps );
+    BOOST_CHECK_SMALL( detector_face_clearance( g, dims, 23.0*cm, 54.0*cm, 0.0 ) - 5.0*cm, eps );
+  }
+}//BOOST_AUTO_TEST_CASE( DetectorFaceClearance )
+
+
+/** Whether an assembly stays in front of the detector-face plane - the test the activity fit refuses
+ a shell on, whatever the offsets, since nothing beside the detector is modelled.  The old test
+ compared the extent along the axis with the offset-aware distance instead, which accepted the
+ off-axis cases below.
+ */
+BOOST_AUTO_TEST_CASE( DetectorFacePlaneClearance )
+{
+  const double cm = PhysicalUnits::cm;
+  const double eps = 1.0E-9 * cm;
+
+  // Each geometry's extent along the detector axis: sphere and side-on cylinder radius, end-on
+  //  cylinder half-length, box half-depth.
+  {
+    const double dims[3] = { 5.0*cm, 20.0*cm, 8.0*cm };
+    BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::Spherical, dims, 15.0*cm ) - 10.0*cm, eps );
+    BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::CylinderSideOn, dims, 15.0*cm ) - 10.0*cm, eps );
+    BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::CylinderEndOn, dims, 15.0*cm ) + 5.0*cm, eps );
+    BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::Rectangular, dims, 15.0*cm ) - 7.0*cm, eps );
+  }
+
+  // On axis it agrees in sign with the face centre's clearance, for every geometry.
+  for( const GeometryType g : { GeometryType::Spherical, GeometryType::CylinderEndOn,
+                                GeometryType::CylinderSideOn, GeometryType::Rectangular } )
+  {
+    const double dims[3] = { 5.0*cm, 20.0*cm, 8.0*cm };
+    for( const double dist : { 3.0*cm, 6.0*cm, 10.0*cm, 25.0*cm } )
+    {
+      const bool plane_ok = (detector_face_plane_clearance( g, dims, dist ) >= 0.0);
+      const bool centre_ok = (detector_face_clearance( g, dims, dist, 0.0, 0.0 ) >= 0.0);
+      BOOST_CHECK_MESSAGE( plane_ok == centre_ok, "geometry " << static_cast<int>(g) << " at "
+                           << dist/cm << " cm: plane " << plane_ok << " vs centre " << centre_ok );
+    }
+  }
+
+  // Beside the detector: clear of the face centre, but reaching past the face plane - refused.
+  {
+    // End-on cylinder r 5, half-length 20, face 15 cm along and 10 cm across: 5 cm past the plane.
+    const double cyl[3] = { 5.0*cm, 20.0*cm, 0.0 };
+    BOOST_CHECK_GT( detector_face_clearance( GeometryType::CylinderEndOn, cyl, 15.0*cm, 10.0*cm, 0.0 ), 0.0 );
+    BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::CylinderEndOn, cyl, 15.0*cm ) + 5.0*cm, eps );
+
+    // Sphere r 18, 15 cm along and 10 cm across: the face centre is just outside it (18.03 cm from
+    //  its centre), but the detector body behind the face is inside it.
+    const double sph[3] = { 18.0*cm, 0.0, 0.0 };
+    BOOST_CHECK_GT( detector_face_clearance( GeometryType::Spherical, sph, 15.0*cm, 10.0*cm, 0.0 ), 0.0 );
+    BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::Spherical, sph, 15.0*cm ) + 3.0*cm, eps );
+  }
+}//BOOST_AUTO_TEST_CASE( DetectorFacePlaneClearance )
+
+
+
+/** The detector enclosure as a fit places it, and the clearance of sources in front, beside and
+ behind it. */
+BOOST_AUTO_TEST_CASE( DetectorEnclosureClearance )
+{
+  const double cm = PhysicalUnits::cm;
+  const double eps = 1.0E-6 * cm;
+
+  // A 3"x3" NaI in a 0.5 mm Al can, with a 1 cm back plate.
+  ceelo::GeometryDescriptor gd;
+  gd.set_dimensions( ceelo::CylinderDims{ 3.81, 7.62 } );
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+  gd.crystal_material_index = 0;
+  ceelo::LayerSpec can;
+  can.material_index = 1;
+  can.front_thickness_cm = 0.05;
+  can.side_thickness_cm = 0.05;
+  can.z_end_cm = 7.62;
+  gd.layers.push_back( can );
+  gd.set_layer_back_thickness_cm( 0, 1.0 );
+  const double R = 3.86, back = 7.62 + 1.0;   // outer radius; back face behind the crystal face
+
+  // In front, on axis: the face plane is `distance` from the source centre.
+  const double sph[3] = { 5.0*cm, 0.0, 0.0 };
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::Spherical, sph, 10.0*cm, 0.0, 0.0 )
+                     - 5.0*cm, eps );
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::Spherical, nullptr, 10.0*cm, 0.0, 0.0 )
+                     - 10.0*cm, eps );
+
+  // Beside: an end-on cylinder centred on the face plane, 8 cm off the detector axis.
+  const double cyl[3] = { 2.0*cm, 10.0*cm, 0.0 };
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::CylinderEndOn, cyl, 0.0, 8.0*cm, 0.0 )
+                     - (8.0 - 2.0 - R)*cm, eps );
+  // ...and overlapping it when only 5 cm off.
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::CylinderEndOn, cyl, 0.0, 5.0*cm, 0.0 ), eps );
+
+  // Behind, on axis: a point 20 cm behind the face plane is (20 - 0.05 - back) from the back plate.
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::Spherical, nullptr, -20.0*cm, 0.0, 0.0 )
+                     - (20.0 - 0.05 - back)*cm, eps );
+
+  // Side-on geometry puts the detector along +x; a point source beside it, 6 cm off in y.
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::CylinderSideOn, nullptr, -2.0*cm, 6.0*cm, 0.0 )
+                     - (6.0 - R)*cm, eps );
+}//BOOST_AUTO_TEST_CASE( DetectorEnclosureClearance )

@@ -1041,6 +1041,13 @@ D3TimeChart::D3TimeChart()
   m_pendingImageCallback{},
   m_downloadResource( nullptr )
 {
+  // Load the scripts now, with the page, even though `init()` may wait until the chart is shown:
+  //  if they are first required in the same update that shows the chart, Wt can send the chart's
+  //  construction JS ahead of the script loading (e.g., when the widget is still hidden as the
+  //  update is rendered), giving "D3TimeChart is not defined", which ends the session.
+  wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
+  wApp->require( "InterSpec_resources/D3TimeChart.js" );
+
 #if( !OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   init();
 #endif
@@ -1050,9 +1057,8 @@ D3TimeChart::D3TimeChart()
 void D3TimeChart::init()
 {
   addStyleClass( "D3TimeChartParent" );
-    
-  wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
-  wApp->require( "InterSpec_resources/D3TimeChart.js" );
+
+  // (The scripts are required in the constructor.)
   wApp->useStyleSheet( "InterSpec_resources/D3TimeChart.css" );
   initChangeableCssRules();
   
@@ -2330,6 +2336,10 @@ void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSi
   js += "}";  // end if(!Wt.WT.ChartToImageData)
 
   js += "var chart=" + m_jsgraph + ";";
+  // The chart learns its size from a ResizeObserver, which does not run while the page is hidden
+  //  (e.g., an unattended session in a background tab), so make sure it has its current size.
+  js += "try{if(chart&&chart.chart&&chart.state&&((chart.state.width!==chart.chart.clientWidth)"
+        "||(chart.state.height!==chart.chart.clientHeight)))chart.handleResize();}catch(e){}";
   // rAF never fires while the window is hidden/occluded, so race it against a timeout.
   js += "var started=false;var go=function(){if(started)return;started=true;";
   js += "Wt.WT.ChartToImageData(chart,'" + format + "',"

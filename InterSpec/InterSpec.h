@@ -101,6 +101,7 @@ class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
+class ColorThemeWindow;
 class LicenseAndDisclaimersWindow;
 namespace ceelo{ struct GeometryDescriptor; }
 namespace HelpSystem{ class HelpWindow; }
@@ -439,9 +440,29 @@ public:
    */
   std::set<int> validForegroundSamples() const;
   
+  /** The detectors summed for display of `type`: the foreground's are checked in the "Detectors"
+   menu; a background or secondary uses that choice if it has exactly the foreground's detectors,
+   and otherwise all of its own.
+
+   TODO(displayed-detectors): the choice is only kept for the foreground, and is not restored from
+   a file's saved <DisplayedDetectors> (SpecMeas::m_displayedDetectors).  When this is reworked,
+   also update the LLM assistant/MCP code that relies on the current rule (grep for the tag).
+   */
   std::vector<std::string> detectorsToDisplay( const SpecUtils::SpectrumType type ) const;
 
-  
+  /** Sets which of the foreground's detectors are summed for display, as checking boxes in the
+   "Detectors" menu does (no undo step is added); empty means all.  The background and secondary
+   follow this choice when they have the same detectors as the foreground.
+
+   @throws std::runtime_error if no foreground is loaded, a name is not one of its detectors, or no
+           gamma detector would be displayed.
+
+   TODO(displayed-detectors): foreground only, as the GUI's menu; take a SpectrumType once the
+   background and secondary can have choices of their own.
+   */
+  void setDetectorsToDisplay( const std::vector<std::string> &detectors );
+
+
   std::shared_ptr<SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type );
   std::shared_ptr<const SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type ) const;
 
@@ -742,6 +763,12 @@ public:
   ShieldingSourceDisplay *shieldingSourceFit( const bool create_window = true );
   void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
+
+  /** Copies into the foreground SpecMeas the state that open tools keep outside of it - the
+   Activity/Shielding fit, Isotopics (by nuclides, and from peaks), and the LLM assistant
+   conversation - so a save or export of the foreground includes all of the user's work.
+   */
+  void syncAllToolStateToForegroundSpecMeas();
   
   /** Shows the help window; if a preselect (ex., "energy-calibration", or "getting-started"), then that topic will be set to be selected.
    */
@@ -973,8 +1000,15 @@ public:
    */
   DrfModifyWidget *drfModifyWidget() const;
 
+  /** Shows the window that allows users to select, alter, and apply color themes; brings an
+   already-open one forward rather than creating a second.
+   */
+  ColorThemeWindow *showColorThemeWindow();
+
 #if( USE_LLM_INTERFACE )
-  /** Create and show the LLM tool widget in the tools tab, if its not already created. */
+  /** Create and show the LLM tool widget, if its not already created; it goes where the user last
+   had it - to the right of the charts, or in the tools tab (see #LlmToolPlacement).
+   */
   void createLlmTool();
   
   /** Returns current LLM tool, or nullptr if one does not currently exist. */
@@ -986,13 +1020,66 @@ public:
    data directory (with an overwrite warning if one already exists). */
   void openLlmConfigForImport( const std::string &configFilePath );
   
-  /** Handle cleanup when LLM tool is closed. */
+  /** Closes the LLM tool because the user asked to (its tab, side-panel, or window close button), so a
+   conversation it cuts off mid-work is offered for resuming, rather than resumed on its own, when the
+   tool is next created; see LlmToolGui::resumeInterruptedConversation().
+   */
   void handleLlmToolClose();
+
+  /** Calls #handleLlmToolClose on the next pass of the event loop - for close buttons that are
+   deleted along with the tool's container (e.g., the side panel's). */
+  void requestLlmToolClose();
 
   /** Sync the current LLM conversation history into the foreground SpecMeas,
    so it will be included when the file is next saved.
    */
   void syncLlmHistoryToSpecMeas();
+
+  /** Phones only: moves the LLM assistant between its full-screen window (`docked == false`) and
+   being docked (`docked == true`) - in the tools tab strip below the spectrum when in portrait, or
+   in the side panel to the right of the charts when in landscape - so the user can watch the
+   spectrum while the conversation carries on.  In landscape the choice is remembered as the
+   "LlmAssistantOnSide" preference.
+
+   Same deferral and tool-preservation as #moveLlmTool.
+   */
+  void setLlmToolDocked( const bool docked );
+
+  /** Where the LLM assistant can be shown. */
+  enum class LlmToolPlacement
+  {
+    /** A closeable tab in the tools tab strip, below the charts. */
+    ToolTab,
+    /** A full-height panel to the right of the charts (and tool tabs), with a draggable width. */
+    SidePanel,
+    /** Its own AuxWindow (full-screen on phones). */
+    Window
+  };//enum class LlmToolPlacement
+
+  /** Moves the LLM assistant to `where`, as asked for by the user, so as an undoable step; a no-op if
+   it isnt open, or is already there.  A `ToolTab` request when the tool tabs are not showing goes to
+   a `Window` instead; and on phones `ToolTab` and `SidePanel` both mean docked (see
+   #setLlmToolDocked).
+
+   The tool widget is moved, not recreated, so any request in flight is unaffected.  The move is
+   made on the next pass of the event loop, since it is asked for by buttons inside the containers
+   being swapped.
+
+   @param rememberPreference If true, sets the "LlmAssistantOnSide" preference to whether `where`
+          is `SidePanel` - i.e., for moves the user explicitly asked for.
+   */
+  void moveLlmTool( const LlmToolPlacement where, const bool rememberPreference );
+
+  /** Returns where the LLM assistant currently is; only meaningful if #currentLlmTool is non-null. */
+  LlmToolPlacement llmToolPlacement() const;
+
+  /** Called by the LLM side panel whenever its rendered width changes, so the width can be kept
+   across layout changes. */
+  void llmSidePanelResized( const int width );
+
+  /** Called by the LLM side panel when the user has dragged the splitter beside it; also remembers
+   the width, as a percentage of the app width, in the "LlmSidePanelPct" preference. */
+  void llmSidePanelDragged( const int width );
 #endif
 
   /** Will show the disclaimer, license, and statment window, setting
@@ -1517,9 +1604,6 @@ protected:
   */
   void setReferenceLineColors( std::shared_ptr<const ColorTheme> theme );
   
-  /** Creates the ColorThemeWidget Window that allows users to alter themes/colors. */
-  void showColorThemeWindow();
-  
   void initDragNDrop();
   
   void hotKeyPressed( const unsigned int value );
@@ -1847,6 +1931,11 @@ protected:
    */
   Wt::Core::observing_ptr<LicenseAndDisclaimersWindow> m_licenseWindow;
   
+  /** The color themes window; it deletes itself when closed (once any "Save changes?" prompt is
+   answered), so this is nullptr unless it is showing or waiting on that prompt.
+   */
+  Wt::Core::observing_ptr<ColorThemeWindow> m_colorThemeWindow;
+  
   //m_useInfoWindow: a pointer to the window initially shown when app starts up
   //  that allows you to select a previous work state or spectrum, or to watch
   //  the how-to movies.  Will be null if a window is currently not showing,
@@ -1875,15 +1964,65 @@ protected:
 #if( USE_LLM_INTERFACE )
   /** Menu item for opening the LLM tool. */
   PopupDivMenuItem *m_llmToolMenuItem;
-  /** LLM tool widget for user interaction.  It moves between the tools tab strip and an AuxWindow
-   depending on whether the tab strip is showing, so whichever parent currently holds it owns it -
-   hence the observing_ptr. */
+  /** LLM tool widget for user interaction.  It moves between the tools tab strip, the side panel
+   (#m_llmSidePanel), and an AuxWindow (see #LlmToolPlacement), so whichever parent currently holds
+   it owns it - hence the observing_ptr. */
   Wt::Core::observing_ptr<LlmToolGui> m_llmTool;
 
-  /** Holds m_llmTool when there is no tool-tab strip to dock it into (same role
-   #m_terminalWindow plays for m_terminal).  Null while the tool is docked in the tab strip.
+  /** Holds m_llmTool when the user wants it in the tab strip, but there is no tool-tab strip to
+   dock it into (same role #m_terminalWindow plays for m_terminal), or on phones when the user has
+   not docked it (see #setLlmToolDocked).  Null while the tool is in the tab strip or side panel.
    */
   Wt::Core::observing_ptr<AuxWindow> m_llmToolWindow;
+
+  /** Holds m_llmTool when it is shown to the right of the charts; owned by #m_layout (as its second
+   column - which only exists while this panel does), like #m_menuDiv.  Null otherwise.
+   */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_llmSidePanel;
+
+  /** The width, in pixels, the side panel was last rendered at, or should be given when it is next
+   added to the layout; zero if not yet known. */
+  int m_llmSidePanelWidth;
+
+  /** True when #m_llmSidePanelWidth was estimated from the screen size, before the app had been
+   laid out; the next #layoutSizeChanged then sizes the panel properly. */
+  bool m_llmSidePanelWidthGuessed;
+
+  /** Adds `tool` (i.e., m_llmTool) to the tools tab strip as a closeable tab; icon-only on phones. */
+  void addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent );
+
+  /** Puts `tool` (i.e., m_llmTool) into a new m_llmToolWindow - full-screen on phones. */
+  void showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool );
+
+  /** Puts `tool` (i.e., m_llmTool) into a new #m_llmSidePanel, which is added to the layout. */
+  void showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool );
+
+  /** Does the work of #moveLlmTool, immediately, adding an undo/redo step for the move; undo/redo
+   call this directly. */
+  void placeLlmTool( const LlmToolPlacement where, const bool rememberPreference );
+
+  /** Takes m_llmTool out of whichever tab, window, or side panel currently holds it (destroying
+   the window or side panel); returns nullptr if there is no tool. */
+  std::unique_ptr<Wt::WWidget> detachLlmTool();
+
+  /** Saves the LLM conversation into the foreground SpecMeas, then deletes the LLM tool; a no-op if
+   there is none.  #handleLlmToolClose for the user closing it, or directly as the session ends. */
+  void closeLlmTool();
+
+  /** Makes `panel` (i.e., #m_llmSidePanel) the second column of #m_layout, spanning the chart and
+   tool-tab rows, with a draggable splitter between it and the charts. */
+  void addLlmSidePanelToLayout( std::unique_ptr<Wt::WWidget> panel );
+
+  /** Undoes #addLlmSidePanelToLayout, returning the panel; nullptr if there is no panel. */
+  std::unique_ptr<Wt::WWidget> takeLlmSidePanelFromLayout();
+
+  /** The width, in pixels, a newly shown side panel should be, from the "LlmSidePanelPct"
+   preference and the app (or, before it is laid out, the screen) width; sets
+   #m_llmSidePanelWidthGuessed. */
+  int llmSidePanelInitialWidth();
+
+  /** Keeps the phones fixed-position "next sample" button left of the side panel, while it shows. */
+  void updateMobileButtonsForLlmSidePanel( const bool panelShowing );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )

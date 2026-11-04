@@ -1,0 +1,5 @@
+# CeeLo FullRealization cascade-truth for the Act/Shield fit
+# scene: id=cs137_side_oblique nuclide=Cs137 age_s=1.57785e+08 activity_bq=37000 live_time_s=3600 shape=0 dist_cm=-8.15 offset_cm=6 fep_window_kev=0.75 (dist_cm: detector face to source centre) src_r_cm=0 src_half_len_cm=0 src_mat=none shield=none shield_cm=0 events=20000000
+# counts = activity x live_time x p_emit x eff_with_summing x k_grounding
+peak_keV,net_counts,net_counts_unc,p_emit,eff_with_summing,eff_no_summing,summing_factor,k_grounding
+661.657,1.170950e+06,3.921e+03,8.53336848e-01,1.03018159e-02,1.03018159e-02,1.000000,1.000000

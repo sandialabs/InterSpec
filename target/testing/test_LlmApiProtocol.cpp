@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <variant>
 #include <iostream>
 
 #define BOOST_TEST_MODULE LlmApiProtocol_suite
@@ -437,3 +438,198 @@ BOOST_AUTO_TEST_CASE( AnthropicOneShotRequestGetsNoMessageBreakpoint )
   BOOST_REQUIRE( req["system"].is_array() && !req["system"].empty() );
   BOOST_CHECK( req["system"].back().contains("cache_control") );
 }
+
+
+/* Claude thinking / sampling parameters depend on the model generation; sending the wrong form is
+ a 400 from the API, so pin which models get which. */
+BOOST_AUTO_TEST_CASE( AnthropicThinkingFormPerModel )
+{
+  const unique_ptr<const LlmApiProtocol> proto = LlmApiProtocol::create( ApiFormat::Anthropic );
+  BOOST_REQUIRE( !!proto );
+
+  json messages = json::array();
+  messages.push_back( json{ {"role","user"}, {"content","Identify the nuclides."} } );
+
+  const auto request_for = [&]( const string &model, const std::variant<bool,LlmConfig::LlmApi::ReasoningEffort> &reasoning,
+                                const ToolChoice choice ) -> json {
+    LlmConfig::LlmApi api = make_anthropic_api();
+    api.providers[0].models[0].name = model;
+    api.providers[0].models[0].reasoning = reasoning;
+    api.providers[0].models[0].temperature = 0.3;
+    return proto->buildRequestBody( api, "sys", messages, make_tools(), choice );
+  };
+
+  const LlmConfig::LlmApi::ReasoningEffort high = LlmConfig::LlmApi::ReasoningEffort::high;
+
+  // Claude 4.6+ get adaptive thinking, with the effort level in output_config.
+  for( const char *model : { "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-5-5", "claude-sonnet-5-5",
+                             "claude-haiku-5-5", "claude-fable-5-1", "anthropic/claude-opus-4.8", "claude-opus-6" } )
+  {
+    const json req = request_for( model, high, ToolChoice::Auto );
+    BOOST_CHECK_MESSAGE( req["thinking"].value("type","") == "adaptive", model << ": " << req["thinking"].dump() );
+    BOOST_CHECK_MESSAGE( req.contains("output_config") && (req["output_config"].value("effort","") == "high"),
+                         model << ": effort not sent" );
+  }
+
+  // Plain "on" leaves the model's default effort.
+  BOOST_CHECK( !request_for( "claude-opus-5-5", true, ToolChoice::Auto ).contains("output_config") );
+
+  // Earlier models (and Haiku 4.5) need an explicit thinking budget, and must not get an effort.
+  for( const char *model : { "claude-sonnet-4-5", "claude-sonnet-4-5-20250929", "claude-opus-4-5", "claude-opus-4-1",
+                             "claude-sonnet-4-20250514", "claude-opus-4-0", "claude-haiku-4-5",
+                             "anthropic/claude-sonnet-4.5", "anthropic.claude-haiku-4-5-20251001-v1:0",
+                             "claude-opus-4-5@20251101", "claude-3-7-sonnet-latest", "claude-3.5-haiku" } )
+  {
+    const json req = request_for( model, high, ToolChoice::Auto );
+    BOOST_CHECK_MESSAGE( req["thinking"].value("type","") == "enabled", model << ": " << req["thinking"].dump() );
+    BOOST_CHECK_MESSAGE( req["thinking"].contains("budget_tokens"), model << ": no budget" );
+    BOOST_CHECK_MESSAGE( !req.contains("output_config"), model << ": effort sent" );
+  }
+
+  // Temperature: never with thinking on; with thinking off, only to models that accept it.
+  BOOST_CHECK( !request_for( "claude-sonnet-4-5", high, ToolChoice::Auto ).contains("temperature") );
+  BOOST_CHECK( request_for( "claude-sonnet-4-5", false, ToolChoice::Auto ).contains("temperature") );
+  BOOST_CHECK( request_for( "claude-opus-4-6", false, ToolChoice::Auto ).contains("temperature") );
+  for( const char *model : { "claude-opus-4-7", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-5-5", "claude-fable-5" } )
+    BOOST_CHECK_MESSAGE( !request_for( model, false, ToolChoice::Auto ).contains("temperature"), model << ": temperature sent" );
+
+  // Forced tool use: only with thinking off, and not to models that reject it.
+  BOOST_CHECK_EQUAL( request_for( "claude-opus-4-8", false, ToolChoice::Required )["tool_choice"].value("type",""), "any" );
+  BOOST_CHECK_EQUAL( request_for( "claude-opus-4-8", high, ToolChoice::Required )["tool_choice"].value("type",""), "auto" );
+  for( const char *model : { "claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1" } )
+    BOOST_CHECK_MESSAGE( request_for( model, false, ToolChoice::Required )["tool_choice"].value("type","") == "auto",
+                         model << ": forced tool_choice" );
+}//AnthropicThinkingFormPerModel
+
+
+// Anthropic rejects oneOf/anyOf/allOf at the top level of a tool's input_schema, so those must be
+//  stripped for that format only - nested combinators, and every other format, keep the full schema.
+BOOST_AUTO_TEST_CASE( AnthropicStripsTopLevelSchemaCombinators )
+{
+  NormalizedTool tool;
+  tool.name = "modify_config";
+  tool.description = "Modify the config.";
+  tool.parameters = json::parse( R"({
+    "type": "object",
+    "properties": {
+      "operation": { "type": "string", "enum": ["add", "remove"] },
+      "value": { "oneOf": [ {"type": "string"}, {"type": "number"} ] }
+    },
+    "required": ["operation"],
+    "allOf": [ { "if": {"properties": {"operation": {"const": "add"}}}, "then": {"required": ["value"]} } ],
+    "anyOf": [ {"required": ["operation"]} ]
+  })" );
+  const vector<NormalizedTool> tools{ tool };
+  const json messages = json::array( { json{ {"role","user"}, {"content","hi"} } } );
+  const LlmConfig::LlmApi api = make_anthropic_api();
+
+  const json anthropicReq = LlmApiProtocol::create( ApiFormat::Anthropic )
+                                ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
+  BOOST_REQUIRE( anthropicReq.contains("tools") && (anthropicReq["tools"].size() == 1) );
+  const json &schema = anthropicReq["tools"][0]["input_schema"];
+  BOOST_CHECK( !schema.contains("allOf") );
+  BOOST_CHECK( !schema.contains("anyOf") );
+  BOOST_CHECK_EQUAL( schema.value("type", ""), "object" );
+  BOOST_CHECK( schema["required"] == tool.parameters["required"] );
+  BOOST_CHECK( schema["properties"] == tool.parameters["properties"] );  // nested oneOf kept
+
+  const json chatReq = LlmApiProtocol::create( ApiFormat::OpenAiChat )
+                           ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
+  BOOST_CHECK( chatReq["tools"][0]["function"]["parameters"] == tool.parameters );
+
+  const json responsesReq = LlmApiProtocol::create( ApiFormat::OpenAiResponses )
+                                ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
+  BOOST_CHECK( responsesReq["tools"][0]["parameters"] == tool.parameters );
+}//AnthropicStripsTopLevelSchemaCombinators
+
+
+// Provider-reported cost (OpenRouter `usage.cost`) is read by every wire format, is absent when the
+//  provider does not report it, and for BYOK requests includes the upstream provider's charge.
+BOOST_AUTO_TEST_CASE( ParseResponseCost )
+{
+  const unique_ptr<const LlmApiProtocol> chat = LlmApiProtocol::create( ApiFormat::OpenAiChat );
+  const json chatChoices = json::parse( R"([{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}])" );
+
+  const auto chat_response = [&chatChoices]( const json &usage ) -> json {
+    json resp;
+    resp["choices"] = chatChoices;
+    resp["usage"] = usage;
+    return resp;
+  };
+
+  // OpenRouter chat completion with a cost
+  {
+    const ParsedLlmResponse parsed = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"cost":0.00123})" ) ) );
+    BOOST_REQUIRE( parsed.cost.has_value() );
+    BOOST_CHECK_CLOSE( parsed.cost.value(), 0.00123, 1.0E-9 );
+    BOOST_CHECK( parsed.totalTokens == size_t(120) );
+  }
+
+  // A provider that reports no cost - e.g., OpenAI itself
+  {
+    const ParsedLlmResponse parsed = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"total_tokens":120})" ) ) );
+    BOOST_CHECK( !parsed.cost.has_value() );
+  }
+
+  // A free model reports a cost of zero, which must be kept (displayed as $0.00)
+  {
+    const ParsedLlmResponse parsed = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"cost":0})" ) ) );
+    BOOST_REQUIRE( parsed.cost.has_value() );
+    BOOST_CHECK_EQUAL( parsed.cost.value(), 0.0 );
+  }
+
+  // BYOK: usage.cost is only OpenRouter's fee; the upstream provider's charge is added to it
+  {
+    const ParsedLlmResponse parsed = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"is_byok":true,"cost":0.001,
+          "cost_details":{"upstream_inference_cost":0.02}})" ) ) );
+    BOOST_REQUIRE( parsed.cost.has_value() );
+    BOOST_CHECK_CLOSE( parsed.cost.value(), 0.021, 1.0E-9 );
+  }
+
+  // Not BYOK: an upstream cost is already included in usage.cost, so must not be added again
+  {
+    const ParsedLlmResponse parsed = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"is_byok":false,"cost":0.02,
+          "cost_details":{"upstream_inference_cost":0.02}})" ) ) );
+    BOOST_REQUIRE( parsed.cost.has_value() );
+    BOOST_CHECK_CLOSE( parsed.cost.value(), 0.02, 1.0E-9 );
+  }
+
+  // Malformed costs are ignored rather than shown
+  {
+    const ParsedLlmResponse strCost = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"cost":"0.01"})" ) ) );
+    BOOST_CHECK( !strCost.cost.has_value() );
+
+    const ParsedLlmResponse negCost = chat->parseResponse( chat_response( json::parse(
+      R"({"prompt_tokens":100,"completion_tokens":20,"cost":-1.0})" ) ) );
+    BOOST_CHECK( !negCost.cost.has_value() );
+  }
+
+  // Anthropic Messages format (e.g., OpenRouter's /v1/messages)
+  {
+    const ParsedLlmResponse parsed = LlmApiProtocol::create( ApiFormat::Anthropic )->parseResponse( json::parse(
+      R"({"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn",
+          "usage":{"input_tokens":10,"output_tokens":5,"cost":0.0042}})" ) );
+    BOOST_REQUIRE( parsed.cost.has_value() );
+    BOOST_CHECK_CLOSE( parsed.cost.value(), 0.0042, 1.0E-9 );
+
+    const ParsedLlmResponse noCost = LlmApiProtocol::create( ApiFormat::Anthropic )->parseResponse( json::parse(
+      R"({"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn",
+          "usage":{"input_tokens":10,"output_tokens":5}})" ) );
+    BOOST_CHECK( !noCost.cost.has_value() );
+  }
+
+  // OpenAI Responses format
+  {
+    const ParsedLlmResponse parsed = LlmApiProtocol::create( ApiFormat::OpenAiResponses )->parseResponse( json::parse(
+      R"({"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"hi"}]}],
+          "usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,"cost":0.5}})" ) );
+    BOOST_REQUIRE( parsed.cost.has_value() );
+    BOOST_CHECK_CLOSE( parsed.cost.value(), 0.5, 1.0E-9 );
+  }
+}//ParseResponseCost

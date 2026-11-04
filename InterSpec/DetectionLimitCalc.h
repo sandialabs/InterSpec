@@ -334,8 +334,18 @@ struct CurrieMdaResult
    \sa CurrieMdaInput::detection_probability
    */
   float upper_limit;
-  
-  
+
+
+  /** Chi2 of the side-channel counts about the fitted straight-line continuum (`continuum_eqn`),
+   with Poisson variances (at least 1), and its degrees of freedom (number of side channels - 2).
+   A large chi2/dof means the continuum is not a straight line there - e.g., a Compton edge or a
+   nearby peak in a side band - so the continuum under the peak region, and everything derived from
+   it, is unreliable.  Zero with zero dof when there are no side channels.
+   */
+  double side_channel_chi2;
+  int side_channel_dof;
+
+
   /** Default constructor that just zeros everything out. */
   CurrieMdaResult();
   
@@ -402,12 +412,18 @@ std::pair<double,double> currie_k_alpha_beta( const CurrieMdaInput &input );
 /** Combines a distance uncertainty and a relative efficiency uncertainty into the single relative
  systematic uncertainty #CurrieMdaInput::additional_uncertainty takes.
 
- A point sources detection efficiency goes as 1/r^2, so a relative distance uncertainty reaches the
- expected counts with a factor of two:
+ The distance term is how much the detection efficiency itself changes over the distance
+ uncertainty, from the detector response when one is given:
 
-     u_rel = sqrt( (2*sigma_d/d)^2 + u_eff^2 )
+     u_dist = 0.5 * |ln( eff(d + sigma_d) / eff(d - sigma_d) )|,   u_rel = sqrt( u_dist^2 + u_eff^2 )
 
- @param distance Source to detector distance.  Only consulted when \p distance_uncertainty is
+ (with d - sigma_d held at zero - the face - when sigma_d > d).  Far from the detector that is, to
+ first order, the inverse-square 2*sigma_d/d, but the crystal sits a setback behind the face the
+ distance is measured to, and close in the solid angle flattens - so 2*sigma_d/d overstates it there
+ (4x at 1 cm for a 5 cm crystal with a 1 cm setback).  Without a detector response, 2*sigma_d/d is
+ used.
+
+ @param distance Source to detector-face distance.  Only consulted when \p distance_uncertainty is
         positive, and must then be positive.
  @param distance_uncertainty The 1-sigma uncertainty of \p distance, in the same units.  Zero or
         negative means none.
@@ -417,6 +433,9 @@ std::pair<double,double> currie_k_alpha_beta( const CurrieMdaInput &input );
  @param inverse_square Whether the efficiency actually follows 1/r^2.  Pass false for a fixed-geometry
         detector response (\sa DetectorPeakResponse::isFixedGeometry), where the distance does not
         enter the efficiency at all, and the distance term must be dropped rather than scaled.
+ @param drf, energy The detector response and gamma energy (keV) the distance term is evaluated
+        with; null (or an invalid or fixed-geometry response, or a non-positive energy) for the plain
+        2*sigma_d/d.
  @returns The combined relative uncertainty; always non-negative.  May be greater than or equal to
         one, which #currie_mda_calc rejects: that is a user-input problem, so the caller decides how
         to report it rather than a clamp silently changing the number the user entered.
@@ -427,7 +446,9 @@ std::pair<double,double> currie_k_alpha_beta( const CurrieMdaInput &input );
 double combine_systematic_uncertainty( const double distance,
                                        const double distance_uncertainty,
                                        const double efficiency_rel_uncertainty,
-                                       const bool inverse_square );
+                                       const bool inverse_square,
+                                       const DetectorPeakResponse *drf = nullptr,
+                                       const double energy = 0.0 );
 
 
 /** Options for the Currie-style detection limit check made for a single peak.

@@ -65,7 +65,7 @@
 using namespace Wt;
 using namespace std;
 
-const int SpecMeas::sm_specMeasSerializationVersion = 2;
+const int SpecMeas::sm_specMeasSerializationVersion = 3;
 const int SpecMeas::sm_peakXmlSerializationVersion = 2;
 
 static_assert( PERFORM_DEVELOPER_CHECKS == SpecUtils_ENABLE_EQUALITY_CHECKS,
@@ -464,7 +464,9 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( USE_REL_ACT_TOOL )
 
 #if( USE_LLM_INTERFACE )
-  if( lhs.m_llmConversationHistory != rhs.m_llmConversationHistory )
+  // Compare by content, not pointer, so a file read back in can match; the conversation IDs are
+  //  written to file, but timestamps are only kept to the second, so arent compared.
+  if( lhs.sampleNumsWithLlmHistory() != rhs.sampleNumsWithLlmHistory() )
   {
     stringstream msg;
     msg << "The LlmConversationHistory of the LHS does not exactly match RHS;"
@@ -472,6 +474,31 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
     " RHS has " << rhs.m_llmConversationHistory.size() << " sample sets with history";
     throw runtime_error( msg.str() );
   }
+
+  const auto conversation_ids = []( const shared_ptr<vector<shared_ptr<LlmInteraction>>> &convos ) -> vector<string> {
+    vector<string> ids;
+    if( convos )
+    {
+      for( const shared_ptr<LlmInteraction> &convo : *convos )
+        ids.push_back( convo ? convo->conversationId : string() );
+    }
+    return ids;
+  };//conversation_ids lambda
+
+  for( const auto &samples_history : lhs.m_llmConversationHistory )
+  {
+    const vector<string> lhs_ids = conversation_ids( samples_history.second );
+    const vector<string> rhs_ids = conversation_ids( rhs.m_llmConversationHistory.at( samples_history.first ) );
+    if( lhs_ids != rhs_ids )
+    {
+      stringstream msg;
+      msg << "The LlmConversationHistory of the LHS does not exactly match RHS;"
+      " for samples {" << SpecUtils::sequencesToBriefString( samples_history.first ) << "}"
+      " LHS has " << lhs_ids.size() << " conversations, RHS has " << rhs_ids.size()
+      << ", or their conversation IDs differ";
+      throw runtime_error( msg.str() );
+    }
+  }//for( loop over LLM histories )
 #endif //#if( USE_LLM_INTERFACE )
 }//void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
@@ -507,12 +534,15 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
     }//for( const SampleNumsToPeakMap::value_type &vt : *(rhs.m_peaks) )
   }//if( rhs.m_peaks )
   
-  for( const SampleNumsToPeakMap::value_type &vt : m_autoSearchPeaks )
+  for( const SampleNumsToPeakMap::value_type &vt : rhs.m_autoSearchPeaks )
   {
     m_autoSearchPeaks[vt.first] = std::make_shared<PeakDeque>();
-    for( PeakShrdPtr peak : *(vt.second) )
-      m_autoSearchPeaks[vt.first]->push_back( peak );
-  }//for( const SampleNumsToPeakMap::value_type &vt : *(rhs.m_peaks) )
+    if( vt.second )
+    {
+      for( PeakShrdPtr peak : *(vt.second) )
+        m_autoSearchPeaks[vt.first]->push_back( peak );
+    }
+  }//for( const SampleNumsToPeakMap::value_type &vt : rhs.m_autoSearchPeaks )
   
 //  for( const SampleNumsToPeakMap::value_type &vt : m_autoSearchInitialPeaks )
 //  {
@@ -1782,6 +1812,77 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
 }//virtual void load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
 
 
+void SpecMeas::reconcileSampleNumbersWithInterSpecXml( const rapidxml::xml_node<char> *RadInstrumentData,
+                                                       const rapidxml::xml_node<char> *interspec_node )
+{
+  if( !RadInstrumentData || !interspec_node || sample_numbers_.empty() )
+    return;
+  
+  const rapidxml::xml_node<char> *samples_node = XML_FIRST_NODE( interspec_node, "AllSampleNumbers" );
+  if( samples_node )
+  {
+    vector<int> written_vec;
+    SpecUtils::split_to_ints( samples_node->value(), samples_node->value_size(), written_vec );
+    const set<int> written( begin(written_vec), end(written_vec) );
+    
+    if( written == sample_numbers_ )
+      return;
+    
+    if( written.size() != sample_numbers_.size() )
+    {
+      const string msg = "The sample numbers read from the file ({"
+                         + SpecUtils::sequencesToBriefString( sample_numbers_ )
+                         + "}) don't match the ones InterSpec saved its information for ({"
+                         + SpecUtils::sequencesToBriefString( written )
+                         + "}), so peaks and other analysis results may be on the wrong samples.";
+      parse_warnings_.push_back( msg );
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, msg.c_str() );
+#endif
+      return;
+    }//if( written.size() != sample_numbers_.size() )
+    
+    // Writing and parsing the N42 keeps the samples in order, so match them up by position.
+    vector<pair<int,int>> from_to_sample_nums;
+    set<int>::const_iterator written_iter = begin( written );
+    for( const int parsed : sample_numbers_ )
+    {
+      if( parsed != *written_iter )
+        from_to_sample_nums.emplace_back( parsed, *written_iter );
+      ++written_iter;
+    }
+    
+    SpecFile::change_sample_numbers( from_to_sample_nums );
+    return;
+  }//if( samples_node )
+  
+  
+  // Files written before <AllSampleNumbers> was added (InterSpec <= v1.0.14): search-mode files
+  //  whose first sample was a long background had positional <Spectrum> ids ("BackgroundDet0Spectrum",
+  //  "Survey<index>Det0Spectrum"), so they parse with sample numbers 0, 1, 2...  InterSpec <= v1.0.13
+  //  then (inadvertently) ran the standard cleanup on them as well, which renumbers to 1, 2, 3...,
+  //  and so matched the <DHS:InterSpec> information for files numbered from 1 - which is the norm,
+  //  since SpecUtils numbers files InterSpec didn't write from 1.  So do the same here.  Files whose
+  //  numbering didn't start at 1 can't be recovered, and are read as InterSpec v1.0.13 read them.
+  if( (*begin(sample_numbers_)) != 0 )
+    return;
+  
+  const rapidxml::xml_node<char> *first_meas = XML_FIRST_NODE( RadInstrumentData, "RadMeasurement" );
+  const string first_meas_id = first_meas ? SpecUtils::xml_value_str( XML_FIRST_ATTRIB(first_meas, "id") ) : string();
+  if( !SpecUtils::iequals_ascii( first_meas_id, "Background" ) )
+    return;
+  
+  const rapidxml::xml_node<char> *first_child = XML_FIRST_NODE( first_meas, "Spectrum" );
+  if( !first_child )
+    first_child = XML_FIRST_NODE( first_meas, "GrossCounts" );
+  const string first_child_id = first_child ? SpecUtils::xml_value_str( XML_FIRST_ATTRIB(first_child, "id") ) : string();
+  if( !SpecUtils::istarts_with( first_child_id, "Background" ) )
+    return;
+  
+  SpecFile::cleanup_after_load( SpecFile::StandardCleanup );
+}//void reconcileSampleNumbersWithInterSpecXml(...)
+
+
 void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *interspecnode )
 {
   using namespace rapidxml;
@@ -1996,22 +2097,29 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     try
     {
       // Get sample numbers from attribute
-      std::set<int> samplenums;
-      rapidxml::xml_attribute<char> *samplesAttr = node->first_attribute( "samples" );
-      if( samplesAttr && samplesAttr->value() )
+      const rapidxml::xml_attribute<char> * const samplesAttr = XML_FIRST_ATTRIB( node, "samples" );
+      if( !samplesAttr )
       {
-        std::vector<int> sampleVec;
-        if( SpecUtils::split_to_ints( samplesAttr->value(), samplesAttr->value_size(), sampleVec ) )
-        {
-          samplenums.insert( sampleVec.begin(), sampleVec.end() );
-        }
-      }
-      
-      if( samplenums.empty() )
-      {
-        parse_warnings_.push_back( "Found LLM conversation history with no valid sample numbers - skipping" );
+        parse_warnings_.push_back( "Found LLM conversation history with no sample numbers - skipping" );
         continue;
       }
+
+      // An empty list is the key for search-mode/passthrough data, whose conversation is kept as
+      //  the user changes the time range (see InterSpec::syncLlmHistoryToSpecMeas()).
+      std::set<int> samplenums;
+      const std::string samplesStr = SpecUtils::trim_copy( SpecUtils::xml_value_str( samplesAttr ) );
+      if( !samplesStr.empty() )
+      {
+        std::vector<int> sampleVec;
+        if( !SpecUtils::split_to_ints( samplesStr.c_str(), samplesStr.size(), sampleVec ) || sampleVec.empty() )
+        {
+          parse_warnings_.push_back( "Found LLM conversation history with invalid sample numbers ('"
+                                     + samplesStr + "') - skipping" );
+          continue;
+        }
+
+        samplenums.insert( sampleVec.begin(), sampleVec.end() );
+      }//if( !samplesStr.empty() )
       
       // Parse conversations for this sample set
       std::vector<std::shared_ptr<LlmInteraction>> conversations;
@@ -2118,6 +2226,16 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
   xml_attribute<char> *versionattrib = doc->allocate_attribute("version", vrsntxt );
   interspec_node->append_attribute( versionattrib );
   
+  // Everything below is keyed by sample number, so record the sample numbers it refers to; the
+  //  N42 itself may not give them back exactly (see reconcileSampleNumbersWithInterSpecXml(...)).
+  if( !sample_numbers_.empty() )
+  {
+    string all_samples;
+    for( const int sample : sample_numbers_ )
+      all_samples += (all_samples.empty() ? "" : " ") + std::to_string( sample );
+    const char *val = doc->allocate_string( all_samples.c_str(), all_samples.size() + 1 );
+    interspec_node->append_node( doc->allocate_node( node_element, "AllSampleNumbers", val ) );
+  }//if( !sample_numbers_.empty() )
   
   appendSampleNumbersToXml( interspec_node );
   appendDisplayedDetectorsToXml( interspec_node );
@@ -2201,8 +2319,10 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
       auto samplesAttribute = doc->allocate_attribute( "samples", samplesAttr );
       sampleHistoryNode->append_attribute( samplesAttribute );
 
-      // Use the static toXml function from LlmConversationHistory
-      LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc );
+      // Use the static toXml function from LlmConversationHistory.  The MCP agent server's files
+      //  go to its clients' users, so they leave out the raw LLM API requests (with the system
+      //  prompt) - which also grow with the square of the number of turns.
+      LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc, !BUILD_AS_MCP_HTTP_SERVER );
     }
   }
 #endif
@@ -2307,6 +2427,7 @@ void SpecMeas::load_N42_from_doc( rapidxml::xml_document<char> &doc )
   {
     try
     {
+      reconcileSampleNumbersWithInterSpecXml( document_node, interspecnode );
       decodeSpecMeasStuffFromXml( interspecnode );
     }catch( std::exception &e )
     {
@@ -2826,9 +2947,13 @@ const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
-  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
-  //  SpecMeas specific things that use the sample numbers
-  bool has_specific_info = !m_dbUserStateIndexes.empty();
+  // Check for any of the SpecMeas specific things keyed by sample number (see
+  //  change_sample_numbers_spec_meas_stuff(...)).
+  bool has_specific_info = !m_dbUserStateIndexes.empty()
+                           || (m_displayedSampleNumbers && !m_displayedSampleNumbers->empty());
+#if( USE_LLM_INTERFACE )
+  has_specific_info = has_specific_info || !m_llmConversationHistory.empty();
+#endif
   if( !has_specific_info && m_peaks )
   {
     for( auto iter = begin(*m_peaks); !has_specific_info && (iter != end(*m_peaks)); ++iter )
@@ -2952,53 +3077,47 @@ void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sampl
 
 void SpecMeas::change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums )
 {
-  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
-  //  SpecMeas specific things that use the sample numbers
+  // The SpecMeas specific things keyed by sample number are m_peaks, m_autoSearchPeaks,
+  //  m_dbUserStateIndexes, m_displayedSampleNumbers, and m_llmConversationHistory.
+  //  The runtime-only m_autoSearchInFlight and m_bgRecoveredForForeground are left alone: they are
+  //  empty while a file is being loaded or copied (when sample numbers get changed), and this
+  //  function may be called with `mutex_` held, so taking `m_autoSearchMutex` here would invert
+  //  the required lock order.
+  //  (The RelActCalcAuto state also records the sample numbers it was computed for, but only
+  //  informationally, so isnt updated here.)
+  if( from_to_sample_nums.empty() )
+    return;
   
-  auto update_peak_map = [&from_to_sample_nums]( SampleNumsToPeakMap &peaks ){
-    SampleNumsToPeakMap new_peak_map;
-    
-    for( const SampleNumsToPeakMap::value_type &t : peaks )
+  const auto new_samples = [&from_to_sample_nums]( const set<int> &orig_samples ) -> set<int> {
+    set<int> answer;
+    for( const int orig_sample : orig_samples )
     {
-      set<int> new_samples;
-      for( const int orig_sample : t.first )
-      {
-        const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
-                    [orig_sample]( const pair<int,int> &val ){ return val.first == orig_sample;} );
-        new_samples.insert( (pos == end(from_to_sample_nums)) ? orig_sample : pos->second );
-      }//for( loop over original sample numbers )
-      
-      new_peak_map[new_samples] = t.second;
-    }//for( const SampleNumsToPeakMap::value_type &t : peaks )
-    
-    peaks = new_peak_map;
-  };//update_peak_map
+      const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
+                  [orig_sample]( const pair<int,int> &val ){ return val.first == orig_sample;} );
+      answer.insert( (pos == end(from_to_sample_nums)) ? orig_sample : pos->second );
+    }
+    return answer;
+  };//new_samples lambda
+  
+  const auto update_map = [&new_samples]( auto &sample_keyed_map ){
+    std::remove_reference_t<decltype(sample_keyed_map)> new_map;
+    for( const auto &samples_value : sample_keyed_map )
+      new_map[new_samples(samples_value.first)] = samples_value.second;
+    sample_keyed_map = std::move( new_map );
+  };//update_map lambda
   
   if( m_peaks )
-    update_peak_map( *m_peaks );
+    update_map( *m_peaks );
   
-  update_peak_map( m_autoSearchPeaks );
-
+  update_map( m_autoSearchPeaks );
+  update_map( m_dbUserStateIndexes );
   
-  // Need to update m_dbUserStateIndexes
-  map<set<int>,long long int> newDbUserStateIndexes;
-  for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
-  {
-    set<int> new_sample_nums;
-    for( const int sample : samplenums_dbindex.first )
-    {
-      // Put original sample number in `new_sample_nums`, unless it is one of the sample numbers
-      //  to change, in which case put in the new sample number
-      const auto pos = std::find_if( begin(from_to_sample_nums), end(from_to_sample_nums),
-                      [sample](const pair<int,int> &lhs) -> bool { return lhs.first == sample; } );
-      
-      new_sample_nums.insert( (pos == end(from_to_sample_nums)) ? sample : pos->second );
-    }//for( const int sample : samplenums_dbindex.first )
-    
-    newDbUserStateIndexes[new_sample_nums] = samplenums_dbindex.second;
-  }//for( const auto &samplenums_dbindex : m_dbUserStateIndexes )
+  if( m_displayedSampleNumbers )
+    *m_displayedSampleNumbers = new_samples( *m_displayedSampleNumbers );
   
-  m_dbUserStateIndexes = newDbUserStateIndexes;
+#if( USE_LLM_INTERFACE )
+  update_map( m_llmConversationHistory );
+#endif
 }//void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
 
 

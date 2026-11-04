@@ -64,7 +64,8 @@ struct ZPlane { double rmin, rmax, z; };
 
 /// Pull the crystal polycone's z-planes back out of an exported GDML file.
 /// Returns empty when the crystal was written as a plain <tube> instead.
-std::vector<ZPlane> read_crystal_polycone(const std::string& path) {
+std::vector<ZPlane> read_crystal_polycone(const std::string& path,
+                                          const std::string& solid = "CrystalSolid") {
     std::ifstream f(path);
     std::string line;
     std::vector<ZPlane> planes;
@@ -77,7 +78,7 @@ std::vector<ZPlane> read_crystal_polycone(const std::string& path) {
     };
 
     while (std::getline(f, line)) {
-        if (line.find("<polycone name=\"CrystalSolid\"") != std::string::npos) {
+        if (line.find("<polycone name=\"" + solid + "\"") != std::string::npos) {
             in_crystal = true;
             continue;
         }
@@ -264,6 +265,49 @@ BOOST_AUTO_TEST_CASE(exported_polycone_matches_traced_solid) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(exported_active_region_matches_traced_scoring_volume) {
+    // With a dead layer the scoring region is the crystal shrunk by the dead
+    // layer minus the bore; it is exported as an ActiveSolid polycone nested
+    // in the whole crystal.  (A merge once left this export referencing
+    // solids it no longer wrote, so every dead-layer detector's GDML failed
+    // to load.)
+    struct Case { const char* tag; double r_b; bool tip; double back; };
+    const Case cases[] = {
+        {"dl_sharp",        0.0, false, 0.0},
+        {"dl_bullet",       RB,  false, 0.0},
+        {"dl_bullet_round", RB,  true,  0.0},
+        {"dl_back",         0.0, false, 0.05},
+    };
+    Material ge = make_HPGe();
+    for (const auto& c : cases) {
+        EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
+        calc.set_detector(&ge, CylinderDims{R, L});
+        if (c.r_b > 0.0) calc.set_bullet_radius(c.r_b);
+        calc.set_bore_hole(RBORE, DEPTH, c.tip);
+        calc.set_dead_layer(0.0739, 0.07, c.back);
+
+        const std::string path = tmp_gdml(c.tag);
+        calc.export_geant4_gdml(path, /*vacuum_world=*/true);
+        const std::string txt = slurp(path);
+        BOOST_CHECK(txt.find("<physvol name=\"active_crystal_PV\">") != std::string::npos);
+        BOOST_CHECK(txt.find("<volumeref ref=\"CrystalLV\"/>") != std::string::npos);
+
+        const auto planes = read_crystal_polycone(path, "ActiveSolid");
+        BOOST_REQUIRE_MESSAGE(!planes.empty(), "no ActiveSolid exported for " << c.tag);
+        for (size_t i = 0; i < planes.size(); ++i) {
+            BOOST_REQUIRE(planes[i].rmin <= planes[i].rmax + 1e-12);
+            if (i) BOOST_REQUIRE(planes[i].z >= planes[i - 1].z - 1e-12);
+        }
+        const double v_export = polycone_volume(planes);
+        const double v_traced = traced_volume(calc.geometry(), R);
+        BOOST_CHECK_MESSAGE(std::abs(v_export - v_traced) / v_traced < 2e-4,
+                            c.tag << ": exported active " << v_export
+                                  << " cm^3 vs traced " << v_traced << " cm^3");
+        std::remove(path.c_str());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(exported_fillet_volume_is_right_not_just_close) {
     // Normalising to the whole crystal hides the fillet: the removed corner is
     // only 1.3% of the volume, so a badly wrong arc still lands within a
@@ -316,6 +360,111 @@ BOOST_AUTO_TEST_CASE(plain_cylinder_still_exports_as_a_tube) {
                           std::istreambuf_iterator<char>());
     BOOST_CHECK(txt.find("<tube name=\"CrystalOuterTube\"") != std::string::npos);
     BOOST_CHECK(txt.find("<polycone") == std::string::npos);
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(housing_sits_on_the_crystal_not_on_the_dead_layer) {
+    // The dead layer is carved inside the crystal, and the tracer stacks the
+    // first shell on the crystal radius; the export once added the side dead
+    // layer again, moving every housing layer out by that much.
+    Material ge = make_HPGe();
+    Material al = make_Aluminum();
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&ge, CylinderDims{R, L});
+    calc.set_dead_layer(0.07, 0.07, 0.0);
+    calc.add_attenuator(&al, 0.1, 0.1, 0.0, L);
+
+    // Traced: the Al side wall spans [R, R + 0.1] for a ray along x at mid-height.
+    double r_in = 0.0, r_out = 0.0;
+    for (const auto& s : calc.geometry().trace_ray(Eigen::Vector3d(-10, 0, 0.5 * L),
+                                                   Eigen::Vector3d(1, 0, 0)))
+        if (s.material == &al && r_in == 0.0) { r_out = 10.0 - s.t_start; r_in = 10.0 - s.t_end; }
+    BOOST_CHECK_CLOSE(r_in, R, 1e-6);
+    BOOST_CHECK_CLOSE(r_out, R + 0.1, 1e-6);
+
+    const std::string path = tmp_gdml("dl_housing");
+    calc.export_geant4_gdml(path, /*vacuum_world=*/true);
+    const std::string txt = slurp(path);
+    for (const auto& [name, r] : {std::pair<std::string, double>{"AttInnerSolid0", R},
+                                  {"AttOuterSolid0", R + 0.1}}) {
+        const size_t at = txt.find("<tube name=\"" + name + "\"");
+        BOOST_REQUIRE(at != std::string::npos);
+        BOOST_CHECK_CLOSE(attr_of(txt.substr(at, txt.find('\n', at) - at), "rmax"), r, 1e-6);
+    }
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(back_plate_layer_exports_its_disk) {
+    // A layer whose z_end runs past the back face is a back plate: the tracer
+    // subtracts only the inner cavity, so the disk behind the crystal is
+    // material.  The export once wrote every front_thickness == 0 layer as a
+    // hollow tube and dropped that disk.
+    Material ge = make_HPGe();
+    Material fe = make_Iron();
+    Material vac("vacuum", 1e-25, {{1, 1.0}});
+    const double gap = 2.0, plate = 1.5, ring = 0.4;
+
+    for (const bool with_side : {false, true}) {
+        EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
+        calc.set_detector(&ge, CylinderDims{R, L});
+        calc.add_attenuator(&vac, 0.0, 3.0, 0.0, L + gap);
+        calc.add_attenuator(&fe, 0.0, with_side ? ring : 0.0, 0.0, L + gap + plate);
+
+        // The tracer sees the plate on axis behind the crystal.
+        double traced = 0.0;
+        for (const auto& s : calc.geometry().trace_ray(Eigen::Vector3d(0, 0, -5),
+                                                       Eigen::Vector3d(0, 0, 1)))
+            if (s.material == &fe) traced += s.length();
+        BOOST_CHECK_CLOSE(traced, plate, 1e-6);
+
+        const std::string path = tmp_gdml(with_side ? "plate_ring" : "plate");
+        calc.export_geant4_gdml(path, /*vacuum_world=*/true);
+        const std::string txt = slurp(path);
+        if (with_side) {
+            // Cup with a side ring: outer minus cavity.
+            BOOST_CHECK(txt.find("<subtraction name=\"AttSolid1\"") != std::string::npos);
+        } else {
+            // Disk only: a plain tube of the plate's thickness, placed behind the crystal.
+            const size_t at = txt.find("<tube name=\"AttSolid1\"");
+            BOOST_REQUIRE(at != std::string::npos);
+            const std::string line = txt.substr(at, txt.find('\n', at) - at);
+            BOOST_CHECK_CLOSE(attr_of(line, "z"), plate, 1e-6);
+            BOOST_CHECK_CLOSE(attr_of(line, "rmax"), R + 3.0, 1e-6);
+            BOOST_CHECK_SMALL(attr_of(line, "rmin"), 1e-12);
+            const size_t pv = txt.find("<physvol name=\"AttPV1\"");
+            BOOST_REQUIRE(pv != std::string::npos);
+            const size_t pos = txt.find("<position", pv);
+            const std::string pline = txt.substr(pos, txt.find('\n', pos) - pos);
+            BOOST_CHECK_CLOSE(attr_of(pline, "z"), L + gap + 0.5 * plate, 1e-6);
+        }
+        std::remove(path.c_str());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(back_plate_layer_exports_as_a_cup) {
+    // A layer with no front wall but a z_end past the crystal's back is a can with a BACK plate in
+    // the ray tracer (outer solid minus the inner envelope); the export used to write it as an
+    // open annular tube, so GEANT4 saw no back.  A layer with neither still exports as the tube.
+    Material ge = make_HPGe();
+    Material al = make_Aluminum();
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&ge, CylinderDims{R, L});
+    calc.add_attenuator(&al, 0.0, 0.1, 0.0, L);          // side wall only: a tube
+    calc.add_attenuator(&al, 0.0, 0.1, 0.0, L + 0.3);    // side wall + 3 mm back plate: a cup
+
+    const std::string path = tmp_gdml("back_plate");
+    calc.export_geant4_gdml(path, /*vacuum_world=*/true);
+
+    std::ifstream f(path);
+    const std::string txt((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+    BOOST_CHECK(txt.find("<subtraction name=\"AttSolid0\"") == std::string::npos);
+    BOOST_CHECK(txt.find("<tube name=\"AttSolid0\"") != std::string::npos);
+    BOOST_CHECK(txt.find("<subtraction name=\"AttSolid1\"") != std::string::npos);
+    BOOST_CHECK(txt.find("att1_inner_offset") != std::string::npos);
     std::remove(path.c_str());
 }
 

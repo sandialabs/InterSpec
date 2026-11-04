@@ -18,9 +18,52 @@
   <message id="ftw-hdr-flux-cm">Flux (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
   <message id="ftw-hdr-use">Use</message>
+  <message id="ftw-hdr-net-cps">Net Peak CPS</message>
+  <message id="ftw-hdr-bkg-cps">Bkg. CPS</message>
+  <message id="ftw-hdr-fixed-geom-rate">ɣ/s{1}</message>
+  <message id="ftw-tt-hdr-bkg-cps">The CPS of the background peaks subtracted from this peak, scaled to the
+    foreground (by the background&apos;s display scale factor, or else the ratio of live times).</message>
+  <message id="ftw-tt-hdr-flux-on-det">Gammas per second crossing the face of the detector crystal - a disk
+    of the detector&apos;s diameter, at the distance plus the detector setback (or, for a detector with a
+    geometry-modeled response, its modeled crystal).</message>
+  <message id="ftw-tt-hdr-flux-cm">Gammas per cm² per second at the detector face - that is, at the distance
+    entered.  This is what reaches the detector, so it is never corrected for air.</message>
+  <message id="ftw-tt-hdr-flux-4pi">Gammas per second the source gives off in all directions, after any
+    shielding.  When &quot;Correct for air attenuation&quot; is checked, this includes the gammas the air
+    absorbed or scattered on the way to the detector, so is then larger than Flux (ɣ/cm²/s) × 4πd².</message>
+  <message id="ftw-tt-hdr-fixed-geom-rate">The source&apos;s gamma emission rate (per unit area, or mass, for
+    those types of detector response), from the fixed-geometry efficiency.  That efficiency usually
+    already accounts for attenuation within the modeled geometry, so this is the rate the source itself
+    emits, not what makes it out of any shielding.</message>
+  <message id="ftw-cb-air">Correct for air attenuation</message>
+  <message id="ftw-cb-air-narrow">Air atten.</message>
+  <message id="ftw-tt-air">
+    When checked, the ɣ/4π/s column is corrected for the gammas absorbed or scattered by the air between
+    the source and the detector face, so it is what the source gives off.  The flux columns are what
+    reaches the detector, so are not changed - meaning that with this checked, ɣ/4π/s is larger than
+    Flux (ɣ/cm²/s) × 4πd².  Not used for fixed-geometry detector responses.
+  </message>
+  <message id="ftw-cb-bkg-sub">Subtract background peaks</message>
+  <message id="ftw-cb-bkg-sub-narrow">Sub. bkg.</message>
+  <message id="ftw-tt-bkg-sub">
+    When checked, the area of any background-spectrum peak within one sigma of a foreground peak is
+    subtracted from it, after scaling the background to the foreground (by the background&apos;s display
+    scale factor, or else the ratio of live times).
+  </message>
+  <message id="ftw-note-fixed-geom">Fixed-geometry detector response: the distance is not used, and ɣ/s{1} is the source&apos;s emission rate.</message>
+  <message id="ftw-note-bkg-scale">Background peaks scaled by {1}, not by live-time normalization ({2}).</message>
+  <message id="ftw-note-bkg-scale-no-lt">Background peaks scaled by {1}; the background has no live time.</message>
+  <message id="ftw-note-bkg-none">No background peaks are within one sigma of the foreground peaks, so nothing was subtracted.</message>
+  <message id="ftw-note-bkg-non-gaus">{1} non-Gaussian background peak(s) could not be used.</message>
+  <message id="ftw-warn-outside-range">The peaks at {1} keV are outside the detector response&apos;s {2} keV energy range; their efficiency is extrapolated.</message>
+  <message id="ftw-tt-outside-range">Outside the detector response&apos;s {1} keV energy range; the efficiency is extrapolated.</message>
   <message id="ftw-tt-distance">
-    Distance from center of source to face of detector. Number must be
-    followed by units; valid units are: meters, m, cm, mm, km, feet,
+    Distance from the center of the source to the face of the detector.  The detector crystal
+    sits a little behind the face (the detector response&apos;s setback, or for a detector with a
+    geometry-modeled response, its modeled endcap); that is added to this distance when computing
+    the efficiency, while the Flux (ɣ/cm²/s) column is given at this distance.  Not used for
+    fixed-geometry detector responses.
+    Number must be followed by units; valid units are: meters, m, cm, mm, km, feet,
     ft, ', in, inches, or ".  You may also add multiple distances,
     such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to 
     40inches and 15.6cm respectively.
@@ -30,6 +73,7 @@
   <message id="ftw-more">More</message>
   <message id="ftw-copy-btn">Copy To Clipboard</message>
   <message id="ftw-copy-btn-narrow">Copy</message>
+  <message id="ftw-tt-copy-btn">Copies the table, as currently shown, to the clipboard, to paste into a spreadsheet or document.</message>
   <message id="ftw-select-rows">Select rows</message>
   <message id="ftw-select-rows-narrow">Select</message>
   <message id="ftw-tt-select-rows">
@@ -41,6 +85,7 @@
   <message id="ftw-no-drf">No Detector Response Function Chosen</message>
   <message id="ftw-no-foreground">No foreground spectrum loaded</message>
   <message id="ftw-invalid-livetime">Invalid foreground live-time</message>
+  <message id="ftw-err-calc">Error computing the fluxes - please report this.</message>
   <message id="ftw-err-copy-clipboard">Failed to copy to clipboard - maybe a permissions issue - sorry.</message>
   <message id="ftw-copied-to-clipboard">Copied table to clipboard.</message>
   <message id="ftw-copied-as-html">Copied table to clipboard as HTML text.</message>

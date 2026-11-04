@@ -259,10 +259,12 @@
     The 1&#963; uncertainty of the source-to-detector distance, written the same way as the distance
     itself - for example <b>1 cm</b>.  Leave blank, or enter 0, for none.
     <p>
-      A point source's efficiency goes as 1/r&#178;, so this reaches the expected counts with a
-      factor of two: a 5% distance uncertainty is a 10% counts uncertainty.  It is combined in
-      quadrature with the efficiency uncertainty beside it.  Much beyond about 20% of the distance,
-      the linear propagation used here is on thin ice.
+      It reaches the expected counts through how much the detector efficiency changes over that
+      distance.  Far from the detector a point source's efficiency goes as 1/r&#178;, so a 5% distance
+      uncertainty is a 10% counts uncertainty; close in it is less, since the crystal sits some way
+      behind the detector face, and the detector response is used to work out how much less.  It is
+      combined in quadrature with the efficiency uncertainty beside it.  Much beyond about 20% of the
+      distance, the linear propagation used here is on thin ice.
     </p>
     <p>
       It is not applied for a fixed-geometry detector response, whose efficiency does not depend on

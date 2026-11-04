@@ -76,5 +76,22 @@
   Az aszimmetria típus naiv {1}-re változtatása a csúcsot jelentéktelenné tette.<br />
   Kérjük, használja a <b>Csúcs szerkesztőt</b> ennek a változtatásnak az elvégzéséhez.
   </message>
-
+  <message id="psgu-missing-back-peaks-title">Hiányzó háttércsúcsok</message>
+  <message id="psgu-missing-back-peaks-msg">
+    A háttérspektrumban nincsenek csúcsok hozzáadva a(z) {1} energiáknál, de
+    valószínűleg valós csúcsok találhatók a háttérspektrumban ezeknél az energiáknál -
+    szeretné hozzáadni ezeket a csúcsokat a háttérspektrumhoz?
+  </message>
+  <message id="psgu-btn-no-dont-add">Nem</message>
+  <message id="psgu-btn-add-peaks">Csúcsok hozzáadása...</message>
+  <message id="psgu-btn-add-all-detectable">Összes auto-illesztett csúcs hozzáadása</message>
+  <message id="psgu-back-peak-preview-title">Háttércsúcsok előnézete</message>
+  <message id="psgu-back-peak-preview-msg">A következő csúcsok kerülnének hozzáadásra a háttérspektrumhoz:</message>
+  <message id="psgu-no-new-back-peaks">Nem találhatók további csúcsok a háttérspektrumban a megadott energiáknál.</message>
+  <message id="psgu-back-peaks-all-fit">{1} jelölt csúcs lett illesztve a háttérhez.</message>
+  <message id="psgu-back-peaks-some-fit">{1} a(z) {2} jelölt csúcsból volt szignifikáns és lett illesztve a háttérhez.</message>
+  <message id="psgu-back-peaks-manual-hint">(háttércsúcsokat manuálisan is illeszthet az Alt billentyű (mac: Option billentyű) plusz dupla<br />
+  kattintással a spektrumon, vagy a háttér előtérként való betöltésével)</message>
+  <message id="psgu-err-adding-back-peaks">Hiba csúcsok háttérhez adásakor: {1}</message>
+  <message id="psgu-warn-no-back-spec">Nincs háttérspektrum betöltve, így nem lehet a háttércsúcs-területeket kivonni az előtérből.</message>
 </messages>

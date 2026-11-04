@@ -34,7 +34,7 @@
  generic-shield AN/AD, source activity) come out of the integration
  automatically.
 
- The Cuba/Cuhre integrator only works on doubles, so integration here is a
+ Integration here is a
  self-contained h-adaptive tensor-product Gauss-Legendre scheme over the unit
  cube (#adaptive_unit_cube_integrate), with subdivision driven by the scalar
  part of T.
@@ -1415,7 +1415,18 @@ struct DistributedSrcCalcT
           here.  Pass 1.0 on the flat-disk path.  See the note in the implementation on why the
           partner legs need it and why it is applied energy-independently for now.
    */
-  T cascade_correction_factor( const T &det_factor, double near_field_ratio ) const;
+  /** Response-based partner legs at one point: the response's ABSOLUTE FEP and total efficiency at
+   each partner energy (CascadeBlock::partner_energies order), and a carrier that has value 1 and
+   carries the point's position derivative (1/r^2 to the crystal) that the plain doubles cannot.
+   Used beside or behind the detector, where the flat-disk, face-on legs are undefined. */
+  struct CascadeLegs
+  {
+    std::vector<double> fep, tot;
+    T carrier = T(1.0);
+  };
+
+  T cascade_correction_factor( const T &det_factor, double near_field_ratio,
+                               const CascadeLegs *legs = nullptr ) const;
 
   /** Maps the flat-disk geometric factor `flat` (from #detector_response_factor at `eval_point`,
    with `det` the detector geometry that produced it) to the per-element efficiency actually applied
@@ -1423,7 +1434,8 @@ struct DistributedSrcCalcT
 
    FlatDisk (or null #m_effResponse): returns `flat` unchanged (post-integration farFieldIntrinsicEfficiency
    then reproduces the legacy result).  MCTransfer/EffTran: returns the absolute FEP efficiency
-   `m_effResponse->eps_fep( m_energy, incidence-angle, 0, dist/cm )` - solid angle and intrinsic
+   `m_effResponse->eps_fep_at` at CeeLoUtils::sourcePositionFromFace( incidence-angle, dist from the
+   face ) - solid angle and intrinsic
    response already folded in, so farFieldIntrinsicEfficiency must NOT be applied afterward.
 
    Autodiff-safe: the value equals eps_fep exactly, while the (dominant) 1/r^2 gradient is carried by
@@ -1436,7 +1448,8 @@ struct DistributedSrcCalcT
 
 template<typename T>
 T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
-                                                     const double near_field_ratio ) const
+                                                     const double near_field_ratio,
+                                                     const CascadeLegs *legs ) const
 {
   if( !m_cascade || !m_cascade->calc || !m_nuclide )
     return T(1.0);
@@ -1458,12 +1471,7 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
     return T(1.0);
 
   const auto idx_of = [&cb]( const double energy ) -> int {
-    // partner_energies is sorted; binary search within 0.25 keV
-    const auto pos = std::lower_bound( std::begin(cb.partner_energies),
-                                       std::end(cb.partner_energies), energy - 0.25 );
-    if( (pos != std::end(cb.partner_energies)) && (std::fabs(*pos - energy) < 0.25) )
-      return static_cast<int>( pos - std::begin(cb.partner_energies) );
-    return -1;
+    return CascadeSummingCalc::nearestEnergyIndex( cb.partner_energies, energy );
   };
 
   const ShieldScatterAugment &scatter = cb.calc->scatterAugment();
@@ -1497,6 +1505,14 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
   //  energy - not scaling it - which costs a response query per partner per element and needs the
   //  aperture shared across partners plus a contribution-based partner cap first.  Until then these
   //  legs stay on the flat-disk geometry they were written for, which is at least self-consistent.
+  //
+  //  That geometry is the DRF's STATED diameter and setback, even on a response-modeled fit whose
+  //  response puts the crystal elsewhere - deliberately.  Moving the legs onto the response's own
+  //  crystal at its endcap offset (tried 2026-11-01) made EVERY extended truth scene in
+  //  test_CascadeSummingFit worse - the Co-60 disk at 1 cm went from 2.8% to 5.5% off the Monte-Carlo
+  //  summing factor - because a flat disk at the true crystal face ignores how deep in the crystal
+  //  photons interact, which a stated setback partly stands in for.  The real fix is the absolute
+  //  efficiency above, not a different disk.
   (void)near_field_ratio;
   const T nf = T(1.0);
 
@@ -1504,6 +1520,14 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
     const int j = idx_of( energy );
     if( j < 0 )
       return T(0.0);
+    if( legs )
+    {
+      // The response's own absolute efficiency here, then the shields and air along the walk.
+      T v = legs->carrier * legs->fep[j] * exp( -m_ray_partner_mu_d[j] );
+      if( m_attenuateForAir )
+        v *= exp( -cb.air_mu[j] * m_ray_air_dist );
+      return v;
+    }
     T v = nf * det_factor * cb.partner_fep_int[j] * exp( -m_ray_partner_mu_d[j] );
     if( m_attenuateForAir )
       v *= exp( -cb.air_mu[j] * m_ray_air_dist );
@@ -1517,7 +1541,8 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
     T shield_part = exp( -m_ray_partner_mu_d[j] );
     if( scatter.valid() )
       shield_part += scatter.evaluate( energy, eff_an, ad_gcm2 );
-    T v = nf * det_factor * cb.partner_tot_int[j] * shield_part;
+    T v = legs ? (legs->carrier * legs->tot[j] * shield_part)
+               : (nf * det_factor * cb.partner_tot_int[j] * shield_part);
     if( m_attenuateForAir )
       v *= exp( -cb.air_mu[j] * m_ray_air_dist );
     return v;
@@ -2830,8 +2855,8 @@ namespace QuadDetail
   /** Degree-4 divided-difference weights for the fixed GL5 abscissas:
    c4[i] = 1 / prod_{j!=i}( gl5_x[i] - gl5_x[j] ).  |sum_i c4[i]*v[i]| is the magnitude of the top
    (degree-4) 1-D mode of the 5 values v[] sampled at the GL5 nodes along an axis - large only where
-   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of Cuhre's per-axis
-   "fourth difference" (Cuba: src/cuhre/Rule.c).  Computed once (thread-safe magic static).
+   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of the per-axis
+   "fourth difference" of Genz-Malik adaptive cubature.  Computed once (thread-safe magic static).
    */
   inline const double *gl5_divdiff4()
   {
@@ -2918,7 +2943,7 @@ namespace QuadDetail
   {
     double err;
     int nsplit[3];        // times each axis has been halved (per-axis subdivision depth)
-    double axis_err[3];   // per-axis non-smoothness indicator (Cuhre-style fourth difference)
+    double axis_err[3];   // per-axis non-smoothness indicator (fourth difference)
     double lower[3];
     double width[3];
     T fine;
@@ -2960,12 +2985,12 @@ namespace QuadDetail
  phase): a per-axis fourth-difference indicator computed from the GL5 grid
  selects which dimension(s) to split, so a thin non-axis-aligned feature (e.g.
  a nested core's silhouette) is resolved without paying to refine the smooth
- axes too - cf. Cuhre (Cuba, src/cuhre/Rule.c).  Subdivision decisions use only
+ axes too - cf. Genz-Malik adaptive cubature.  Subdivision decisions use only
  the scalar part of T, so T may be a ceres::Jet<> and the derivative
  components are integrated alongside the value.
 
  `f` is called as f(const double xx[3]) and must return T (the Jacobian onto
- [0,1]^ndim included, exactly like the Cuhre integrands).
+ [0,1]^ndim included).
 
  The error control is relative to the integral magnitude, so wildly
  near-cancelling integrands should not use this; the volumetric-source
@@ -3016,7 +3041,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
   };
 
   // While true, every cell splits isotropically (every dimension) - bit-identical to the original
-  //  integrator.  False enables Cuhre-style single roughest-axis refinement above min_depth (the
+  //  integrator.  False enables Genz-Malik-style single roughest-axis refinement above min_depth (the
   //  anisotropic optimization); the priming phase (below min_depth) stays isotropic either way, which
   //  preserves the symmetric-void defense.
   const bool force_isotropic_split = false;
@@ -3099,7 +3124,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
         }
       }//if( max_axis > 0.0 )
 
-      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis (Cuhre)
+      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis
       {
         double widest = -1.0;
         int best = -1;
@@ -3259,7 +3284,7 @@ std::vector<DistributedSrcCalcT<T>> split_source_subdomains( const DistributedSr
  integrates `calculator` over its source volume, filling
  `calculator.integral` (plus m_num_evals / m_est_rel_error).
 
- Unlike the Cuhre version, exceptions from the integrand (e.g., inconsistent
+ Exceptions from the integrand (e.g., inconsistent
  geometry) propagate to the caller, which decides the failure policy.
  */
 template<typename T>
@@ -4350,6 +4375,15 @@ inline double ShieldingSourceChi2Fcn::fepWindowKeV( const double energy,
 
 
 template<typename T>
+T ShieldingSourceChi2Fcn::pointLayerOpticalDepth( const Material *material, const double energy, const T &chord,
+                                    const std::vector<std::pair<double,double>> &energie_widths ) const
+{
+  return chord * fep_survival_removal_coefficient( material, energy, fepWindowKeV( energy, energie_widths ),
+                                                   std::max( 0.0, scalar_of(chord) ) );
+}//pointLayerOpticalDepth(...)
+
+
+template<typename T>
 std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
                         const std::vector<T> &params,
                         NucMixtureCache &mixturecache,
@@ -4379,24 +4413,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     cascade_block = std::make_shared<typename DistributedSrcCalcT<T>::CascadeBlock>();
     cascade_block->calc = m_cascadeCalc.get();
     cascade_block->partner_energies = m_cascadeCalc->allPartnerEnergies();
-    for( const double energy : cascade_block->partner_energies )
-    {
-      double fep_int = 0.0, tot_int = 0.0;
-      try
-      {
-        fep_int = m_detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
-        // CeeLo-aware, and returns 0 (rather than throwing) when the DRF has no
-        //  total-efficiency info - the CeeLo-response case, where the total
-        //  lives in the response, not a separate curve.
-        tot_int = m_detector->totalIntrinsicEfficiencyAny( static_cast<float>(energy) );
-      }catch( std::exception & )
-      {
-      }
-      cascade_block->partner_fep_int.push_back( std::max(0.0, fep_int) );
-      cascade_block->partner_tot_int.push_back( std::max(0.0, tot_int) );
-      cascade_block->air_mu.push_back(
-              transmission_length_coefficient_air( energy ) );
-    }//for( partner energies )
+    cascade_block->partner_fep_int = m_cascadeCalc->partnerFepIntrinsic();
+    cascade_block->partner_tot_int = m_cascadeCalc->partnerTotIntrinsic();
+    cascade_block->air_mu = m_cascadePartnerAirMu;
+    const size_t npartner = cascade_block->partner_energies.size();
+    if( (cascade_block->partner_fep_int.size() != npartner)
+       || (cascade_block->partner_tot_int.size() != npartner)
+       || (cascade_block->air_mu.size() != npartner) )
+      throw std::logic_error( "build_volumetric_calculators: cascade partner tables out of step" );
   }//if( m_cascadeCalc )
 
   const auto cascade_mu_for_material = [&]( const Material * const mat ) -> const std::vector<double> & {
@@ -4418,15 +4442,23 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     if( pos != std::end(cascade_nuc_active) )
       return pos->second;
 
-    // Upper-bound geometry: closest possible element, no attenuation.
-    double extent = 0.0;
+    // Upper-bound geometry: closest possible element, no attenuation, on the flat disk the partner
+    //  legs use.  The closest element is the assembly's outer surface nearest the detector face,
+    //  which for anything but an on-axis sphere is not the distance less one dimension.
+    double outer[3] = { 0.0, 0.0, 0.0 };
     for( const ShieldingSourceFitCalc::ShieldingInfo &sh : m_initial_shieldings )
     {
-      if( !sh.m_isGenericMaterial && sh.m_material )
-        extent += std::max( 0.0, sh.m_dimensions[0] );
+      if( sh.m_isGenericMaterial || !sh.m_material )
+        continue;
+      for( int i = 0; i < 3; ++i )
+        outer[i] += std::max( 0.0, sh.m_dimensions[i] );
     }
-    const double closest = std::max( 0.1*PhysicalUnits::cm,
-                                     trueSourceToDetectorDistance() - extent );
+    // Beside or behind the detector: how near the source comes to the detector's outside.
+    const double clearance = (m_extendedScene && m_volEffResponse)
+                ? detector_enclosure_clearance( m_volEffResponse->descriptor, m_geometry, outer, m_distance,
+                                                m_sourceOffsets[0], m_sourceOffsets[1] )
+                : detector_face_clearance( m_geometry, outer, m_distance, m_sourceOffsets[0], m_sourceOffsets[1] );
+    const double closest = std::max( 0.1*PhysicalUnits::cm, clearance );
     const double det_diam = m_detector->detectorDiameter();
     const double omega = DetectorPeakResponse::fractionalSolidAngle( det_diam,
                                     closest + m_detector->detectorSetback() );
@@ -4435,9 +4467,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     const std::vector<double> &feps = cascade_block->partner_fep_int;
     const std::vector<double> &tots = cascade_block->partner_tot_int;
     const auto find_idx = [&energies]( const double energy ) -> int {
-      const auto p = std::lower_bound( std::begin(energies), std::end(energies), energy - 0.25 );
-      return ((p != std::end(energies)) && (std::fabs(*p - energy) < 0.25))
-                ? static_cast<int>(p - std::begin(energies)) : -1;
+      return CascadeSummingCalc::nearestEnergyIndex( energies, energy );
     };
     const std::function<double(double)> fep_f = [&]( double energy ) -> double {
       const int j = find_idx(energy);
@@ -4784,31 +4814,47 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
               break;
           }//switch( m_geometry )
 
-          // Compare against the true (offset-aware) source-to-detector distance, not the
-          //  on-axis m_distance: with an off-axis offset the detector is farther away, so
-          //  using m_distance would spuriously flag a legitimate shell as past the detector.
-          //  On-axis the two are equal.
-          const double det_dist = trueSourceToDetectorDistance();
-          bool pastDetector = false;
-          switch( m_geometry )
+          // Beside or behind the detector the shell faces it along whichever axis points most toward
+          //  it - the one the gammas leave through - not the detector axis.  (In front this gives the
+          //  same dimension as above.)
+          if( m_extendedScene )
           {
-            case GeometryType::Spherical:
-            case GeometryType::CylinderSideOn:
-              pastDetector = (scalar_of(outer_dims[0]) > det_dist);
-              break;
+            const DetectorGeomT<double> dg = detector_geom_from_config<double>( m_geometry, m_distance,
+                                                    0.0, 0.0, m_sourceOffsets[0], m_sourceOffsets[1] );
+            const double ax = std::fabs( dg.position[0] ), ay = std::fabs( dg.position[1] ),
+                         az = std::fabs( dg.position[2] );
+            switch( m_geometry )
+            {
+              case GeometryType::Spherical:
+                break;
+              case GeometryType::CylinderEndOn:
+              case GeometryType::CylinderSideOn:
+                facing_thick = (az >= std::hypot( ax, ay ))
+                                 ? cylindricalLengthThickness_imp( subMat, params )
+                                 : cylindricalRadiusThickness_imp( subMat, params );
+                break;
+              case GeometryType::Rectangular:
+                facing_thick = ((az >= ax) && (az >= ay)) ? rectangularDepthThickness_imp( subMat, params )
+                               : ((ax >= ay) ? rectangularWidthThickness_imp( subMat, params )
+                                             : rectangularHeightThickness_imp( subMat, params ));
+                break;
+              case GeometryType::NumGeometryType:
+                break;
+            }//switch( m_geometry )
+          }//if( m_extendedScene )
 
-            case GeometryType::CylinderEndOn:
-              pastDetector = (scalar_of(outer_dims[1]) > det_dist);
-              break;
-
-            case GeometryType::Rectangular:
-              pastDetector = (scalar_of(outer_dims[2]) > det_dist);
-              break;
-
-            case GeometryType::NumGeometryType:
-              assert( 0 );
-              break;
-          }//switch( m_geometry )
+          // Every shell must stay in front of the detector-face plane, whatever the offsets: a shell
+          //  reaching beside the detector is not modelled (see detector_face_plane_clearance), so
+          //  this compares the extent along the axis with the ON-AXIS distance.  (It used to compare
+          //  with the offset-aware distance, which accepted such shells - and, for a sphere, ones
+          //  the detector body sits inside.)
+          //  An extended scene (see extendedScene()) is limited by the detector's outside instead.
+          const double scalar_outer[3] = { scalar_of(outer_dims[0]), scalar_of(outer_dims[1]),
+                                           scalar_of(outer_dims[2]) };
+          const bool pastDetector = m_extendedScene
+                        ? !(detector_enclosure_clearance( m_volEffResponse->descriptor, m_geometry,
+                                     scalar_outer, m_distance, m_sourceOffsets[0], m_sourceOffsets[1] ) > 0.0)
+                        : (detector_face_plane_clearance( m_geometry, scalar_outer, m_distance ) < 0.0);
 
           if( pastDetector && !(m_detector && m_detector->isFixedGeometry()) )
             throw std::runtime_error( "expected_peak_counts_imp: radius > distance" );
@@ -4876,6 +4922,316 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
   return calculators;
 }//build_volumetric_calculators(...)
 
+/** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
+struct PointSourceRays
+{
+  std::shared_ptr<const ceelo::DetectorResponse> response;   //the resolved response the fan was traced for
+  double theta = 0.0, phi = 0.0, dist_from_face_cm = 0.0;    //query geometry, fixed for the life of the fit
+  Eigen::Vector3d position_cm = Eigen::Vector3d::Zero();     //crystal-face frame (CeeLoUtils::sourcePositionFromFace)
+  ceelo::ApertureQuadrature quadrature;                      //response->make_quadrature( position_cm ), traced once
+
+  // Extended scenes only (ShieldingSourceChi2Fcn::pointFanFepEfficiencies), parallel to quadrature.rays:
+  std::vector<Eigen::Vector3d> dirs_assembly;   //each ray's direction, assembly frame
+  std::vector<double> entry_cm;                 //distance from the source along it to the detector's outside
+  Eigen::Vector3d mean_dir_assembly = Eigen::Vector3d::UnitZ();  //solid-angle-weighted mean ray direction
+  Eigen::Matrix3d rotation = Eigen::Matrix3d::Identity();        //crystal -> assembly
+  ceelo::ConvexSolid enclosure;                                  //the detector's outside, assembly frame, cm
+
+  /** Per-energy memo of the response's prefactor and each ray's omega_w * p_i - neither depends on a
+   fit parameter.  Entries are shared, so a caller's stays valid when another thread trims the memo. */
+  struct FanWeights
+  {
+    double prefactor = 0.0;
+    std::vector<double> w;
+  };
+  mutable std::mutex fan_mutex;
+  mutable std::map<double,std::shared_ptr<const FanWeights>> fan_memo;
+
+  /** The TOTAL-efficiency counterpart: the response's total prefactor and its compacted per-ray
+   total-kernel weights, with each ray's assembly-frame direction and envelope entry. */
+  struct TotWeights
+  {
+    double prefactor = 0.0;
+    std::vector<double> w;
+    std::vector<Eigen::Vector3d> dirs;
+    std::vector<double> entry_cm;
+  };
+  mutable std::map<double,std::shared_ptr<const TotWeights>> tot_memo;
+
+  std::shared_ptr<const TotWeights> tot_weights( const double energy ) const
+  {
+    std::lock_guard<std::mutex> lock( fan_mutex );
+    const auto pos = tot_memo.find( energy );
+    if( pos != std::end(tot_memo) )
+      return pos->second;
+    auto answer = std::make_shared<TotWeights>();
+    TotWeights &tw = *answer;
+    tw.prefactor = response->total_prefactor( energy, position_cm, quadrature ).value;
+    std::vector<Eigen::Vector3d> dirs_c;
+    response->total_ray_weights( energy, quadrature, tw.w, dirs_c );
+    for( const Eigen::Vector3d &dc : dirs_c )
+    {
+      const Eigen::Vector3d da = (rotation * dc).normalized();
+      tw.dirs.push_back( da );
+      tw.entry_cm.push_back( ceelo::convex_entry_distance( enclosure, Eigen::Vector3d::Zero(), da ) );
+    }
+    if( tot_memo.size() >= 512 )
+      tot_memo.clear();
+    tot_memo[energy] = answer;
+    return answer;
+  }
+
+  std::shared_ptr<const FanWeights> fan_weights( const double energy ) const
+  {
+    std::lock_guard<std::mutex> lock( fan_mutex );
+    const auto pos = fan_memo.find( energy );
+    if( pos != std::end(fan_memo) )
+      return pos->second;
+    auto answer = std::make_shared<FanWeights>();
+    FanWeights &fw = *answer;
+    fw.prefactor = response->fep_prefactor( energy, position_cm, quadrature ).value;
+    std::vector<double> p;
+    response->fep_line_probabilities( energy, quadrature, p );
+    fw.w.resize( p.size() );
+    for( size_t i = 0; i < p.size(); ++i )
+      fw.w[i] = quadrature.rays[i].omega_w * p[i];
+    if( fan_memo.size() >= 512 )
+      fan_memo.clear();
+    fan_memo[energy] = answer;
+    return answer;
+  }
+};//struct PointSourceRays
+
+
+template<typename T>
+std::vector<T> ShieldingSourceChi2Fcn::pointFanFepEfficiencies( const std::vector<T> &params,
+                                const std::vector<double> &energies,
+                                const std::vector<std::pair<double,double>> &energie_widths ) const
+{
+  return pointFanEfficiencies( params, energies, energie_widths, false );
+}
+
+
+template<typename T>
+std::vector<T> ShieldingSourceChi2Fcn::pointFanEfficiencies( const std::vector<T> &params,
+                                const std::vector<double> &energies,
+                                const std::vector<std::pair<double,double>> &energie_widths,
+                                const bool total ) const
+{
+  using namespace std;
+  assert( usePointFan() );
+  const PointSourceRays &fan = *m_pointRays;
+  const size_t nrays = fan.dirs_assembly.size();
+  assert( nrays == fan.quadrature.rays.size() );
+
+  // Exit distance from the assembly centre, along the unit direction `u`, through a shell of outer
+  //  dimensions `dims` (sphere radius; cylinder radius and half-length along z; box half-extents).
+  const auto exit_along = [this]( const std::array<T,3> &dims, const Eigen::Vector3d &u ) -> T {
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        return dims[0];
+
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+      {
+        const double uxy = std::hypot( u.x(), u.y() );
+        T t( std::numeric_limits<double>::max() );
+        if( uxy > 0.0 )
+          t = dims[0] / uxy;
+        if( std::fabs(u.z()) > 0.0 )
+        {
+          const T tz = dims[1] / std::fabs(u.z());
+          if( scalar_of(tz) < scalar_of(t) )
+            t = tz;
+        }
+        return t;
+      }
+
+      case GeometryType::Rectangular:
+      {
+        T t( std::numeric_limits<double>::max() );
+        for( int i = 0; i < 3; ++i )
+        {
+          if( std::fabs(u[i]) > 0.0 )
+          {
+            const T ti = dims[i] / std::fabs(u[i]);
+            if( scalar_of(ti) < scalar_of(t) )
+              t = ti;
+          }
+        }
+        return t;
+      }
+
+      case GeometryType::NumGeometryType:
+        break;
+    }//switch( m_geometry )
+    throw std::runtime_error( "pointFanFepEfficiencies: invalid geometry" );
+  };//exit_along
+
+  // Each material shell's chord along every ray, and along the mean direction; generic shells as
+  //  (AN, AD), direction-free.
+  struct Layer
+  {
+    const Material *material = nullptr;
+    T atomic_number = T(0.0), areal_density = T(0.0);
+    T mean_chord = T(0.0);
+    std::vector<T> chords;
+    std::array<T,3> outer_dims = { T(0.0), T(0.0), T(0.0) };   //cumulative, for other ray sets
+  };
+  vector<Layer> layers;
+  std::array<T,3> dims = { T(0.0), T(0.0), T(0.0) };
+  vector<T> prev_exit( nrays, T(0.0) );
+  T prev_mean_exit( 0.0 );
+  for( size_t materialN = 0; materialN < m_initial_shieldings.size(); ++materialN )
+  {
+    const std::shared_ptr<const Material> &material = m_initial_shieldings[materialN].m_material;
+    Layer layer;
+    if( !material )
+    {
+      layer.atomic_number = atomicNumber_imp( materialN, params );
+      layer.areal_density = arealDensity_imp( materialN, params );
+      if( scalar_of(layer.atomic_number) < MassAttenuation::sm_min_xs_atomic_number )
+        layer.atomic_number = T( static_cast<double>(MassAttenuation::sm_min_xs_atomic_number) );
+      if( scalar_of(layer.atomic_number) > MassAttenuation::sm_max_xs_atomic_number )
+        layer.atomic_number = T( static_cast<double>(MassAttenuation::sm_max_xs_atomic_number) );
+      if( scalar_of(layer.areal_density) < 0.0 )
+        layer.areal_density = T(0.0);
+      layers.push_back( std::move(layer) );
+      continue;
+    }
+
+    switch( m_geometry )
+    {
+      case GeometryType::Spherical:
+        dims[0] += sphericalThickness_imp( materialN, params );
+        break;
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        dims[0] += cylindricalRadiusThickness_imp( materialN, params );
+        dims[1] += cylindricalLengthThickness_imp( materialN, params );
+        break;
+      case GeometryType::Rectangular:
+        dims[0] += rectangularWidthThickness_imp( materialN, params );
+        dims[1] += rectangularHeightThickness_imp( materialN, params );
+        dims[2] += rectangularDepthThickness_imp( materialN, params );
+        break;
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( m_geometry )
+
+    layer.material = material.get();
+    layer.outer_dims = dims;
+    layer.chords.resize( nrays );
+    for( size_t i = 0; i < nrays; ++i )
+    {
+      const T exit = exit_along( dims, fan.dirs_assembly[i] );
+      layer.chords[i] = exit - prev_exit[i];
+      prev_exit[i] = exit;
+    }
+    const T mean_exit = exit_along( dims, fan.mean_dir_assembly );
+    layer.mean_chord = mean_exit - prev_mean_exit;
+    prev_mean_exit = mean_exit;
+    layers.push_back( std::move(layer) );
+  }//for( shells )
+
+  // Air from the outermost shell to the detector's outside, along each ray.
+  const bool do_air = m_options.attenuate_for_air;
+  vector<T> air( nrays, T(0.0) );
+  if( do_air )
+  {
+    for( size_t i = 0; i < nrays; ++i )
+    {
+      const double entry = fan.entry_cm[i] * PhysicalUnits::cm;
+      if( std::isfinite( entry ) && (entry > scalar_of(prev_exit[i])) )
+        air[i] = T(entry) - prev_exit[i];
+    }
+  }
+
+  vector<T> answer;
+  answer.reserve( energies.size() );
+  for( const double energy : energies )
+  {
+    if( total )
+    {
+      // The total: its own (compacted) rays, plain total attenuation - a scattered photon still
+      //  counts - and the chords walked here, per ray.
+      const std::shared_ptr<const PointSourceRays::TotWeights> tw_entry = fan.tot_weights( energy );
+      const PointSourceRays::TotWeights &tw = *tw_entry;
+      const double mu_air = do_air ? transmission_length_coefficient_air( energy ) : 0.0;
+      T tau_generic( 0.0 );
+      for( const Layer &layer : layers )
+        if( !layer.material )
+          tau_generic += transmission_coefficient_generic_imp( layer.atomic_number, layer.areal_density, energy );
+      T sum( 0.0 );
+      for( size_t k = 0; k < tw.w.size(); ++k )
+      {
+        if( tw.w[k] <= 0.0 )
+          continue;
+        T tau = tau_generic, prev( 0.0 );
+        for( const Layer &layer : layers )
+        {
+          if( !layer.material )
+            continue;
+          const T exit = exit_along( layer.outer_dims, tw.dirs[k] );
+          tau += T( transmition_length_coefficient( layer.material, energy ) ) * (exit - prev);
+          prev = exit;
+        }
+        if( do_air && std::isfinite( tw.entry_cm[k] ) && (tw.entry_cm[k]*PhysicalUnits::cm > scalar_of(prev)) )
+          tau += mu_air * (T(tw.entry_cm[k]*PhysicalUnits::cm) - prev);
+        sum += tw.w[k] * exp( -tau );
+      }
+      answer.push_back( tw.prefactor * sum );
+      continue;
+    }//if( total )
+
+    const std::shared_ptr<const PointSourceRays::FanWeights> fw_entry = fan.fan_weights( energy );
+    const PointSourceRays::FanWeights &fw = *fw_entry;
+    assert( fw.w.size() == nrays );
+
+    // Removal coefficient per material shell, at its mean-direction chord (the Rayleigh deflection
+    //  loss depends on the chord); generic shells' optical depth is the same along every ray.
+    vector<T> mu( layers.size(), T(0.0) );
+    T tau_generic( 0.0 );
+    for( size_t l = 0; l < layers.size(); ++l )
+    {
+      if( !layers[l].material )
+      {
+        tau_generic += transmission_coefficient_generic_imp( layers[l].atomic_number,
+                                                             layers[l].areal_density, energy );
+        continue;
+      }
+      const T c = layers[l].mean_chord;
+      if( scalar_of(c) > 0.0 )
+        mu[l] = pointLayerOpticalDepth( layers[l].material, energy, c, energie_widths ) / c;
+      else
+        mu[l] = pointLayerOpticalDepth( layers[l].material, energy, T(1.0E-6*PhysicalUnits::cm),
+                                        energie_widths ) / T(1.0E-6*PhysicalUnits::cm);
+    }
+    const double mu_air = do_air ? transmission_length_coefficient_air( energy ) : 0.0;
+
+    T sum( 0.0 );
+    for( size_t i = 0; i < nrays; ++i )
+    {
+      if( fw.w[i] <= 0.0 )
+        continue;
+      T tau = tau_generic + mu_air * air[i];
+      for( size_t l = 0; l < layers.size(); ++l )
+      {
+        if( layers[l].material )
+          tau += mu[l] * layers[l].chords[i];
+      }
+      sum += fw.w[i] * exp( -tau );
+    }//for( rays )
+
+    answer.push_back( fw.prefactor * sum );
+  }//for( energies )
+
+  return answer;
+}//pointFanFepEfficiencies(...)
+
+
 template<typename T>
 std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vector<T> &params,
                                                           NucMixtureCache &mixturecache ) const
@@ -4889,6 +5245,16 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   if( params.size() != numExpectedFitParameters() )
     throw std::runtime_error( "expected_peak_counts_imp: invalid params size" );
+
+  // A scene beside or behind the detector must stay clear of the detector itself at every step -
+  //  point sources included, whose fitted shields the volumetric check never sees.
+  if( m_extendedScene )
+  {
+    std::vector<double> scalar_params( params.size() );
+    for( size_t i = 0; i < params.size(); ++i )
+      scalar_params[i] = scalar_of( params[i] );
+    checkExtendedSceneClearance( scalar_params );
+  }
 
   EnergyCountMapT energy_count_map;
   const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
@@ -4978,6 +5344,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   const double true_dist = trueSourceToDetectorDistance();
   const bool fixed_geom_det = (m_detector && m_detector->isFixedGeometry());
+  const bool use_point_fan = usePointFan();
 
   std::array<T,3> cumulative_dims = { T(0.0), T(0.0), T(0.0) };
   T prev_exit_dist(0.0);
@@ -5054,18 +5421,20 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       //  exactly as a volumetric source's outer shells are (2026-09-04; before this it used plain
       //  mu_total with neither term, and read ~5% high behind 0.5 cm of Fe at 60 keV).
       att_coef_fcn = [this, mat = material.get(), chord, &energie_widths]( const double energy ) -> T {
-        return chord * fep_survival_removal_coefficient( mat, energy,
-                                                         fepWindowKeV( energy, energie_widths ),
-                                                         std::max( 0.0, scalar_of(chord) ) );
+        return pointLayerOpticalDepth( mat, energy, chord, energie_widths );
       };
     }//if( generic material ) / else
 
-    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-      energy_count.second *= exp( -1.0 * att_coef_fcn( energy_count.first ) );
+    // (A source beside or behind the detector is attenuated ray by ray instead - step 4.)
+    if( !use_point_fan )
+    {
+      for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+        energy_count.second *= exp( -1.0 * att_coef_fcn( energy_count.first ) );
+    }
   }//for( size_t materialN = 0; materialN < nMaterials; ++materialN )
 
   // 3) Attenuation in the air between the shielding surface and the detector
-  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
+  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) && !use_point_fan )
   {
     T air_dist = true_dist - prev_exit_dist;
     if( scalar_of(air_dist) < 0.0 )
@@ -5085,7 +5454,17 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
   //  same one the volumetric integrand uses) through a ray fan traced once per fit, else flat-disk,
   //  or the intrinsic curve for a fixed geometry.  An explicit FlatDisk request forces solid-angle
   //  x intrinsic here too, so the control means what its label says and is a usable escape hatch.
-  if( m_detector && m_detector->isValid() )
+  if( use_point_fan )
+  {
+    // Beside or behind the detector: shields, air and detector together, ray by ray.
+    std::vector<double> energies;
+    for( const typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+      energies.push_back( energy_count.first );
+    const std::vector<T> effs = pointFanFepEfficiencies( params, energies, energie_widths );
+    size_t index = 0;
+    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+      energy_count.second *= effs[index++];
+  }else if( m_detector && m_detector->isValid() )
   {
     for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
       energy_count.second *= pointSourceFepEff( energy_count.first ).value;
@@ -5467,9 +5846,7 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       // Same FEP coefficient as expected_peak_counts_imp (window credit + Rayleigh deflection
       //  loss), so the cascade functors see exactly the transmission the fit uses.
       ctx.att_fcns.push_back( [this, mat = material.get(), chord, energie_widths]( const double energy ) -> T {
-        return chord * fep_survival_removal_coefficient( mat, energy,
-                                                         fepWindowKeV( energy, *energie_widths ),
-                                                         std::max( 0.0, scalar_of(chord) ) );
+        return pointLayerOpticalDepth( mat, energy, chord, *energie_widths );
       } );
 
       // `mat` is m_initial_shieldings' material, fixed for the life of this function object, so the
@@ -5501,6 +5878,46 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
   ctx.note_input( ctx.eff_an );
   ctx.note_input( ctx.air_dist );
 
+  // Beside or behind the detector the partner legs go ray by ray, like the primary.  The fan traces
+  //  every material shell along every ray, so each of a shell's dimensions is an input - not only
+  //  the one the central ray's chord happens to leave through (for a box or cylinder the chord
+  //  above can be blind to the fitted one).  Generic shells' AN and AD are already noted above.
+  if( usePointFan() )
+  {
+    for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+    {
+      if( !m_initial_shieldings[materialN].m_material )
+        continue;
+      switch( m_geometry )
+      {
+        case GeometryType::Spherical:
+          ctx.note_input( sphericalThickness_imp( materialN, params ) );
+          break;
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+          ctx.note_input( cylindricalRadiusThickness_imp( materialN, params ) );
+          ctx.note_input( cylindricalLengthThickness_imp( materialN, params ) );
+          break;
+        case GeometryType::Rectangular:
+          ctx.note_input( rectangularWidthThickness_imp( materialN, params ) );
+          ctx.note_input( rectangularHeightThickness_imp( materialN, params ) );
+          ctx.note_input( rectangularDepthThickness_imp( materialN, params ) );
+          break;
+        case GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( m_geometry )
+    }//for( material shells )
+
+    const std::vector<std::pair<double,double>> widths = observedPeakEnergyWidths( m_peaks );
+    ctx.fan_fep_abs = [this, params, widths]( const double energy ) -> T {
+      return pointFanEfficiencies<T>( params, std::vector<double>{ energy }, widths, false ).front();
+    };
+    ctx.fan_tot_abs = [this, params, widths]( const double energy ) -> T {
+      return pointFanEfficiencies<T>( params, std::vector<double>{ energy }, widths, true ).front();
+    };
+  }
+
   return ctx;
 }//pointSourceAttenContext(...)
 
@@ -5524,6 +5941,8 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
   // Absolute FEP efficiency at the fit geometry: shields x air x detector.
   //  The parameter (Jet) dependence enters through the shield chords / AD.
   const auto fep_raw = [&]( const double energy ) -> T {
+    if( atten_ctx.fan_fep_abs )   //beside or behind the detector: ray by ray
+      return atten_ctx.fan_fep_abs( energy ) / m_cascadeFepScale;
     T att(0.0);
     for( const std::function<T(double)> &f : atten_ctx.att_fcns )
       att += f( energy );
@@ -5540,6 +5959,21 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
   //    eps_tot = eps_tot_bare * ( T_shield + A(E; AN, AD) ) * air
   //  (see ShieldScatterAugment / the GADRAS benchmark recipe).
   const auto tot_raw = [&]( const double energy ) -> T {
+    if( atten_ctx.fan_tot_abs )
+    {
+      // Ray by ray, plus the shield-scatter continuum on the bare total (as below, with the
+      //  central ray's AN/AD).
+      T v = atten_ctx.fan_tot_abs( energy );
+      if( scatter.valid() )
+      {
+        T aug = scatter.evaluate( energy, atten_ctx.eff_an, atten_ctx.total_ad_gcm2 )
+                * std::max( 0.0, pointSourceTotEff( energy ).value );
+        if( do_air )
+          aug *= exp( -transmission_length_coefficient_air( energy ) * atten_ctx.air_dist );
+        v += aug;
+      }
+      return v;
+    }
     T att(0.0);
     for( const std::function<T(double)> &f : atten_ctx.att_fcns )
       att += f( energy );

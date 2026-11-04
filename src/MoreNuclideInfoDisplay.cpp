@@ -214,28 +214,12 @@ MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *cons
 }//MoreNuclideInfoDisplay constructor
 
 
-void MoreNuclideInfoDisplay::handleDecayChartClose( AuxWindow *window )
-{
-  assert( window == m_decayWindow.get() );
-  if( window != m_decayWindow.get() )
-    cerr << "MoreNuclideInfoDisplay::handleDecayChartClose(...): passed in pointer ("
-         << window << ") not same as internal pointer (" << m_decayWindow.get() << ")." << endl;
-  
-  m_decayWindow = nullptr;
-}//void handleDecayChartClose( AuxWindow *window )
-
-
 void MoreNuclideInfoDisplay::programmaticallyCloseDecayChart()
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-  
-  if( m_decayWindow )
-  {
-    // Calling done seems to crash for some reason
-    //m_decayWindow->done( Wt::DialogCode::Accepted );
-    AuxWindow::deleteAuxWindow( m_decayWindow.get() );
-  }
-  m_decayWindow = nullptr;
+
+  AuxWindow::deleteAuxWindow( m_decayWindow.get() );
+  assert( !m_decayWindow );
 }//void programmaticallyCloseDecayChart()
 
 
@@ -252,15 +236,13 @@ void MoreNuclideInfoDisplay::implementShowDecayCharts( const bool through )
   }
   
   const auto results = DecayChainChart::show_decay_chart_window( nuc, type );
-  
+
+  // The window's own finished() handler (connected in show_decay_chart_window, so it runs
+  //  before ours) deletes it, which auto-nulls m_decayWindow.
   m_decayWindow = results.first;
-  
-  if( m_decayWindow )
-  {
-    AuxWindow * const decayWin = m_decayWindow.get();
-    m_decayWindow->finished().connect( this, [this, decayWin](){ handleDecayChartClose( decayWin ); } );
-  }
-  
+  if( !m_decayWindow )
+    return;
+
   auto get_display = []() -> MoreNuclideInfoDisplay * {
     InterSpec *interspec = InterSpec::instance();
     ReferencePhotopeakDisplay *display = interspec ? interspec->referenceLinesWidget() : nullptr;

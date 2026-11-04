@@ -158,6 +158,10 @@
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+
+#if( BUILD_AS_MCP_STDIO_SERVER )
+#include "InterSpec/SpectrumChartImage.h"
+#endif
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
 
@@ -384,6 +388,29 @@ static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif // InterSpec_PHONE_ROTATE_FOR_TABS
 
 
+#if( USE_LLM_INTERFACE )
+  /** Calls `fcn` with this sessions InterSpec on the next pass of the event loop - for requests
+   from widgets that `fcn` will delete.  Only the session and widget ids are captured; if the
+   InterSpec has since been replaced (e.g., "Clear Session..."), nothing is done.
+   */
+  void postToInterSpec( InterSpec *viewer, std::function<void(InterSpec *)> fcn )
+  {
+    assert( viewer && wApp );
+    const string sessionId = wApp->sessionId();
+    const string viewerId = viewer->id();
+    WServer::instance()->post( sessionId, [sessionId, viewerId, fcn](){
+      WApplication * const app = WApplication::instance();
+      InterSpec * const viewer = InterSpec::instance();
+      if( !app || (app->sessionId() != sessionId) || !viewer || (viewer->id() != viewerId) )
+        return;
+
+      fcn( viewer );
+      app->triggerUpdate();
+    } );
+  }//void postToInterSpec(...)
+#endif //USE_LLM_INTERFACE
+
+
   /** The peak-fit prefs for a spectrum, when nothing more specific (file, DRF, or user) gives them:
    the defaults for its detector type, or else the application defaults.
    */
@@ -561,6 +588,7 @@ InterSpec::InterSpec()
   m_refLineDynamic( nullptr ),
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
+  m_colorThemeWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_decayBatchCalc( nullptr ),
@@ -571,6 +599,9 @@ InterSpec::InterSpec()
   m_llmToolMenuItem( nullptr ),
   m_llmTool( nullptr ),
   m_llmToolWindow( nullptr ),
+  m_llmSidePanel( nullptr ),
+  m_llmSidePanelWidth( 0 ),
+  m_llmSidePanelWidthGuessed( false ),
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -1371,6 +1402,7 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_undo )
     removeChild( m_undo.get() );
   AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
+  AuxWindow::deleteAuxWindow( m_colorThemeWindow.get() );
   
   try
   {
@@ -1436,8 +1468,13 @@ InterSpec::~InterSpec() noexcept(true)
   //  The exceptions are the tools that persist user state on close - handled above (shielding/
   //  rel-act) or just below (LLM history).
 #if( USE_LLM_INTERFACE )
+  // In a tab or the side panel, the tool is in our layout, so goes with it; just save the
+  //  conversation (handleLlmToolClose() would also rearrange the layout, which, mid-teardown, gives
+  //  a client-side layout exception).
   if( m_llmToolWindow )
-    handleLlmToolClose();   //syncs conversation history into the SpecMeas before deleting
+    closeLlmTool();   //syncs conversation history into the SpecMeas before deleting
+  else if( m_llmTool )
+    syncLlmHistoryToSpecMeas();
 #endif
 
   AuxWindow::deleteAuxWindow( m_specFileQueryDialog.get() );
@@ -1487,6 +1524,11 @@ InterSpec::~InterSpec() noexcept(true)
 #if( USE_SEARCH_MODE_3D_CHART )
   AuxWindow::deleteAuxWindow( m_3dViewWindow.get() );
 #endif
+
+  // The Spectrum Manager window holds the file managers table while open; this hands it back to
+  //  the file manager (no undo step is added, as `m_undo` is already gone).
+  if( m_fileManager )
+    m_fileManager->deleteSpectrumManager();
 
   // Backstop for every dialog the named teardowns above do not cover.  Most tool dialogs are
   //  created *locally* with no member holding them (`SpecFileSummary`, the External RID warning,
@@ -1583,6 +1625,14 @@ InterSpec::~InterSpec() noexcept(true)
 
     if( m_preferences )
       removeChild( m_preferences.get() );
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+    // Each session has its own database user, which is never used again; remove it, and with it
+    //  (by cascade) its preferences and detector-response rows, or the database grows with every
+    //  session.
+    if( m_user )
+      m_user.remove();
+#endif
     m_user.reset();
 
     if( transaction )
@@ -1658,7 +1708,7 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
 void InterSpec::handleUserIncrementSampleNum( SpecUtils::SpectrumType type,
                                                       bool increment)
 {
-    CompactFileManager::handleUserIncrementSampleNum(type, increment, this, m_fileManager->model(), NULL);
+    CompactFileManager::handleUserIncrementSampleNum( type, increment, this, nullptr );
 }
 
 std::shared_ptr<DataBaseUtils::DbSession> InterSpec::sql()
@@ -1671,8 +1721,17 @@ void InterSpec::layoutSizeChanged( int w, int h )
 {
   m_renderedWidth = w;
   m_renderedHeight = h;
-  
-  
+
+#if( USE_LLM_INTERFACE )
+  // A side panel shown before we were laid out was sized from the screen width; now size it right.
+  if( m_llmSidePanel && m_llmSidePanelWidthGuessed && (w > 100) )
+  {
+    m_llmSidePanelWidth = llmSidePanelInitialWidth();
+    m_llmSidePanel->setWidth( WLength( m_llmSidePanelWidth, WLength::Unit::Pixel ) );
+    updateMobileButtonsForLlmSidePanel( true );
+  }
+#endif
+
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
   if( isPhone() )
   {
@@ -1744,8 +1803,9 @@ void InterSpec::layoutSizeChanged( int w, int h )
         if( m_detectionLimitWindow )
           handleDetectionLimitWindowClose();
 #endif
+        // The help window is kept open (it is often read alongside the app), just re-fit to the screen.
         if( m_helpWindow )
-          closeHelpWindow();
+          m_helpWindow->refitPhoneFullScreen();
         if( m_licenseWindow )
           deleteLicenseAndDisclaimersWindow();
         if( m_useInfoWindow )
@@ -1768,6 +1828,15 @@ void InterSpec::layoutSizeChanged( int w, int h )
           programmaticallyCloseRiidResults();
         if( m_drfSelectWindow )
           closeDrfSelectWindow();
+
+#if( USE_LLM_INTERFACE )
+        // The assistant is deliberately kept open across rotation (closing it would drop any
+        //  request in flight); its full-screen windows just need re-fitting to the new screen.
+        if( m_llmToolWindow )
+          m_llmToolWindow->refitPhoneFullScreen();
+        if( m_llmTool )
+          m_llmTool->refitPhoneWindows();
+#endif
       }//if( we are changing orientation )
       
       setToolTabsVisible( isVertical );
@@ -1998,10 +2067,12 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         setLogY( !m_spectrum->yAxisIsLog() );
         break;
         
+#if( USE_DB_TO_STORE_SPECTRA )
       case 's': case 'S':
         stateSave();
         break;
-        
+#endif
+
       case 'e': case 'E':
         createExportSpectrumFileDialog();
         break;
@@ -3551,22 +3622,34 @@ void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_pt
   
   const set<int> &sample_nums = displayedSamples( spectrum );
   
-  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas->peaks(sample_nums);
-  
-  if( orig_peaks.get() == peaks.get() )
+  const std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> current_peaks = meas->peaks(sample_nums);
+
+  if( current_peaks.get() == peaks.get() )
     throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
-  
-  auto set_peaks = [this,&peaks,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+
+  // Snapshot the current peaks: `current_peaks` is the SpecMeas's own deque, which
+  //  PeakModel::setPeaks clears and refills in place, so holding it would leave undo nothing to go
+  //  back to.  (The PeakDefs themselves are const, so sharing them is fine.)
+  const auto orig_peaks = make_shared<const deque<shared_ptr<const PeakDef>>>(
+                            current_peaks ? *current_peaks : deque<shared_ptr<const PeakDef>>{} );
+
+  auto set_peaks = [spectrum]( const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &new_peaks ){
+    InterSpec *viewer = InterSpec::instance();
+    if( !viewer || !viewer->m_peakModel )
+      return;
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-    m_peakModel->setPeaks( (peaks ? *peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
+    viewer->m_peakModel->setPeaks( (new_peaks ? *new_peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
   };
-  
-  set_peaks(peaks);
-  
+
+  {
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    m_peakModel->setPeaks( *peaks, spectrum );
+  }
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [set_peaks,peaks,orig_peaks](){ set_peaks(orig_peaks); };
-    auto redo = [set_peaks,peaks,orig_peaks](){ set_peaks(peaks); };
+    auto undo = [set_peaks,orig_peaks](){ set_peaks(orig_peaks); };
+    auto redo = [set_peaks,peaks](){ set_peaks(peaks); };
     m_undo->addUndoRedoStep( undo, redo, "Set peaks." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
@@ -3581,14 +3664,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 
   try
   {
-    saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-#endif
-#if( USE_LLM_INTERFACE )
-    syncLlmHistoryToSpecMeas();
-#endif
+    syncAllToolStateToForegroundSpecMeas();
 
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
@@ -4257,6 +4333,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     if( parent )
     {
+      // `background` and `second` may be the same objects as the parent foreground/background
+      //  (when they are the same file); we'll re-point them below to the snapshot copies.
+      const shared_ptr<SpecMeas> parentForeground = foreground;
+      const shared_ptr<SpecMeas> parentBackground = background;
+
       if( foregroundheader && snapforeground )
       {
         foregroundheader->setMeasurmentInfo( snapforeground );
@@ -4289,6 +4370,16 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
         }
       }
+
+      // A background/secondary that was the same file as the foreground (or secondary as the
+      //  background) still points at the parent copy, whose header now holds the snapshot copy;
+      //  left alone it would display the parent's data, and not be in the file manager.
+      if( parentForeground && (background == parentForeground) )
+        background = foreground;
+      if( parentForeground && (second == parentForeground) )
+        second = foreground;
+      else if( parentBackground && (second == parentBackground) )
+        second = background;
     }//if( parent )
     
     
@@ -4655,7 +4746,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   #endif
   #if( USE_LLM_INTERFACE )
           case UserState::kLlmAssistantTab:
-            if( m_llmTool )
+            if( m_llmTool && (m_toolsTabs->indexOf( m_llmTool.get() ) >= 0) )
               m_toolsTabs->setCurrentWidget( m_llmTool.get() );
             break;
   #endif
@@ -5122,13 +5213,24 @@ void InterSpec::osThemeChange( std::string name )
 #endif
 
 
-void InterSpec::showColorThemeWindow()
+ColorThemeWindow *InterSpec::showColorThemeWindow()
 {
+  if( m_colorThemeWindow )
+  {
+    // It may be hidden, waiting on its "Save changes?" prompt from being closed.
+    m_colorThemeWindow->dismissSaveChangesPrompt();
+    m_colorThemeWindow->show();
+    m_colorThemeWindow->centerWindowHeavyHanded();
+    return m_colorThemeWindow.get();
+  }
+
   //Takes ~5ms (on the server) to create a ColorThemeWindow.
-	ColorThemeWindow *window = AuxWindow::make<ColorThemeWindow>(this);
+  m_colorThemeWindow = AuxWindow::make<ColorThemeWindow>(this);
   
-  window->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
-}//void showColorThemeWindow()
+  m_colorThemeWindow->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+
+  return m_colorThemeWindow.get();
+}//ColorThemeWindow *showColorThemeWindow()
 
 
 void InterSpec::showLicenseAndDisclaimersWindow()
@@ -5791,14 +5893,7 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     if( !output.is_open() )
       throw runtime_error( "Couldnt open test file output '" + filepath + "'" );
     
-    saveShieldingSourceModelToForegroundSpecMeas();
-  #if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-  #endif
-  #if( USE_LLM_INTERFACE )
-    syncLlmHistoryToSpecMeas();
-  #endif
+    syncAllToolStateToForegroundSpecMeas();
 
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
@@ -5936,10 +6031,11 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
   {
     std::shared_ptr<SpecMeas> meas = std::make_shared<SpecMeas>();
     
-    // TODO: If we call load_from_N42_document(...), the sample numbers get all messed up and we
-    //       cant match peaks and displayed samples up right - I'm not sure why this is at the
-    //       moment, probably some virtual call issue or something, but for the moment will just
-    //       patch through it and re-parse the XML a second time.
+    // Note: we can't just call load_from_N42_document(...) on the XML parsed below, as that skips
+    //       SpecMeas::load_N42_from_doc(...), which marks the file as written by InterSpec (so its
+    //       sample numbers are kept) and reconciles the sample numbers with the ones the
+    //       <DHS:InterSpec> info is keyed by - without these, peaks and displayed samples may not
+    //       line up.  So we parse the file twice.
     //const bool loaded = meas->load_from_N42_document( doc_node );
     const bool loaded = meas->load_file( filename, SpecUtils::ParserType::N42_2012, ".n42" );
     
@@ -6439,14 +6535,7 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
   const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   if( !saveState || !m_dataMeasurement )
   {
-    saveShieldingSourceModelToForegroundSpecMeas();
-  #if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-  #endif
-  #if( USE_LLM_INTERFACE )
-    syncLlmHistoryToSpecMeas();
-  #endif
+    syncAllToolStateToForegroundSpecMeas();
 
     return;
   }//if( !saveState || !m_dataMeasurement )
@@ -6511,14 +6600,7 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
       }//if( we have done work we might want to save )
     }else
     {
-      saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-      saveRelActManualStateToForegroundSpecMeas();
-      saveRelActAutoStateToForegroundSpecMeas();
-#endif
-#if( USE_LLM_INTERFACE )
-      syncLlmHistoryToSpecMeas();
-#endif
+      syncAllToolStateToForegroundSpecMeas();
       
       // Get foreground/background/secondary files, and update them to the database..
       SpectraFileModel *filemodel = m_fileManager->model();
@@ -7150,7 +7232,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     const bool phone = isPhone();
 #endif
-  
+
+#if( USE_LLM_INTERFACE )
+  // The LLM side panel is part of m_layout, which is about to be replaced; hold onto the panel until
+  //  the new layout is ready.
+  std::unique_ptr<WWidget> llmSidePanel;
+  if( m_llmSidePanel )
+  {
+    llmSidePanel = m_layout->removeWidget( m_llmSidePanel.get() );
+    assert( llmSidePanel );
+  }
+#endif
+
   if( showToolTabs )
   { //We are showing the tool tabs
     if( m_menuDiv )
@@ -7324,6 +7417,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->addWidget( std::unique_ptr<WWidget>(toolsWrapper), ++row, 0 );
     m_layout->setRowStretch( row, 0 );
 
+#if( USE_LLM_INTERFACE )
+    if( llmSidePanel )
+      addLlmSidePanelToLayout( std::move(llmSidePanel) );
+#endif
+
     std::unique_ptr<WWidget> nuclide_search_widget;
     if( m_nuclideSearchWindow )
     {
@@ -7388,26 +7486,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
     
 #if( USE_LLM_INTERFACE )
-    // If the assistant was showing in its own window (no tab strip), dock it back into the strip.
-    if( m_llmTool )
-    {
-      std::unique_ptr<WWidget> llm_widget;
-      if( m_llmToolWindow )
-      {
-        llm_widget = m_llmToolWindow->stretcher()->removeWidget( m_llmTool.get() );
-        AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
-      }else
-      {
-        llm_widget = removeChild( m_llmTool.get() );
-      }
-      assert( llm_widget );
-      if( llm_widget )
-      {
-        WMenuItem *llmTab = m_toolsTabs->addTab( std::move(llm_widget),
-                                                 WString::tr(LlmAssistantTabTitleKey), TabLoadPolicy );
-        llmTab->setCloseable( true );
-      }
-    }//if( m_llmTool )
+    // If the assistant was showing in its own window (no tab strip), dock it back into the strip;
+    //  except on phones, where the tab strip is too short for a conversation, so it stays a
+    //  full-screen window - but if the phone was rotated to portrait with the assistant docked
+    //  beside the charts, it stays docked, now in the tab strip.  On desktop, the side panel stays.
+    const bool llmMovedFromSidePanel = (m_llmTool && isPhone() && m_llmSidePanel);
+    if( llmMovedFromSidePanel || (m_llmTool && !isPhone() && m_llmToolWindow) )
+      addLlmToolTab( detachLlmTool(), llmMovedFromSidePanel );
 #endif
 
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -7433,7 +7518,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay.get() );
 #endif
-    
+
+#if( USE_LLM_INTERFACE )
+    // The user was just using the assistant, so keep it showing.
+    if( llmMovedFromSidePanel && m_llmTool )
+      m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+#endif
+
     if( m_referencePhotopeakLines && refNucXmlState.size() )
       m_referencePhotopeakLines->deSerialize( refNucXmlState );
   }else
@@ -7475,17 +7566,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
 
 #if( USE_LLM_INTERFACE )
-    if( m_llmTool )
-    {
-      // Must persist the conversation *before* the widget goes away.  Otherwise m_toolsTabs (and
-      //  with it m_llmTool) is destroyed by the setLayout() below - Wt4's setLogicalLayout() calls
-      //  clear() first - handleLlmToolClose() never runs, and the whole in-tool conversation is
-      //  silently discarded instead of being written back to the SpecMeas.
-      syncLlmHistoryToSpecMeas();
-      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
-      if( m_llmToolMenuItem )
-        m_llmToolMenuItem->enable();
-    }//if( m_llmTool )
+    // If the assistant is in a tab, it moves beside the charts (once the new layout is made below),
+    //  so the conversation stays in view; on phones this is the user, having docked the assistant,
+    //  rotating to landscape.  It must be taken out now, else m_toolsTabs (and with it m_llmTool) is
+    //  destroyed by the setLayout() below.
+    std::unique_ptr<WWidget> llmToolFromTab;
+    if( m_llmTool && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
+      llmToolFromTab = safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
@@ -7534,6 +7621,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), ++row, 0 );
     m_layout->addWidget( std::unique_ptr<WWidget>(m_charts), ++row, 0 );
     m_layout->setRowStretch( row, 1 );
+
+#if( USE_LLM_INTERFACE )
+    if( llmSidePanel )
+      addLlmSidePanelToLayout( std::move(llmSidePanel) );
+    else if( llmToolFromTab )
+      showLlmToolInSidePanel( std::move(llmToolFromTab) );
+#endif
   }//if( showToolTabs ) / else
   
   
@@ -7594,7 +7688,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_spectrum->scheduleUpdateSecondData();
   
   m_timeSeries->scheduleRenderAll();
-  
+
   // If we call `displayFeatureMarkerWindow(true);`, we'll get a JS exception - rather than
   //  figure this out, we'll just not re-open it.
   //if( showingFeatureMarkers )
@@ -8989,6 +9083,39 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
 }//saveSpectrumToPng()
 
 
+#if( BUILD_AS_MCP_STDIO_SERVER )
+namespace
+{
+  /** Renders a chart image server-side, and gives it to `callback` as the browser capture would:
+   (base64 data, mime type, width, height), or empty data on failure.
+   */
+  void render_chart_image( const std::string &format, const int maxLongestSide,
+                           std::function<void(std::string, std::string, int, int)> callback,
+                           const std::function<void( Wt::WPaintDevice & )> &paint )
+  {
+    // About the size of the chart in a desktop window; scaled down to `maxLongestSide`.
+    int width = 1200, height = 600;
+    if( (maxLongestSide > 0) && (maxLongestSide < width) )
+    {
+      height = std::max( 1, (height * maxLongestSide) / width );
+      width = maxLongestSide;
+    }
+
+    const std::string mime = (format == "jpeg") ? "image/jpeg" : "image/png";
+    try
+    {
+      const std::string image = SpectrumChartImage::renderImage( width, height, format, paint );
+      callback( Wt::Utils::base64Encode( image, false ), mime, width, height );
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "Rendering a chart image failed: " << e.what();
+      callback( std::string(), std::string(), 0, 0 );
+    }
+  }//render_chart_image(...)
+}//namespace
+#endif //BUILD_AS_MCP_STDIO_SERVER
+
+
 void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestSide,
                                        std::optional<std::pair<double,double>> energyRange,
                                        std::optional<bool> yAxisLog,
@@ -8997,8 +9124,43 @@ void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestS
 {
   if( !m_spectrum )
     throw std::runtime_error( "captureSpectrumImage: no spectrum display available" );
+
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // No browser draws the chart, so draw what it would show here.
+  SpectrumChartImage::SpectrumOptions options;
+  options.foreground = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  options.background = displayedHistogram( SpecUtils::SpectrumType::Background );
+  options.secondary = displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
+  options.background_scale = displayScaleFactor( SpecUtils::SpectrumType::Background );
+  options.secondary_scale = displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
+  options.peaks = m_peakModel ? m_peakModel->peaks() : nullptr;
+  if( m_referencePhotopeakLines )
+  {
+    for( const ReferenceLineInfo &lines : m_referencePhotopeakLines->showingNuclides() )
+      options.reference_lines.push_back( std::make_shared<ReferenceLineInfo>( lines ) );
+  }
+
+  if( energyRange )
+  {
+    options.energy_range = energyRange;
+  }else
+  {
+    double xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0;
+    displayedSpectrumRange( xmin, xmax, ymin, ymax );
+    if( xmax > xmin )
+      options.energy_range = std::make_pair( xmin, xmax );
+  }
+
+  options.log_y = yAxisLog.value_or( m_spectrum->yAxisIsLog() );
+  options.background_subtract = backgroundSubtract.value_or( m_spectrum->backgroundSubtract() );
+  options.theme = getColorTheme();
+
+  render_chart_image( format, maxLongestSide, std::move( callback ),
+    [options]( Wt::WPaintDevice &device ){ SpectrumChartImage::paintSpectrum( device, options ); } );
+#else
   m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog,
                                  backgroundSubtract, std::move( callback ) );
+#endif
 }//captureSpectrumImage(...)
 
 
@@ -9011,7 +9173,25 @@ void InterSpec::captureTimeChartImage( const std::string &format, int maxLongest
   if( m_timeSeries->isHidden() )
     throw std::runtime_error( "captureTimeChartImage: time chart is not visible" );
 
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // No browser draws the chart, so draw what it would show here.
+  SpectrumChartImage::TimeSeriesOptions options;
+  options.meas = measurment( SpecUtils::SpectrumType::Foreground );
+  if( !options.meas )
+    throw std::runtime_error( "captureTimeChartImage: no foreground is loaded" );
+  options.detectors = detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  options.foreground_samples = displayedSamples( SpecUtils::SpectrumType::Foreground );
+  if( measurment( SpecUtils::SpectrumType::Background ) == options.meas )
+    options.background_samples = displayedSamples( SpecUtils::SpectrumType::Background );
+  if( measurment( SpecUtils::SpectrumType::SecondForeground ) == options.meas )
+    options.secondary_samples = displayedSamples( SpecUtils::SpectrumType::SecondForeground );
+  options.theme = getColorTheme();
+
+  render_chart_image( format, maxLongestSide, std::move( callback ),
+    [options]( Wt::WPaintDevice &device ){ SpectrumChartImage::paintTimeSeries( device, options ); } );
+#else
   m_timeSeries->captureChartImage( format, maxLongestSide, std::move( callback ) );
+#endif
 }//captureTimeChartImage(...)
 
 
@@ -9052,6 +9232,11 @@ void InterSpec::handleDisplayScaleFactorChangeFromSpectrum( const double sf, con
 {
   // This function is called when the user slides the slider on the spectrum, through the
   //  D3SpectrumDisplayDiv::yAxisScaled() signal.
+
+  // Tell the tools that show background-scaled numbers (Flux Tool, Energy Range Sum, ...).  The
+  //  CompactFileManager also emits this when it is around (it calls setDisplayScaleFactor), but it
+  //  isnt always - e.g., with the tool tabs hidden - and an extra emit is harmless.
+  m_spectrumScaleFactorChanged.emit( spec_type, sf );
   
   if( !m_undo || m_undo->isInUndoOrRedo() )
     return;
@@ -11529,6 +11714,19 @@ void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
 }//void saveShieldingSourceModelToForegroundSpecMeas()
 
 
+void InterSpec::syncAllToolStateToForegroundSpecMeas()
+{
+  saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+  saveRelActManualStateToForegroundSpecMeas();
+  saveRelActAutoStateToForegroundSpecMeas();
+#endif
+#if( USE_LLM_INTERFACE )
+  syncLlmHistoryToSpecMeas();
+#endif
+}//void syncAllToolStateToForegroundSpecMeas()
+
+
 
 void InterSpec::closeShieldingSourceFit()
 {
@@ -12421,6 +12619,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     syncLlmHistoryToSpecMeas();
 #endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
+
+#if( USE_LLM_INTERFACE )
+  // The same file again (e.g., other samples of it picked in "Spectrum Files"): the conversation is
+  //  swapped for the new samples' one at the end of this function, so keep the current one first.
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && (previous == meas) )
+    syncLlmHistoryToSpecMeas();
+#endif
   
   if( !!meas && isMobile() && !toolTabsVisible()
       /* && options.test(SetSpectrumOptions::CheckToPreservePreviousEnergyCal) */
@@ -12588,22 +12793,23 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     //Assume we will use all the detectors (just to determine binning)
     const vector<string> &detectors = m_dataMeasurement->detector_names();
     
-    shared_ptr<const vector<float>> binning;
+    size_t num_foreground_channels = 0;
     try
     {
       auto energy_cal = m_dataMeasurement->suggested_sum_energy_calibration( sample_numbers, detectors );
       if( energy_cal )
-        binning = energy_cal->channel_energies();
+        num_foreground_channels = energy_cal->num_channels();
     }catch( std::exception & )
     {
-      
+
     }
-    
-    shared_ptr<const vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : nullptr;
-    
-    const bool diff_fore_nchan = ((!prev_binning || !binning) || (prev_binning->size() != binning->size()));
-    
-    const size_t num_foreground_channels = binning ? binning->size() : 0;
+
+    // Compare numbers of channels (`channel_energies()` has one more entry than there are channels)
+    const size_t prev_num_channels = prev_display ? prev_display->num_gamma_channels() : size_t(0);
+
+    const bool diff_fore_nchan = (!prev_num_channels || !num_foreground_channels
+                                  || (prev_num_channels != num_foreground_channels));
+
     size_t num_sec_channel = 0, num_back_channel = 0;
     if( m_secondDataMeasurement )
       num_sec_channel = m_secondDataMeasurement->num_gamma_channels();
@@ -12777,8 +12983,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   
   // Update the energy calibration tool, as there is new data.
+  //  We emit the sample numbers actually displayed (e.g., all valid foreground samples when the
+  //  caller passed an empty set), so listeners dont record or show the empty request.
   const auto shownDets = detectorsToDisplay(spec_type);
-  m_displayedSpectrumChangedSignal.emit( spec_type, meas, sample_numbers, shownDets );
+  const set<int> shownSamples = displayedSamples(spec_type);
+  m_displayedSpectrumChangedSignal.emit( spec_type, meas, shownSamples, shownDets );
   
   if( meas )
   {
@@ -14634,6 +14843,61 @@ vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type
 }//std::vector<string> detectorsToDisplay() const
 
 
+void InterSpec::setDetectorsToDisplay( const std::vector<std::string> &detectors )
+{
+  if( !m_dataMeasurement )
+    throw runtime_error( "No foreground is loaded." );
+
+  const vector<string> &all_det_names = m_dataMeasurement->detector_names();
+  const vector<string> &gamma_det_names = m_dataMeasurement->gamma_detector_names();
+
+  bool any_gamma = detectors.empty();
+  for( const string &name : detectors )
+  {
+    if( std::find( begin(all_det_names), end(all_det_names), name ) == end(all_det_names) )
+      throw runtime_error( "'" + name + "' is not a detector of the foreground." );
+    any_gamma = (any_gamma || (std::find( begin(gamma_det_names), end(gamma_det_names), name ) != end(gamma_det_names)));
+  }
+
+  if( !any_gamma )
+    throw runtime_error( "At least one gamma detector must be displayed." );
+
+  if( !m_detectorToShowMenu )
+    throw runtime_error( "Selecting detectors is not available." );
+
+  // The menu has one checkbox per detector, in the order of `detector_names()`; see
+  //  `detectorsToDisplay(...)`.
+  bool changed = false;
+  size_t detnum = 0;
+  for( WMenuItem *menu_item : m_detectorToShowMenu->items() )
+  {
+    if( menu_item->hasStyleClass("PhoneMenuBack") )
+      continue;
+
+    PopupDivMenuItem * const item = dynamic_cast<PopupDivMenuItem *>( menu_item );
+    WCheckBox * const cb = item ? item->checkBox() : nullptr;
+    if( cb && (detnum < all_det_names.size()) )
+    {
+      const bool want = detectors.empty()
+               || (std::find( begin(detectors), end(detectors), all_det_names[detnum] ) != end(detectors));
+      if( cb->isChecked() != want )
+      {
+        cb->setChecked( want );
+        syncNativeMenuCheckBox( cb );
+        changed = true;
+      }
+    }//if( cb && (detnum < all_det_names.size()) )
+    ++detnum;
+  }//for( WMenuItem *menu_item : m_detectorToShowMenu->items() )
+
+  if( detnum != all_det_names.size() )
+    throw runtime_error( "InterSpec::setDetectorsToDisplay(): detector menu does not match the foreground." );
+
+  if( changed )
+    detectorsToDisplayChanged();
+}//void setDetectorsToDisplay( const std::vector<std::string> &detectors )
+
+
 void InterSpec::refreshDisplayedCharts()
 {
   //We want to keep the old display scale factors, but calling displayForegroundData() will
@@ -14950,7 +15214,10 @@ void InterSpec::createLlmTool()
   {
     std::unique_ptr<LlmToolGui> llmTool = std::make_unique<LlmToolGui>( this );
     m_llmTool = llmTool.get();
-    m_llmTool->focusInput();
+
+    // On phones, focusing the input would pop the on-screen keyboard up over the window.
+    if( !isPhone() )
+      m_llmTool->focusInput();
 
     // Load any existing LLM conversation history from the foreground SpecMeas
     std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
@@ -14967,52 +15234,395 @@ void InterSpec::createLlmTool()
         m_llmTool->setConversationHistory( history );
     }
 
-    if( m_toolsTabs )
+    // The tool goes where the user last put it: beside the charts, or else in the tool tabs.
+    //  On phones the (portrait-only) tool-tab strip is far too short to start a conversation in,
+    //  so the assistant starts as a full-screen window there (the user can dock it after); in
+    //  landscape it starts beside the charts, if that is where the user last had it.
+    //  With no tool-tab strip to dock into, the tool gets its own window - parking it with
+    //  addChild() would give it no DOM element, leaving the tool invisible *and* (since we
+    //  disable the menu item below) unreachable.
+    bool onSide = false;
+    try
     {
-      WMenuItem *item = m_toolsTabs->addTab( std::move(llmTool), WString::tr(LlmAssistantTabTitleKey) );
-      item->setCloseable( true );
-      m_toolsTabs->setCurrentWidget( m_llmTool.get() );
-      const int index = m_toolsTabs->currentIndex();
-      m_toolsTabs->setTabToolTip( index, WString::tr("app-tab-tt-llm-assistant") );
-
-      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
-      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
-    }else
+      onSide = UserPreferences::preferenceValue<bool>( "LlmAssistantOnSide", this );
+    }catch( std::exception & )
     {
-      // No tool-tab strip to dock into, so show the tool in its own window - otherwise the widget
-      //  would be parked with addChild(), which gives it no widget parent and hence no DOM element,
-      //  leaving the tool invisible *and* (since we disable the menu item below) unreachable.
-      m_llmToolWindow = AuxWindow::make( WString::tr(LlmAssistantTabTitleKey),
-                                        (AuxWindowProperties::SetCloseable
-                                         | AuxWindowProperties::EnableResize
-                                         | AuxWindowProperties::TabletNotFullScreen) );
-
-      WPushButton *closeButton = m_llmToolWindow->addCloseButtonToFooter();
-      closeButton->clicked().connect( m_llmToolWindow.get(), &AuxWindow::hide );
-
-      m_llmToolWindow->rejectWhenEscapePressed();
-      m_llmToolWindow->finished().connect( this, &InterSpec::handleLlmToolClose );
-
-      m_llmToolWindow->show();
-      if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
-      {
-        m_llmToolWindow->resizeWindow( 0.6*m_renderedWidth, 0.8*m_renderedHeight );
-        m_llmToolWindow->centerWindow();
-      }
-
-      m_llmToolWindow->stretcher()->addWidget( std::move(llmTool), 0, 0 );
-    }//if( m_toolsTabs ) / else
+      // A default_preferences.xml from before this preference existed; dont lose the tool over it.
+    }
+    if( onSide && (!isPhone() || !m_toolsTabs) )
+      showLlmToolInSidePanel( std::move(llmTool) );
+    else if( m_toolsTabs && !isPhone() )
+      addLlmToolTab( std::move(llmTool), true );
+    else
+      showLlmToolInWindow( std::move(llmTool) );
 
     m_llmToolMenuItem->disable();
+
+    // Pick back up a conversation cut off when the tool, or the session, last closed - on the next
+    //  pass of the event loop, so any state being restored (see loadStateFromDb()) is all in place first.
+    postToInterSpec( this, []( InterSpec *viewer ){
+      if( LlmToolGui * const tool = viewer->currentLlmTool() )
+        tool->resumeInterruptedConversation();
+    } );
   }catch( const std::exception &e )
   {
     std::cout << "Error creating LLM tool: " << e.what() << std::endl;
-    // `llmTool` still owns the widget unless it was handed to the tab strip / addChild above,
+    // `llmTool` still owns the widget unless it was handed to a tab, window, or side panel above,
     //  so it is freed when it goes out of scope; the observing_ptr auto-clears with it.
     if( m_llmTool && m_llmTool->parent() )
-      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+      detachLlmTool();
   }//try / catch
 }//void createLlmTool()
+
+void InterSpec::addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent )
+{
+  assert( m_toolsTabs && tool && (tool.get() == m_llmTool.get()) );
+  if( !m_toolsTabs || !tool )
+    return;
+
+  // Phone tabs are icon-only (see setToolTabsVisible())
+  const bool phone = isPhone();
+  const WString title = phone ? WString() : WString::tr(LlmAssistantTabTitleKey);
+  WMenuItem *item = m_toolsTabs->addTab( std::move(tool), title, TabLoadPolicy );
+  item->setCloseable( true );
+  if( phone )
+    item->setIcon( "InterSpec_resources/images/llm_assistant.svg" );
+
+  // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+  //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+  m_toolsTabs->setTabToolTip( m_toolsTabs->indexOf( m_llmTool.get() ),
+                              WString::tr("app-tab-tt-llm-assistant") );
+  if( makeCurrent )
+    m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+
+  if( phone )
+    m_llmTool->setPhoneWindowHeader( nullptr );
+}//void addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent )
+
+
+void InterSpec::showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool )
+{
+  assert( !m_llmToolWindow && tool && (tool.get() == m_llmTool.get()) );
+  if( m_llmToolWindow || !tool )
+    return;
+
+  m_llmToolWindow = AuxWindow::make( WString::tr(LlmAssistantTabTitleKey),
+                                    (AuxWindowProperties::SetCloseable
+                                     | AuxWindowProperties::EnableResize
+                                     | AuxWindowProperties::TabletNotFullScreen) );
+  m_llmToolWindow->addStyleClass( "LlmToolWindow" );
+
+  WPushButton *closeButton = m_llmToolWindow->addCloseButtonToFooter();
+  closeButton->clicked().connect( m_llmToolWindow.get(), &AuxWindow::hide );
+
+  // On phones the footer is the windows header bar, which has room on the right for the tools
+  //  dock button and conversation menu; and the screen is narrow enough we dont want the default
+  //  margins.
+  if( isPhone() )
+  {
+    m_llmTool->setPhoneWindowHeader( m_llmToolWindow->footer() );
+    m_llmToolWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
+  }
+
+  m_llmToolWindow->rejectWhenEscapePressed();
+  m_llmToolWindow->finished().connect( this, &InterSpec::handleLlmToolClose );
+
+  m_llmToolWindow->show();
+  if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
+  {
+    m_llmToolWindow->resizeWindow( 0.6*m_renderedWidth, 0.8*m_renderedHeight );
+    m_llmToolWindow->centerWindow();
+  }
+
+  // A widget taken out of the tool-tab strip comes out still hidden by the tabs' internal stack.
+  tool->setHidden( false );
+  m_llmToolWindow->stretcher()->addWidget( std::move(tool), 0, 0 );
+}//void showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool )
+
+
+void InterSpec::setLlmToolDocked( const bool docked )
+{
+  if( !isPhone() )
+    return;
+
+  // Docked is the tool tabs in portrait, or the side panel in landscape (see placeLlmTool()); only
+  //  the landscape choice is remembered, as portrait always starts full-screen.
+  moveLlmTool( docked ? LlmToolPlacement::ToolTab : LlmToolPlacement::Window, !m_toolsTabs );
+}//void setLlmToolDocked( const bool docked )
+
+
+void InterSpec::moveLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+{
+  // Deferred, as the buttons asking for this live in the window, tab, or panel being swapped out.
+  postToInterSpec( this, [where, rememberPreference]( InterSpec *viewer ){
+    viewer->placeLlmTool( where, rememberPreference );
+  } );
+}//void moveLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+
+
+void InterSpec::requestLlmToolClose()
+{
+  // Deferred, as the button asking for this is deleted with the tool's container.
+  postToInterSpec( this, []( InterSpec *viewer ){ viewer->handleLlmToolClose(); } );
+}//void requestLlmToolClose()
+
+
+void InterSpec::placeLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+{
+  if( !m_llmTool )
+    return;
+
+  // On phones, docked is the tool tabs in portrait, or the side panel in landscape (no tool tabs);
+  //  otherwise, with no tool tabs to go into, the tool goes to its own window.
+  LlmToolPlacement target = where;
+  if( isPhone() && (where != LlmToolPlacement::Window) )
+    target = m_toolsTabs ? LlmToolPlacement::ToolTab : LlmToolPlacement::SidePanel;
+  else if( (where == LlmToolPlacement::ToolTab) && !m_toolsTabs )
+    target = LlmToolPlacement::Window;
+
+  if( rememberPreference )
+    UserPreferences::setPreferenceValue( "LlmAssistantOnSide", (target == LlmToolPlacement::SidePanel), this );
+
+  const LlmToolPlacement from = llmToolPlacement();
+  if( target == from )
+    return;
+
+  // Let the user undo the move; not added while undoing or redoing (which call back into here).
+  //  Only placements are captured - the tool is looked up again, as it may have been closed (in
+  //  which case there is nothing to do), or re-opened, by then.
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [from, rememberPreference](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->placeLlmTool( from, rememberPreference );
+    };
+    auto redo = [target, rememberPreference](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->placeLlmTool( target, rememberPreference );
+    };
+    m_undo->addUndoRedoStep( undo, redo, "Move LLM Assistant" );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+
+  // Taking the tool out of the tab strip changes the current tab, which would otherwise insert
+  //  a "Change tool tab" undo/redo step.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  std::unique_ptr<WWidget> tool = detachLlmTool();
+  assert( tool );
+  if( !tool )
+    return;
+
+  switch( target )
+  {
+    case LlmToolPlacement::ToolTab:
+      addLlmToolTab( std::move(tool), true );
+      break;
+
+    case LlmToolPlacement::SidePanel:
+      showLlmToolInSidePanel( std::move(tool) );
+      break;
+
+    case LlmToolPlacement::Window:
+      showLlmToolInWindow( std::move(tool) );
+      break;
+  }//switch( target )
+}//void placeLlmTool( const LlmToolPlacement where, const bool rememberPreference )
+
+
+InterSpec::LlmToolPlacement InterSpec::llmToolPlacement() const
+{
+  if( m_llmSidePanel )
+    return LlmToolPlacement::SidePanel;
+
+  if( m_toolsTabs && m_llmTool && (m_toolsTabs->indexOf( m_llmTool.get() ) >= 0) )
+    return LlmToolPlacement::ToolTab;
+
+  return LlmToolPlacement::Window;
+}//LlmToolPlacement llmToolPlacement() const
+
+
+std::unique_ptr<Wt::WWidget> InterSpec::detachLlmTool()
+{
+  if( !m_llmTool )
+    return nullptr;
+
+  // Bring the tools phone header controls, or its menu icon in the side panels header, back, before
+  //  the window or panel goes.
+  if( isPhone() )
+    m_llmTool->setPhoneWindowHeader( nullptr );
+  m_llmTool->setMenuIconHost( nullptr );
+
+  std::unique_ptr<WWidget> tool;
+  if( m_llmSidePanel )
+  {
+    std::unique_ptr<WWidget> panel = takeLlmSidePanelFromLayout();
+    assert( panel && m_llmTool->parent() );
+    if( m_llmTool->parent() )
+      tool = m_llmTool->removeFromParent();
+  }else if( m_llmToolWindow )
+  {
+    tool = m_llmToolWindow->stretcher()->removeWidget( m_llmTool.get() );
+    AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+    assert( !m_llmToolWindow );
+  }else if( m_toolsTabs && (m_toolsTabs->indexOf( m_llmTool.get() ) >= 0) )
+  {
+    tool = safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+  }
+
+  assert( tool && (tool.get() == m_llmTool.get()) );
+  return tool;
+}//std::unique_ptr<Wt::WWidget> detachLlmTool()
+
+
+void InterSpec::showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
+{
+  assert( !m_llmSidePanel && tool && (tool.get() == m_llmTool.get()) );
+  if( m_llmSidePanel || !tool )
+    return;
+
+  // On phones the panel is a docked placement, like the tool tab - so the conversation menu is only
+  //  shown full-screen, which the panel header's "expand" button goes to.
+  if( isPhone() )
+    m_llmTool->setPhoneWindowHeader( nullptr );
+
+  std::unique_ptr<LlmSidePanel> panel = std::make_unique<LlmSidePanel>( this, std::move(tool) );
+  m_llmSidePanel = panel.get();
+
+  // On desktop, the conversation menu icon goes in the panels header, rather than the input bar.
+  if( !isPhone() )
+    m_llmTool->setMenuIconHost( panel->menuIconSlot() );
+
+  m_llmSidePanelWidth = llmSidePanelInitialWidth();
+  addLlmSidePanelToLayout( std::move(panel) );
+}//void showLlmToolInSidePanel( std::unique_ptr<Wt::WWidget> tool )
+
+
+void InterSpec::addLlmSidePanelToLayout( std::unique_ptr<Wt::WWidget> panel )
+{
+  assert( m_layout && panel && (panel.get() == m_llmSidePanel.get()) );
+  if( !m_layout || !panel )
+    return;
+
+  LlmSidePanel * const sidePanel = dynamic_cast<LlmSidePanel *>( panel.get() );
+  assert( sidePanel );
+
+  // Column 0 has the menu (if not mobile), the charts, and the tool tabs (if showing); the panel
+  //  spans all but the menu, which instead spans both columns.
+  const int firstRow = m_menuDiv ? 1 : 0;
+  const int numRows = std::max( 1, m_layout->rowCount() - firstRow );
+
+  if( m_menuDiv )
+    m_layout->addWidget( m_layout->removeWidget( m_menuDiv ), 0, 0, 1, 2 );
+
+  // As column 1 does not stretch, the panels explicit width is its width; and once the user drags
+  //  the splitter, Wt pins the width of the non-stretching column (see finishResize() in Wt's
+  //  StdGridLayoutImpl2.js) - so either way, changes in window width go to the charts.
+  panel->setWidth( WLength( m_llmSidePanelWidth, WLength::Unit::Pixel ) );
+
+  // Wt's layout reserves 10px for each splitter, but only uses 5px (see the wtGetPS() workaround in
+  //  our constructor), which, when the charts/tool-tabs splitter is there, pushes the panel 5px past
+  //  the bottom; and when the tool tabs are showing, the charts are pulled up to the menu bar by a
+  //  negative top margin.  So line the panel up with the charts.  (The same leak leaves a 5px gap
+  //  right of the panel - see .LlmSidePanelHeader in LlmToolGui.css)
+  panel->setMargin( m_charts->margin( Wt::Side::Top ), Wt::Side::Top );
+  panel->setMargin( WLength( m_toolsTabs ? 5 : 0, WLength::Unit::Pixel ), Wt::Side::Bottom );
+
+  m_layout->addWidget( std::move(panel), firstRow, 1, numRows, 1 );
+  m_layout->setColumnStretch( 0, 1 );
+  m_layout->setColumnResizable( 0, true );
+
+  // Dont let the user drag the splitter so far the charts are unusable.
+  m_charts->setMinimumSize( WLength(300, WLength::Unit::Pixel), WLength::Auto );
+
+  addStyleClass( "HasLlmSidePanel" );
+  updateMobileButtonsForLlmSidePanel( true );
+  if( sidePanel )
+  {
+    sidePanel->updateMoveOutButton();  // where it goes depends on if the tool tabs are showing
+    sidePanel->watchSplitter();
+  }
+}//void addLlmSidePanelToLayout( std::unique_ptr<Wt::WWidget> panel )
+
+
+std::unique_ptr<Wt::WWidget> InterSpec::takeLlmSidePanelFromLayout()
+{
+  if( !m_llmSidePanel || !m_layout )
+    return nullptr;
+
+  std::unique_ptr<WWidget> panel = m_layout->removeWidget( m_llmSidePanel.get() );
+  assert( panel );
+
+  // Put the layout back how it was before the panel (the now-empty column 1 takes no space).
+  m_layout->setColumnResizable( 0, false );
+  m_layout->setColumnStretch( 0, 0 );
+  if( m_menuDiv )
+    m_layout->addWidget( m_layout->removeWidget( m_menuDiv ), 0, 0 );
+  m_charts->setMinimumSize( WLength::Auto, WLength::Auto );
+  removeStyleClass( "HasLlmSidePanel" );
+  updateMobileButtonsForLlmSidePanel( false );
+
+  return panel;
+}//std::unique_ptr<Wt::WWidget> takeLlmSidePanelFromLayout()
+
+
+int InterSpec::llmSidePanelInitialWidth()
+{
+  const int pct = std::max( 10, std::min( 90,
+                    UserPreferences::preferenceValue<int>( "LlmSidePanelPct", this ) ) );
+
+  // Before the first layout we dont know our width, so use the screen width, and correct things
+  //  in layoutSizeChanged().
+  m_llmSidePanelWidthGuessed = (m_renderedWidth <= 100);
+  const int appWidth = m_llmSidePanelWidthGuessed ? wApp->environment().screenWidth()
+                                                  : m_renderedWidth;
+  if( appWidth <= 100 )
+    return 400;
+
+  // Leave at least 300 px for the charts, but if the app is that narrow, the panel still gets 260.
+  const int minWidth = 260, maxWidth = appWidth - 300;
+  return std::max( minWidth, std::min( maxWidth, (pct * appWidth) / 100 ) );
+}//int llmSidePanelInitialWidth()
+
+
+void InterSpec::llmSidePanelResized( const int width )
+{
+  if( !m_llmSidePanel || (width <= 0) || (std::abs( width - m_llmSidePanelWidth ) <= 2) )
+    return;
+
+  m_llmSidePanelWidth = width;
+  updateMobileButtonsForLlmSidePanel( true );
+}//void llmSidePanelResized( const int width )
+
+
+void InterSpec::llmSidePanelDragged( const int width )
+{
+  if( !m_llmSidePanel || (width <= 0) || (m_renderedWidth <= 100) )
+    return;
+
+  llmSidePanelResized( width );
+
+  const int pct = static_cast<int>( std::round( (100.0 * width) / m_renderedWidth ) );
+  if( pct != UserPreferences::preferenceValue<int>( "LlmSidePanelPct", this ) )
+    UserPreferences::setPreferenceValue( "LlmSidePanelPct", pct, this );
+}//void llmSidePanelDragged( const int width )
+
+
+void InterSpec::updateMobileButtonsForLlmSidePanel( const bool panelShowing )
+{
+  // `.MobileNextSample` is fixed to the bottom-right of the window, which would put it over the
+  //  side panels input area, so move it left of the panel.  Wt only writes offsets once it knows the
+  //  position scheme, and then writes all four, so the CSS position and bottom offset are repeated.
+  if( !m_mobileForwardButton )
+    return;
+
+  const int right = 5 + (panelShowing ? m_llmSidePanelWidth : 0);
+  m_mobileForwardButton->setPositionScheme( Wt::PositionScheme::Fixed );
+  m_mobileForwardButton->setOffsets( WLength( 5, WLength::Unit::Pixel ), Wt::Side::Bottom );
+  m_mobileForwardButton->setOffsets( WLength( right, WLength::Unit::Pixel ), Wt::Side::Right );
+}//void updateMobileButtonsForLlmSidePanel( const bool panelShowing )
+
 
 LlmToolGui *InterSpec::currentLlmTool()
 {
@@ -15029,8 +15639,10 @@ void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
     return;
 
   // If the tool already existed, the user may be on a different tab - bring the assistant forward.
-  if( m_toolsTabs )
+  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
     m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+  else if( m_llmToolWindow )
+    m_llmToolWindow->show();
 
   m_llmTool->openConfigWindowToImport( configFilePath );
 }//void openLlmConfigForImport( const std::string &configFilePath )
@@ -15068,6 +15680,16 @@ void InterSpec::syncLlmHistoryToSpecMeas()
 
 void InterSpec::handleLlmToolClose()
 {
+  // The user is closing it, so a conversation it cuts off is not resumed without asking.
+  if( m_llmTool )
+    m_llmTool->noteClosedByUser();
+
+  closeLlmTool();
+}//void handleLlmToolClose()
+
+
+void InterSpec::closeLlmTool()
+{
   if( !m_llmTool )
     return;
 
@@ -15083,6 +15705,13 @@ void InterSpec::handleLlmToolClose()
   {
     // The tool lives in the window's stretcher, so tearing the window down destroys it too.
     AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+  }else if( m_llmSidePanel )
+  {
+    // The tool lives in the panel, so dropping the panel destroys it too.
+    if( isPhone() )
+      m_llmTool->setPhoneWindowHeader( nullptr );
+    m_llmTool->setMenuIconHost( nullptr );
+    takeLlmSidePanelFromLayout();
   }else if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
   {
     safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
@@ -15094,6 +15723,6 @@ void InterSpec::handleLlmToolClose()
 
   assert( !m_llmTool );         // observing_ptr auto-clears when the widget is destroyed
   assert( !m_llmToolWindow );
-}
+}//void closeLlmTool()
 #endif // USE_LLM_INTERFACE
 

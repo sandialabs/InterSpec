@@ -30,6 +30,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <iosfwd>
 
 #include <Wt/WContainerWidget.h>
 
@@ -67,6 +68,15 @@ namespace ExportSpecFileCAM
 {
   class GenieCnfOptionsWidget;
 }
+
+#if( SpecUtils_ENABLE_D3_CHART )
+/** Writes the currently displayed spectra (foreground, secondary, and background) and their peaks
+ as a standalone, interactive D3 HTML page - what the "HTML" export format produces.
+
+ Must be called from the session's thread (it reads the displayed state of `viewer`).
+ */
+void write_displayed_spectra_d3_html( std::ostream &output, InterSpec *viewer );
+#endif
 
 /**
  TODO:

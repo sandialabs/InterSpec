@@ -183,7 +183,12 @@ set( ENABLE_OPENGL ON CACHE INTERNAL "" )
 set( ENABLE_QT4 OFF CACHE INTERNAL "" )
 set( ENABLE_QT5 OFF CACHE INTERNAL "" )
 set( ENABLE_QT6 OFF CACHE INTERNAL "" )
-set( ENABLE_LIBWTTEST OFF CACHE INTERNAL "" )
+# The stdio MCP server (target/mcp_stdio) hosts its session with libwttest instead of libwthttp.
+if( BUILD_AS_MCP_STDIO_SERVER )
+  set( ENABLE_LIBWTTEST ON CACHE INTERNAL "" )
+else()
+  set( ENABLE_LIBWTTEST OFF CACHE INTERNAL "" )
+endif()
 set( ENABLE_SAML OFF CACHE INTERNAL "" )
 set( ENABLE_UNWIND OFF CACHE INTERNAL "" )
 # Keep Wt from enabling gzip responses.  Other than it probably not being needed here,

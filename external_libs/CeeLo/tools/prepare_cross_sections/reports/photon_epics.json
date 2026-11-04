@@ -102,22 +102,22 @@
       "runtime_emitted": true
     },
     {
-      "coefficient_bytes": 0,
-      "encoding": "generator-only adaptive EPDL curve; not emitted at runtime",
-      "grid_bytes": 0,
+      "coefficient_bytes": 24668,
+      "encoding": "float32 log10(argument), per-curve affine uint16 log10(value)",
+      "grid_bytes": 49336,
       "legacy_compatibility_bytes": 0,
       "maximum_integrated_error_percent": 0.03187747288414533,
       "maximum_interpolation_error_percent": 0.0999979189460154,
-      "metadata_bytes": 0,
+      "metadata_bytes": 1176,
       "native_coefficients": 106810,
-      "nodes_max": 0,
-      "nodes_median": 0.0,
-      "nodes_min": 0,
-      "nodes_p95": 0.0,
+      "nodes_max": 148,
+      "nodes_median": 127.5,
+      "nodes_min": 79,
+      "nodes_p95": 142.14999999999998,
       "p95_interpolation_error_percent": 0.07358968526450377,
       "process": "form_factor",
-      "retained_coefficients": 0,
-      "runtime_emitted": false
+      "retained_coefficients": 12334,
+      "runtime_emitted": true
     },
     {
       "coefficient_bytes": 18402,
@@ -162,6 +162,6 @@
     "stored_float32_coordinates": 5418
   },
   "source": "EPICS2023 EPDL",
-  "source_lock_sha256": "3efabdacdc1e88e33a82ce69e4e6734cbaa482287db8a586760f2d04fdc7ce9a",
+  "source_lock_sha256": "6e3f7af063f6bd0e9eb45cdd5027bfdbe6af4b3f012f3e22eafa9d626fbc059f",
   "source_sha256": "b4888d0d0e3b7672f56232f1c6ef8da369a67ad2f2d773168fc26275fac82fca"
 }

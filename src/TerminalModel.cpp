@@ -485,9 +485,9 @@ namespace {
         else if( functionName == "drfFWHM" )
           return "Returns the full-width-at-half-maximum according to the current detector response function, for the specified energy.";
         else if( functionName == "drfIntrinsicEff" )
-          return "Returns the intrinsic efficiency (i.e., probability of gamma striking face of detector contributing towards a peak) for the specified energy.";
+          return "Returns the intrinsic efficiency (i.e., probability of gamma striking the face of the detector crystal contributing towards a peak) for the specified energy.";
         else if( functionName == "drfGeometricEff" )
-          return "Returns the fraction of gammas emitted from a point source at the specified distance, that will impinge upon the detector face.";
+          return "Returns the fraction of gammas emitted from a point source at the specified distance from the detector face, that will strike the face of the detector crystal (which is the setback behind the detector face).";
         else if( functionName == "drfEfficiency" )
           return "Returns the fraction of gammas, at the specified energy and distance, that will contribute to a photo-peak.";
         
@@ -1456,7 +1456,11 @@ double TerminalModel::drfIntrinsicEff( const double energy )
   
   try
   {
-    return det->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+    // The intrinsic against the crystal #drfGeometricEff uses, so the two multiply back to
+    //  #drfEfficiency (in the far field, for a geometry-modeled detector).  For a fixed-geometry
+    //  DRF this is the per-decay efficiency, as before.
+    return det->isFixedGeometry() ? det->farFieldIntrinsicEfficiency( static_cast<float>(energy) )
+                                  : det->intrinsicEfficiencyEval( static_cast<float>(energy) ).value;
   }catch( std::exception &e )
   {
     throw mup::ParserError( "Error getting intrinsic efficiency: " + std::string(e.what()) );
@@ -1490,7 +1494,7 @@ double TerminalModel::drfGeometricEff( const std::string &distance_str )
   
   try
   {
-    return DetectorPeakResponse::fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
+    return det->geometricEfficiency( distance );
   }catch( std::exception &e )
   {
     throw mup::ParserError( "Error getting geometric efficiency: " + std::string(e.what()) );

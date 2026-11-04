@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <set>
 #include <map>
 #include <deque>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <memory>
@@ -46,6 +47,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmConversationHistory.h"
 
 //Forward declarations
 class SpecMeas;
@@ -54,6 +56,7 @@ class LlmInterface;
 class LlmConfigWindow;
 class LlmBenchmarkRunner;
 class LlmJsSandboxBridge;
+struct BenchmarkRunOptions;
 class LlmInteractionDisplay;
 class LlmConversationHistory;
 struct LlmInteraction;
@@ -61,9 +64,11 @@ class LlmInteractionTurn;
 
 namespace Wt
 {
+  class WText;
+  class WMenuItem;
   class WTextArea;
   class WPushButton;
-  class WGridLayout;
+  class WVBoxLayout;
 }
 
 /** Widget for interacting with Large Language Models.
@@ -82,12 +87,30 @@ public:
   LlmToolGui(InterSpec *viewer);
   ~LlmToolGui();
   
-  /** Returns if the user has added a `llm_config.xml` file, and enabled the `LlmApi`, and this was read in when the
-   InterSpec server was started.
+  /** Returns if the currently loaded LLM config (from the user's `llm_config.xml`, which is written by the
+   "LLM Provider Settings" window) has the `LlmApi` enabled, with an endpoint set for the active provider.
    */
   static bool llmToolIsConfigured();
   
   LlmInterface *llmInterface();
+
+  /** Notes that the user is closing this tool - as opposed to it going away with the session - so a
+   conversation it cuts off mid-work is offered for resuming when the tool is next shown, rather than
+   resumed on its own; see resumeInterruptedConversation().  Call just before the tool is deleted.
+   */
+  void noteClosedByUser();
+
+  /** If the newest conversation was cut off mid-work (see LlmInteraction::interruption) less than
+   #sm_autoResumeWindow ago, and not by the user (closing the tool, or showing another spectrum), continues
+   it; otherwise it is left for the user to Resume, or Dismiss, from its display.  For when the tool is
+   (re)created.
+   */
+  void resumeInterruptedConversation();
+
+  /** How recently a conversation must have been cut off, other than by the user, for
+   resumeInterruptedConversation() to continue it without asking.
+   */
+  static constexpr std::chrono::seconds sm_autoResumeWindow{ 120 };
 
   /** Open the LLM provider settings window seeded from an on-disk `llm_config.xml` the user opened
    or dragged onto the app (import mode).  On Accept the file is written to the writable data
@@ -97,6 +120,26 @@ public:
 
   /** Focus the input text field */
   void focusInput();
+
+  /** Re-fits any full-screen phone window this tool has open (i.e., the provider settings window)
+   to the screen; called when a phone is rotated.  See AuxWindow::refitPhoneFullScreen().
+   */
+  void refitPhoneWindows();
+
+  /** Phones only: tells the tool where it is being shown.
+
+   When in a full-screen window, `header` is that windows header bar (otherwise empty on the right),
+   and the tool puts its "dock" button (see InterSpec::setLlmToolDocked) and its conversation menu
+   icon there, rather than having the menu icon at the left of the input bar.  When docked - in the tools tab strip in portrait, or the side panel in
+   landscape - `header` is null, and the tool instead shows an "expand to full-screen" button.
+   */
+  void setPhoneWindowHeader( Wt::WContainerWidget *header );
+
+  /** Desktop: where to put the conversation menu icon other than its usual spot at the left of the
+   input bar - i.e., the header of the side panel (see LlmSidePanel::menuIconSlot()); null to bring
+   it back.  `host` must outlive our use of it, or be reset (to null) before it goes away.
+   */
+  void setMenuIconHost( Wt::WContainerWidget *host );
 
   /** Clear the conversation history display */
   void clearHistory();
@@ -116,11 +159,13 @@ public:
   /** Clear the current conversation history */
   void clearConversationHistory();
 
-  /** Submit a message as if the user typed it.
-   Sets the text on the input field, then triggers send — identical to the user pressing Enter.
-   Used by LlmBenchmarkRunner to drive automated evaluation.
+  /** Submit a message as if the user typed it - as when the user presses Enter.
+   Used by LlmBenchmarkRunner to drive automated evaluation, and to submit the MCP tools' prompts.
+   @returns false if the message could not be sent (e.g., the assistant is not configured, a request
+            is already pending, or the request could not be built), in which case no response signal
+            will follow; during a benchmark, no error dialog is shown either.
    */
-  void submitMessageAsUser( const std::string &message );
+  bool submitMessageAsUser( const std::string &message );
 
   /** Callback used by the MCP `assistant_submit_prompt` tool: invoked exactly once, on the session
    event loop, with either a result JSON (final assistant text + compact tool-call trace) or an
@@ -139,16 +184,30 @@ public:
    under the session UpdateLock).
    If `progressCallback` is provided, it will be called with intermediate results as the assistant
    works (tool calls, tool results, sub-agent responses).
+   `images` are sent with the prompt (refused if the model does not accept images); `id`, if not
+   empty, identifies the prompt to `cancelMcpPrompt`.
    */
   void queuePromptForMcp( const std::string &prompt, McpPromptCallback callback,
-                          McpProgressCallback progressCallback = {} );
+                          McpProgressCallback progressCallback = {},
+                          std::vector<LlmToolCall::ImageContent> images = {},
+                          const std::string &id = {} );
+
+  /** Cancels the MCP prompt queued with `id`: dropped if it has not started, or its turn cancelled
+   if it is running; its callback then reports the cancellation.  Returns false if no such prompt
+   is queued or running.
+   */
+  bool cancelMcpPrompt( const std::string &id );
+
+  /** True if an assistant turn is running, or MCP prompts are queued. */
+  bool isTurnInProgress() const;
 
   /** Directly invoke a specialized agent (e.g. NuclideId, ActivityFit) with a prompt, streaming
    intermediate results via `progressCallback` and resolving `callback` when the agent finishes.
    Shows the assistant widget if it is not already visible.
    */
   void invokeAgentForMcp( AgentType agentType, const std::string &prompt,
-                          McpPromptCallback callback, McpProgressCallback progressCallback );
+                          McpPromptCallback callback, McpProgressCallback progressCallback,
+                          const std::string &id = {} );
 
   /** Disconnect the spectrum-changed handler (used by LlmBenchmarkRunner during SpectrumSequence). */
   void disconnectSpectrumChangedForBenchmark();
@@ -157,7 +216,7 @@ public:
   void reconnectSpectrumChangedForBenchmark();
 
   /** Stage an image to be sent with the next user message.
-   Called from UploadedImgDisplay when user clicks "Send to AI assistant".
+   Called from UploadedImgDisplay when user clicks "Send to LLM assistant".
    Shows a thumbnail preview near the input area.
 
    `displayName` labels the thumbnail in the GUI only.  `caption`, if non-empty, is additionally
@@ -176,6 +235,19 @@ public:
    images, even if a previous attempt errored out before sendMessage() drained them.
    */
   void clearStagedImages();
+
+  /** Start running the benchmark in `xmlPath`, without any dialogs of our own (the runner may still
+   show some, unless `options.interactive` is false).
+   @param finished Called (in this session) when the run ends - finished, cancelled, or could not
+          start - with the runner, from which the results can be read.
+   @returns false, without calling `finished`, if a benchmark is already running, or the assistant
+            is not configured.
+   */
+  bool startBenchmark( const std::string &xmlPath, const BenchmarkRunOptions &options,
+                       std::function<void(const LlmBenchmarkRunner &)> finished = nullptr );
+
+  /** Cancel the running benchmark (if any), and its in-flight LLM request. */
+  void cancelBenchmark();
 
   /** Returns true if a benchmark is currently running. */
   bool isBenchmarkRunning() const;
@@ -197,8 +269,8 @@ protected:
   /** Handle user clicking the send button */
   void handleSendButton();
 
-  /** Process the user's input message */
-  void sendMessage(const std::string& message);
+  /** Process the user's input message; returns false if it could not be sent. */
+  bool sendMessage(const std::string& message);
 
   /** Handle retry request from error display */
   //void handleRetry( std::shared_ptr<LlmInteraction> interaction );
@@ -219,6 +291,16 @@ protected:
    to `<writable data dir>/llm_logs/`.  Called at the end of each turn; never throws or shows a dialog.
    */
   void writeConversationLog();
+
+  /** Shows or hides the details only of use when developing the assistant: the "LlmDebugOnly"
+   elements of the conversation (via the "LlmHideDebug" class on us), and the developer items of the
+   conversation menu.  Called when the "LlmShowDebugOptions" preference changes; phones never show
+   them.
+   */
+  void setShowDebugOptions( const bool show );
+
+  /** The "LlmShowDebugOptions" preference; false if it can't be read, or on phones. */
+  bool showDebugOptionsPref() const;
   
 
 
@@ -245,10 +327,47 @@ private:
 
   Wt::WTextArea *m_inputEdit;             ///< Auto-growing input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Icon button to submit (arrow) / cancel (stop) messages
-  Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
-  Wt::WGridLayout *m_layout;              ///< Main layout manager
+  /** Menu icon for conversation-level actions; owns the menu.  An observing_ptr, as it may live in
+   a header we don't own (see m_menuIconHost and m_phoneHeaderTools).
+   */
+  Wt::Core::observing_ptr<Wt::WPushButton> m_menuIcon;
+
+  /** Where m_menuIcon normally lives: the input bar (at its left). */
+  Wt::WContainerWidget *m_menuIconHome;
+
+  /** Desktop: the side panel header slot m_menuIcon is in instead; see setMenuIconHost(). */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_menuIconHost;
+
+  /** The "Show to Right of Spectrum" menu item; hidden while we are in the side panel. */
+  Wt::Core::observing_ptr<Wt::WMenuItem> m_sideDockItem;
+
+  /** Menu items only shown with debug options on; see setShowDebugOptions(). */
+  std::vector<Wt::Core::observing_ptr<Wt::WMenuItem>> m_debugMenuItems;
+
+  /** Phones only: the dock button and conversation menu icon, placed in the header bar of the
+   full-screen window holding us (so owned by that header); see setPhoneWindowHeader().
+   */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_phoneHeaderTools;
+
+  /** Creates m_menuIcon, at the left of `inputRow` (its home), and its menu. */
+  void createMenuIcon( Wt::WContainerWidget *inputRow );
+
+  /** Moves m_menuIcon to where it should be: m_phoneHeaderTools, if we have it, else m_menuIconHost,
+   if we have it, else m_menuIconHome.
+   */
+  void placeMenuIcon();
+
+  /** Deletes m_menuIcon if it lives in m_phoneHeaderTools or m_menuIconHost (i.e., not under m_root). */
+  void removeForeignMenuIcon();
+
+  /** Adds a phone "expand to full-screen" button to `parent`; only visible while docked (CSS). */
+  void addPhoneExpandButton( Wt::WContainerWidget *parent );
+  Wt::WVBoxLayout *m_layout;              ///< Main layout manager
 
   bool m_isRequestPending;                 ///< Whether a request is currently pending
+
+  /** Set by noteClosedByUser(); see LlmInteraction::Interruption::Cause::AssistantClosed. */
+  bool m_closedByUser;
 
   /** Full path of the log file for the current conversation; empty until first written, and reset
    whenever the conversation is cleared or replaced, so the next write starts a new file. */
@@ -288,6 +407,10 @@ private:
 
   /** Container for thumbnail previews of staged images, shown above the input field. */
   Wt::WContainerWidget *m_imagePreviewContainer;
+
+  /** The active provider's optional banner text (llm_config.xml `<Banner>`), shown above the input
+   field; hidden when the provider has none. */
+  Wt::WText *m_inputBanner;
 
   /** Emitted from client-side JS when the user pastes an image into the focused input.
    Carries (base64Data, mimeType, widthPx, heightPx); connected to stage the pasted image. */
@@ -332,7 +455,11 @@ private:
    m_welcomeMessage (which ->clear() just freed) so it can't dangle. */
   void clearConversationDisplays();
 
-  /** Tear down m_root and recreate an empty one in the outer layout; nulls child pointers. */
+  /** Create a new outer layout, with an empty m_root in it (deleting any previous ones). */
+  void createRoot();
+
+  /** Replace m_root with a new empty one (see createRoot()), so a different UI can be built in it;
+   nulls child pointers. */
   void resetRoot();
 
   /** Open (or focus) the LLM provider settings window. */
@@ -349,16 +476,27 @@ private:
 
   /** Enable or disable the input field and send button */
   void setInputEnabled(bool enabled);
+
+  /** Show the active provider's banner text above the input field, or hide it if there is none. */
+  void updateInputBanner();
   
-  /** Handle spectrum changes - cancel pending requests if foreground spectrum changes.
-   For passthrough/search-mode data, foreground sample changes are expected (the LLM is changing them)
-   so we do not cancel the pending request.
+  /** Handle spectrum changes: the user showing another foreground interrupts the work in flight (see
+   interruptForSpectrumChange()); other changes cancel it.  For passthrough/search-mode data, foreground
+   sample changes are expected (the LLM is changing them) so we do not cancel the pending request.
    */
   void handleSpectrumChanged( SpecUtils::SpectrumType specType,
                               std::shared_ptr<SpecMeas> meas,
                               std::set<int> samples,
                               std::vector<std::string> detectors );
   
+  /** Interrupts the work in flight, or stopped on a paused sub-agent, as the user has shown another
+   spectrum, so it can be resumed when its conversation is next shown (see LlmInteraction::interruption).
+   Returns false, doing nothing, if the change is not the user's to interrupt for: the LLM's own tools are
+   running (e.g., load_spectrum, which decides what becomes of the conversation), or an MCP client or a
+   benchmark is driving the conversation.
+   */
+  bool interruptForSpectrumChange();
+
   /** Cancel the current pending request */
   void cancelCurrentRequest();
 
@@ -371,6 +509,8 @@ private:
     std::string prompt;
     McpPromptCallback callback;
     McpProgressCallback progressCallback;
+    std::vector<LlmToolCall::ImageContent> images;
+    std::string id;
   };//struct PendingMcpPrompt
 
   /** FIFO of MCP-submitted prompts awaiting their turn (front = next to run). */
@@ -382,6 +522,10 @@ private:
 
   /** Progress callback for the in-flight MCP prompt (streams intermediate results). */
   McpProgressCallback m_activeProgressCallback;
+
+  /** The `id` of the in-flight MCP prompt, and whether `cancelMcpPrompt` cancelled it. */
+  std::string m_activeMcpId;
+  bool m_activeMcpCancelled = false;
 
   /** Connection to the current conversation's `responseAdded` signal for streaming MCP progress. */
   Wt::Signals::connection m_mcpResponseAddedConn;
@@ -408,6 +552,52 @@ private:
   /** Disconnect the MCP progress signal and clear the active progress callback. */
   void disconnectMcpProgress();
 };
+
+
+
+/** Holds the LLM assistant (an #LlmToolGui) when it is shown to the right of the charts, as the
+ second column of InterSpec's layout (see InterSpec::showLlmToolInSidePanel): a slim header bar
+ (title, a button to move the assistant out of the panel, and a close button), with the assistant
+ filling the rest.  Tells InterSpec whenever its width changes, and when the user has dragged the
+ splitter beside it, so the width can be kept, and remembered.
+ */
+class LlmSidePanel : public Wt::WContainerWidget
+{
+public:
+  LlmSidePanel( InterSpec *interspec, std::unique_ptr<Wt::WWidget> tool );
+
+  /** The spot in the header, between the move-out and close buttons, for the assistants conversation
+   menu icon; see LlmToolGui::setMenuIconHost().
+   */
+  Wt::WContainerWidget *menuIconSlot();
+
+  /** On phones the move-out button goes to full-screen; otherwise to the tool tabs, if they are
+   showing, or else to a window.  Call when the tool tabs are shown or hidden.
+   */
+  void updateMoveOutButton();
+
+  /** Wt has no signal for the user dragging a splitter, so this watches the layout we have just been
+   put in (once per layout) for drags of its column splitter - i.e., the one beside us - and once Wt
+   has re-laid things out, sends our width to InterSpec::llmSidePanelDragged().  Call each time we
+   are added to a layout.
+   */
+  void watchSplitter();
+
+protected:
+  virtual void layoutSizeChanged( int width, int height ) override;
+
+private:
+  void moveOut();
+
+  InterSpec *m_interspec;
+
+  /** The width last passed to InterSpec::llmSidePanelResized(). */
+  int m_width;
+
+  Wt::WPushButton *m_moveOutButton;
+  Wt::WContainerWidget *m_menuIconSlot;
+  Wt::JSignal<int> m_dragged;
+};//class LlmSidePanel
 
 #endif // USE_LLM_INTERFACE
 #endif // LlmToolGui_h

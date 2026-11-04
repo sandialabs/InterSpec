@@ -1,0 +1,92 @@
+name: macOS notarize
+description: >
+  Submits an archive to Apple's notary service, waits, prints the notary log, fails unless it was
+  Accepted, and optionally staples the ticket.
+
+# ------------------------------------------------------------------------------------------------
+# Shared by build_macos.yml and build_mcp_stdio.yml.  Expects .github/actions/macos_signing_setup to
+# have run in the job (it writes the key file this reads from NOTARY_KEY_PATH).
+#
+# Stapling works for an .app, .dmg or .pkg - not for a bare executable, whose ticket Gatekeeper
+# instead fetches online the first time it checks it.
+# ------------------------------------------------------------------------------------------------
+
+inputs:
+  archive:
+    description: The file to submit (a .zip made with `ditto -c -k --keepParent`, a .dmg or a .pkg).
+    required: true
+  staple-path:
+    description: Optional; once accepted, `xcrun stapler staple` this (e.g. the .app that was zipped).
+    required: false
+    default: ''
+  key-id:
+    description: App Store Connect API key ID.
+    required: true
+  key-issuer:
+    description: App Store Connect API key issuer ID.
+    required: true
+  team-id:
+    description: Apple Developer team ID.
+    required: true
+  timeout:
+    description: >
+      How long to wait for Apple before failing (notarytool's --timeout).  Usually minutes, but Apple
+      sometimes takes hours; this only bounds a hang, so the release is not held up for the job's
+      whole six-hour limit.
+    required: false
+    default: '2h'
+
+runs:
+  using: composite
+  steps:
+    - name: Notarize
+      shell: bash
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+        STAPLE_PATH: ${{ inputs.staple-path }}
+        MAC_NOTARY_KEY_ID: ${{ inputs.key-id }}
+        MAC_NOTARY_KEY_ISSUER: ${{ inputs.key-issuer }}
+        MAC_NOTARY_TEAM_ID: ${{ inputs.team-id }}
+        NOTARY_TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        set -euo pipefail
+        if [ -z "${NOTARY_KEY_PATH:-}" ] || [ ! -f "${NOTARY_KEY_PATH}" ]; then
+          echo "::error::NOTARY_KEY_PATH is not set; run .github/actions/macos_signing_setup first."
+          exit 1
+        fi
+
+        # A non-zero exit (e.g. the timeout) must not end the step before the output and the log are
+        #  printed: the submission ID is what lets someone look the submission up afterwards.
+        SUBMIT_RC=0
+        SUBMIT_OUTPUT=$(xcrun notarytool submit "${ARCHIVE}" \
+          --key "${NOTARY_KEY_PATH}" \
+          --key-id "${MAC_NOTARY_KEY_ID}" \
+          --issuer "${MAC_NOTARY_KEY_ISSUER}" \
+          --team-id "${MAC_NOTARY_TEAM_ID}" \
+          --wait --timeout "${NOTARY_TIMEOUT}" --output-format json) || SUBMIT_RC=$?
+
+        echo "Notarization submission output:"
+        echo "${SUBMIT_OUTPUT}"
+
+        SUBMISSION_ID=$(echo "${SUBMIT_OUTPUT}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+        echo "Submission ID: ${SUBMISSION_ID}"
+
+        # The log says *why* when it is rejected, and lists any warnings when it is not.
+        if [ -n "${SUBMISSION_ID}" ]; then
+          echo "Fetching notarization log..."
+          xcrun notarytool log "${SUBMISSION_ID}" \
+            --key "${NOTARY_KEY_PATH}" \
+            --key-id "${MAC_NOTARY_KEY_ID}" \
+            --issuer "${MAC_NOTARY_KEY_ISSUER}" \
+            --team-id "${MAC_NOTARY_TEAM_ID}" || true
+        fi
+
+        STATUS=$(echo "${SUBMIT_OUTPUT}" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+        if [ "${SUBMIT_RC}" -ne 0 ] || [ "${STATUS}" != "Accepted" ]; then
+          echo "::error::Notarization of $(basename "${ARCHIVE}") failed: notarytool exit code ${SUBMIT_RC}, status '${STATUS}', submission ID '${SUBMISSION_ID}'."
+          exit 1
+        fi
+
+        if [ -n "${STAPLE_PATH}" ]; then
+          xcrun stapler staple "${STAPLE_PATH}"
+        fi

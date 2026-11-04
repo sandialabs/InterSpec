@@ -538,16 +538,17 @@ void DetectorGeometryInput::init()
     m_layersTable->elementAt( 0, 0 )->addNew<WText>( WString::tr("dgi-layer-material") );
     m_layersTable->elementAt( 0, 1 )->addNew<WText>( WString::tr("dgi-layer-front") );
     m_layersTable->elementAt( 0, 2 )->addNew<WText>( WString::tr("dgi-layer-side") );
+    m_layersTable->elementAt( 0, 3 )->addNew<WText>( WString::tr("dgi-layer-back") );
 
     WContainerWidget *btns = layersHolder->addNew<WContainerWidget>();
     m_addLayer = btns->addNew<WPushButton>( WString::tr("dgi-add-layer") );
     m_addLayer->addStyleClass( "LinkBtn" );
-    m_addLayer->clicked().connect( this, [this](){ addLayerRow( "", "", "" ); } );
+    m_addLayer->clicked().connect( this, [this](){ addLayerRow( "", "", "", "" ); } );
     m_removeLayer = btns->addNew<WPushButton>( WString::tr("dgi-remove-layer") );
     m_removeLayer->addStyleClass( "LinkBtn" );
     m_removeLayer->clicked().connect( this, &DetectorGeometryInput::removeLayerRow );
 
-    addLayerRow( "Al", "1 mm", "1 mm" );
+    addLayerRow( "Al", "1 mm", "1 mm", "" );
   }
 
   //Collimator (optional)
@@ -713,6 +714,7 @@ std::string DetectorGeometryInput::problemDescription() const
 void DetectorGeometryInput::addLayerRow( const Wt::WString &material,
                                          const Wt::WString &frontThick,
                                          const Wt::WString &sideThick,
+                                         const Wt::WString &backThick,
                                          const shared_ptr<const ceelo::MaterialSpec> &seeded )
 {
   const int row = m_layersTable->rowCount();
@@ -730,8 +732,11 @@ void DetectorGeometryInput::addLayerRow( const Wt::WString &material,
   layer.frontThickness->setTextSize( 9 );
   layer.sideThickness = m_layersTable->elementAt( row, 2 )->addNew<WLineEdit>( sideThick );
   layer.sideThickness->setTextSize( 9 );
+  layer.backThickness = m_layersTable->elementAt( row, 3 )->addNew<WLineEdit>( backThick );
+  layer.backThickness->setTextSize( 9 );
+  layer.backThickness->setPlaceholderText( WString::tr("dgi-layer-back-ph") );  //blank = open back
 
-  for( WLineEdit *edit : { layer.material, layer.frontThickness, layer.sideThickness } )
+  for( WLineEdit *edit : { layer.material, layer.frontThickness, layer.sideThickness, layer.backThickness } )
     edit->changed().connect( this, &DetectorGeometryInput::handleUserInput );
 
   m_layers.push_back( layer );
@@ -771,6 +776,7 @@ bool DetectorGeometryInput::State::Layer::operator==( const Layer &rhs ) const
   return (material == rhs.material)
          && (frontThickness == rhs.frontThickness)
          && (sideThickness == rhs.sideThickness)
+         && (backThickness == rhs.backThickness)
          && (seeded == rhs.seeded)
          && (seededName == rhs.seededName);
 }//State::Layer::operator==
@@ -789,7 +795,9 @@ bool DetectorGeometryInput::State::operator==( const State &rhs ) const
          && (collimatorMaterial == rhs.collimatorMaterial)
          && (collimatorThickness == rhs.collimatorThickness)
          && (collimatorExtension == rhs.collimatorExtension)
-         && (layers == rhs.layers);
+         && (layers == rhs.layers)
+         && (seededFromDiameterGuess == rhs.seededFromDiameterGuess)
+         && (importNotes == rhs.importNotes);
 }//State::operator==
 
 
@@ -821,10 +829,14 @@ DetectorGeometryInput::State DetectorGeometryInput::currentState() const
     layer.material = row.material->text().toUTF8();
     layer.frontThickness = row.frontThickness->text().toUTF8();
     layer.sideThickness = row.sideThickness->text().toUTF8();
+    layer.backThickness = row.backThickness->text().toUTF8();
     layer.seeded = row.seeded;
     layer.seededName = row.seededName;
     state.layers.push_back( std::move(layer) );
   }//for( const LayerRow &row : m_layers )
+
+  state.seededFromDiameterGuess = m_seededFromDiameterGuess;
+  state.importNotes = m_importNotes->isHidden() ? string() : m_importNotes->text().toUTF8();
 
   return state;
 }//DetectorGeometryInput::currentState()
@@ -857,10 +869,16 @@ void DetectorGeometryInput::setState( const State &state )
     popLayerRow();
   for( const State::Layer &layer : state.layers )
     addLayerRow( WString::fromUTF8(layer.material), WString::fromUTF8(layer.frontThickness),
-                 WString::fromUTF8(layer.sideThickness), layer.seeded );
+                 WString::fromUTF8(layer.sideThickness), WString::fromUTF8(layer.backThickness),
+                 layer.seeded );
   for( size_t i = 0; (i < m_layers.size()) && (i < state.layers.size()); ++i )
     m_layers[i].seededName = state.layers[i].seededName;
   m_removeLayer->setEnabled( m_layers.size() > 1 );
+
+  // Before handleShapeChange, whose validity note reads the guess flag.
+  m_seededFromDiameterGuess = state.seededFromDiameterGuess;
+  m_importNotes->setText( WString::fromUTF8(state.importNotes) );
+  m_importNotes->setHidden( state.importNotes.empty() );
 
   // Sync the shape-dependent row visibility (and, through `handleUserInput`, the validity note and
   //  collimator row) to the restored values.
@@ -959,18 +977,25 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
   const shared_ptr<const MaterialDB> matDb = MaterialDB::initialized()
                                               ? MaterialDB::instance() : nullptr;
 
+  // Back plate of each entry of gd.layers; applied once every layer (and the collimator) is in
+  //  place, innermost first, since each one moves the backs of everything outside it.
+  vector<double> back_thicknesses;
+
   for( const LayerRow &layer : m_layers )
   {
     string mat_name = layer.material->text().toUTF8();
     SpecUtils::trim( mat_name );
     const double front = distance_cm( layer.frontThickness, "layer front thickness", true );
     const double side = distance_cm( layer.sideThickness, "layer side thickness", true );
+    const double back = distance_cm( layer.backThickness, "layer back thickness", true );
 
-    if( mat_name.empty() && (front <= 0.0) && (side <= 0.0) )
+    if( mat_name.empty() && (front <= 0.0) && (side <= 0.0) && (back <= 0.0) )
       continue;  //blank row
 
-    if( (front <= 0.0) && (side <= 0.0) )
+    if( (front <= 0.0) && (side <= 0.0) && (back <= 0.0) )
       throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
+
+    back_thicknesses.push_back( back );
 
     // A layer seeded from an imported descriptor may name a material this
     //  session's MaterialDB has never heard of (an ANGLE file defines its own
@@ -1002,7 +1027,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     if( !use_seeded
         && CeeLoUtils::parseGenericAttenuatorName( mat_name, gen_an, gen_ad ) )
     {
-      const double thickness = (front > 0.0) ? front : side;
+      const double thickness = (front > 0.0) ? front : ((side > 0.0) ? side : back);
       if( thickness <= 0.0 )
         throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
 
@@ -1060,6 +1085,13 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     spec.z_end_cm = crystal_len;
     gd.collimator = spec;
   }//if( m_hasCollimator->isChecked() )
+
+  assert( back_thicknesses.size() == gd.layers.size() );
+  for( size_t k = 0; k < gd.layers.size(); ++k )
+  {
+    if( back_thicknesses[k] > 0.0 )
+      gd.set_layer_back_thickness_cm( k, back_thicknesses[k] );
+  }
 
   // InterSpec measures every distance from the detector face, and forms CeeLo query positions
   //  itself (CeeLoUtils::sourcePositionFromFace), so the descriptor's reference point is never
@@ -1152,11 +1184,12 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
   while( m_layers.size() > 1 )
     removeLayerRow();
   if( m_layers.empty() )  //seedFromDiameter() without a setback, or setState(), can leave none
-    addLayerRow( "", "", "" );
+    addLayerRow( "", "", "", "" );
 
   bool first = true;
-  for( const ceelo::LayerSpec &layer : gd.layers )
+  for( size_t k = 0; k < gd.layers.size(); ++k )
   {
+    const ceelo::LayerSpec &layer = gd.layers[k];
     if( (layer.material_index < 0)
         || (layer.material_index >= static_cast<int>(gd.materials.size())) )
       continue;
@@ -1164,6 +1197,8 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     const string name = mspec.name;
     const string front = cm_to_str( layer.front_thickness_cm );
     const string side = cm_to_str( layer.side_thickness_cm );
+    const double back_cm = gd.layer_back_thickness_cm( k );
+    const string back = (back_cm > 0.0) ? cm_to_str( back_cm ) : string();
     const shared_ptr<const ceelo::MaterialSpec> seeded
                             = make_shared<const ceelo::MaterialSpec>( mspec );
     if( first )
@@ -1173,13 +1208,14 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
       m_layers[0].material->setText( WString::fromUTF8(name) );
       m_layers[0].frontThickness->setText( WString::fromUTF8(front) );
       m_layers[0].sideThickness->setText( WString::fromUTF8(side) );
+      m_layers[0].backThickness->setText( WString::fromUTF8(back) );
       first = false;
     }else
     {
       addLayerRow( WString::fromUTF8(name), WString::fromUTF8(front),
-                   WString::fromUTF8(side), seeded );
+                   WString::fromUTF8(side), WString::fromUTF8(back), seeded );
     }
-  }//for( const ceelo::LayerSpec &layer : gd.layers )
+  }//for( size_t k = 0; k < gd.layers.size(); ++k )
 
   if( first )  //no layers
   {
@@ -1188,6 +1224,7 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     m_layers[0].material->setText( "" );
     m_layers[0].frontThickness->setText( "" );
     m_layers[0].sideThickness->setText( "" );
+    m_layers[0].backThickness->setText( "" );
   }
 
   m_hasCollimator->setChecked( gd.collimator.has_value() );
@@ -1228,6 +1265,9 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     m_importNotes->show();
   }
 
+  // A real descriptor, so no longer the length==diameter guess a seeder may have left.
+  m_seededFromDiameterGuess = false;
+
   handleShapeChange();
 }//setFromDescriptor(...)
 
@@ -1267,6 +1307,10 @@ std::shared_ptr<const ceelo::GeometryDescriptor> DetectorGeometryInput::seedFrom
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 
+  // Without this the form keeps its default endcap, and a response generated from it puts the
+  //  crystal at a different depth than the DRF it is meant to characterize.
+  setLayersFromSetback( drf->detectorSetback() );
+
   handleShapeChange();
 
   // The fabricated length is a guess we must not let be Monte-Carlo characterized until the user
@@ -1277,6 +1321,18 @@ std::shared_ptr<const ceelo::GeometryDescriptor> DetectorGeometryInput::seedFrom
 
   return nullptr;
 }//seedFromDrf(...)
+
+
+void DetectorGeometryInput::setLayersFromSetback( const double setback )
+{
+  // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
+  //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
+  while( !m_layers.empty() )
+    popLayerRow();
+  if( setback > 0.0 )
+    addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "", "" );
+  m_removeLayer->setEnabled( m_layers.size() > 1 );
+}//setLayersFromSetback(...)
 
 
 void DetectorGeometryInput::seedFromDiameter( const double diameter, const double setback,
@@ -1308,13 +1364,7 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 
-  // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
-  //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
-  while( !m_layers.empty() )
-    popLayerRow();
-  if( setback > 0.0 )
-    addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "" );
-  m_removeLayer->setEnabled( m_layers.size() > 1 );
+  setLayersFromSetback( setback );
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();
