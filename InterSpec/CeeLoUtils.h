@@ -312,8 +312,10 @@ namespace CeeLoUtils
    `model_eff` through the descriptor's own reference point, which for a CrystalFace descriptor puts
    the source one endcap offset too close; so here every point's model efficiency is formed
    face-referenced (#sourcePositionFromFace), on the UNGROUNDED response (an existing grounding is
-   cleared first - k(E) is a ratio to the ungrounded model).  The one way InterSpec grounds a
-   response.  Touches nothing but its arguments, so it may run on a worker thread.
+   cleared first - k(E) is a ratio to the ungrounded model).  Points whose model efficiency is zero
+   (nothing reaches the crystal there) are dropped; throws std::runtime_error if none remain.  The
+   one way InterSpec grounds a response.  Touches nothing but its arguments, so it may run on a
+   worker thread.
    */
   void groundResponseToFacePoints( ceelo::DetectorResponse &response,
                                    std::vector<ceelo::GroundingPoint> points,

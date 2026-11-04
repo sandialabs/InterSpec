@@ -872,6 +872,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmBenchmarkJudge test_LlmBenchmarkJudge.cpp )
+  target_link_libraries( test_LlmBenchmarkJudge PRIVATE InterSpecLib )
+  add_test( NAME TLlmBenchmarkJudge
+    COMMAND $<TARGET_FILE:test_LlmBenchmarkJudge> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_LlmModelPresets test_LlmModelPresets.cpp )
   target_link_libraries( test_LlmModelPresets PRIVATE InterSpecLib )
   add_test( NAME TLlmModelPresets

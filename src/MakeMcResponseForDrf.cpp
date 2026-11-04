@@ -1988,7 +1988,9 @@ bool MakeMcResponseForDrf::startGeneration()
       run_opts.stats_out = stats.get();
       response = ceelo::ResponseGenerator::generate( gd, run_opts );
       // The point distances are from the detector face (InterSpec's convention, not the
-      //  descriptor's reference point) - see CeeLoUtils::groundResponseToFacePoints.
+      //  descriptor's reference point) - see CeeLoUtils::groundResponseToFacePoints.  (For an
+      //  imported grid, k only feeds the consistency figure logged below: attachTotalEfficiency
+      //  takes the Monte Carlo's total/FEP ratio, ignoring any grounding.)
       if( response && !ground_pts.empty() )
         CeeLoUtils::groundResponseToFacePoints( *response, ground_pts, curve_derived );
 

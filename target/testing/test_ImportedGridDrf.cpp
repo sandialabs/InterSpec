@@ -60,7 +60,9 @@
 #include <Eigen/Core>
 
 #include "io/ResponseKernel.h"
+#include "materials/Material.h"
 #include "io/DetectorResponse.h"
+#include "io/ResponseGenerator.h"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -149,10 +151,11 @@ namespace
   }
 
 
-  /** A response for `gd` that carries only a (synthetic, smooth) EtaTotTable total on the grid's own
+  /** A response for `gd` that carries a (synthetic, smooth) EtaTotTable total on the grid's own
    energy x angle nodes - the stand-in for a Monte Carlo of `gd` - and, optionally, a synthetic
-   near-field total table like a General-profile run's.  Its FEP table is the grid's, only so it is
-   a complete response; nothing here reads it. */
+   near-field total table like a General-profile run's.  Its FEP table is the grid's (without the
+   grid's near-field table), so its total/FEP - all attachTotalEfficiency takes from it - is
+   exp(eta_tot - eta_fep), times the near-field total table close in. */
   shared_ptr<ceelo::DetectorResponse> total_donor( const ceelo::DetectorResponse &grid,
                                                    const ceelo::GeometryDescriptor &gd,
                                                    const bool with_near_table = false )
@@ -207,9 +210,38 @@ namespace
   }//total_donor(...)
 
 
+  /** As #total_donor, but with a compact total tier - BCurve, eps_tot = b(E) * K_NoRayleigh, as CeeLo
+   picks for scintillators.  Grounding scales such a response's FEP but not its total. */
+  shared_ptr<ceelo::DetectorResponse> bcurve_donor( const ceelo::DetectorResponse &grid,
+                                                    const ceelo::GeometryDescriptor &gd )
+  {
+    const shared_ptr<ceelo::DetectorResponse> donor = total_donor( grid, gd );
+    donor->tot_eff = ceelo::TotEffPayload{};
+    donor->tot_eff.tier = ceelo::TotEffTier::BCurve;
+    for( const double energy : { 40.0, 150.0, 600.0, 3000.0 } )
+    {
+      donor->tot_eff.b_energies_keV.push_back( energy );
+      donor->tot_eff.ln_b.push_back( 0.3 + 0.2*std::log( energy / 100.0 ) );
+    }
+    donor->finalize();
+    return donor;
+  }//bcurve_donor(...)
+
+
   double rel_diff( const double a, const double b )
   {
     return std::fabs( a - b ) / (std::max)( std::fabs(b), 1.0e-300 );
+  }
+
+
+  /** The total attachTotalEfficiency promises: the grid's FEP times the donor's total/FEP at the same
+   physical point (`grid_pos` in the grid's frame, `donor_pos` in the donor's). */
+  double grid_fep_times_donor_ratio( const ceelo::DetectorResponse &grid, const Eigen::Vector3d &grid_pos,
+                                     const ceelo::DetectorResponse &donor, const Eigen::Vector3d &donor_pos,
+                                     const double energy )
+  {
+    return grid.eps_fep_at( energy, grid_pos ).value * donor.eps_total_at( energy, donor_pos ).value
+           / donor.eps_fep_at( energy, donor_pos ).value;
   }
 }//namespace
 
@@ -316,7 +348,7 @@ BOOST_AUTO_TEST_CASE( SideAndBackFromTheGrid )
   const shared_ptr<ceelo::DetectorResponse> covered = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() );
   BOOST_CHECK_EQUAL( covered->tot_eff.eta_tot.cos_thetas.front(), -1.0 );
   const ceelo::EffResult tot_covered = covered->eps_total_at( 662.0, beside );
-  BOOST_CHECK_LT( rel_diff( tot_covered.value, donor->eps_total_at( 662.0, beside ).value ), 1.0e-6 );
+  BOOST_CHECK_LT( rel_diff( tot_covered.value, grid_fep_times_donor_ratio( *grid, beside, *donor, beside, 662.0 ) ), 1.0e-6 );
 
   const shared_ptr<ceelo::DetectorResponse> front_donor = total_donor( *grid, gd );
   front_donor->tot_eff.eta_tot = strip_back_nodes( front_donor->tot_eff.eta_tot );
@@ -375,8 +407,10 @@ BOOST_AUTO_TEST_CASE( MockPairImports )
 }//BOOST_AUTO_TEST_CASE( MockPairImports )
 
 
-/** A total from a donor on the grid's own geometry is carried exactly - same kernel, same nodes -
- everywhere, while the FEP stays the grid's to the bit; stripping it restores the import. */
+/** On the grid's own geometry the total is the grid's FEP times the donor's total/FEP: exactly at
+ the far-field pin's nodes (same kernel, same nodes), and closer in to what the distance table's
+ interpolation of the grid's own close-in FEP allows - while the FEP stays the grid's to the bit;
+ stripping it restores the import.  The gates sit a little above the printed figures. */
 BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
 {
   const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
@@ -388,22 +422,36 @@ BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
   BOOST_CHECK( DetEffG2kPar::isGridResponse( with_total ) );
   BOOST_CHECK( with_total->tot_eff.characterized() );
 
-  double worst = 0.0;
-  for( const double d_cm : { 1.0, 5.0, 25.0, 50.0, 200.0 } )
+  const double d_pin = (std::max)( 1000.0 * grid->descriptor.transverse_half_extent(), 100.0 );
+  for( size_t i = 0; i < grid->eta_fep.energies_keV.size(); i += 5 )
   {
+    const Eigen::Vector3d pos = ceelo::source_position( d_pin, 1.0 );
+    const double energy = grid->eta_fep.energies_keV[i];
+    BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( energy, pos ).value,
+                              grid_fep_times_donor_ratio( *grid, pos, *donor, pos, energy ) ), 1.0e-9 );
+  }
+
+  //  Measured: 0.27, 0.74, 0.16, 0.16, 0.13 % - the distance table interpolating the grid's own
+  //  close-in FEP structure, and eta_tot interpolating in energy.
+  const vector<pair<double,double>> gates{ {1.0, 0.004}, {5.0, 0.009}, {25.0, 0.0025}, {50.0, 0.0025}, {200.0, 0.002} };
+  for( const pair<double,double> &gate : gates )
+  {
+    const double d_cm = gate.first;
+    double worst_d = 0.0;
     for( const double theta_deg : { 0.0, 30.0, 60.0, 85.0 } )
     {
       const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( grid->descriptor, theta_deg*pi/180.0, 0.0, d_cm );
       for( const double energy : { 45.0, 100.0, 300.0, 1000.0, 2500.0 } )
       {
-        worst = (std::max)( worst, rel_diff( with_total->eps_total_at( energy, pos ).value,
-                                             donor->eps_total_at( energy, pos ).value ) );
+        worst_d = (std::max)( worst_d, rel_diff( with_total->eps_total_at( energy, pos ).value,
+                                                 grid_fep_times_donor_ratio( *grid, pos, *donor, pos, energy ) ) );
         BOOST_CHECK_EQUAL( with_total->eps_fep_at( energy, pos ).value, grid->eps_fep_at( energy, pos ).value );
       }
     }
+    BOOST_TEST_MESSAGE( "Total on the imported geometry, " << d_cm << " cm: worst |graft/(grid FEP x donor ratio) - 1| = "
+                        << worst_d );
+    BOOST_CHECK_MESSAGE( worst_d < gate.second, "at " << d_cm << " cm: " << worst_d << " vs gate " << gate.second );
   }
-  BOOST_TEST_MESSAGE( "Total on the imported geometry: worst |graft/donor - 1| = " << worst );
-  BOOST_CHECK_LT( worst, 1.0e-9 );
 
   shared_ptr<ceelo::DetectorResponse> stripped;
   BOOST_REQUIRE_NO_THROW( stripped = DetEffG2kPar::attachTotalEfficiency( *with_total, nullptr ) );
@@ -419,10 +467,180 @@ BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
 }//BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
 
 
+/** Where nothing reaches the donor's crystal - 8 cm of lead around it underflows its kernel to 0 at
+ the grid's lowest energy, at every angle - the donor's total/FEP comes from its kernel-free
+ prefactors rather than the energy being refused; where the lead passes something, from its
+ efficiencies, however small. */
+BOOST_AUTO_TEST_CASE( TotalWhereKernelUnderflows )
+{
+  const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
+
+  ceelo::GeometryDescriptor shielded = grid->descriptor;
+  BOOST_REQUIRE( !shielded.layers.empty() );
+  shielded.materials.push_back( ceelo::MaterialSpec::from( ceelo::make_Lead() ) );
+  ceelo::LayerSpec lead = shielded.layers.back();
+  lead.material_index = static_cast<int>( shielded.materials.size() ) - 1;
+  lead.front_thickness_cm = lead.side_thickness_cm = 8.0;
+  shielded.layers.push_back( lead );
+  shielded.set_layer_back_thickness_cm( shielded.layers.size() - 1, 8.0 );  //behind it too: the grid has side & back nodes
+  const shared_ptr<ceelo::DetectorResponse> donor = total_donor( *grid, shielded );
+
+  // The same physical point for each response, as attachTotalEfficiency maps them.
+  const double shift = shielded.endcap_front_offset_cm() - grid->descriptor.endcap_front_offset_cm();
+  const auto donor_pos = [shift]( Eigen::Vector3d pos ) -> Eigen::Vector3d { pos.z() -= shift; return pos; };
+  const double d_pin = (std::max)( 1000.0 * grid->descriptor.transverse_half_extent(), 100.0 );
+
+  // The premise: at the lowest grid energy the donor has no total at any of the grid's angles.
+  const ceelo::EtaTable &nodes = grid->eta_fep;
+  const double e_lo = nodes.energies_keV.front();
+  for( const double cos_theta : nodes.cos_thetas )
+    BOOST_REQUIRE_EQUAL( donor->eps_total_at( e_lo, donor_pos( ceelo::source_position( d_pin, cos_theta ) ) ).value, 0.0 );
+
+  shared_ptr<ceelo::DetectorResponse> with_total;
+  BOOST_REQUIRE_NO_THROW( with_total = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() ) );
+
+  // There, at the pin: the grid's FEP times the donor's own (kernel-free) total/FEP.
+  for( const double cos_theta : { 1.0, 0.5 } )
+  {
+    const Eigen::Vector3d pos = ceelo::source_position( d_pin, cos_theta );
+    const Eigen::Vector3d dpos = donor_pos( pos );
+    const ceelo::ApertureQuadrature q_donor = donor->make_quadrature( dpos );
+    const double ratio = donor->total_prefactor( e_lo, dpos, q_donor ).value
+                         / donor->fep_prefactor( e_lo, dpos, q_donor ).value;
+    const double fep = grid->eps_fep_at( e_lo, pos ).value;
+    BOOST_REQUIRE_GT( fep, 0.0 );
+    BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( e_lo, pos ).value / fep, ratio ), 1.0e-9 );
+  }
+
+  // Close in, too, a finite positive total (the distance table holds where the donor has none).
+  const double tot_close = with_total->eps_total_at( e_lo, CeeLoUtils::sourcePositionFromFace( grid->descriptor, 0.0, 0.0, 5.0 ) ).value;
+  BOOST_CHECK( std::isfinite( tot_close ) && (tot_close > 0.0) );
+
+  // Where the lead passes photons, the same product from the donor's efficiencies, at the nodes -
+  //  however many decades the lead takes off them; the FEP is the grid's.
+  for( const size_t e : { nodes.energies_keV.size() / 2, nodes.energies_keV.size() - 1 } )
+  {
+    const double energy = nodes.energies_keV[e];
+    const Eigen::Vector3d pos = ceelo::source_position( d_pin, 1.0 );
+    BOOST_REQUIRE_GT( donor->eps_total_at( energy, donor_pos( pos ) ).value, 0.0 );
+    const double expected = grid_fep_times_donor_ratio( *grid, pos, *donor, donor_pos( pos ), energy );
+    BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( energy, pos ).value, expected ), 1.0e-6 );
+    BOOST_CHECK_EQUAL( with_total->eps_fep_at( energy, pos ).value, grid->eps_fep_at( energy, pos ).value );
+  }
+}//BOOST_AUTO_TEST_CASE( TotalWhereKernelUnderflows )
+
+
+/** A donor with a compact total tier, grounded as the app's worker grounds every Monte Carlo: the
+ grounding k(E) moves its FEP but not its total, so the graft must take the total/FEP of the
+ UNGROUNDED donor - at the far-field pin, at the close-in table's nodes, and, from the kernel-free
+ prefactors, where 8 cm of lead underflows the donor's kernel. */
+BOOST_AUTO_TEST_CASE( TotalFromGroundedCompactTierDonor )
+{
+  const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
+  const double d_pin = (std::max)( 1000.0 * grid->descriptor.transverse_half_extent(), 100.0 );
+  const ceelo::EtaTable &nodes = grid->eta_fep;
+
+  for( const bool shielded : { false, true } )
+  {
+    ceelo::GeometryDescriptor gd = grid->descriptor;
+    if( shielded )
+    {
+      gd.materials.push_back( ceelo::MaterialSpec::from( ceelo::make_Lead() ) );
+      ceelo::LayerSpec lead = gd.layers.back();
+      lead.material_index = static_cast<int>( gd.materials.size() ) - 1;
+      lead.front_thickness_cm = lead.side_thickness_cm = 8.0;
+      gd.layers.push_back( lead );
+    }
+
+    const shared_ptr<const ceelo::DetectorResponse> ungrounded = bcurve_donor( *grid, gd );
+    const shared_ptr<ceelo::DetectorResponse> donor = ceelo::DetectorResponse::from_xml_string( ungrounded->to_xml_string() );
+
+    // Grounded 13-20% high, on axis at 50 cm - where even the lead passes something.
+    const Eigen::Vector3d ref_pos = CeeLoUtils::sourcePositionFromFace( gd, 0.0, 0.0, 50.0 );
+    vector<ceelo::GroundingPoint> pts;
+    for( const double energy : { 100.0, 300.0, 1000.0, 2500.0 } )
+    {
+      ceelo::GroundingPoint p;
+      p.energy_keV = energy;
+      p.model_eff = donor->eps_fep_at( energy, ref_pos ).value;
+      p.measured_eff = p.model_eff * (1.2 - 0.05*std::log10( energy / 100.0 ));
+      p.frac_stat_sigma = 0.01;
+      p.distance_cm = 50.0;
+      p.cos_theta = 1.0;
+      BOOST_REQUIRE_GT( p.model_eff, 0.0 );
+      pts.push_back( p );
+    }
+    BOOST_REQUIRE_NO_THROW( ceelo::ResponseGenerator::ground_to_points( *donor, pts, true ) );
+
+    // The premise: grounding moved the FEP, and not the total.
+    BOOST_REQUIRE_GT( donor->eps_fep_at( 300.0, ref_pos ).value / ungrounded->eps_fep_at( 300.0, ref_pos ).value, 1.1 );
+    BOOST_REQUIRE_LT( rel_diff( donor->eps_total_at( 300.0, ref_pos ).value, ungrounded->eps_total_at( 300.0, ref_pos ).value ), 1.0e-12 );
+
+    shared_ptr<ceelo::DetectorResponse> with_total;
+    BOOST_REQUIRE_NO_THROW( with_total = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() ) );
+
+    const double shift = gd.endcap_front_offset_cm() - grid->descriptor.endcap_front_offset_cm();
+    const auto donor_pos = [shift]( Eigen::Vector3d pos ) -> Eigen::Vector3d { pos.z() -= shift; return pos; };
+
+    // At the pin's nodes, where the donor's efficiencies are nonzero: the ungrounded donor's ratio,
+    //  not the grounded one's (which grounding lowers by k).
+    for( size_t e = 0; e < nodes.energies_keV.size(); e += 6 )
+    {
+      const double energy = nodes.energies_keV[e];
+      for( const double cos_theta : { 1.0, 0.5 } )
+      {
+        const Eigen::Vector3d pos = ceelo::source_position( d_pin, cos_theta );
+        if( !(ungrounded->eps_total_at( energy, donor_pos( pos ) ).value > 0.0) )
+          continue;   //under the lead: checked from the prefactors below
+        const double ours = with_total->eps_total_at( energy, pos ).value;
+        BOOST_CHECK_LT( rel_diff( ours, grid_fep_times_donor_ratio( *grid, pos, *ungrounded, donor_pos( pos ), energy ) ), 1.0e-6 );
+        BOOST_CHECK_GT( rel_diff( ours, grid_fep_times_donor_ratio( *grid, pos, *donor, donor_pos( pos ), energy ) ), 0.1 );
+      }
+    }
+
+    if( !shielded )
+    {
+      // At every node of the close-in table too.
+      const ceelo::NearFieldModel &tn = with_total->tot_eff.near_field;
+      BOOST_REQUIRE( !tn.empty() );
+      double worst_node = 0.0;
+      for( size_t c = 0; c < tn.cos_thetas.size(); ++c )
+        for( size_t d = 0; (d + 1) < tn.dists_cm.size(); ++d )
+        {
+          const Eigen::Vector3d pos = ceelo::source_position( tn.dists_cm[d], tn.cos_thetas[c] );
+          for( size_t e = 0; e < tn.energies_keV.size(); e += 3 )
+          {
+            if( tn.frac_sigma[tn.index( e, c, d )] >= 1.0 )
+              continue;   //held: the donor had nothing there
+            worst_node = (std::max)( worst_node, rel_diff( with_total->eps_total_at( tn.energies_keV[e], pos ).value,
+                                         grid_fep_times_donor_ratio( *grid, pos, *ungrounded, pos, tn.energies_keV[e] ) ) );
+          }
+        }
+      BOOST_TEST_MESSAGE( "Grounded BCurve donor, at the near-field nodes: worst |graft/(grid FEP x ungrounded ratio) - 1| = "
+                          << worst_node );
+      BOOST_CHECK_LT( worst_node, 1.0e-6 );
+    }else
+    {
+      // Under the lead, at the grid's lowest energy: from the ungrounded donor's prefactors.
+      const double e_lo = nodes.energies_keV.front();
+      const Eigen::Vector3d pos = ceelo::source_position( d_pin, 1.0 );
+      const Eigen::Vector3d dpos = donor_pos( pos );
+      BOOST_REQUIRE_EQUAL( donor->eps_total_at( e_lo, dpos ).value, 0.0 );
+      const ceelo::ApertureQuadrature q_donor = ungrounded->make_quadrature( dpos );
+      const double ratio = ungrounded->total_prefactor( e_lo, dpos, q_donor ).value
+                           / ungrounded->fep_prefactor( e_lo, dpos, q_donor ).value;
+      const double fep = grid->eps_fep_at( e_lo, pos ).value;
+      BOOST_REQUIRE_GT( fep, 0.0 );
+      BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( e_lo, pos ).value / fep, ratio ), 1.0e-9 );
+    }//if( !shielded ) / else
+  }//for( const bool shielded : { false, true } )
+}//BOOST_AUTO_TEST_CASE( TotalFromGroundedCompactTierDonor )
+
+
 /** A donor on an EDITED geometry - the corrected core and bulletizing - with its own near-field
- total, as a General-profile Monte Carlo of it would have.  The grid reproduces it exactly at the
- far-field pin and at every node of its own distance table, and between nodes to what interpolation
- allows; the gates sit a little above the printed figures. */
+ total, as a General-profile Monte Carlo of it would have.  The grid's total is its own FEP times the
+ donor's total/FEP: exactly at the far-field pin and at every node of its own distance table, and
+ between nodes to what interpolation allows; the gates sit a little above the printed figures. */
 BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
 {
   const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
@@ -444,7 +662,7 @@ BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
     const Eigen::Vector3d pos = ceelo::source_position( d_pin, 1.0 );
     const double energy = grid->eta_fep.energies_keV[i];
     BOOST_CHECK_LT( rel_diff( with_total->eps_total_at( energy, pos ).value,
-                              donor->eps_total_at( energy, donor_pos( pos ) ).value ), 1.0e-6 );
+                              grid_fep_times_donor_ratio( *grid, pos, *donor, donor_pos( pos ), energy ) ), 1.0e-6 );
   }
 
   // At every node of the grid's own near-field total table.
@@ -460,16 +678,17 @@ BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
         if( tn.frac_sigma[tn.index( e, c, d )] >= 1.0 )
           continue;   //held: the donor had nothing there
         worst_node = (std::max)( worst_node, rel_diff( with_total->eps_total_at( tn.energies_keV[e], pos ).value,
-                                     donor->eps_total_at( tn.energies_keV[e], donor_pos( pos ) ).value ) );
+                                     grid_fep_times_donor_ratio( *grid, pos, *donor, donor_pos( pos ), tn.energies_keV[e] ) ) );
       }
     }
-  BOOST_TEST_MESSAGE( "Total on the edited geometry, at the near-field nodes: worst |graft/donor - 1| = " << worst_node );
+  BOOST_TEST_MESSAGE( "Total on the edited geometry, at the near-field nodes: worst |graft/(grid FEP x donor ratio) - 1| = "
+                      << worst_node );
   BOOST_CHECK_LT( worst_node, 1.0e-6 );
 
   // Between nodes: at the same place relative to the endcap face.
-  //  Measured: 0.24, 0.87, 0.41, 0.13, 0.07, 0.02, 0.03 % - interpolation between table nodes.
-  const vector<pair<double,double>> gates{ {1.0, 0.005}, {2.0, 0.012}, {5.0, 0.006}, {10.0, 0.003},
-                                           {25.0, 0.002}, {100.0, 0.001}, {300.0, 0.001} };
+  //  Measured: 0.34, 1.13, 0.37, 0.25, 0.27, 0.19, 0.05 % - interpolation between table nodes.
+  const vector<pair<double,double>> gates{ {1.0, 0.005}, {2.0, 0.014}, {5.0, 0.006}, {10.0, 0.004},
+                                           {25.0, 0.004}, {100.0, 0.003}, {300.0, 0.001} };
   for( const pair<double,double> &gate : gates )
   {
     const double d_cm = gate.first;
@@ -481,9 +700,9 @@ BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
       const Eigen::Vector3d other_pos = CeeLoUtils::sourcePositionFromFace( corrected, theta, 0.0, d_cm );
       for( const double energy : { 60.0, 122.0, 344.0, 662.0, 1332.0, 2614.0 } )
         worst_d = (std::max)( worst_d, rel_diff( with_total->eps_total_at( energy, grid_pos ).value,
-                                                 donor->eps_total_at( energy, other_pos ).value ) );
+                                                 grid_fep_times_donor_ratio( *grid, grid_pos, *donor, other_pos, energy ) ) );
     }
-    BOOST_TEST_MESSAGE( "Total on the edited geometry, " << d_cm << " cm (0-75 deg): worst |graft/donor - 1| = "
+    BOOST_TEST_MESSAGE( "Total on the edited geometry, " << d_cm << " cm (0-75 deg): worst |graft/(grid FEP x donor ratio) - 1| = "
                         << worst_d );
     BOOST_CHECK_MESSAGE( worst_d < gate.second, "at " << d_cm << " cm: " << worst_d << " vs gate " << gate.second );
   }

@@ -317,6 +317,12 @@ class ResponseGenerator {
 public:
     /// Full characterization: minutes of MC (profile/precision dependent).
     /// Throws GenerationCancelled on cancel; std::runtime_error on bad input.
+    ///
+    /// Energies or angles where the MC scores no FEP at all (e.g. 10-20 keV
+    /// behind a thick endcap and dead layer) are held from the nearest measured
+    /// node, at frac_sigma 0.75: that attenuation is in the kernel K, so they
+    /// evaluate to eps ~ 0, still positive and inside [e_min_keV, e_max_keV].
+    /// Throws only when no backbone energy scores any FEP.
     static std::shared_ptr<DetectorResponse> generate(
         const GeometryDescriptor& descriptor, const GenerationOptions& options);
 

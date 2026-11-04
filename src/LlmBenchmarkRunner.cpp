@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <map>
 #include <set>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -836,6 +837,66 @@ chrono::milliseconds LlmBenchmarkRunner::retryDelay( const int retryNumber )
     default:        return chrono::seconds( 60 );
   }
 }//retryDelay(...)
+
+
+LlmBenchmarkRunner::JudgeVerdict LlmBenchmarkRunner::parseJudgeResponse( const string &response,
+                                                                          const int rubricMax )
+{
+  // Find the last balanced {...} that parses as a verdict.  Judges sometimes reason before the JSON,
+  //  or wrap it in markdown fences; braces inside JSON strings are rare enough in a verdict to ignore.
+  std::optional<nlohmann::json> verdict;
+  for( size_t end = response.rfind( '}' ); (end != string::npos) && !verdict; )
+  {
+    int depth = 0;
+    for( size_t start = end + 1; start-- > 0; )
+    {
+      if( response[start] == '}' )
+        ++depth;
+      else if( (response[start] == '{') && (--depth == 0) )
+      {
+        try
+        {
+          const nlohmann::json j = nlohmann::json::parse( response.substr( start, end - start + 1 ) );
+          if( j.is_object() && (j.contains( "score" ) || j.contains( "correct" )) )
+            verdict = j;
+        }catch( const std::exception & )
+        {
+        }
+        break;
+      }
+    }//for( scan back to the matching '{' )
+
+    end = (end > 0) ? response.rfind( '}', end - 1 ) : string::npos;
+  }//for( each candidate closing brace, last first )
+
+  if( !verdict )
+    throw std::runtime_error( "no JSON object with a \"score\" or \"correct\" field" );
+
+  const nlohmann::json &j = *verdict;
+  JudgeVerdict result;
+  result.correct = j.value( "correct", false );
+
+  // Accept a judge's "score": 3.5 or "4" as well as 4
+  const auto as_int = []( const nlohmann::json &v, const int fallback ) -> int {
+    if( v.is_number() )
+      return static_cast<int>( std::lround( v.get<double>() ) );
+    if( v.is_string() )
+    {
+      int val = 0;
+      if( SpecUtils::parse_int( v.get<string>().c_str(), v.get<string>().size(), val ) )
+        return val;
+    }
+    return fallback;
+  };
+
+  const int judgeMax = j.contains( "maxScore" ) ? as_int( j["maxScore"], 0 ) : 0;
+  result.maxScore = (rubricMax > 0) ? rubricMax : std::max( judgeMax, 1 );
+  const int score = j.contains( "score" ) ? as_int( j["score"], 0 ) : (result.correct ? result.maxScore : 0);
+  result.score = std::clamp( score, 0, result.maxScore );
+  result.reason = j.value( "reason", string() );
+
+  return result;
+}//parseJudgeResponse(...)
 
 
 std::vector<LlmBenchmarkRunner::InProgressRun>
@@ -1891,12 +1952,42 @@ void LlmBenchmarkRunner::handleResponseError()
       return;
     }
 
-    // Retries exhausted - skip entire problem on sequence step error
+    // Retries exhausted - the problem's questions can't be asked without its sequence, so record each
+    //  of them as an error (rather than skipping them, which would drop them from the totals unseen).
+    const int retries = m_currentQuestionRetries;
     m_currentQuestionRetries = 0;
     reconnectSpectrumChangedHandler();
+    if( problem )
+    {
+      const auto now = chrono::system_clock::now();
+      for( const BenchmarkQuestion &q : problem->questions )
+      {
+        BenchmarkQuestionResult result;
+        result.problemId = problem->id;
+        result.questionPart = q.part;
+        result.prompt = q.prompt;
+        result.hadError = true;
+        result.errorMessage = "Not asked: the problem's spectrum sequence failed (after "
+                              + to_string( retries ) + " retries)";
+        result.errorRetries = retries;
+        result.duration = chrono::duration_cast<chrono::milliseconds>( now - m_questionStartTime );
+        if( m_grade && q.judgement.has_value() )
+        {
+          result.graded = true;
+          result.expectedAnswer = q.judgement->expectedAnswer;
+          for( const BenchmarkCriterion &c : q.judgement->rubric )
+            result.maxScore += std::max( c.points, 0 );
+          result.maxScore = std::max( result.maxScore, 1 );
+        }
+        log( "Recorded result for " + result.problemId + " Q" + to_string( result.questionPart )
+             + ": ERROR (sequence failed)" );
+        m_results.questionResults.push_back( std::move( result ) );
+      }//for( each question of the problem )
+    }//if( problem )
     m_currentProblem++;
     m_currentQuestion = 0;
     m_currentSequenceStep = 0;
+    writeInProgressCheckpoint();
     m_state = State::Idle;
     advanceToNextStep();
     return;
@@ -2146,6 +2237,11 @@ void LlmBenchmarkRunner::judgeWithLlm( const string &llmAnswer,
 
   log( "Sending to judge LLM (" + to_string( judgePrompt.size() ) + " chars)" );
 
+  // Kept so a judge error can re-send the same prompt, and still record the answer if it gives up
+  m_judgeRetries = 0;
+  m_judgePrompt = judgePrompt;
+  m_judgedAnswer = llmAnswer;
+
   // Clear judge history for a fresh conversation
   shared_ptr<LlmConversationHistory> judgeHistory = m_judgeInterface->getHistory();
   if( judgeHistory )
@@ -2232,35 +2328,20 @@ void LlmBenchmarkRunner::handleJudgeConversationFinished()
   }
 
   // Parse judge JSON response
+  int rubricMax = 0;
+  if( question && question->judgement.has_value() )
+  {
+    for( const BenchmarkCriterion &c : question->judgement->rubric )
+      rubricMax += std::max( c.points, 0 );
+  }
+
   try
   {
-    // Strip markdown code fences if present
-    string jsonStr = judgeResponse;
-    {
-      const size_t startFence = jsonStr.find( "```" );
-      if( startFence != string::npos )
-      {
-        size_t contentStart = jsonStr.find( '\n', startFence );
-        if( contentStart != string::npos )
-          contentStart++;
-        else
-          contentStart = startFence + 3;
-
-        const size_t endFence = jsonStr.find( "```", contentStart );
-        if( endFence != string::npos )
-          jsonStr = jsonStr.substr( contentStart, endFence - contentStart );
-        else
-          jsonStr = jsonStr.substr( contentStart );
-      }
-    }
-
-    SpecUtils::trim( jsonStr );
-
-    const nlohmann::json j = nlohmann::json::parse( jsonStr );
-    result.correct = j.value( "correct", false );
-    result.score = j.value( "score", result.correct ? 1 : 0 );
-    result.maxScore = j.value( "maxScore", 1 );
-    result.judgementReason = j.value( "reason", "" );
+    const JudgeVerdict verdict = parseJudgeResponse( judgeResponse, rubricMax );
+    result.correct = verdict.correct;
+    result.score = verdict.score;
+    result.maxScore = verdict.maxScore;
+    result.judgementReason = verdict.reason;
 
     log( "LLM Judge: " + string( result.correct ? "PASS" : "FAIL" )
          + " score=" + to_string( result.score ) + "/" + to_string( result.maxScore )
@@ -2270,7 +2351,7 @@ void LlmBenchmarkRunner::handleJudgeConversationFinished()
     logError( "Failed to parse judge response as JSON: " + string( e.what() ) );
     result.correct = false;
     result.score = 0;
-    result.maxScore = 1;
+    result.maxScore = (rubricMax > 0) ? rubricMax : 1;
     result.judgementReason = "Failed to parse judge response: " + judgeResponse;
   }
 
@@ -2288,14 +2369,38 @@ void LlmBenchmarkRunner::handleJudgeResponseError()
   const BenchmarkQuestion *question = currentQuestion();
   const BenchmarkProblem *problem = currentProblem();
 
+  // A judge error is almost always the endpoint (connection drop, outage), not the answer, so re-ask
+  //  the judge - not the model, whose answer we already have.
+  if( (m_judgeRetries < sm_max_question_retries) && m_judgeInterface && !m_judgePrompt.empty() )
+  {
+    m_judgeRetries += 1;
+    const chrono::milliseconds delay = retryDelay( m_judgeRetries );
+    logError( "Retrying the judge for " + (problem ? problem->id : string("?"))
+              + " Q" + to_string( question ? question->part : -1 )
+              + " in " + to_string( delay.count() / 1000 ) + " s (retry " + to_string( m_judgeRetries )
+              + " of " + to_string( sm_max_question_retries ) + ")" );
+
+    scheduleRetry( delay, [this](){
+      m_state = State::Judging;
+      shared_ptr<LlmConversationHistory> judgeHistory = m_judgeInterface->getHistory();
+      if( judgeHistory )
+        judgeHistory->clear();
+      m_judgeInterface->sendUserMessage( m_judgePrompt );
+    } );
+    return;
+  }//if( retry the judge )
+
   BenchmarkQuestionResult result;
   result.problemId = problem ? problem->id : "";
   result.questionPart = question ? question->part : 0;
   result.prompt = question ? question->prompt : "";
+  result.llmAnswer = m_judgedAnswer;
+  result.expectedAnswer = (question && question->judgement.has_value())
+    ? question->judgement->expectedAnswer : "";
   result.graded = true;
   result.correct = false;
   result.hadError = true;
-  result.errorMessage = "Judge LLM response error";
+  result.errorMessage = "Judge LLM response error (after " + to_string( m_judgeRetries ) + " retries)";
   const auto now = chrono::system_clock::now();
   result.duration = chrono::duration_cast<chrono::milliseconds>( now - m_questionStartTime );
 

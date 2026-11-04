@@ -848,16 +848,26 @@ void groundResponseToFacePoints( ceelo::DetectorResponse &response,
 {
   response.grounding = ceelo::GroundingBlock();
 
+  // A point where nothing reaches the crystal - its kernel underflows to 0 (e.g. ~1 cm of lead at
+  //  15 keV) - has a zero model, so says nothing about k = measured / model; k there comes from its
+  //  neighbours.
   const ceelo::GeometryDescriptor &gd = response.descriptor;
+  vector<ceelo::GroundingPoint> usable;
   for( ceelo::GroundingPoint &p : points )
   {
     const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
     const double phi = p.phi_deg * PhysicalUnits::pi / 180.0;
     const Eigen::Vector3d pos = sourcePositionFromFace( gd, theta, phi, p.distance_cm );
     p.model_eff = response.eps_fep_at( p.energy_keV, pos ).value;
+    if( (p.model_eff > 0.0) && std::isfinite( p.model_eff ) )
+      usable.push_back( std::move(p) );
   }
 
-  ceelo::ResponseGenerator::ground_to_points( response, std::move(points), curve_derived );
+  if( usable.empty() )
+    throw std::runtime_error( "the Monte-Carlo geometry passes no photons to its crystal at any"
+                              " energy it would be grounded at." );
+
+  ceelo::ResponseGenerator::ground_to_points( response, std::move(usable), curve_derived );
 }//groundResponseToFacePoints(...)
 
 

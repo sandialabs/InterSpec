@@ -322,6 +322,27 @@ public:
    */
   static std::vector<std::pair<std::string,std::string>> findBenchmarkFiles( const std::string &directory );
 
+  /** The judge LLM's verdict, as parsed by parseJudgeResponse(). */
+  struct JudgeVerdict
+  {
+    bool correct = false;
+    int score = 0;
+    int maxScore = 1;
+    std::string reason;
+  };//struct JudgeVerdict
+
+  /** Parse the judge LLM's reply into a verdict.
+
+   Uses the last JSON object in `response` that has a "score" or "correct" field, so a reply with
+   reasoning, or markdown fences, around the JSON still parses.  The maximum score is the rubric's
+   total (the sum of its positive points) when there is a rubric - judges often omit or misstate
+   "maxScore" - else the judge's "maxScore", else 1; the score is clamped to [0, maxScore].
+   @param response The judge's reply text
+   @param rubricMax Sum of the rubric's positive points, or 0 if there is no rubric
+   @throws std::runtime_error if no such JSON object is found
+   */
+  static JudgeVerdict parseJudgeResponse( const std::string &response, int rubricMax );
+
 private:
   enum class State
   {
@@ -368,6 +389,12 @@ private:
   //  and recording it as an error.  Bounds the retry loop so a persistently
   //  failing endpoint can't hang the run.
   static constexpr int sm_max_question_retries = 3;
+
+  // How many times the judge has been re-asked for the in-flight question after an error, and the
+  //  judge prompt and answer to re-send; the answer is kept since a retry must not re-ask the model.
+  int m_judgeRetries = 0;
+  std::string m_judgePrompt;
+  std::string m_judgedAnswer;
 
   // Waits before each re-ask, so a short endpoint outage does not use up every retry in a second.
   static std::chrono::milliseconds retryDelay( int retryNumber );

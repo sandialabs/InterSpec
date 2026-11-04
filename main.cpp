@@ -52,9 +52,6 @@
 #include "InterSpec/LlmConfig.h"
 #endif
 
-//#if( USE_REL_ACT_TOOL )
-#include "InterSpec/RelActAutoDev.h"
-//#endif
 
 int main( int argc, char **argv )
 {
@@ -342,9 +339,6 @@ int main( int argc, char **argv )
   }//if( cl_vm.count("static-data-dir") ) / else
 #endif
 
-#if( USE_REL_ACT_TOOL )
-  //return RelActAutoDev::dev_code();
-#endif
 
 #if( USE_BATCH_CLI_TOOLS )
   if( is_batch )
