@@ -1,0 +1,21 @@
+CEELO_GEOMETRY 1
+shape cylinder
+dimensions 3.25 5.0
+bullet_radius 0
+crystal_material 0
+bore 0.45 3.8 0
+dead_layer 0.07 0.07 0.0
+layer 1 0.05 0.0 0.0 5.0
+layer 2 0.0 0.15 0.0 5.0
+layer 3 0.0 0.038 0.0 5.0
+layer 4 0.85 0.4 0.0 5.0
+layer 5 0.1 0.1 0.0 5.0
+symmetry axial
+reference_point endcap_front
+material 0 5.323 1 32 1.0 HPGe
+material 1 1.38 3 1 0.041959 6 0.625017 8 0.333025 PET
+material 2 2.7 1 13 1.0 Al
+material 3 8.0 4 26 0.7 24 0.19 28 0.1 25 0.01 SS304
+material 4 1e-25 1 1 1.0 vacuum
+material 5 2.7 1 13 1.0 Al
+end

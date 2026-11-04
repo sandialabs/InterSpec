@@ -36,6 +36,16 @@ studies/
 # Dev-only research output (reports, fit payloads, plots)
 docs/
 
+# Full-spectrum payloads and every bake intermediate are regenerated with
+# tools/full_spectrum/README.md. Only the final results of a complete bake are
+# committed (git add -f); bake_work/ is the default bake work area.
+/data/full_spectrum/
+/bake_work/
+*.pkl
+*.npz
+*.h5
+*.hdf5
+
 # Downloaded data files (large, re-downloadable)
 tools/prepare_cross_sections/data/
 

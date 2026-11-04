@@ -23,6 +23,8 @@
  */
 
 #include "EventAction.hh"
+
+#include "SteppingAction.hh"
 #include "RunAction.hh"
 #include "PrimaryGeneratorAction.hh"
 
@@ -37,6 +39,7 @@ EventAction::EventAction(RunAction* run_action,
 {}
 
 void EventAction::BeginOfEventAction(const G4Event* event) {
+    if (sphere_step_action_) sphere_step_action_->ResetPrimaryInteracted();
     energy_deposited_MeV_ = 0.0;
     edep_electron_MeV_ = 0.0;
     edep_gamma_MeV_ = 0.0;
@@ -44,7 +47,7 @@ void EventAction::BeginOfEventAction(const G4Event* event) {
     sum_fluor_escape_keV_ = 0.0;
     fluor_escape_energies_.clear();
 
-    if (diagnostics_enabled_) {
+    if (diagnostics_enabled_ || component_labels_enabled_) {
         interactions_.clear();
         compton_count_ = 0;
     }
@@ -53,9 +56,16 @@ void EventAction::BeginOfEventAction(const G4Event* event) {
         crystal_entries_.clear();
     }
 
+    if (fluence_enabled_) {
+        fluence_entry_keV_.clear();
+        primary_fluence_recorded_ = false;
+    }
+
     has_external_electron_ = false;
     primary_interacted_outside_ = false;
     primary_reached_crystal_ = false;
+    had_pair_production_ = false;
+    pair_secondary_compton_count_ = 0;
 
     // Record the primary photon energy for FEP classification.
     if (event->GetNumberOfPrimaryVertex() > 0) {
@@ -77,6 +87,8 @@ void EventAction::AddInteraction(G4InteractionRecord rec) {
 }
 
 void EventAction::EndOfEventAction(const G4Event*) {
+    if (sphere_run_action_) sphere_run_action_->EndSphereEvent();
+
     // Half-width of the full-energy-peak window, in MeV.  MUST match the window
     //  CeeLo scores with (ceelo::kDefaultFepWindowKeV, physics/FepWindow.h) or
     //  the comparison is apples-to-oranges: a reference generated at a wider
@@ -114,7 +126,23 @@ void EventAction::EndOfEventAction(const G4Event*) {
         run_action_->RecordHistogram(energy_deposited_MeV_,
                                      edep_electron_MeV_,
                                      edep_gamma_MeV_,
-                                     weight);
+                                     weight,
+                                     interactions_,
+                                     primary_energy_MeV,
+                                     had_pair_production_,
+                                     pair_secondary_compton_count_);
+    }
+
+    // Fluence-at-detector mode: forward each gamma's detector-entry energy,
+    // classifying uncollided (E ~= E0) vs air-scattered (E < E0) with the same
+    // window used for FEP -- kFepTol above, which now follows fep_window_keV_
+    // rather than a hand-synced literal.
+    if (fluence_enabled_) {
+        const double E0_keV = primary_energy_MeV * 1000.0;
+        for (double e_keV : fluence_entry_keV_) {
+            const bool uncollided = std::abs(e_keV - E0_keV) < (kFepTol * 1000.0);
+            run_action_->RecordFluence(e_keV, weight, uncollided);
+        }
     }
 
     // Diagnostics mode: forward interaction records to RunAction.

@@ -221,4 +221,22 @@ Material make_Air() {
          { 6, 0.0001}}); // C (trace)
 }
 
+Material make_Concrete() {
+    // Ordinary (Portland) concrete — NIST "concrete, portland" / ICRU
+    // composition, density 2.3 g/cm³. Mass fractions:
+    //   H 0.0100  C 0.0010  O 0.5299  Na 0.0160  Mg 0.0020  Al 0.0339
+    //   Si 0.3374  K 0.0130  Ca 0.0440  Fe 0.0140
+    return Material("Concrete", 2.3,
+        {{ 1, 0.0100},   // H
+         { 6, 0.0010},   // C
+         { 8, 0.5299},   // O
+         {11, 0.0160},   // Na
+         {12, 0.0020},   // Mg
+         {13, 0.0339},   // Al
+         {14, 0.3374},   // Si
+         {19, 0.0130},   // K
+         {20, 0.0440},   // Ca
+         {26, 0.0140}}); // Fe
+}
+
 } // namespace ceelo

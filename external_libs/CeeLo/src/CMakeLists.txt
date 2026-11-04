@@ -3,17 +3,26 @@ add_library(CeeLo
     cross_sections/element_data.cpp
     cross_sections/photon_epics_data.cpp
     cross_sections/relaxation_epics_data.cpp
+    cross_sections/electron_elastic_data.cpp
+    cross_sections/electron_ionization_data.cpp
     materials/Material.cpp
     materials/BuiltinMaterials.cpp
     geometry/Cylinder.cpp
     geometry/Box.cpp
     geometry/RayTrace.cpp
+    geometry/GeometryDescriptor.cpp
     geometry/BoundingCone.cpp
     geometry/ConvexSeparation.cpp
     geometry/SourceGeometry.cpp
+    geometry/EnvironmentGeometry.cpp
+    transport/FluenceTally.cpp
+    transport/NextEventEstimator.cpp
     transport/ComptonScatter.cpp
+    transport/RayleighAngular.cpp
+    transport/AngularNorms.cpp
     transport/PhotonTransport.cpp
     transport/TransportUtils.cpp
+    physics/BremsAngular.cpp
     physics/ElectronCsda.cpp
     physics/estar_stopping_data.cpp
     cascade/AnalyticCascade.cpp
@@ -22,6 +31,13 @@ add_library(CeeLo
     efficiency/SourceDimensionEstimator.cpp
     export/Geant4Export.cpp
     io/VirtualDepthFit.cpp
+    io/Pchip.cpp
+    io/EnvScatterKernel.cpp
+    io/EnvFitArchive.cpp
+    io/EnvFitBlockBuilder.cpp
+    io/EnvFitPayload.cpp
+    full_spectrum/FullSpectrumModel.cpp
+    full_spectrum/ArrivalResponse.cpp
 )
 
 # Storable detector-response payload (optional; see CEELO_BUILD_RESPONSE in the
@@ -31,7 +47,6 @@ if(CEELO_BUILD_RESPONSE)
         io/DetectorEtendue.cpp
         io/DetectorResponse.cpp
         io/EfficiencyTransfer.cpp
-        io/Pchip.cpp
         io/ResponseGenerator.cpp
         io/ResponseKernel.cpp
     )

@@ -12,6 +12,16 @@ add_ceelo_example(vpd_generate            vpd_generate.cpp)
 add_ceelo_example(export_cascade_g4        export_cascade_g4.cpp)
 add_ceelo_example(sphere_g4_validation     sphere_g4_validation.cpp)
 
+# The environment-scatter bake programs (env_kernel_bake, env_kernel_merge,
+# env_fit_*, env_registered_e0_gate, env_scatter_export) live with the other
+# bake tools in tools/full_spectrum/.
+
+if(CEELO_BUILD_CERES_TESTS)
+    find_package(Ceres REQUIRED)
+    add_executable(full_spectrum_ceres_fit full_spectrum_ceres_fit.cpp)
+    target_link_libraries(full_spectrum_ceres_fit PRIVATE CeeLo Ceres::ceres)
+endif()
+
 # NOTE: one-off research studies (study0/7/8/9, study_grids, efficiency_grid_study,
 # cascade_shielding_study) and perf micro-benchmarks (bench_compton_cap,
 # bench_perf_verify) live in the dev-only studies/ tree, which is not part of the
@@ -20,6 +30,11 @@ add_ceelo_example(sphere_g4_validation     sphere_g4_validation.cpp)
 
 # Cascade-summing validation study (needs the SandiaDecay adapter).
 if(CEELO_WITH_SANDIADECAY)
+    add_executable(full_spectrum_nuclides full_spectrum_nuclides.cpp)
+    target_link_libraries(full_spectrum_nuclides PRIVATE CeeLoCascade)
+    target_compile_definitions(full_spectrum_nuclides PRIVATE
+        SANDIA_DECAY_XML_PATH="${CEELO_SANDIADECAY_DIR}/sandia.decay.xml")
+
     add_executable(cascade_validation cascade_validation.cpp)
     target_link_libraries(cascade_validation PRIVATE CeeLoCascade)
     target_compile_definitions(cascade_validation PRIVATE

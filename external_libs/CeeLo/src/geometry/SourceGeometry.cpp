@@ -30,10 +30,12 @@
 #include "transport/ComptonScatter.h"
 #include "transport/TransportUtils.h"
 
-#include <cmath>
 #include <algorithm>
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <random>
+#include <utility>
 
 namespace ceelo {
 
@@ -950,10 +952,57 @@ double SourceGeometry::min_distance_to_boundary(
     }
 }
 
+double SourceGeometry::min_distance_within_material(
+    const Eigen::Vector3d& position,
+    const Material& material) const
+{
+    // If every finite source region has the same Material object, the nearest
+    // material boundary is the outer source+shield envelope. Pointer identity
+    // is intentional: distinct Material objects may differ in density or
+    // composition even when their names happen to match.
+    const Material* homogeneous_material = nullptr;
+    bool homogeneous = true;
+    auto include_region = [&](const Material* candidate) {
+        if (!candidate || !homogeneous)
+            return;
+        if (!homogeneous_material)
+            homogeneous_material = candidate;
+        else if (homogeneous_material != candidate)
+            homogeneous = false;
+    };
+
+    include_region(source_material_);
+    for (const auto& layer : shields())
+        include_region(layer.material);
+    // A cored source always has an interface at the source/core wall - and
+    //  possibly a void behind the cores - so it is never homogeneous; the same
+    //  rule as the single-material electron-containment test.
+    if (has_attenuating_interior_)
+        homogeneous = false;
+
+    if (homogeneous && homogeneous_material == &material)
+        return min_distance_to_boundary(position, /*include_shields=*/true);
+
+    // In a heterogeneous geometry the source-material surface is still a
+    // cheap, conservative boundary. Shield-born particles fall back to the
+    // full walk because not every supported shape has a general nearest-layer
+    // distance calculation.
+    if (source_material_ == &material)
+        return min_distance_to_boundary(position, /*include_shields=*/false);
+
+    return 0.0;
+}
+
 double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
                                              const Eigen::Vector3d& direction,
                                              double energy_MeV) const {
     double total_mu_L = 0.0;
+    const auto attenuation_mu = [&](const Material* material) {
+        const MacroscopicXS xs = material->macroscopic_xs(energy_MeV);
+        return rayleigh_enabled_
+            ? xs.mu_total()
+            : xs.mu_pe + xs.mu_cs + xs.mu_pp;
+    };
 
     // With cores the concentric stack is walked once, in order, and this is just
     //  the sum over the segments it returns; without them, the original per-layer
@@ -964,7 +1013,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         trace_cored_segments(position, direction, segments, SIZE_MAX);
         for (const SourcePathSegment& seg : segments) {
             if (seg.material && seg.length > 0.0)
-                total_mu_L += seg.material->mu_total(energy_MeV) * seg.length;
+                total_mu_L += attenuation_mu(seg.material) * seg.length;
         }
         return std::exp(-total_mu_L);
     }
@@ -973,7 +1022,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
     if (source_material_) {
         double path = source_material_path(position, direction);
         if (path > 0.0) {
-            total_mu_L += source_material_->mu_total(energy_MeV) * path;
+            total_mu_L += attenuation_mu(source_material_) * path;
         }
     }
 
@@ -982,7 +1031,8 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         // Spherical shells: path = thickness (direction-independent)
         for (const auto& layer : shields()) {
             assert(layer.is_uniform());
-            total_mu_L += layer.material->mu_total(energy_MeV) * layer.scalar_thickness();
+            total_mu_L += attenuation_mu(layer.material)
+                * layer.scalar_thickness();
         }
     } else if (shape_ == Shape::Cylindrical) {
         // Cylindrical shells: compute path through each shell
@@ -1024,7 +1074,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
             }
 
             if (path > 0.0) {
-                total_mu_L += layer.material->mu_total(energy_MeV) * path;
+                total_mu_L += attenuation_mu(layer.material) * path;
             }
 
             inner_r = outer_r;
@@ -1068,7 +1118,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
             }
 
             if (path > 0.0) {
-                total_mu_L += layer.material->mu_total(energy_MeV) * path;
+                total_mu_L += attenuation_mu(layer.material) * path;
             }
 
             inner_hx = outer_hx;
@@ -1086,7 +1136,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
             double path = spherical_shell_path(sphere_center_, position, direction,
                                                inner_r, outer_r);
             if (path > 0.0)
-                total_mu_L += layer.material->mu_total(energy_MeV) * path;
+                total_mu_L += attenuation_mu(layer.material) * path;
             inner_r = outer_r;
         }
     } else if (shape_ == Shape::Marinelli) {
@@ -1095,7 +1145,8 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         if (wall_factor > 0.0) {
             for (const auto& layer : shields()) {
                 assert(layer.is_uniform());
-                total_mu_L += layer.material->mu_total(energy_MeV) * layer.scalar_thickness() * wall_factor;
+                total_mu_L += attenuation_mu(layer.material)
+                    * layer.scalar_thickness() * wall_factor;
             }
         }
     }
@@ -1107,7 +1158,12 @@ double SourceGeometry::point_source_transmission(double energy_MeV) const {
     double total_mu_L = 0.0;
     for (const auto& layer : shields()) {
         assert(layer.is_uniform());
-        total_mu_L += layer.material->mu_total(energy_MeV) * layer.scalar_thickness();
+        const MacroscopicXS xs =
+            layer.material->macroscopic_xs(energy_MeV);
+        const double mu = rayleigh_enabled_
+            ? xs.mu_total()
+            : xs.mu_pe + xs.mu_cs + xs.mu_pp;
+        total_mu_L += mu * layer.scalar_thickness();
     }
     return std::exp(-total_mu_L);
 }
@@ -1132,7 +1188,7 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
         total_path += path;
         MacroscopicXS xs = mat->macroscopic_xs(energy_MeV);
         double mu_no_rs = xs.mu_pe + xs.mu_cs + xs.mu_pp;
-        double mu_rs = xs.mu_rs;
+        double mu_rs = rayleigh_enabled_ ? xs.mu_rs : 0.0;
 
         weight *= std::exp(-mu_no_rs * path);
 
@@ -1511,7 +1567,12 @@ double SourceGeometry::no_interaction_probability(
     for (const auto& seg : segments) {
         if (!seg.material || seg.length <= 0.0) continue;
         path += seg.length;
-        tau += seg.material->macroscopic_xs(energy_MeV).mu_total() * seg.length;
+        const MacroscopicXS xs =
+            seg.material->macroscopic_xs(energy_MeV);
+        const double mu = rayleigh_enabled_
+            ? xs.mu_total()
+            : xs.mu_pe + xs.mu_cs + xs.mu_pp;
+        tau += mu * seg.length;
     }
     if (path_cm) *path_cm = path;
     return std::exp(-tau);
@@ -1535,6 +1596,129 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
                                         budget);
 }
 
+SourceGeometry::SourcePrimaryElectronResult
+SourceGeometry::transport_source_electron(
+    const Eigen::Vector3d& position,
+    const Eigen::Vector3d& direction,
+    double kinetic_energy_keV,
+    std::mt19937_64& rng,
+    bool is_positron,
+    SourceSecondaryPhoton::Origin brems_origin) const
+{
+    SourcePrimaryElectronResult out;
+    out.stop_position = position;
+    if (!(kinetic_energy_keV > 0.0) || !std::isfinite(kinetic_energy_keV))
+        return out;
+
+    Eigen::Vector3d dir = direction;
+    const double norm = dir.norm();
+    if (!(norm > 0.0) || !std::isfinite(norm))
+        return out;
+    dir /= norm;
+
+    std::vector<SourcePathSegment> birth_segments;
+    trace_source_segments(position, dir, kinetic_energy_keV, birth_segments, 1);
+    if (birth_segments.empty() || !birth_segments.front().material) {
+        out.escaped = true;
+        out.escaped_electron = {position, dir, kinetic_energy_keV};
+        return out;
+    }
+
+    const ElectronSourceWalkResult walk =
+        ElectronCsda::instance().walk_in_source_geometry(
+            *this, *birth_segments.front().material, position, dir,
+            kinetic_energy_keV, rng, is_positron);
+    out.escaped = walk.escaped;
+    out.traversed_gcm2 = walk.traversed_gcm2;
+    out.stop_position = walk.stop_position;
+    out.annihilated_in_flight = walk.annihilated_in_flight;
+    out.residual_KE_at_annih_keV = walk.residual_KE_at_annih_keV;
+    if (walk.escaped) {
+        out.escaped_electron = {
+            walk.exit_position, walk.exit_direction, walk.exit_KE_keV,
+            is_positron};
+    }
+
+    auto transport_and_append =
+        [&](const Eigen::Vector3d& photon_position,
+            const Eigen::Vector3d& photon_direction,
+            double photon_energy_keV,
+            SourceSecondaryPhoton::Origin origin,
+            bool pair_history) {
+        auto transported = transport_source_photon_impl(
+            photon_position, photon_direction, photon_energy_keV, rng,
+            /*bias_budget=*/0);
+        if (transported.survived) {
+            out.photons.push_back(
+                {transported.position, transported.direction,
+                 transported.energy_keV, origin,
+                 transported.truth.compton_interactions,
+                 transported.truth.rayleigh_interactions,
+                 pair_history || transported.truth.pair_history});
+        }
+        for (auto& photon : transported.secondaries)
+            out.photons.push_back(std::move(photon));
+    };
+
+    for (const BremsPhoton& photon : walk.brems_photons) {
+        if (photon.impact_Z > 0) {
+            transport_and_append(
+                photon.position, photon.direction, photon.energy_keV,
+                SourceSecondaryPhoton::Origin::ImpactIonization, false);
+            continue;
+        }
+        if (!source_brems_enabled_) continue;
+        {
+            const SourceSecondaryPhoton::Origin photon_origin =
+                photon.charged_generation == 0
+                    ? brems_origin
+                    : SourceSecondaryPhoton::Origin::
+                        SecondaryElectronBrems;
+            if (record_truth_labels_) {
+                out.created_brems_photons.push_back(
+                    {photon.position, photon.direction, photon.energy_keV,
+                     photon_origin, 0, 0, false});
+            }
+            transport_and_append(
+                photon.position, photon.direction, photon.energy_keV,
+                photon_origin, false);
+        }
+    }
+
+    // A positron that escapes the source carries its annihilation photons with
+    // it; they are not part of the source-escape photon measure.
+    if (!is_positron || walk.escaped)
+        return out;
+
+    constexpr double kElectronMassKeV = 510.998950;
+    double energy1 = kElectronMassKeV;
+    double energy2 = kElectronMassKeV;
+    Eigen::Vector3d direction1 = sample_isotropic_direction(rng);
+    Eigen::Vector3d direction2 = -direction1;
+    auto origin = SourceSecondaryPhoton::Origin::PrimaryPositronAnnihilation;
+
+    if (walk.annihilated_in_flight) {
+        const double total_energy =
+            2.0 * kElectronMassKeV + walk.residual_KE_at_annih_keV;
+        std::uniform_real_distribution<double> uniform(0.0, 1.0);
+        const double fraction =
+            0.5 + (uniform(rng) - 0.5)
+                * walk.residual_KE_at_annih_keV / total_energy;
+        energy1 = fraction * total_energy;
+        energy2 = total_energy - energy1;
+        direction1 = sample_isotropic_direction(rng);
+        direction2 = sample_isotropic_direction(rng);
+        origin = SourceSecondaryPhoton::Origin::
+            PrimaryPositronAnnihilationInFlight;
+    }
+
+    transport_and_append(
+        walk.stop_position, direction1, energy1, origin, true);
+    transport_and_append(
+        walk.stop_position, direction2, energy2, origin, true);
+    return out;
+}
+
 SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photon_impl(
     const Eigen::Vector3d& position,
     const Eigen::Vector3d& direction,
@@ -1554,6 +1738,7 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
     // bremsstrahlung) across multiple Compton scatters
     std::vector<SourceElectron> result_electrons;
     std::vector<SourceSecondaryPhoton> result_secondaries;
+    SourceFullTransportResult::TruthLabels truth;
 
     // True once any interaction (Compton/PE/PP/Rayleigh) has occurred,
     // including scatters in earlier re-trace iterations.
@@ -1564,16 +1749,63 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
 
     // Transport a brems photon through the remaining source geometry and keep
     // the survivor (and any nested secondaries) as event secondaries.
-    auto transport_brems_photon = [&](const BremsPhoton& bp) {
+    auto transport_brems_photon =
+        [&](const BremsPhoton& bp,
+            SourceSecondaryPhoton::Origin brems_origin) {
+        const SourceSecondaryPhoton::Origin photon_origin =
+            bp.impact_Z > 0
+                ? SourceSecondaryPhoton::Origin::ImpactIonization
+                : bp.charged_generation == 0
+                ? brems_origin
+                : SourceSecondaryPhoton::Origin::
+                    SecondaryElectronBrems;
         auto br = transport_source_photon_impl(
             bp.position, bp.direction, bp.energy_keV, rng, /*bias_budget=*/0);
-        if (br.survived)
+        if (br.survived) {
             result_secondaries.push_back(
-                {br.position, br.direction, br.energy_keV});
+                {br.position, br.direction, br.energy_keV,
+                 photon_origin,
+                 br.truth.compton_interactions,
+                 br.truth.rayleigh_interactions,
+                 br.truth.pair_history});
+        }
         for (auto& sec : br.secondaries)
             result_secondaries.push_back(std::move(sec));
         for (auto& e : br.source_electrons)
             result_electrons.push_back(std::move(e));
+    };
+
+    // Transport a relaxation x-ray (K or L line) isotropically from `at`
+    // through the remaining source geometry. Lines below 1 keV stay local.
+    auto transport_relaxation_xray = [&](const Eigen::Vector3d& at, double x_keV) {
+        if (x_keV < 1.0) return;
+        auto x = transport_source_photon_impl(
+            at, sample_isotropic_direction(rng), x_keV, rng, /*bias_budget=*/0);
+        if (x.survived) {
+            result_secondaries.push_back(
+                {x.position, x.direction, x.energy_keV,
+                 SourceSecondaryPhoton::Origin::Fluorescence,
+                 x.truth.compton_interactions,
+                 x.truth.rayleigh_interactions,
+                 x.truth.pair_history});
+        }
+        for (auto& sec : x.secondaries)
+            result_secondaries.push_back(std::move(sec));
+        for (auto& e : x.source_electrons)
+            result_electrons.push_back(std::move(e));
+    };
+
+    // Relax a K vacancy of element Z: the K x-ray (or Auger), then the L
+    // vacancy a K-alpha leaves when the element has retained L lines.
+    auto relax_k_vacancy = [&](const Eigen::Vector3d& at, const FluorescenceData& fl,
+                               const LFluorescenceData* fl_L) {
+        const KRelaxation relax = sample_k_relaxation(fl, rng);
+        LRelaxation l_relax;
+        if (relax.line_keV > 0.0 && has_l_lines(fl_L)
+            && relax.filling_subshell >= kEadlL1 && relax.filling_subshell <= kEadlL3)
+            l_relax = sample_l_relaxation(*fl_L, relax.filling_subshell - kEadlL1, rng);
+        transport_relaxation_xray(at, relax.line_keV);
+        transport_relaxation_xray(at, l_relax.line_keV);
     };
 
     // Detect whether the source geometry is a single material (no internal
@@ -1623,12 +1855,37 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
     // 50 keV) is the other knob.
     auto process_electron = [&](const Eigen::Vector3d& e_pos,
                                 const Eigen::Vector3d& e_dir,
-                                double T_keV, const Material& mat) {
+                                double T_keV, const Material& mat,
+                                SourceSecondaryPhoton::Origin brems_origin,
+                                bool is_positron = false)
+        -> ElectronSourceWalkResult {
+        ElectronSourceWalkResult no_walk;
+        no_walk.stop_position = e_pos;
+        // An electron that is not walked emits the impact-ionization K x-rays
+        // of its whole slowing-down at its birth point.
+        auto impact_in_place = [&]() {
+            if (!source_impact_ionization_enabled_) return;
+            const auto& csda = ElectronCsda::instance();
+            const double ke = std::min(T_keV, ElectronCsda::impact_ionization_max_keV());
+            std::vector<ElectronCsda::ImpactXray> xrays;
+            csda.sample_impact_xrays(mat, ke, csda.impact_xray_yield(mat, ke), true, rng, xrays);
+            for (const auto& x : xrays) {
+                BremsPhoton bp{e_pos, sample_isotropic_direction(rng), x.line_keV};
+                bp.impact_Z = static_cast<std::uint8_t>(x.Z);
+                bp.impact_filling_subshell = x.filling_subshell;
+                transport_brems_photon(bp, brems_origin);
+            }
+        };
         const bool want_brems = source_brems_enabled_ &&
             T_keV > kMoliereBremsThreshold_keV;
         const bool want_escape = source_electron_enabled_ &&
             T_keV > source_electron_threshold_keV_;
-        if (!want_brems && !want_escape) return;
+        const bool want_positron_transport =
+            is_positron && source_positron_transport_enabled_;
+        if (!want_brems && !want_escape && !want_positron_transport) {
+            impact_in_place();
+            return no_walk;
+        }
 
         // The electron's reach (cm) in its birth material `mat`: the straight-
         // line displacement cannot exceed the CSDA path length. Exact for the
@@ -1637,7 +1894,8 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
         double range_cm = 0.0;
         if (mat.density() > 0.0) {
             range_cm =
-                ElectronCsda::instance().range_gcm2_material(mat, T_keV)
+                ElectronCsda::instance().range_gcm2_material(
+                    mat, T_keV, want_positron_transport)
                 / mat.density();
         }
 
@@ -1651,27 +1909,36 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
         else if (&mat == source_material_)
             d_stay = min_distance_to_boundary(e_pos, /*include_shields=*/false);
 
-        if (range_cm < d_stay) {
+        if (!want_positron_transport && range_cm < d_stay) {
             // Contained in `mat`: cannot escape, cannot cross an interface.
             if (want_brems) {
                 auto brems = ElectronCsda::instance().sample_brems_in_material(
                     mat, e_pos, e_dir, T_keV, rng);
-                for (const auto& bp : brems) transport_brems_photon(bp);
+                for (const auto& bp : brems)
+                    transport_brems_photon(bp, brems_origin);
             }
-            return;  // no escaped electron possible
+            impact_in_place();
+            return no_walk;  // no escaped electron possible
         }
 
         auto walk = ElectronCsda::instance().walk_in_source_geometry(
-            *this, mat, e_pos, e_dir, T_keV, rng);
+            *this, mat, e_pos, e_dir, T_keV, rng,
+            want_positron_transport);
 
-        if (source_brems_enabled_)
-            for (const auto& bp : walk.brems_photons) transport_brems_photon(bp);
+        for (const auto& bp : walk.brems_photons)
+            if (source_brems_enabled_ || bp.impact_Z > 0)
+                transport_brems_photon(bp, brems_origin);
 
+        // A slow positron still annihilates wherever it stops, so the
+        // kinetic-energy floor applies to electrons only.
         if (source_electron_enabled_ && walk.escaped &&
-            walk.exit_KE_keV > source_electron_threshold_keV_) {
+            (want_positron_transport ||
+             walk.exit_KE_keV > source_electron_threshold_keV_)) {
             result_electrons.push_back(
-                {walk.exit_position, walk.exit_direction, walk.exit_KE_keV});
+                {walk.exit_position, walk.exit_direction, walk.exit_KE_keV,
+                 want_positron_transport});
         }
+        return walk;
     };
 
     std::vector<SourcePathSegment> segments;  // reused across retrace iters (E2)
@@ -1680,7 +1947,7 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
 
         if (segments.empty()) {
             return {true, pos, dir, energy, std::move(result_secondaries),
-                    std::move(result_electrons), any_interaction, w_bias};
+                    std::move(result_electrons), any_interaction, w_bias, truth};
         }
 
         bool scattered = false;
@@ -1696,6 +1963,8 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
 
             double energy_MeV = energy * 1e-3;
             MacroscopicXS xs = seg.material->macroscopic_xs(energy_MeV);
+            if (!rayleigh_enabled_)
+                xs.mu_rs = 0.0;
             double mu_total = xs.mu_total();
 
             if (mu_total <= 0.0) {
@@ -1719,6 +1988,8 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
 
             switch (type) {
             case InteractionType::Photoelectric: {
+                if (record_truth_labels_)
+                    ++truth.photoelectric_interactions;
                 // A K-shell vacancy relaxes as in the crystal: the K x-ray
                 // is transported through the remaining source geometry, the
                 // rest of the binding energy stays local, and the
@@ -1730,44 +2001,53 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
                     const int Z_pe = seg.material->select_element(
                         energy_MeV, 0 /*PE*/, uniform(rng));
                     const FluorescenceData* fl = xs_data.fluorescence(Z_pe);
+                    const LFluorescenceData* fl_L = xs_data.l_fluorescence(Z_pe);
+                    double f_K = 0.0;
+                    bool k_shell = false;
                     if (fl && energy > fl->k_edge_keV) {
                         const double sigma_K =
                             xs_data.sigma_K_photoelectric(Z_pe, energy_MeV);
                         const double sigma_tot =
                             xs_data.sigma_photoelectric(Z_pe, energy_MeV);
-                        const double f_K = (sigma_tot > 0.0)
+                        f_K = (sigma_tot > 0.0)
                             ? std::min(sigma_K / sigma_tot, 1.0) : 1.0;
-                        if (uniform(rng) < f_K) {
-                            pe_KE = energy - fl->k_edge_keV;
-                            const KRelaxation relax = sample_k_relaxation(*fl, rng);
-                            if (relax.line_keV >= 1.0) {
-                                auto x = transport_source_photon_impl(
-                                    pos, sample_isotropic_direction(rng),
-                                    relax.line_keV, rng, /*bias_budget=*/0);
-                                if (x.survived) {
-                                    result_secondaries.push_back(
-                                        {x.position, x.direction, x.energy_keV});
-                                }
-                                for (auto& sec : x.secondaries)
-                                    result_secondaries.push_back(std::move(sec));
-                                for (auto& e : x.source_electrons)
-                                    result_electrons.push_back(std::move(e));
-                            }
+                        k_shell = uniform(rng) < f_K;
+                    }
+                    if (k_shell) {
+                        pe_KE = energy - fl->k_edge_keV;
+                        relax_k_vacancy(pos, *fl, fl_L);
+                    } else if (has_l_lines(fl_L)) {
+                        // Outer-shell absorption: an L vacancy (by the tabulated
+                        // subshell shares) may radiate a retained L line.
+                        const int s_l = sample_l_photoelectric_subshell(
+                            *fl_L, energy, f_K, rng);
+                        if (s_l >= 0 && energy > fl_L->sub[s_l].edge_keV) {
+                            pe_KE = energy - fl_L->sub[s_l].edge_keV;
+                            transport_relaxation_xray(
+                                pos, sample_l_relaxation(*fl_L, s_l, rng).line_keV);
                         }
                     }
                 }
                 // Below the 200 keV brems floor the photoelectron neither
-                // radiates nor (above the escape threshold) gets walked.
-                if (pe_KE > kMoliereBremsThreshold_keV) {
+                // radiates nor (above the escape threshold) gets walked; with
+                // impact ionization it still emits its K x-rays in place.
+                if (pe_KE > kMoliereBremsThreshold_keV
+                    || source_impact_ionization_enabled_) {
                     Eigen::Vector3d e_dir =
                         sample_photoelectron_direction(dir, pe_KE, rng);
-                    process_electron(pos, e_dir, pe_KE, *seg.material);
+                    process_electron(
+                        pos, e_dir, pe_KE, *seg.material,
+                        SourceSecondaryPhoton::Origin::PhotoelectronBrems);
                 }
                 return {false, pos, dir, energy, std::move(result_secondaries),
-                        std::move(result_electrons), true, w_bias};
+                        std::move(result_electrons), true, w_bias, truth};
             }
 
             case InteractionType::PairProduction: {
+                if (record_truth_labels_) {
+                    ++truth.pair_production_interactions;
+                    truth.pair_history = true;
+                }
                 // Generate two back-to-back annihilation gammas (electron rest mass energy)
                 // and transport each through the remaining source material.
                 constexpr double kElectronMassKeV = 510.998950;
@@ -1777,24 +2057,80 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
                 // uniformly; both particles start (approximately) along the
                 // photon direction.
                 double pair_T = energy - 2.0 * kElectronMassKeV;
+                ElectronSourceWalkResult positron_walk;
+                positron_walk.stop_position = pos;
                 if (pair_T > 0.0) {
                     double u = uniform(rng);
-                    process_electron(pos, dir, u * pair_T, *seg.material);
-                    process_electron(pos, dir, (1.0 - u) * pair_T, *seg.material);
+                    process_electron(
+                        pos, dir, u * pair_T, *seg.material,
+                        SourceSecondaryPhoton::Origin::PairElectronBrems,
+                        false);
+                    positron_walk = process_electron(
+                        pos, dir, (1.0 - u) * pair_T, *seg.material,
+                        SourceSecondaryPhoton::Origin::PairElectronBrems,
+                        true);
                 }
 
                 SourceFullTransportResult pp_result{false, pos, dir, energy,
                                                     std::move(result_secondaries),
                                                     std::move(result_electrons),
-                                                    true, w_bias};
-                Eigen::Vector3d ann_dir1 = sample_isotropic_direction(rng);
-                Eigen::Vector3d ann_dir2 = -ann_dir1;
-                for (const auto& ann_dir : {ann_dir1, ann_dir2}) {
+                                                    true, w_bias, truth};
+                // With positron transport off, the 511-keV pair is emitted at
+                // the pair vertex. Full-spectrum campaigns track the positron to its
+                // stop/annihilation point, omit source annihilation photons
+                // when it escapes, and include the in-flight continuum.
+                if (source_positron_transport_enabled_
+                    && positron_walk.escaped) {
+                    return pp_result;
+                }
+                const Eigen::Vector3d annihilation_position =
+                    source_positron_transport_enabled_
+                    ? positron_walk.stop_position : pos;
+                double annihilation_energy_1 = kElectronMassKeV;
+                double annihilation_energy_2 = kElectronMassKeV;
+                Eigen::Vector3d annihilation_direction_1 =
+                    sample_isotropic_direction(rng);
+                Eigen::Vector3d annihilation_direction_2 =
+                    -annihilation_direction_1;
+                if (source_positron_transport_enabled_
+                    && positron_walk.annihilated_in_flight) {
+                    const double total_energy =
+                        2.0 * kElectronMassKeV
+                        + positron_walk.residual_KE_at_annih_keV;
+                    const double fraction =
+                        0.5 + (uniform(rng) - 0.5)
+                        * (positron_walk.residual_KE_at_annih_keV
+                           / total_energy);
+                    annihilation_energy_1 = fraction * total_energy;
+                    annihilation_energy_2 =
+                        total_energy - annihilation_energy_1;
+                    annihilation_direction_1 =
+                        sample_isotropic_direction(rng);
+                    annihilation_direction_2 =
+                        sample_isotropic_direction(rng);
+                }
+                const std::array<std::pair<Eigen::Vector3d, double>, 2>
+                    annihilation_photons{{
+                        {annihilation_direction_1, annihilation_energy_1},
+                        {annihilation_direction_2, annihilation_energy_2},
+                    }};
+                const auto annihilation_origin =
+                    source_positron_transport_enabled_
+                    && positron_walk.annihilated_in_flight
+                    ? SourceSecondaryPhoton::Origin::PairAnnihilationInFlight
+                    : SourceSecondaryPhoton::Origin::PairAnnihilation;
+                for (const auto& annihilation : annihilation_photons) {
                     auto ann = transport_source_photon_impl(
-                        pos, ann_dir, kElectronMassKeV, rng, /*bias_budget=*/0);
-                    if (ann.survived)
+                        annihilation_position, annihilation.first,
+                        annihilation.second, rng, /*bias_budget=*/0);
+                    if (ann.survived) {
                         pp_result.secondaries.push_back(
-                            {ann.position, ann.direction, ann.energy_keV});
+                            {ann.position, ann.direction, ann.energy_keV,
+                             annihilation_origin,
+                             ann.truth.compton_interactions,
+                             ann.truth.rayleigh_interactions,
+                             true});
+                    }
                     // Propagate secondaries and source electrons from recursive calls
                     for (auto& sec : ann.secondaries)
                         pp_result.secondaries.push_back(std::move(sec));
@@ -1805,6 +2141,8 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
             }
 
             case InteractionType::Compton: {
+                if (record_truth_labels_)
+                    ++truth.compton_interactions;
                 int Z_cs = seg.material->select_element(energy_MeV, 1 /*CS*/, uniform(rng));
 
                 // Compton-angle mixture biasing (primary's first K vertices):
@@ -1858,38 +2196,66 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
                             w_bias *= p_sphere / q;
                             scatter = finish_compton_at_angle(
                                 energy, dir, mu, rng, Z_cs,
-                                /*doppler=*/false, &w_dir);
+                                compton_doppler_enabled_, &w_dir);
                             biased_vertex = true;
                             --bias_budget;
                         }
                     }
                 }
                 if (!biased_vertex) {
-                    scatter = sample_compton_scatter(energy, dir, rng, Z_cs);
+                    scatter = sample_compton_scatter(
+                        energy, dir, rng, Z_cs,
+                        compton_doppler_enabled_);
                 }
 
-                // Recoil electron: bremsstrahlung (all shapes) and Moliere
-                // escape (non-Marinelli) via process_electron.
+                // A Doppler-sampled collision leaves a vacancy in a known
+                // subshell (scatter.shell_index, xraylib order K, L1, L2, L3):
+                // relax K and retained-line L vacancies as after
+                // photoabsorption. The recoil electron then carries
+                // E - E' - U rather than E - E'.
                 double recoil_T = energy - scatter.scattered_energy_keV;
+                if (source_fluorescence_enabled_ && scatter.binding_deposit_keV > 0.0) {
+                    recoil_T = scatter.deposited_energy_keV;
+                    const auto& xs_data = CrossSectionData::instance();
+                    const double U = scatter.binding_deposit_keV;
+                    const FluorescenceData* fl = xs_data.fluorescence(Z_cs);
+                    const LFluorescenceData* fl_L = xs_data.l_fluorescence(Z_cs);
+                    if (scatter.shell_index == 0 && fl
+                        && std::abs(U - fl->k_edge_keV) < 0.05 * fl->k_edge_keV) {
+                        relax_k_vacancy(pos, *fl, fl_L);
+                    } else if (scatter.shell_index >= 1 && scatter.shell_index <= 3
+                               && has_l_lines(fl_L)) {
+                        const int s_l = scatter.shell_index - 1;
+                        const double edge = fl_L->sub[s_l].edge_keV;
+                        if (std::abs(U - edge) < 0.05 * edge)
+                            transport_relaxation_xray(
+                                pos, sample_l_relaxation(*fl_L, s_l, rng).line_keV);
+                    }
+                }
                 if (recoil_T > std::min(kMoliereBremsThreshold_keV,
-                                        source_electron_threshold_keV_)) {
+                                        source_electron_threshold_keV_)
+                    || source_impact_ionization_enabled_) {
                     Eigen::Vector3d e_dir = compton_recoil_direction(
                         dir, scatter.new_direction,
                         energy, scatter.scattered_energy_keV);
-                    process_electron(pos, e_dir, recoil_T, *seg.material);
+                    process_electron(
+                        pos, e_dir, recoil_T, *seg.material,
+                        SourceSecondaryPhoton::Origin::ComptonElectronBrems);
                 }
 
                 energy = scatter.scattered_energy_keV;
                 dir = scatter.new_direction;
                 if (energy < 1.0) {
                     return {false, pos, dir, energy, std::move(result_secondaries),
-                            std::move(result_electrons), true, w_bias};
+                            std::move(result_electrons), true, w_bias, truth};
                 }
                 scattered = true;
                 break;
             }
 
             case InteractionType::Rayleigh: {
+                if (record_truth_labels_)
+                    ++truth.rayleigh_interactions;
                 int Z_rs = seg.material->select_element(energy_MeV, 2 /*RS*/, uniform(rng));
                 double cos_theta = sample_rayleigh_cos_theta(Z_rs, energy, rng);
                 double phi = kTwoPi * uniform(rng);
@@ -1906,13 +2272,13 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
             // Walked all segments without interaction — photon exited
             pos += dir * distance_along_ray;
             return {true, pos, dir, energy, std::move(result_secondaries),
-                    std::move(result_electrons), any_interaction, w_bias};
+                    std::move(result_electrons), any_interaction, w_bias, truth};
         }
     }
 
     // Hit max scatters — kill the photon
     return {false, pos, dir, energy, std::move(result_secondaries),
-            std::move(result_electrons), true, w_bias};
+            std::move(result_electrons), true, w_bias, truth};
 }
 
 double SourceGeometry::outermost_extent_radius() const {

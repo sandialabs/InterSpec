@@ -9,13 +9,28 @@ these references against CeeLo's own results (regenerated into `build/examples/`
 
 ## FEP window
 
-These references were generated with the harness scoring a **1.5 keV** half-window
-for full-energy classification.  CeeLo's own default is
+Most of these references were generated with the harness scoring a **1.5 keV**
+half-window for full-energy classification.  CeeLo's own default is
 `ceelo::kDefaultFepWindowKeV` (physics/FepWindow.h), which is narrower — so any
-comparison against this data must pin CeeLo to 1.5 keV
+comparison against that data must pin CeeLo to 1.5 keV
 (`EfficiencyCalculator::set_fep_window_keV(1.5)`, as `cascade_ref_common.h` does)
 until the references are regenerated.  When regenerating, set the harness and
 CeeLo to the same window and update this note.
+
+The **1.5 keV** set is everything here except the two files listed below.  It
+includes the configs 20/21 pair added on branch `feature/FullSpecApprox`
+(`nai_3x3_pbbox_cellulose_15cm_multi.csv`, `nai_3x3_wbox_cellulose_15cm_multi.csv`),
+so those are covered by the same pin as configs 1-12 and 25/26 —
+`benchmark_mc_configs` pins `kReferenceFepWindowKeV = 1.5` and needs no flag.
+
+Scored at **0.75 keV** on both sides instead, and stamped as such in their own
+headers: `hpge_gem35_bullet_fe05cm_2cm_multi.csv` and
+`hpge_gem35_bullet_fe05cm_10cm_multi.csv` (configs 27/28).
+
+The harness now takes `--fep-window <keV>`; its default follows
+`ceelo::kDefaultFepWindowKeV` (0.75), so **regenerating any 1.5 keV reference
+requires passing `--fep-window 1.5` explicitly** or the new data will silently
+not be comparable to the CeeLo rows it is gated against.
 
 ## How to regenerate reference data
 
@@ -60,7 +75,11 @@ energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num
 
 ## Current reference files
 
-Generated with GEANT4 11.4.0, `FTFP_BERT` + `G4EmStandardPhysics_option4`.
+Generated with GEANT4 11.4.0, `FTFP_BERT` + `G4EmStandardPhysics_option4` — passed
+explicitly via `ceelo_g4val --em-option4`. The harness's own default is
+`G4EmLivermorePhysics`, so regenerating any of these without that flag silently
+changes the EM model.
+
 Point-source configs are cone-biased at 64M events/energy; extended and shielded
 sources are isotropic at 16M–32M, except configs 11 {2000, 3000} and 12 {662,
 1173, 2614}, which were regenerated at 64M.  Per-file provenance notes are in the

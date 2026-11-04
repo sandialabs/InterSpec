@@ -53,6 +53,7 @@
 #include <Eigen/Core>
 #include <random>
 #include <array>
+#include <mutex>
 #include <vector>
 
 namespace ceelo {
@@ -62,6 +63,40 @@ struct BremsPhoton {
     Eigen::Vector3d position;
     Eigen::Vector3d direction;
     double energy_keV;
+    /// Charged-particle generation that emitted this photon: zero for the
+    /// requested primary electron/positron, one for a Møller/Bhabha delta
+    /// electron, and so on.
+    std::uint8_t charged_generation = 0;
+    /// Nonzero for an electron-impact ionization K x-ray rather than a
+    /// bremsstrahlung photon: the element whose K shell was ionized, and the
+    /// EADL subshell that filled the vacancy (FluorescenceData numbering).
+    std::uint8_t impact_Z = 0;
+    std::uint8_t impact_filling_subshell = 0;
+};
+
+/// One bremsstrahlung emission EVENT with the emitting particle's state, from
+/// sample_brems_emissions_in_material(). Unlike BremsPhoton (creation-point
+/// position only), this carries everything a next-event estimator needs to
+/// score the photon's arrival probability through the 2BS angular density:
+/// the true emission position along the diffused walk, and the electron
+/// direction/energy at the emission vertex (the 2BS axis and its energy
+/// argument).
+struct BremsEmission {
+    /// True emission point, accumulated along the Highland-diffused walk
+    /// from the particle's birth position. In air the walk is metres long
+    /// and a soft photon's placement decides its attenuation to the
+    /// detector; in condensed media the displacement is mm-cm and harmless.
+    Eigen::Vector3d position;
+    /// The particle's diffused direction at the emission vertex, BEFORE the
+    /// emission recoil deflection -- the axis the 2BS density is about.
+    Eigen::Vector3d electron_dir;
+    /// The 2BS-sampled photon direction (for analog transport of the photon).
+    Eigen::Vector3d photon_dir;
+    double photon_keV = 0.0;
+    /// The particle's kinetic energy at the emission vertex (before the
+    /// photon's energy is deducted).
+    double electron_KE_keV = 0.0;
+    std::uint8_t charged_generation = 0;
 };
 
 /// Result of CSDA electron tracking through detector geometry.
@@ -86,6 +121,17 @@ struct ElectronDepositResult {
     bool escaped = false;
     double exit_KE_keV = 0.0;
     Eigen::Vector3d exit_direction{0.0, 0.0, 1.0};
+
+    /// Detailed walk only: kinetic energy carried out of the geometry by the
+    /// particle's delta rays (the rest of their energy is in
+    /// `deposited_scoring_keV` / non-scoring regions / their brems photons).
+    double escaped_delta_keV = 0.0;
+
+    /// Detailed walk with impact ionization: impact x-rays born in a scoring
+    /// region take their energy out of `deposited_scoring_keV` (the stopping
+    /// power already holds it); what the walk's scoring deposit could not
+    /// cover (an x-ray from an electron that then left) is reported here.
+    double unpaid_impact_keV = 0.0;
 
     /// Positron-only: set true when the positron annihilated IN FLIGHT during
     /// the walk (sampled per substep against the Heitler annihilation rate over
@@ -113,25 +159,40 @@ struct ElectronSourceWalkResult {
     Eigen::Vector3d exit_position{0.0, 0.0, 0.0};
     Eigen::Vector3d exit_direction{0.0, 0.0, 1.0};
     double exit_KE_keV = 0.0;
+
+    /// Total charged-particle path through source material, expressed as mass
+    /// thickness. This diagnostic is accumulated without additional random
+    /// draws and is useful for separating brems-rate errors from multiple-
+    /// scattering/path-length errors.
+    double traversed_gcm2 = 0.0;
+
+    /// Terminal point when the charged particle stops inside the source, or
+    /// the in-flight annihilation point for a positron.
+    Eigen::Vector3d stop_position{0.0, 0.0, 0.0};
+
+    /// Positron-only in-flight annihilation state, matching
+    /// ElectronDepositResult.
+    bool annihilated_in_flight = false;
+    double residual_KE_at_annih_keV = 0.0;
 };
 
-/// Minimum electron kinetic energy (keV) for Moliere condensed-history transport
-/// with discrete bremsstrahlung emission. Below this threshold, straight-line
-/// CSDA is used with no angular deflection and no bremsstrahlung.
-///
-/// This value must not be lowered below kSB_min_energy_keV without extending
-/// the Seltzer-Berger brems tables to cover the new range.
+/// Minimum electron kinetic energy (keV) for the detector-side Moliere
+/// condensed-history transport. The source walk uses the lower Seltzer-Berger
+/// limit because conversion-electron bremsstrahlung is relevant below 50 keV.
 static constexpr double kMoliereBremsThreshold_keV = 200.0;
 
 /// Minimum electron energy (keV) covered by the Seltzer-Berger brems tables.
-/// If kMoliereBremsThreshold_keV is lowered below this, the SB data in
-/// element_data.cpp must be regenerated with an extended energy range.
-static constexpr double kSB_min_energy_keV = 200.0;
+/// The embedded Seltzer-Berger grid (NIST EPQ) extends from 10 keV through 20 MeV.
+static constexpr double kSB_min_energy_keV = 10.0;
+
+/// Source-side electron floor for condensed-history direction diffusion and
+/// bremsstrahlung. It intentionally equals the table and photon-tally floor:
+/// low-energy conversion electrons can still emit observable 10–50 keV brems.
+static constexpr double kSourceBremsFloor_keV = kSB_min_energy_keV;
 
 static_assert(kMoliereBremsThreshold_keV >= kSB_min_energy_keV,
-    "Seltzer-Berger brems tables only cover electron energies >= 200 keV. "
-    "To lower the Moliere/brems threshold, regenerate element_data.cpp with "
-    "SB data extending to lower energies.");
+    "Detector-side condensed-history threshold must lie within the "
+    "Seltzer-Berger electron-energy grid.");
 
 /// Singleton that provides pre-computed CSDA range tables for Z = 1..92. Heavier
 /// elements (up to kMaxZ) are treated as uranium throughout the electron physics
@@ -159,7 +220,10 @@ public:
     /// in the Gaussian-core width: Highland-minus-hard vs soft-transport-moment).
 
     /// CSDA range for pure element Z at kinetic energy KE_keV (g/cm²).
-    double range_gcm2(int Z, double KE_keV) const;
+    /// is_positron selects the Berger-Seltzer F+ stopping table. Z > 92 uses
+    /// uranium's table; throws std::out_of_range outside Z = 1..kMaxZ.
+    double range_gcm2(int Z, double KE_keV,
+                      bool is_positron = false) const;
 
     /// CSDA range for a compound material using the Bragg range rule (g/cm²).
     /// R_compound = 1 / (Σᵢ wᵢ / Rᵢ(E))
@@ -211,21 +275,93 @@ public:
                                 bool disable_brems = false,
                                 bool is_positron = false) const;
 
+    /// Spectrum-fidelity sibling of deposited_in_scoring() (same arguments
+    /// and result, minus the Molière switch): a mixed condensed-history walk
+    /// at every energy, with elastic scattering from a per-material Wentzel
+    /// fit to the EPICS2023 EEDL transport moments (so electrons diffuse and
+    /// backscatter at surfaces), CSDA loss with straggling above 500 keV,
+    /// Seltzer-Berger brems and positron in-flight annihilation. An electron
+    /// whose residual range is below Geometry::safety_distance() deposits in
+    /// place without walking. Selected by TransportConfig::electron_transport;
+    /// the method and its knobs are described at the definition.
+    ElectronDepositResult deposited_in_scoring_detailed(
+                                const Eigen::Vector3d& position,
+                                const Eigen::Vector3d& direction,
+                                double KE_keV,
+                                const Geometry& geometry,
+                                std::mt19937_64& rng,
+                                bool disable_brems = false,
+                                bool is_positron = false,
+                                double impact_max_keV = 0.0) const;
+
+    /// Electron-impact K-shell ionization (EPICS2023 EEDL MT=534 x omega_K):
+    /// the expected number of K x-rays per g/cm² of path at kinetic energy
+    /// KE_keV in `mat`, and over the whole CSDA slowing-down from KE_keV to
+    /// rest. Elements above Z = 92 (no EEDL table) contribute nothing.
+    double impact_xray_rate_per_gcm2(const Material& mat, double KE_keV) const;
+    double impact_xray_yield(const Material& mat, double KE_keV) const;
+
+    /// One impact-ionization K x-ray: the element, the line and the EADL
+    /// subshell that filled the vacancy.
+    struct ImpactXray {
+        int Z = 0;
+        double line_keV = 0.0;
+        std::uint8_t filling_subshell = 0;
+    };
+
+    /// Draw Poisson(`mean`) impact-ionization K x-rays of `mat` into `out`
+    /// (appended): the element by its share of the rate at KE_keV (or, with
+    /// `slowing_down`, of the CSDA yield from KE_keV to rest), the line by
+    /// intensity. Draws nothing when `mean` is zero.
+    void sample_impact_xrays(const Material& mat, double KE_keV, double mean,
+                             bool slowing_down, std::mt19937_64& rng,
+                             std::vector<ImpactXray>& out) const;
+
+    /// The electron kinetic energy below which impact ionization is sampled:
+    /// unlimited by default; CEELO_EWALK_EII_EMAX (keV) caps it for A/B
+    /// against GEANT4 option4, which ionizes only below 100 keV without PIXE.
+    static double impact_ionization_max_keV();
+
     /// Sample bremsstrahlung photons from an electron (or positron) of kinetic
     /// energy KE_keV slowing down entirely within an infinite medium of `mat`.
     ///
-    /// Geometry-free companion to deposited_in_scoring(): same condensed-history
-    /// substepping, Seltzer-Berger emission sampling, and Highland direction
-    /// evolution, but every photon is reported at the creation position
+    /// Geometry-free companion to deposited_in_scoring(). Because containment
+    /// makes the final charged-particle state unobservable, it samples the
+    /// competing Seltzer-Berger and Moller optical-depth processes directly
+    /// along the CSDA range, applying Highland direction diffusion only before
+    /// actual interactions. Every photon is reported at the creation position
     /// (valid when the electron range is much smaller than both the medium
     /// thickness and the distance to the detector, e.g. source shields).
-    /// Returns no photons for KE ≤ 200 keV (below the SB table floor).
+    /// Returns no photons for KE ≤ 10 keV.
     std::vector<BremsPhoton> sample_brems_in_material(
                                 const Material& mat,
                                 const Eigen::Vector3d& position,
                                 const Eigen::Vector3d& direction,
                                 double KE_keV,
-                                std::mt19937_64& rng) const;
+                                std::mt19937_64& rng,
+                                std::uint8_t charged_generation = 0) const;
+
+    /// Emission-recording sibling of sample_brems_in_material(): identical
+    /// physics and RNG draw sequence, but each emission is reported with the
+    /// particle's state at the vertex (true along-walk position, diffused
+    /// direction, kinetic energy) instead of collapsing to the creation
+    /// point -- what a next-event estimator needs to evaluate the 2BS
+    /// density toward a detector. Position is accumulated by advancing along
+    /// the current diffused direction each Highland interval; the walk stays
+    /// geometry-free (a track that would cross a material boundary keeps its
+    /// birth material's stopping power -- accepted at the estimator's
+    /// channel-accuracy scope; the emitted photon's attenuation is traced
+    /// through the real geometry by the caller). With is_positron=true the
+    /// Bhabha delta spectrum and positron brems tables are used; delta
+    /// knock-ons are always electrons.
+    std::vector<BremsEmission> sample_brems_emissions_in_material(
+                                const Material& mat,
+                                const Eigen::Vector3d& position,
+                                const Eigen::Vector3d& direction,
+                                double KE_keV,
+                                std::mt19937_64& rng,
+                                bool is_positron = false,
+                                std::uint8_t charged_generation = 0) const;
 
     /// Condensed-history walk of an electron (or positron) through source
     /// geometry (source material + shields), emitting bremsstrahlung along
@@ -250,7 +386,9 @@ public:
                                 const Eigen::Vector3d& position,
                                 const Eigen::Vector3d& direction,
                                 double KE_keV,
-                                std::mt19937_64& rng) const;
+                                std::mt19937_64& rng,
+                                bool is_positron = false,
+                                std::uint8_t charged_generation = 0) const;
 
     // The per-element statics below accept Z = 1..kMaxZ and throw std::out_of_range
     // outside it. Z > kMaxElectronTableZ (92) returns uranium's value: the
@@ -308,6 +446,27 @@ public:
     static double source_escape_survival_exit(double exit_KE_keV, double Z_exit,
                                               double tau);
 
+    /// Macroscopic Seltzer-Berger bremsstrahlung cross section above the
+    /// 10 keV photon transport threshold, per unit mass thickness (cm²/g).
+    ///
+    /// This uses the absolute normalization retained in the embedded NIST EPQ
+    /// tables:
+    ///   chi = (beta²/Z²) kappa dSigma/dkappa,
+    /// rather than reconstructing a photon rate from radiation length and
+    /// radiative stopping power.  It therefore follows the same discrete
+    /// bremsstrahlung rate as Geant4's Livermore model.  The positron overload
+    /// includes the element-dependent Elwert correction.
+    double brems_emission_rate_per_gcm2(const Material& mat,
+                                        double KE_keV,
+                                        bool is_positron = false) const;
+
+    /// Macroscopic Møller/Bhabha delta-electron production rate above
+    /// `minimum_delta_keV`, per unit mass thickness (cm²/g).  This is the same
+    /// analytical cross section used by Geant4's G4MollerBhabhaModel.
+    double delta_electron_rate_per_gcm2(
+        const Material& mat, double KE_keV, double minimum_delta_keV,
+        bool is_positron = false) const;
+
 private:
     ElectronCsda();  // Builds range tables on first access.
 
@@ -335,8 +494,14 @@ private:
     // dominated runtime via sb_chi) with a small weighted sum of table lookups.
     std::array<std::array<double, kNGrid>, kMaxElectronTableZ> sb_Jchi_;
     std::array<std::array<double, kNGrid>, kMaxElectronTableZ> sb_Jchiok_;
+    mutable std::array<std::array<double, kNGrid>, kMaxElectronTableZ> sb_Jchiok_pos_;
+    mutable std::array<std::once_flag, kMaxElectronTableZ> sb_Jchiok_pos_once_;
 
-    double interpolate_range(int Z, double KE_keV) const;
+    // The positron Elwert-corrected integrals are substantially more expensive
+    // to build than their electron counterparts. Build only the elements that
+    // a run actually transports; call_once keeps the singleton thread-safe.
+    // Z is an electron-table Z (already mapped through electron_table_z()).
+    void ensure_positron_brems_integral(int Z) const;
 
     // Linear interpolation of a per-element table over the uniform log-energy grid.
     double interpolate_log_grid(const std::array<double, kNGrid>& tbl,
@@ -350,6 +515,24 @@ private:
     // the cache lifetime is naturally bounded) and guarded by a composition check.
     const std::array<double, kNGrid>& compound_range_table(const Material& mat,
                                                            bool is_positron = false) const;
+
+    // Cumulative expected number of >10 keV brems photons emitted while an
+    // electron slows from rest to each energy-grid node in an infinite medium.
+    // Built lazily per material from the absolute SB rate and CSDA range. This
+    // supports event-driven contained-secondary transport without storing
+    // another per-element static table.
+    const std::array<double, kNGrid>& compound_brems_depth_table(
+        const Material& mat,
+        bool is_positron = false) const;
+
+    // Cumulative expected number of Moller/Bhabha knock-ons above
+    // `minimum_delta_keV` while a charged particle slows from rest to each
+    // energy-grid node.  Like the brems optical-depth table, this is built
+    // lazily per material and permits event-driven contained transport.
+    const std::array<double, kNGrid>& compound_delta_depth_table(
+        const Material& mat,
+        double minimum_delta_keV,
+        bool is_positron = false) const;
 
     // Compound ESTAR/Tsai radiative ratio for a material, evaluated
     // on the energy grid and cached per-thread (same scheme as compound_range_table).

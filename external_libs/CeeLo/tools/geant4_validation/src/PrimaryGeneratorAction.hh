@@ -26,6 +26,7 @@
 #include "G4VUserPrimaryGeneratorAction.hh"
 #include "G4ThreeVector.hh"
 
+#include <cstdint>
 #include <random>
 
 class G4GeneralParticleSource;
@@ -69,6 +70,19 @@ public:
     /// Cone solid angle as fraction of 4π (0 if not cone-biased).
     double GetConeSolidAngleFraction() const { return cone_weight_; }
 
+    /// Multiply the auto-computed cone half-angle by this factor (default 1.0).
+    /// Used by the air-scatter study to widen the cone so off-axis air that
+    /// scatters photons into the detector is sampled. The importance weight
+    /// (= cone solid-angle fraction) scales accordingly, so tallies stay
+    /// unbiased. Call BEFORE EnableConeBias().
+    void SetConeScale(double s) { cone_scale_ = s; }
+
+    /// Seed the cone-direction generator (separate from G4Random).  main()
+    /// passes the run's --seed, so seeded processes sample independent
+    /// directions; a fixed seed made every parallel cone run repeat one
+    /// direction sequence.
+    void SetDirectionSeed(std::uint64_t seed) { rng_.seed(seed); }
+
 private:
     // GPS mode (default)
     G4GeneralParticleSource* gps_ = nullptr;
@@ -81,6 +95,7 @@ private:
     double energy_MeV_ = 0.0;
     double cos_theta_max_ = 0.0;  // cos(cone half-angle)
     double cone_weight_ = 0.0;    // (1 - cos_theta_max) / 2
+    double cone_scale_ = 1.0;     // multiplier on the auto half-angle
     double event_weight_ = 1.0;
 
     std::mt19937_64 rng_{42};

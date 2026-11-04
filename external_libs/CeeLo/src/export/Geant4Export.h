@@ -64,9 +64,19 @@ class SourceGeometry;
 /// @param vacuum_world  If true, the world volume uses G4_Galactic (vacuum)
 ///                      instead of Air. Use this when MC does not include air
 ///                      attenuation, so G4 and MC are consistent.
+/// @param min_world_half_xy_cm  If > 0, force the world box transverse half-size
+///                      (x and y) to at least this value (cm). The world volume
+///                      IS the air/vacuum region, so for an air-scatter study the
+///                      transverse extent must be large enough to contain the
+///                      off-axis air that can scatter photons into the detector;
+///                      the default auto-size is only a few cm wider than the
+///                      detector and would kill off-axis scatter at long range.
+/// @param min_world_half_z_cm  If > 0, force the world box half-length in z.
 void write_gdml(const Geometry& geom, const std::string& filename,
                 const SourceGeometry* source_geom = nullptr,
-                bool vacuum_world = false);
+                bool vacuum_world = false,
+                double min_world_half_xy_cm = 0.0,
+                double min_world_half_z_cm = 0.0);
 
 /// Write a GEANT4 GPS macro file for a point-source monoenergetic simulation.
 ///
@@ -126,5 +136,29 @@ void write_geant4_macro_spherical(const Eigen::Vector3d& center,
                                    double energy_keV,
                                    uint64_t num_events,
                                    const std::string& filename);
+
+/// Write a GEANT4 GPS macro for a monodirectional parallel beam over a disk.
+///
+/// Matches the detector-response campaign's source: photons travel along a
+/// fixed direction, starting on a disk of the given radius perpendicular to
+/// that direction and centred `back_off_cm` upstream of `aim_point`. The
+/// campaign additionally rejects start points whose ray misses the detector
+/// envelope, so the two are equivalent only after normalizing by the fraction
+/// of the disk that hits; `ceelo_export_detector_campaign` prints it.
+///
+/// @param aim_point    Point the beam axis passes through (detector frame, cm).
+/// @param direction    Beam direction (need not be normalized).
+/// @param disk_radius_cm  Radius of the start disk (cm).
+/// @param back_off_cm  Distance upstream of aim_point to place the disk (cm).
+/// @param energy_keV   Photon energy in keV.
+/// @param num_events   Number of events to simulate.
+/// @param filename     Output file path.
+void write_geant4_macro_parallel_beam(const Eigen::Vector3d& aim_point,
+                                      const Eigen::Vector3d& direction,
+                                      double disk_radius_cm,
+                                      double back_off_cm,
+                                      double energy_keV,
+                                      uint64_t num_events,
+                                      const std::string& filename);
 
 } // namespace ceelo

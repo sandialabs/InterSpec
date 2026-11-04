@@ -1,0 +1,62 @@
+{
+  "electron_brems": {
+    "rank": 16,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 0.0,
+    "loss": "cell_l1",
+    "count_weighting": false,
+    "init_lambda": 0.001
+  },
+  "positron_brems": {
+    "rank": 16,
+    "weight_grid": [
+      10,
+      6,
+      12
+    ],
+    "weight_lambda": 1e-09,
+    "loss": "cell_l1",
+    "count_weighting": true,
+    "init_lambda": 0.001
+  },
+  "positron_annihilation_continuum": {
+    "rank": 8,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 1e-08,
+    "loss": "cell_l1",
+    "count_weighting": true,
+    "init_lambda": 0.001
+  },
+  "positron_annihilation_in_flight_direct": {
+    "rank": 8,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 1e-06,
+    "loss": "l2",
+    "count_weighting": true,
+    "init_lambda": 0.001
+  },
+  "positron_annihilation_in_flight_continuum": {
+    "rank": 8,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 1e-08,
+    "loss": "l2",
+    "count_weighting": true,
+    "init_lambda": 0.001
+  }
+}

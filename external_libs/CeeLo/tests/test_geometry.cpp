@@ -29,6 +29,7 @@
 #include "geometry/Cylinder.h"
 #include "geometry/Box.h"
 #include "geometry/RayTrace.h"
+#include "geometry/GeometryDescriptor.h"
 #include "materials/Material.h"
 
 #include <Eigen/Core>
@@ -962,6 +963,83 @@ BOOST_AUTO_TEST_CASE(cylinder_with_attenuator) {
 
     BOOST_CHECK_CLOSE(nai_length, 5.08, 1e-2);
     BOOST_CHECK_CLOSE(al_length, 0.2, 2.0); // 1mm front + 1mm back = 2mm
+}
+
+BOOST_AUTO_TEST_CASE(outer_z_extent_encloses_stacked_layer_fronts) {
+    // Layers that all start at z_start = 0 (the GeometryDescriptor convention)
+    // stack their fronts in trace_ray(): 0.05 + 0.85 + 0.10 = 1.00 cm in front
+    // of the crystal, not max(front) = 0.85 cm.
+    auto ge = make_HPGe();
+    auto al = make_Aluminum();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{2.5, 3.0});
+    geom.set_dead_layer(0.07, 0.07, 0.0);
+    geom.add_attenuator(&al, 0.05, 0.0, 0.0, 3.0);
+    geom.add_attenuator(&al, 0.85, 0.40, 0.0, 3.0);
+    geom.add_attenuator(&al, 0.10, 0.10, 0.0, 3.0);
+    const auto [z_min, z_max] = geom.outer_z_extent();
+    BOOST_CHECK_CLOSE(z_min, -1.00, 1e-9);
+    BOOST_CHECK_CLOSE(z_max, 3.0, 1e-9);
+
+    // An oblique ray that enters the outermost front just inside its rim and
+    // leaves through the side before z = -0.85 meets material, so it must
+    // count as hitting the outer boundary.
+    const double r_out = 2.5 + 0.0 + 0.40 + 0.10;
+    const Eigen::Vector3d dir = Eigen::Vector3d(1.0, 0.0, 1.0).normalized();
+    const Eigen::Vector3d origin =
+        Eigen::Vector3d(r_out - 0.05, 0.0, -1.0) - 5.0 * dir;
+    BOOST_CHECK(!geom.trace_ray(origin, dir).empty());
+    BOOST_CHECK(geom.ray_hits_outer_boundary(origin, dir));
+
+    // A single layer with an explicit negative z_start keeps its old envelope.
+    Geometry single;
+    single.set_detector(&ge, CylinderDims{4.0, 8.0});
+    single.add_attenuator(&al, 0.10, 0.10, -0.10, 8.10);
+    BOOST_CHECK_CLOSE(single.outer_z_extent().first, -0.20, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(geometry_descriptor_text_round_trip) {
+    // A Micro-Detective-like stack: bullet, rounded bore, five housing layers
+    // of compound and near-vacuum materials, all starting at z = 0.
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{2.5, 3.0});
+    gd.bullet_radius_cm = 0.8;
+    gd.bore = BoreHoleConfig{0.435, 2.13, true};
+    gd.dead_layer = DeadLayerConfig{0.07, 0.07, 0.0};
+    gd.reference_point = ReferencePoint::EndcapFront;
+    gd.materials = {MaterialSpec::from(make_HPGe()),
+                    MaterialSpec{"PET film", 1.38, {{1, 0.041959}, {6, 0.625017},
+                                                    {8, 0.333025}}},
+                    MaterialSpec::from(make_Aluminum()),
+                    MaterialSpec{"vacuum", 1e-25, {{1, 1.0}}}};
+    gd.crystal_material_index = 0;
+    gd.layers = {{1, 0.05, 0.0, 0.0, 3.0}, {2, 0.0, 0.15, 0.0, 3.0},
+                 {3, 0.85, 0.40, 0.0, 3.0}, {2, 0.10, 0.10, 0.0, 3.0}};
+    gd.collimator = CollimatorSpec{2, 0.2, -1.5, 3.0};
+
+    const std::string text = gd.to_text();
+    const GeometryDescriptor back = GeometryDescriptor::from_text(text);
+    BOOST_CHECK_EQUAL(back.to_text(), text);
+    BOOST_CHECK(back.problems().empty());
+    BOOST_REQUIRE_EQUAL(back.materials.size(), 4u);
+    BOOST_CHECK_EQUAL(back.materials[1].name, "PET film");
+    BOOST_CHECK_EQUAL(back.materials[3].density_g_per_cm3, 1e-25);
+    BOOST_REQUIRE(back.bore.has_value());
+    BOOST_CHECK(back.bore->rounded_tip);
+    BOOST_CHECK_EQUAL(back.layers[2].front_thickness_cm, 0.85);
+    std::vector<std::unique_ptr<Material>> owned;
+    const Geometry g = back.build_geometry(owned);
+    // The collimator tube reaches past the 1.00 cm housing front.
+    BOOST_CHECK_CLOSE(g.outer_z_extent().first, -1.5, 1e-9);
+
+    // Malformed input is rejected, not half-read.
+    BOOST_CHECK_THROW(GeometryDescriptor::from_text("shape cylinder\nend\n"),
+                      std::runtime_error);
+    std::string truncated = text.substr(0, text.find("end"));
+    BOOST_CHECK_THROW(GeometryDescriptor::from_text(truncated), std::runtime_error);
+    std::string unknown = text;
+    unknown.insert(unknown.find("symmetry"), "colour blue\n");
+    BOOST_CHECK_THROW(GeometryDescriptor::from_text(unknown), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(bare_box_trace) {

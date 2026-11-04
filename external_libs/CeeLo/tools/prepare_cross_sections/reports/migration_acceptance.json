@@ -3,15 +3,15 @@
   "status": "accepted",
   "reviewer": "project maintainer (user approval)",
   "reviewed_at": "2026-09-23",
-  "source_lock_sha256": "3efabdacdc1e88e33a82ce69e4e6734cbaa482287db8a586760f2d04fdc7ce9a",
+  "source_lock_sha256": "6e3f7af063f6bd0e9eb45cdd5027bfdbe6af4b3f012f3e22eafa9d626fbc059f",
   "accepted_reports": {
     "tools/prepare_cross_sections/reports/photon_migration.json": {
-      "sha256": "d994cdf6c762e8ff6633b1a08fe94543357a1312902213ede2ddcc467b02b732",
+      "sha256": "85f3ecab9964ee25246461746bc6cc7a6cae63eb820269ce9824e8fa6a30b59a",
       "accepted_gate": "contribution-weighted attenuation p95",
       "rationale": "The 0.7123% p95 difference (1.6582% worst, within its 2% gate) remains the accepted change from the historical Geant4 fitted representation to direct EPICS2023 EPDL; the comparison stays on the historical baseline's domain (Z=1-92, 10 keV-10 MeV). The runtime tables now cover Z=1-98 and 10 keV-20 MeV. Every emitted curve, including Z=93-98 and the 10-20 MeV intervals, meets the generator gates against EPDL (0.1% pointwise, 0.05% for pair production, 0.05% integrated; angular and Rayleigh-CDF gates), re-checked on the emitted tables. Old-vs-new drift inside 10 keV-10 MeV is at most 0.18% per process and 0.10% in total attenuation, from re-selected nodes and repacking when the upper endpoint moved; both representations are within the generator gates against EPDL. The only larger moves are in the pair-production threshold sliver, where pair production is below 1e-6 of total attenuation and under the generator's floor. Independent NIST XCOM checks give photoelectric+Compton+pair agreement within 0.3% for Z=92-98 and within 0.5% at 12-20 MeV."
     },
     "tools/prepare_cross_sections/reports/stopping_migration.json": {
-      "sha256": "e91cc1ba4d72b5848517be914d012c72e6df3485d9e3ce3624f9410bd6271be9",
+      "sha256": "68b14fa893b053aa89c68c0c43f2041703df39c0d326bd98b86c146a2086b066",
       "accepted_gate": "historical stopping, CSDA-range, and deterministic-deposition compatibility",
       "rationale": "The differences are concentrated away from the 12 elements in the historical correction surface and reflect replacing cross-element interpolation, including gas/solid density-effect discontinuities, with direct all-Z NIST ESTAR tables. Historical anchor elements remain close. The per-element affine uint16 encoding adds at most 0.00195% collision and 0.00401% radiative error at the native nodes, negligible relative to both NIST's stated source precision and the accepted migration change. Re-bound 2026-09-23 after the photon extension changed the source lock; the stopping data and this report's measured values are unchanged (only its recorded source-lock hash differs)."
     }

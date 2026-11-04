@@ -29,6 +29,7 @@
 #include "materials/Material.h"
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <fstream>
 #include <sstream>
@@ -347,7 +348,9 @@ void write_gdml_air(std::ostream& out) {
 
 void write_gdml(const Geometry& geom, const std::string& filename,
                 const SourceGeometry* source_geom,
-                bool vacuum_world) {
+                bool vacuum_world,
+                double min_world_half_xy_cm,
+                double min_world_half_z_cm) {
     std::ofstream out(filename);
     if (!out) {
         throw std::runtime_error("write_gdml: cannot open file: " + filename);
@@ -423,6 +426,13 @@ void write_gdml(const Geometry& geom, const std::string& filename,
     double world_hxy = outer_r * 3.0 + 5.0;
     double world_hz  = (std::max(std::abs(z_min_geom), std::abs(z_max_geom)) + 5.0) * 3.0;
 
+    // Air-scatter studies: the world volume IS the air region, so force a large
+    // enough transverse (and axial) extent to contain the off-axis air that
+    // scatters photons into the detector. Default args are 0 (no-op), preserving
+    // the auto-sized world for all existing callers.
+    if (min_world_half_xy_cm > world_hxy) world_hxy = min_world_half_xy_cm;
+    if (min_world_half_z_cm  > world_hz)  world_hz  = min_world_half_z_cm;
+
     // Bore hole data.  The bore is part of the crystal polycone's profile, so
     // no separate bore solid or placement is needed.
     const bool has_bore = geom.has_bore_hole();
@@ -455,6 +465,12 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         dl_side  = geom.dead_layer()->side;
         dl_back  = geom.dead_layer()->back;
     }
+    // The ray tracer shrinks the scoring region inward by these thicknesses
+    // and leaves the remaining germanium as non-scoring material. Export the
+    // same split so the GDML geometry matches volume for volume.
+    const bool has_dead_layer = is_cyl && geom.has_dead_layer()
+        && (dl_front > 0.0 || dl_side > 0.0 || dl_back > 0.0);
+    const double active_R = has_dead_layer ? R - dl_side : R;
 
     // Sanitized crystal material name.
     std::string crystal_mat_name = sanitize_name(geom.detector_material()->name());
@@ -469,13 +485,23 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         double inner_z;       ///< z-extent of inner cavity solid
         double center_z;      ///< World z of solid center for physvol placement
         double inner_offset;  ///< z offset of inner solid center relative to outer solid center
-        bool use_subtraction; ///< true when the shell has a front or a back plate
+        bool use_subtraction; ///< true when the shell has a front and/or back disk
+        /// Zero side thickness with a front and/or back disk: the ray trace's
+        ///  "outer minus inner cylinder" is then just those disks, and a GDML
+        ///  subtraction of two equal-radius cylinders would leave coincident
+        ///  lateral surfaces -- so the disks are written as plain tubes.
+        bool disks_only;
+        double front_len;     ///< front disk thickness (shell_z_min .. inner z_min)
+        double back_len;      ///< back disk thickness (inner z_max .. shell_z_max)
     };
 
     std::vector<AttGDMLParams> att_gdml;
     {
+        // The dead layer is carved INSIDE the crystal (the exported crystal keeps
+        //  radius R), and RayTrace stacks the first shell on the crystal radius,
+        //  so no dead-layer term here: adding dl_side once pushed every housing
+        //  layer of a dead-layer detector out by that much in the GDML.
         double acc_r     = is_cyl ? R : std::sqrt(hx*hx + hy*hy);
-        if (geom.has_dead_layer()) acc_r += dl_side;
         double acc_z_min = 0.0;  // crystal front face
         double acc_z_max = L;    // crystal back face
 
@@ -494,12 +520,26 @@ void write_gdml(const Geometry& geom, const std::string& filename,
 
             double inner_center_world = (acc_z_min + acc_z_max) / 2.0;
             p.inner_offset    = inner_center_world - p.center_z;
-            // A cup (outer minus inner) whenever the shell has a front OR a back plate - the back
-            //  plate being where z_end reaches past the envelope inside (RayTrace's construction).
-            //  Only a shell with neither is the plain annular tube below.
-            const bool has_back = (shell_z_max > acc_z_max + 1.0e-9);   // not rounding residue
-            p.use_subtraction = ((att.front_thickness > 0.0 || has_back) && p.inner_z > 0.0
-                                 && !att.side_only);
+            // RayTrace subtracts only the inner cavity [acc_z_min, acc_z_max]
+            //  from a non-side_only shell, so a shell reaching past the cavity
+            //  carries a disk there whether or not front_thickness > 0 (a layer
+            //  whose z_end runs past the back face is a back plate).
+            p.front_len = acc_z_min - shell_z_min;
+            p.back_len  = shell_z_max - acc_z_max;
+            const bool has_disk = !att.side_only && p.inner_z > 0.0
+                                  && (p.front_len > 1e-9 || p.back_len > 1e-9);
+            p.use_subtraction = has_disk && att.side_thickness > 0.0;
+            p.disks_only      = has_disk && !(att.side_thickness > 0.0);
+            if (p.disks_only && !(p.front_len > 1e-9 && p.back_len > 1e-9)) {
+                // A single disk is placed at its own centre.
+                p.center_z = (p.back_len > 1e-9) ? acc_z_max + 0.5 * p.back_len
+                                                 : shell_z_min + 0.5 * p.front_len;
+            } else if (p.disks_only) {
+                // Union of both disks: the front disk is the first solid and
+                //  sets the placement; the back disk is offset from it.
+                p.center_z = shell_z_min + 0.5 * p.front_len;
+                p.inner_offset = (acc_z_max + 0.5 * p.back_len) - p.center_z;
+            }
 
             att_gdml.push_back(p);
 
@@ -518,6 +558,15 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         << "      xsi:noNamespaceSchemaLocation=\""
         << "http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd\">\n\n";
 
+    // The detector geometry's outer bounding cylinder, exactly as CeeLo sizes
+    //  its own emission cone (the harness reads this for --cone-bias; parsing
+    //  the solids instead missed attenuators standing in front of the crystal).
+    {
+        const auto [bz_min, bz_max] = geom.outer_z_extent();
+        out << "<!-- ceelo_cone_bounds_cm r=\"" << fmt(geom.outer_bounding_radius())
+            << "\" zmin=\"" << fmt(bz_min) << "\" zmax=\"" << fmt(bz_max) << "\" -->\n\n";
+    }
+
     // -----------------------------------------------------------------------
     // <define>: positions used in the structure section
     // -----------------------------------------------------------------------
@@ -527,7 +576,9 @@ void write_gdml(const Geometry& geom, const std::string& filename,
 
     // Attenuator inner-cavity offset positions (used in subtraction solids for cup-shaped endcaps).
     for (size_t i = 0; i < att_gdml.size(); ++i) {
-        if (att_gdml[i].use_subtraction) {
+        if (att_gdml[i].use_subtraction
+            || (att_gdml[i].disks_only && att_gdml[i].front_len > 1e-9
+                && att_gdml[i].back_len > 1e-9)) {
             out << "    <position name=\"att" << i << "_inner_offset\""
                 << " x=\"0\" y=\"0\" z=\"" << fmt(att_gdml[i].inner_offset) << "\""
                 << " unit=\"cm\"/>\n";
@@ -582,65 +633,72 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         << " z=\"" << fmt(2.0*world_hz) << "\""
         << " lunit=\"cm\"/>\n\n";
 
-    if (is_cyl && (has_bore || has_bullet)) {
-        // A coaxial and/or bulletized crystal is a surface of revolution, so it
-        // exports as ONE native G4Polycone rather than a stack of boolean
-        // solids.  That matters for more than tidiness: an earlier
-        // subtraction-based version of this export produced ~0.3% stuck-track
-        // warnings under cone-biased runs (G4 navigation struggles with tracks
-        // skimming a subtracted surface), which both floods the log and risks
-        // biasing the very comparison the export exists to support.  The
-        // polycone has none.
-        //
-        // Profile in crystal-local z (front face at -L/2, back at +L/2):
-        //   rmax  follows the front fillet from rho_c up to R over the first
-        //         r_b of depth, then stays at R.
-        //   rmin  is 0 until the bore starts, then the bore radius (via the
-        //         tip hemisphere first, if the bore is round-tipped).
-        // Circular arcs become chord segments; kArcSeg keeps the sagitta well
-        // under a micron, i.e. ~1e-4 % of the crystal volume.
-        constexpr int kArcSeg = 64;
-        struct ZPlane { double z, rmin, rmax; };
+    // Crystal-local polycone profile (front face at -L/2, back at +L/2) of a
+    //  filleted cylinder of radius r_out (fillet radius r_b, 0 = sharp edge)
+    //  spanning [z_front, z_back], with the bore cut into it from the back.
+    //  Written for the whole crystal and, with a dead layer, for the active
+    //  region nested inside it -- the tracer's dead = crystal - active - bore.
+    //   rmax  follows the front fillet from r_out - r_b up to r_out over the
+    //         first r_b of depth, then stays at r_out.
+    //   rmin  is 0 until the bore starts, then the bore radius (via the tip
+    //         hemisphere first, if the bore is round-tipped).
+    //  Circular arcs become chord segments; kArcSeg keeps the sagitta well
+    //  under a micron, i.e. ~1e-4 % of the crystal volume.
+    constexpr int kArcSeg = 64;
+    struct ZPlane { double z, rmin, rmax; };
+    auto polycone_profile = [&](double r_out, double r_b,
+                                double z_front, double z_back) {
+        const bool filleted = (r_b > 0.0);
+        const double rho_c = r_out - r_b;
         std::vector<ZPlane> profile;
 
-        const double z_front = -L / 2.0;
-        const double z_back  =  L / 2.0;
-
         // --- rmax: front fillet, then the straight side wall ---
-        if (has_bullet) {
+        if (filleted) {
             // Arc centre at (rho_c, z_front + r_b); walk the quarter circle
             // from the front face outward to the side wall.
             for (int i = 0; i <= kArcSeg; ++i) {
                 const double ang = (kPi / 2.0) * i / kArcSeg;   // 0 -> 90 deg
-                const double z = z_front + bullet_r * (1.0 - std::cos(ang));
-                const double r = bullet_rho_c + bullet_r * std::sin(ang);
+                const double z = z_front + r_b * (1.0 - std::cos(ang));
+                const double r = rho_c + r_b * std::sin(ang);
                 profile.push_back({z, 0.0, r});
             }
         } else {
-            profile.push_back({z_front, 0.0, R});
+            profile.push_back({z_front, 0.0, r_out});
         }
-        profile.push_back({z_back, 0.0, R});
+        profile.push_back({z_back, 0.0, r_out});
 
         // --- rmin: the bore, cut into the profile from the back ---
         //  Cut over the WHOLE profile, including any dead-layer slabs, which is
         //  what Geometry::trace_cylinder_geometry does too: it removes the bore
         //  from the active volume AND from the dead layer, so the GDML and the
-        //  MC describe the same germanium.
+        //  MC describe the same germanium.  The bore always starts at the
+        //  crystal's back face; a profile ending in front of it (an active
+        //  region ahead of a back dead layer) is simply bored to its own back.
         if (has_bore) {
-            const double z_bore_start = z_back - D_bore;   // apex of the bore
+            const double z_bore_start = L / 2.0 - D_bore;   // apex of the bore
+            if (z_bore_start < z_front)
+                throw std::runtime_error("write_gdml: the bore reaches the front "
+                                         "dead layer; not exportable");
             std::vector<ZPlane> bore;
             if (round_bore_tip) {
                 const double z_tip = z_bore_start + R_bore;  // hemisphere centre
                 for (int i = 0; i <= kArcSeg; ++i) {
                     const double ang = (kPi / 2.0) * i / kArcSeg;
-                    bore.push_back({z_tip - R_bore * std::cos(ang),
-                                    R_bore * std::sin(ang), 0.0});
+                    const double z = z_tip - R_bore * std::cos(ang);
+                    if (z < z_back) bore.push_back({z, R_bore * std::sin(ang), 0.0});
                 }
-            } else {
+            } else if (z_bore_start < z_back) {
                 bore.push_back({z_bore_start, 0.0, 0.0});      // flat bottom:
                 bore.push_back({z_bore_start, R_bore, 0.0});   // rmin steps up
             }
-            bore.push_back({z_back, R_bore, 0.0});
+            auto rmin_at = [&](double z) {
+                if (z <= z_bore_start) return 0.0;
+                const double z_tip = z_bore_start + R_bore;
+                if (!round_bore_tip || z >= z_tip) return R_bore;
+                const double dz = z_tip - z;
+                return std::sqrt(std::max(0.0, R_bore * R_bore - dz * dz));
+            };
+            if (!bore.empty()) bore.push_back({z_back, rmin_at(z_back), 0.0});
 
             // Merge onto the union of both profiles' z values, evaluating each
             // profile at the other's planes.  Evaluating rather than
@@ -648,18 +706,10 @@ void write_gdml(const Geometry& geom, const std::string& filename,
             // reaches back into the front fillet -- from cutting the arc short
             // and interpolating rmax straight to the back face.
             auto rmax_at = [&](double z) {
-                if (!has_bullet) return R;
-                if (z >= z_front + bullet_r) return R;
-                const double dz = (z_front + bullet_r) - z;
-                return bullet_rho_c
-                     + std::sqrt(std::max(0.0, bullet_r * bullet_r - dz * dz));
-            };
-            auto rmin_at = [&](double z) {
-                if (z <= z_bore_start) return 0.0;
-                const double z_tip = z_bore_start + R_bore;
-                if (!round_bore_tip || z >= z_tip) return R_bore;
-                const double dz = z_tip - z;
-                return std::sqrt(std::max(0.0, R_bore * R_bore - dz * dz));
+                if (!filleted) return r_out;
+                if (z >= z_front + r_b) return r_out;
+                const double dz = (z_front + r_b) - z;
+                return rho_c + std::sqrt(std::max(0.0, r_b * r_b - dz * dz));
             };
 
             std::vector<ZPlane> merged;
@@ -690,7 +740,28 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 profile.push_back(p);
             }
         }
+        return profile;
+    };
+    auto write_polycone = [&](const std::string& name, const std::vector<ZPlane>& profile) {
+        out << "    <polycone name=\"" << name << "\""
+            << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\">\n";
+        for (const auto& p : profile) {
+            out << "      <zplane rmin=\"" << fmt(p.rmin) << "\""
+                << " rmax=\"" << fmt(p.rmax) << "\""
+                << " z=\"" << fmt(p.z) << "\"/>\n";
+        }
+        out << "    </polycone>\n";
+    };
 
+    if (is_cyl && (has_bore || has_bullet)) {
+        // A coaxial and/or bulletized crystal is a surface of revolution, so it
+        // exports as ONE native G4Polycone rather than a stack of boolean
+        // solids.  That matters for more than tidiness: an earlier
+        // subtraction-based version of this export produced ~0.3% stuck-track
+        // warnings under cone-biased runs (G4 navigation struggles with tracks
+        // skimming a subtracted surface), which both floods the log and risks
+        // biasing the very comparison the export exists to support.  The
+        // polycone has none.
         out << "    <!-- Detector crystal (polycone: "
             << (has_bullet ? "bulletized front edge" : "sharp front edge")
             << (has_bore ? (round_bore_tip ? ", round-tipped bore" : ", flat-bottomed bore")
@@ -701,14 +772,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 << " cm about ring radius " << fmt(bullet_rho_c,4) << " cm;"
                 << " removes " << fmt(bullet_removed_vol,4) << " cm^3 of crystal -->\n";
         }
-        out << "    <polycone name=\"CrystalSolid\""
-            << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\">\n";
-        for (const auto& p : profile) {
-            out << "      <zplane rmin=\"" << fmt(p.rmin) << "\""
-                << " rmax=\"" << fmt(p.rmax) << "\""
-                << " z=\"" << fmt(p.z) << "\"/>\n";
-        }
-        out << "    </polycone>\n";
+        write_polycone("CrystalSolid", polycone_profile(R, bullet_r, -L / 2.0, L / 2.0));
     } else if (is_cyl) {
         // Plain cylinder: a single tube, exactly as before.
         out << "    <!-- Detector crystal outer solid -->\n"
@@ -724,6 +788,23 @@ void write_gdml(const Geometry& geom, const std::string& filename,
             << " y=\"" << fmt(2.0*hy) << "\""
             << " z=\"" << fmt(L) << "\""
             << " lunit=\"cm\"/>\n";
+    }
+
+    // Dead layer: the active (scoring) region, nested in the crystal as a
+    //  daughter in the crystal's own local frame, so the remaining germanium of
+    //  the mother is the dead layer.  Same idiom as the source chain -- a
+    //  daughter displaces its mother's material exactly, no booleans.  The
+    //  active fillet follows RayTrace: the arc tangent to both offset faces,
+    //  radius r_b - max(front, side).
+    if (has_dead_layer) {
+        const double r_b_active =
+            has_bullet ? std::max(0.0, bullet_r - std::max(dl_front, dl_side)) : 0.0;
+        out << "\n    <!-- Active (scoring) region: crystal minus the dead layer"
+            << " (front=" << fmt(dl_front,4) << " side=" << fmt(dl_side,4)
+            << " back=" << fmt(dl_back,4) << " cm) -->\n";
+        write_polycone("ActiveSolid",
+                       polycone_profile(active_R, r_b_active,
+                                        -L / 2.0 + dl_front, L / 2.0 - dl_back));
     }
 
     // Attenuator solids: cup shape with solid front endcap + hollow cylindrical sides.
@@ -753,8 +834,27 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 << "      <second ref=\"AttInnerSolid" << i << "\"/>\n"
                 << "      <positionref ref=\"att" << i << "_inner_offset\"/>\n"
                 << "    </subtraction>\n";
+        } else if (p.disks_only) {
+            auto disk = [&](const std::string& name, double len) {
+                out << "    <tube name=\"" << name << "\""
+                    << " rmin=\"0\" rmax=\"" << fmt(p.inner_r) << "\""
+                    << " z=\"" << fmt(len) << "\""
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
+            };
+            if (p.front_len > 1e-9 && p.back_len > 1e-9) {
+                disk("AttFrontDisk" + std::to_string(i), p.front_len);
+                disk("AttBackDisk" + std::to_string(i), p.back_len);
+                out << "    <union name=\"AttSolid" << i << "\">\n"
+                    << "      <first ref=\"AttFrontDisk" << i << "\"/>\n"
+                    << "      <second ref=\"AttBackDisk" << i << "\"/>\n"
+                    << "      <positionref ref=\"att" << i << "_inner_offset\"/>\n"
+                    << "    </union>\n";
+            } else {
+                disk("AttSolid" + std::to_string(i),
+                     p.back_len > 1e-9 ? p.back_len : p.front_len);
+            }
         } else {
-            // Neither a front nor a back plate: simple hollow annular tube.
+            // No front or back disk: simple hollow annular tube.
             out << "    <tube name=\"AttSolid" << i << "\""
                 << " rmin=\"" << fmt(p.inner_r) << "\""
                 << " rmax=\"" << fmt(p.outer_r) << "\""
@@ -920,7 +1020,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
 
     // Dead-layer note (not explicitly modeled as separate GDML volume in this
     // first implementation; the crystal material provides attenuation).
-    if (geom.has_dead_layer()) {
+    if (geom.has_dead_layer() && !has_dead_layer) {
         out << "    <!-- NOTE: dead layer (front=" << fmt(dl_front,4) << " cm,"
             << " side=" << fmt(dl_side,4) << " cm,"
             << " back=" << fmt(dl_back,4) << " cm) is NOT explicitly modeled as a\n"
@@ -931,10 +1031,28 @@ void write_gdml(const Geometry& geom, const std::string& filename,
     // Crystal logical volume (named "active_crystal" for SteppingAction scoring).
     const std::string crystal_solid_ref =
         (is_cyl && !has_bore && !has_bullet) ? "CrystalOuterTube" : "CrystalSolid";
-    out << "    <!-- Active crystal: SteppingAction scores energy deposited here -->\n"
-        << "    <volume name=\"active_crystal\">\n"
-        << "      <materialref ref=\"" << crystal_mat_name << "\"/>\n"
-        << "      <solidref ref=\"" << crystal_solid_ref << "\"/>\n";
+    if (has_dead_layer) {
+        // The scoring daughter first (GDML defines a volume before its use),
+        //  then the dead germanium mother that carries it.
+        out << "    <!-- Active crystal: SteppingAction scores energy deposited here -->\n"
+            << "    <volume name=\"active_crystal\">\n"
+            << "      <materialref ref=\"" << crystal_mat_name << "\"/>\n"
+            << "      <solidref ref=\"ActiveSolid\"/>\n"
+            << "    </volume>\n\n"
+            << "    <!-- Whole crystal; what the active daughter leaves is the dead layer -->\n"
+            << "    <volume name=\"CrystalLV\">\n"
+            << "      <materialref ref=\"" << crystal_mat_name << "\"/>\n"
+            << "      <solidref ref=\"" << crystal_solid_ref << "\"/>\n"
+            << "      <physvol name=\"active_crystal_PV\">\n"
+            << "        <volumeref ref=\"active_crystal\"/>\n"
+            << "        <position x=\"0\" y=\"0\" z=\"0\" unit=\"cm\"/>\n"
+            << "      </physvol>\n";
+    } else {
+        out << "    <!-- Active crystal: SteppingAction scores energy deposited here -->\n"
+            << "    <volume name=\"active_crystal\">\n"
+            << "      <materialref ref=\"" << crystal_mat_name << "\"/>\n"
+            << "      <solidref ref=\"" << crystal_solid_ref << "\"/>\n";
+    }
 
     // The bore is part of the crystal polycone's profile, so the cavity belongs
     // to the world (vacuum for the validation exports -- which matches the MC,
@@ -1026,8 +1144,8 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         << "      <materialref ref=\"" << world_mat << "\"/>\n"
         << "      <solidref ref=\"WorldBox\"/>\n\n"
         << "      <!-- Crystal physical volume (front face at z=0, back at z=" << fmt(L,3) << " cm) -->\n"
-        << "      <physvol name=\"active_crystal_PV\">\n"
-        << "        <volumeref ref=\"active_crystal\"/>\n"
+        << "      <physvol name=\"" << (has_dead_layer ? "crystal_PV" : "active_crystal_PV") << "\">\n"
+        << "        <volumeref ref=\"" << (has_dead_layer ? "CrystalLV" : "active_crystal") << "\"/>\n"
         << "        <positionref ref=\"crystal_center\"/>\n"
         << "      </physvol>\n";
 
@@ -1317,6 +1435,61 @@ void write_geant4_macro_spherical(const Eigen::Vector3d& center,
                               << fmt(center.z(), 6) << " cm\n"
         << "/gps/pos/confine SrcMaterialPV\n"
         << "/gps/ang/type iso\n"
+        << "/gps/ene/type Mono\n"
+        << "/gps/ene/mono " << fmt(energy_keV * 1e-3, 6) << " MeV\n\n"
+        << "/run/beamOn " << num_events << "\n";
+
+    out.flush();
+}
+
+void write_geant4_macro_parallel_beam(const Eigen::Vector3d& aim_point,
+                                      const Eigen::Vector3d& direction,
+                                      double disk_radius_cm,
+                                      double back_off_cm,
+                                      double energy_keV,
+                                      uint64_t num_events,
+                                      const std::string& filename)
+{
+    std::ofstream out(filename);
+    if (!out) throw std::runtime_error("Cannot open macro file: " + filename);
+
+    const Eigen::Vector3d dir = direction.normalized();
+    const Eigen::Vector3d centre = aim_point - dir * back_off_cm;
+    // GPS builds the plane from rot1/rot2; any pair spanning the plane
+    // perpendicular to the beam works.
+    const Eigen::Vector3d trial = std::abs(dir.z()) < 0.8
+        ? Eigen::Vector3d(0.0, 0.0, 1.0) : Eigen::Vector3d(1.0, 0.0, 0.0);
+    const Eigen::Vector3d e1 =
+        Eigen::Vector3d(dir).cross(trial).normalized();
+    const Eigen::Vector3d e2 = Eigen::Vector3d(dir).cross(e1).normalized();
+
+    out << "# GEANT4 GPS macro generated by CeeLo (parallel beam on a disk)\n"
+        << "# Direction: (" << fmt(dir.x(), 6) << ", " << fmt(dir.y(), 6)
+        << ", " << fmt(dir.z(), 6) << ")\n"
+        << "# Disk radius: " << fmt(disk_radius_cm, 6) << " cm, centred "
+        << fmt(back_off_cm, 4) << " cm upstream of ("
+        << fmt(aim_point.x(), 4) << ", " << fmt(aim_point.y(), 4) << ", "
+        << fmt(aim_point.z(), 4) << ") cm\n"
+        << "# Energy: " << energy_keV << " keV\n"
+        << "# Events: " << num_events << "\n\n"
+        << "/gps/particle gamma\n"
+        << "/gps/pos/type Plane\n"
+        << "/gps/pos/shape Circle\n"
+        << "/gps/pos/radius " << fmt(disk_radius_cm, 6) << " cm\n"
+        << "/gps/pos/centre " << fmt(centre.x(), 6) << " "
+                              << fmt(centre.y(), 6) << " "
+                              << fmt(centre.z(), 6) << " cm\n"
+        << "/gps/pos/rot1 " << fmt(e1.x(), 6) << " " << fmt(e1.y(), 6)
+                            << " " << fmt(e1.z(), 6) << "\n"
+        << "/gps/pos/rot2 " << fmt(e2.x(), 6) << " " << fmt(e2.y(), 6)
+                            << " " << fmt(e2.z(), 6) << "\n"
+        << "/gps/ang/type planar\n"
+        << "/gps/ang/rot1 " << fmt(e1.x(), 6) << " " << fmt(e1.y(), 6)
+                            << " " << fmt(e1.z(), 6) << "\n"
+        << "/gps/ang/rot2 " << fmt(e2.x(), 6) << " " << fmt(e2.y(), 6)
+                            << " " << fmt(e2.z(), 6) << "\n"
+        << "/gps/direction " << fmt(dir.x(), 6) << " " << fmt(dir.y(), 6)
+                             << " " << fmt(dir.z(), 6) << "\n"
         << "/gps/ene/type Mono\n"
         << "/gps/ene/mono " << fmt(energy_keV * 1e-3, 6) << " MeV\n\n"
         << "/run/beamOn " << num_events << "\n";
