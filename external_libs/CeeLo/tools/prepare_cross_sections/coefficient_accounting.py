@@ -53,6 +53,8 @@ OBJECTS = {
     "element_data.cpp.o": "src/CMakeFiles/CeeLo.dir/cross_sections/element_data.cpp.o",
     "relaxation_epics_data.cpp.o": "src/CMakeFiles/CeeLo.dir/cross_sections/relaxation_epics_data.cpp.o",
     "estar_stopping_data.cpp.o": "src/CMakeFiles/CeeLo.dir/physics/estar_stopping_data.cpp.o",
+    "electron_elastic_data.cpp.o": "src/CMakeFiles/CeeLo.dir/cross_sections/electron_elastic_data.cpp.o",
+    "electron_ionization_data.cpp.o": "src/CMakeFiles/CeeLo.dir/cross_sections/electron_ionization_data.cpp.o",
 }
 RUNTIME_OBJECT = "src/CMakeFiles/CeeLo.dir/cross_sections/CrossSectionData.cpp.o"
 PHOTON_NAMES = (

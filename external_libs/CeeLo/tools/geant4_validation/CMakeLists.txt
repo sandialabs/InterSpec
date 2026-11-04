@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(CeeLoG4Validation)
 
-# This CMakeLists.txt is built only when the top-level option
-#   CEELO_BUILD_GEANT4_VALIDATION=ON
-# is set.  It requires a GEANT4 installation.
+# This directory may be built either standalone or from the top-level option
+# CEELO_BUILD_GEANT4_VALIDATION=ON. It requires a GEANT4 installation.
 #
 # To build:
 #   cmake -B build -S /path/to/mc_det_eff_plan \
@@ -32,14 +31,16 @@ set(G4VAL_SOURCES
     src/RunAction.cc
     src/EventAction.cc
     src/SteppingAction.cc
+    ../../src/io/EnvFitArchive.cpp
 )
 
 add_executable(ceelo_g4val ${G4VAL_SOURCES})
 
 target_include_directories(ceelo_g4val PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    # For physics/FepWindow.h only: the harness must classify full-energy with the SAME window
-    #  CeeLo scores with, and a hand-synced literal is exactly how those two drifted apart before.
+    # For physics/FepWindow.h and io/EnvFitArchive.h: the harness must classify full-energy with
+    #  the SAME window CeeLo scores with, and a hand-synced literal is exactly how those two
+    #  drifted apart before.
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 

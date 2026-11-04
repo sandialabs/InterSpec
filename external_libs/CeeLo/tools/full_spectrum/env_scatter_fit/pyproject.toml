@@ -1,0 +1,19 @@
+[build-system]
+requires = []
+build-backend = "build_backend"
+backend-path = ["."]
+
+[project]
+name = "ceelo-env-scatter-fit"
+version = "0.1.0"
+description = "Fit-first environmental-scatter campaign and surrogate tools"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+fit = ["numpy>=1.26"]
+archive = ["numpy>=1.26", "h5py>=3.10"]
+
+[project.scripts]
+ceefit = "env_scatter_fit.cli:main"

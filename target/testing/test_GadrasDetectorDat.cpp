@@ -780,7 +780,12 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   const string base = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(base), "Missing " + base );
 
-  // name -> hash, re-recorded 2026-09-23 (--record-gadras-hashes), for the CeeLo re-vendor that
+  // name -> hash, re-recorded 2026-11-02 (--record-gadras-hashes), for CeeLo's switch of
+  //  DetectorResponse::content_hash() from hashing the serialized XML to hashing the stored members
+  //  (2f3029c6), which moves every response's hash once.  "HPGe 40%", which carries no response,
+  //  kept its hash.
+  //
+  //  Previously re-recorded 2026-09-23, for the CeeLo re-vendor that
   //  regenerated its photon tables (CeeLo a032bc5: Z <= 98, 10 keV - 20 MeV).  The response each of
   //  these DRFs carries stores CeeLo's photon mu tables, and regenerating them moved every tabulated
   //  mu by at most 0.094% (max |d ln| = 9.4e-4 over MuPE/MuCS/MuRS/MuPP); through the kernel, LnEta
@@ -813,19 +818,19 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   //  (parameter 10), so no geometry can be built for it, it carries no CeeLo response, and it keeps
   //  the flat-disk treatment.  If that data file is ever corrected, this hash moves too.
   static const std::map<string,uint64_t> sm_expected = {
-    { "HPGe 10%", 11105849555574549990ull },
-    { "HPGe 20%", 12699365125597787390ull },
+    { "HPGe 10%", 7220337637084336725ull },
+    { "HPGe 20%", 10574136661919479182ull },
     { "HPGe 40%", 11793998863736797277ull },
-    { "LaBr 10%", 10603061785403644759ull },
-    { "LaBr 5%", 14639350877560941553ull },
-    { "NaI 10%", 1936410060157356732ull },
-    { "NaI 12%", 9885823345380394963ull },
-    { "NaI 1x1", 9525623812407942701ull },
-    { "NaI 25%", 16754079468361279556ull },
-    { "NaI 2x2", 2545616606137210441ull },
-    { "NaI 30%", 16341185075972576269ull },
-    { "NaI 3x3", 5750198296142389519ull },
-    { "NaI 5%", 10923877891009050372ull }
+    { "LaBr 10%", 4485705310667081682ull },
+    { "LaBr 5%", 17319719086175044535ull },
+    { "NaI 10%", 10402107236762285313ull },
+    { "NaI 12%", 9583958027464822181ull },
+    { "NaI 1x1", 9838334944521933408ull },
+    { "NaI 25%", 7856883847960711214ull },
+    { "NaI 2x2", 11185387477218545497ull },
+    { "NaI 30%", 9073700637782885512ull },
+    { "NaI 3x3", 15829542889611239351ull },
+    { "NaI 5%", 3894492620147479907ull }
   };
 
   bool record = false;

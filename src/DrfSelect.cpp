@@ -3733,6 +3733,28 @@ void DrfSelect::updateDrfContentSummary()
                     .arg( ceelo::to_string( mc->provenance.profile ) )
                     .arg( mc->provenance.valid_e_min_keV )
                     .arg( mc->provenance.valid_e_max_keV );
+
+    // The Monte-Carlo choices it was generated with (a no-MC transfer has none).
+    const ceelo::ResponseProvenance &prov = mc->provenance;
+    if( prov.method != ceelo::ProductionMethod::CurveTransfer )
+    {
+      const bool balanced = (prov.precision_profile == ceelo::PrecisionProfile::RelaxMild);
+      tip += WString::tr( balanced ? "ds-chip-tt-mc-precision-balanced" : "ds-chip-tt-mc-precision" )
+               .arg( SpecUtils::printCompact( 100.0*prov.node_fep_precision, 3 ) + "%" );
+    }
+
+    if( prov.method == ceelo::ProductionMethod::FullMc )
+    {
+      // Responses saved before the level was recorded still show whether they reach behind the face.
+      const bool covered = !mc->eta_fep.cos_thetas.empty() && (mc->eta_fep.cos_thetas.front() < 0.0);
+      const char *back_key = covered ? "ds-chip-tt-mc-back-yes" : "ds-chip-tt-mc-back-none";
+      if( prov.back_coverage == ceelo::BackCoverage::Coarse )
+        back_key = "ds-chip-tt-mc-back-coarse";
+      else if( prov.back_coverage == ceelo::BackCoverage::Fine )
+        back_key = "ds-chip-tt-mc-back-fine";
+      tip += WString::tr( back_key );
+    }//if( full MC )
+
     add_chip( WString::tr("ds-chip-mc"), tip, true );
 
     // Efficiency-transfer response (quick MC backbone, or anchored on a

@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <string>
 #include <cctype>
 
@@ -260,19 +261,20 @@ std::string printToBestLengthUnits( double length, int maxNpostDecimal,
 {
   using namespace std;
   length *= cm / cm_definition;
+  const double magnitude = fabs( length );  //the unit follows the magnitude; a negative keeps its sign
 
   char formatflag[32], buffer[64];
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s", maxNpostDecimal );
-  
-  if( length < (1000.0 * nm) )
+
+  if( magnitude < (1000.0 * nm) )
     snprintf(buffer, sizeof(buffer), formatflag, (length/nm), "nm" );
-  else if( length < (1000.0 * um) )
+  else if( magnitude < (1000.0 * um) )
     snprintf(buffer, sizeof(buffer), formatflag, (length/um), "um" );
-  else if( length < (10.0 * mm) )
+  else if( magnitude < (10.0 * mm) )
     snprintf(buffer, sizeof(buffer), formatflag, (length/mm), "mm" );
-  else if( length < (100.0 * cm) )
+  else if( magnitude < (100.0 * cm) )
     snprintf(buffer, sizeof(buffer), formatflag, (length/cm), "cm" );
-  else if( length < (1000.0 * m) )
+  else if( magnitude < (1000.0 * m) )
     snprintf(buffer, sizeof(buffer), formatflag, (length/m), "m" );
   else
     snprintf(buffer, sizeof(buffer), formatflag, (length/(1000.0*m)), "km" );
@@ -289,13 +291,14 @@ std::string printToBestLengthUnitsCompact( double length, size_t sig_figs,
   // Same magnitude-based unit selection as printToBestLengthUnits, but the number is formatted
   //  with SpecUtils::printCompact (significant figures, trailing zeros trimmed) instead of a
   //  fixed number of decimals.
+  const double magnitude = fabs( length );
   double value;
   const char *unit;
-  if( length < (1000.0 * nm) )      { value = length / nm;            unit = "nm"; }
-  else if( length < (1000.0 * um) ) { value = length / um;            unit = "um"; }
-  else if( length < (10.0 * mm) )   { value = length / mm;            unit = "mm"; }
-  else if( length < (100.0 * cm) )  { value = length / cm;            unit = "cm"; }
-  else if( length < (1000.0 * m) )  { value = length / m;             unit = "m";  }
+  if( magnitude < (1000.0 * nm) )      { value = length / nm;            unit = "nm"; }
+  else if( magnitude < (1000.0 * um) ) { value = length / um;            unit = "um"; }
+  else if( magnitude < (10.0 * mm) )   { value = length / mm;            unit = "mm"; }
+  else if( magnitude < (100.0 * cm) )  { value = length / cm;            unit = "cm"; }
+  else if( magnitude < (1000.0 * m) )  { value = length / m;             unit = "m";  }
   else                              { value = length / (1000.0 * m);  unit = "km"; }
 
   return SpecUtils::printCompact( value, sig_figs ) + " " + unit;
@@ -308,35 +311,36 @@ std::wstring printToBestLengthUnits( double length, double uncert,
   using namespace std;
   length *= cm / cm_definition;
   uncert *= cm / cm_definition;
-  
+  const double magnitude = fabs( length );
+
   double unit = 1000.0*m;
   wstring unitLabel = L" km";
-  
-  if( length < (1000.0 * nm) )
+
+  if( magnitude < (1000.0 * nm) )
   {
     unit = nm;
     unitLabel = L" nm";
-  }else if( length < (1000.0 * um) )
+  }else if( magnitude < (1000.0 * um) )
   {
     unit = um;
     unitLabel = L" um";
-  }else if( length < (10.0 * mm) )
+  }else if( magnitude < (10.0 * mm) )
   {
     unit = mm;
     unitLabel = L" mm";
-  }else if( length < (100.0 * cm) )
+  }else if( magnitude < (100.0 * cm) )
   {
     unit = cm;
     unitLabel = L" cm";
-  }else if( length < (1000.0 * m) )
+  }else if( magnitude < (1000.0 * m) )
   {
     unit = m;
     unitLabel = L" m";
   }
-  
+
   wstringstream txt;
   txt << setprecision(maxNpostDecimal) << fixed << (length/unit) << L" (\x00B1";
-  if( ((uncert > 100.0*length) || (uncert < length/100.0)) && uncert!=0.0 )
+  if( ((uncert > 100.0*magnitude) || (uncert < magnitude/100.0)) && uncert!=0.0 )
     txt << setprecision(maxNpostDecimal) << scientific << (uncert/unit) << ")";
   else
     txt << setprecision(maxNpostDecimal) << fixed << (uncert/unit) << ")";
@@ -1228,6 +1232,19 @@ double stringToDistance( std::string str, double cm_definition )
 
   return distance;
 }//double stringToDistance( std::string str )
+
+
+double stringToSignedDistance( const std::string &str, const double cm_definition )
+{
+  string trimmed = str;
+  SpecUtils::trim( trimmed );
+  if( !trimmed.empty() && ((trimmed[0] == '-') || (trimmed[0] == '+')) )
+  {
+    const double magnitude = stringToDistance( trimmed.substr( 1 ), cm_definition );
+    return (trimmed[0] == '-') ? -magnitude : magnitude;
+  }
+  return stringToDistance( trimmed, cm_definition );
+}//double stringToSignedDistance(...)
 
 
 double stringToAbsorbedDose( const std::string &str, const double gray_definition )

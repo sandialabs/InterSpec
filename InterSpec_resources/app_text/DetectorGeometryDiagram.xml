@@ -18,6 +18,7 @@
   <message id="dgd-dead-dims">Front {1}, side {2}</message>
   <message id="dgd-dead-dims-back">Front {1}, side {2}, back {3}</message>
   <message id="dgd-layer-dims">Front {1}, side {2}; outer diameter {3}</message>
+  <message id="dgd-layer-back">Back plate {1}</message>
   <message id="dgd-coll-dims">Thickness {1}, extends {2} past the face; inner diameter {3}</message>
   <message id="dgd-volume">Volume: {1} cm³</message>
   <message id="dgd-mass">Mass: {1}</message>

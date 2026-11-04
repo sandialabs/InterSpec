@@ -69,8 +69,9 @@ void PrimaryGeneratorAction::EnableConeBias(
     double dz_back  = std::abs(source_pos.z() - det_z_max_mm);
     double dz = std::min(dz_front, dz_back);
 
-    // Half-angle with 5% margin
-    double half_angle = std::atan2(max_apparent_radius, dz) * 1.05;
+    // Half-angle with 5% margin, optionally widened (air-scatter study) so the
+    // cone also subtends off-axis air that can scatter photons into the detector.
+    double half_angle = std::atan2(max_apparent_radius, dz) * 1.05 * cone_scale_;
     if (half_angle > M_PI) half_angle = M_PI;
 
     cos_theta_max_ = std::cos(half_angle);

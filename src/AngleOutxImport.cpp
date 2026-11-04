@@ -667,7 +667,7 @@ void read_detector( const xml_node<char> * const det_node, const double unit,
   }//if( endcap )
 
   // Pieces behind the crystal (NaI light path).  Carried for fidelity; they
-  //  affect backscatter only, and CeeLo models no back layers.
+  //  matter for sources behind the detector (see CeeLoUtils::buildAngleGeometry).
   const xml_node<char> * const coupling = child( det_node, "opticalCoupling" );
   if( coupling )
     add_layer( contents.layers, AngleLayerRole::OpticalCoupling,

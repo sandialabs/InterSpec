@@ -241,6 +241,11 @@ namespace PhysicalUnits
   //Throws std::runtime_exception on failure.
   double stringToDistance( std::string str, double cm_definition = cm );
 
+  /** As #stringToDistance, but a leading '-' (or '+') sign is allowed and applied to the whole
+   value - for positions that can be on either side of a reference, e.g. a source behind the
+   detector-face plane.  Throws std::runtime_exception on failure. */
+  double stringToSignedDistance( const std::string &str, double cm_definition = cm );
+
   /** Converts a string into absorbed dose.
    
    Accepted physical units: "gray", "Gy", "rad", "erg" (assumes per gram), "erg/g", "erg per gram"

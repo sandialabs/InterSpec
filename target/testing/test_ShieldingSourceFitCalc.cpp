@@ -3647,10 +3647,10 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
 }//BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
 
 
-/** A shell reaching past the detector-face plane is refused even beside the detector, clear of it:
- nothing there is modelled (GammaInteractionCalc::detector_face_plane_clearance).  The end-on
- cylinder below, 2 cm across from the detector's face centre, reaches 2 cm past the face plane at
- half-length 8 cm; at half-length 4 cm it stays in front of the plane and is accepted.
+/** A shell beside the detector is refused once it runs into the detector.  The end-on cylinder
+ below, radius 2 cm and centred 4 cm off the axis, spans 2-6 cm across: at half-length 8 cm it
+ reaches 2 cm past the face plane, into the NaI's 3.86 cm outer radius; at half-length 4 cm it stays
+ in front of the face and is accepted.
  */
 BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
 {
@@ -3672,48 +3672,307 @@ BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
           = make_ba133_point_input( det, 6.0*cm, 4.0*cm, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
     input.config.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-
-    ShieldingSourceFitCalc::TraceSourceInfo trace;
-    trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
-    trace.m_fitActivity = true;
-    trace.m_nuclide = db->nuclide( "Ba133" );
-    trace.m_activity = 10.0*PhysicalUnits::microCi;
-    trace.m_relaxationDistance = 0.0f;
-
-    ShieldingSourceFitCalc::ShieldingInfo shell;
+    add_ba133_trace_shell( input, water, 2.0*cm );
+    ShieldingSourceFitCalc::ShieldingInfo &shell = input.config.shieldings.at( 0 );
     shell.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-    shell.m_isGenericMaterial = false;
-    shell.m_forFitting = true;
-    shell.m_material = water;
-    shell.m_dimensions[0] = 2.0*cm;
     shell.m_dimensions[1] = half_length;
-    shell.m_dimensions[2] = 0.0;
-    shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
-    shell.m_traceSources.push_back( trace );
-
-    input.config.shieldings = { shell };
-    input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
 
     // Clear of the detector's face centre either way...
     const double outer[3] = { shell.m_dimensions[0], shell.m_dimensions[1], 0.0 };
     BOOST_REQUIRE_GT( GammaInteractionCalc::detector_face_clearance( input.config.geometry, outer,
                                                      input.config.distance, 4.0*cm, 0.0 ), 0.0 );
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
-                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
-    BOOST_REQUIRE( fcn.first );
-
-    // ...but only the shorter one is evaluated; the longer one's evaluation throws, which the
-    //  effective-shielding report turns into a warning.
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
-    vector<string> warnings;
-    fcn.first->computeEffectiveShielding( fcn.second.values(), cache, &warnings );
-    const bool refused = !warnings.empty();
+    // ...but only the shorter one is accepted: the longer one is refused when the fit is set up
+    //  (or, were it to get that far, by its evaluation, which the effective-shielding report turns
+    //  into a warning).
+    bool refused = false;
+    try
+    {
+      pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
+                                = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+      BOOST_REQUIRE( fcn.first );
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+      vector<string> warnings;
+      fcn.first->computeEffectiveShielding( fcn.second.values(), cache, &warnings );
+      refused = !warnings.empty();
+    }catch( std::exception & )
+    {
+      refused = true;
+    }
     BOOST_CHECK_MESSAGE( refused == (half_length > input.config.distance),
                          "half-length " << half_length/cm << " cm at 6 cm, 4 cm off axis: "
                          << (refused ? "refused" : "accepted") );
   }//for( half_length )
 }//BOOST_AUTO_TEST_CASE( ShellBesideDetectorPastFacePlaneIsRefused )
+
+
+/** A source beside or behind the detector - past its face plane - is set up only with a detector
+ response that models the detector's geometry, only while it stays clear of the detector, and with
+ every fitted dimension capped where it would run into the detector.
+ */
+BOOST_AUTO_TEST_CASE( ExtendedSceneGating )
+{
+  set_data_dir();
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const Material> water = MaterialDB::instance()->material( "water" );
+  BOOST_REQUIRE( water );
+
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<DetectorPeakResponse> transfer_det = make_synthetic_nai_drf( true );
+
+  auto flat_det = make_shared<DetectorPeakResponse>( "flat NaI", "no geometry" );
+  flat_det->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)", 2.0*3.81*cm,
+                                           PhysicalUnits::keV, 20.0f, 3000.0f,
+                                           DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_REQUIRE( flat_det->isValid() && !flat_det->geometry() );
+
+  using Fcn = GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+  // A point source 5 cm behind the face plane, 15 cm off the axis - beside the detector, clear of it.
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( transfer_det, -5.0*cm, 15.0*cm, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+
+    pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> fcn;
+    BOOST_REQUIRE_NO_THROW( fcn = Fcn::create( input ) );
+    BOOST_REQUIRE( fcn.first );
+    BOOST_CHECK( fcn.first->extendedScene() );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    const vector<double> counts = fcn.first->expected_peak_counts_imp<double>( fcn.second.values(), cache );
+    for( const double c : counts )
+      BOOST_CHECK( std::isfinite( c ) && (c > 0.0) );
+
+    // The same place with a flat-disk detector: refused - it describes the detector face-on only.
+    input.detector = flat_det;
+    BOOST_CHECK_THROW( Fcn::create( input ), std::exception );
+
+    // A source in front of the face is unaffected by any of this.
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput front
+          = make_ba133_point_input( flat_det, 15.0*cm, 5.0*cm, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    BOOST_REQUIRE_NO_THROW( fcn = Fcn::create( front ) );
+    BOOST_CHECK( !fcn.first->extendedScene() );
+  }
+
+  // A point source inside the detector: refused.
+  {
+    const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( transfer_det, -2.0*cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    BOOST_CHECK_THROW( Fcn::create( input ), std::exception );
+  }
+
+  // A water cylinder (end-on, 6 cm half-length) holding the Ba133 as a trace source, its radius fit.
+  const auto cylinder_input = [&]( const double distance, const double offset ){
+    Fcn::ShieldSourceInput input
+          = make_ba133_point_input( transfer_det, distance, offset, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    input.config.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+    add_ba133_trace_shell( input, water, 2.0*cm );
+    ShieldingSourceFitCalc::ShieldingInfo &shell = input.config.shieldings.at( 0 );
+    shell.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+    shell.m_dimensions[1] = 6.0*cm;
+    shell.m_fitDimensions[0] = true;
+    return input;
+  };
+
+  const auto radius_index = []( const ShieldingSourceFitCalc::FitParameters &params ) -> size_t {
+    for( size_t i = 0; i < params.parameters().size(); ++i )
+      if( SpecUtils::iends_with( params.parameters()[i].name, "_dr" ) )
+        return i;
+    return params.parameters().size();
+  };
+
+  // Each peak's expected counts, their analytic (Jet) derivative in the fitted radius, and a
+  //  central finite difference of the same.
+  struct RadiusDerivatives { vector<double> value, jet_value, jet, numeric; };
+  const auto radius_derivatives = [&]( const pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> &fcn ){
+    const vector<double> p0 = fcn.second.values();
+    const size_t ir = radius_index( fcn.second );
+    BOOST_REQUIRE_LT( ir, p0.size() );
+
+    using Jet1 = ceres::Jet<double,1>;
+    vector<Jet1> jp( p0.size() );
+    for( size_t i = 0; i < p0.size(); ++i )
+      jp[i] = Jet1( p0[i] );
+    jp[ir].v[0] = 1.0;
+    Fcn::NucMixtureCache jc, c0, cp, cm_;
+    const vector<Jet1> jets = fcn.first->expected_peak_counts_imp<Jet1>( jp, jc );
+    const vector<double> base = fcn.first->expected_peak_counts_imp<double>( p0, c0 );
+    const double h = 1.0E-3 * cm;
+    vector<double> pp = p0, pm = p0;
+    pp[ir] += h;
+    pm[ir] -= h;
+    const vector<double> fp = fcn.first->expected_peak_counts_imp<double>( pp, cp );
+    const vector<double> fm = fcn.first->expected_peak_counts_imp<double>( pm, cm_ );
+
+    RadiusDerivatives d;
+    for( size_t i = 0; i < base.size(); ++i )
+    {
+      d.value.push_back( base[i] );
+      d.jet_value.push_back( jets[i].a );
+      d.jet.push_back( jets[i].v[0] );
+      d.numeric.push_back( (fp[i] - fm[i]) / (2.0*h) );
+    }
+    return d;
+  };
+
+  // Centred on the face plane, 7 cm off the axis: the radius is capped where the cylinder would
+  //  touch the detector's side (7 cm less the NaI's outer radius, 3.81 + 0.05 cm).
+  {
+    pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> fcn;
+    BOOST_REQUIRE_NO_THROW( fcn = Fcn::create( cylinder_input( 0.0, 7.0*cm ) ) );
+    BOOST_CHECK( fcn.first->extendedScene() );
+
+    const size_t ir = radius_index( fcn.second );
+    BOOST_REQUIRE_LT( ir, fcn.second.parameters().size() );
+    BOOST_REQUIRE( fcn.second.parameters()[ir].has_upper );
+    BOOST_CHECK_CLOSE( fcn.second.parameters()[ir].upper, (7.0 - 3.86)*cm, 1.0E-3 );
+
+    // The line path integrates it, and its derivative in the fitted radius tracks a finite
+    //  difference - as well as it does in front of the detector, where (the control below) the
+    //  analytic gradient sits 6-7% off the estimator's own finite difference for this cylinder at the
+    //  default line count; beside the detector it measured 2.6-2.8%.
+    const RadiusDerivatives d = radius_derivatives( fcn );
+    for( size_t i = 0; i < d.value.size(); ++i )
+    {
+      BOOST_CHECK( std::isfinite( d.value[i] ) && (d.value[i] > 0.0) );
+      BOOST_CHECK_CLOSE_FRACTION( d.jet_value[i], d.value[i], 1.0E-9 );
+      BOOST_CHECK_MESSAGE( std::fabs( d.jet[i] - d.numeric[i] ) <= 0.10*std::fabs( d.numeric[i] ) + 1.0E-12*std::fabs( d.value[i] ),
+                           "peak " << i << ": Jet " << d.jet[i] << " vs finite difference " << d.numeric[i] );
+    }
+
+    // Grown past the cap, the evaluation refuses.
+    vector<double> params = fcn.second.values();
+    params[ir] = 3.5*cm;
+    Fcn::NucMixtureCache cache;
+    BOOST_CHECK_THROW( fcn.first->expected_peak_counts_imp<double>( params, cache ), std::exception );
+  }
+
+  // CONTROL (measurement only): the same cylinder in front of the detector - how well the line
+  //  path's analytic gradient tracks a finite difference with nothing extended.
+  {
+    const pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> fcn = Fcn::create( cylinder_input( 10.0*cm, 0.0 ) );
+    BOOST_REQUIRE( !fcn.first->extendedScene() );
+    const RadiusDerivatives d = radius_derivatives( fcn );
+    for( size_t i = 0; i < d.jet.size(); ++i )
+      BOOST_TEST_MESSAGE( "  front control peak " << i << ": Jet " << d.jet[i] << " vs FD " << d.numeric[i]
+                          << " (" << 100.0*(d.jet[i]/d.numeric[i] - 1.0) << "%)" );
+  }
+}//BOOST_AUTO_TEST_CASE( ExtendedSceneGating )
+
+
+/** A point source beside the detector is attenuated ray by ray over the response's fan
+ (pointFanFepEfficiencies): with nothing in the way that is exactly the point-source efficiency;
+ a spherical shield, the same chord every way, takes off exactly its optical depth; a box shield
+ something between its thinnest and thickest chords; and the derivative is the derivative.
+ */
+BOOST_AUTO_TEST_CASE( ExtendedPointSourceFan )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const Material> iron = MaterialDB::instance()->material( "Fe" );
+  BOOST_REQUIRE( iron );
+
+  using Fcn = GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  const auto make_input = [&]( const GammaInteractionCalc::GeometryType geom,
+                               const vector<ShieldingSourceFitCalc::ShieldingInfo> &shields ) {
+    Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, -5.0*cm, 15.0*cm, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    input.config.geometry = geom;
+    input.config.shieldings = shields;
+    return input;
+  };
+
+  // 1. Nothing in the way: the fan reproduces the point-source efficiency.
+  pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> bare;
+  BOOST_REQUIRE_NO_THROW( bare = Fcn::create( make_input( GammaInteractionCalc::GeometryType::Spherical, {} ) ) );
+  BOOST_REQUIRE( bare.first->usePointFan() );
+  const vector<pair<double,double>> widths = Fcn::observedPeakEnergyWidths( bare.first->peaks() );
+  vector<double> energies;
+  for( const auto &w : widths )
+    energies.push_back( w.first );
+  const vector<double> fan_bare = bare.first->pointFanFepEfficiencies<double>( bare.second.values(), energies, widths );
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    const double direct = bare.first->pointSourceFepEff( energies[i] ).value;
+    BOOST_CHECK_CLOSE_FRACTION( fan_bare[i], direct, 1.0E-9 );
+  }
+
+  // 2. A 0.5 cm iron sphere: every ray crosses the same 0.5 cm.
+  {
+    ShieldingSourceFitCalc::ShieldingInfo fe;
+    fe.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    fe.m_isGenericMaterial = false;
+    fe.m_material = iron;
+    fe.m_dimensions[0] = 0.5*cm;
+    fe.m_fitDimensions[0] = fe.m_fitDimensions[1] = fe.m_fitDimensions[2] = false;
+    pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> shielded;
+    BOOST_REQUIRE_NO_THROW( shielded = Fcn::create( make_input( GammaInteractionCalc::GeometryType::Spherical, { fe } ) ) );
+    const vector<double> fan = shielded.first->pointFanFepEfficiencies<double>( shielded.second.values(), energies, widths );
+    for( size_t i = 0; i < energies.size(); ++i )
+    {
+      const double tau = shielded.first->pointLayerOpticalDepth( iron.get(), energies[i], 0.5*cm, widths );
+      BOOST_CHECK_CLOSE_FRACTION( fan[i], fan_bare[i] * std::exp( -tau ), 1.0E-9 );
+    }
+  }
+
+  // 3. A box of iron, 0.3 x 0.5 x 1.0 cm half-thicknesses, its depth fit: between the thinnest and
+  //    thickest chords, and the Jet derivative matches a finite difference.
+  {
+    ShieldingSourceFitCalc::ShieldingInfo fe;
+    fe.m_geometry = GammaInteractionCalc::GeometryType::Rectangular;
+    fe.m_isGenericMaterial = false;
+    fe.m_forFitting = true;
+    fe.m_material = iron;
+    fe.m_dimensions[0] = 0.3*cm;
+    fe.m_dimensions[1] = 0.5*cm;
+    fe.m_dimensions[2] = 1.0*cm;
+    fe.m_fitDimensions[0] = fe.m_fitDimensions[1] = false;
+    fe.m_fitDimensions[2] = true;
+    pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> boxed;
+    BOOST_REQUIRE_NO_THROW( boxed = Fcn::create( make_input( GammaInteractionCalc::GeometryType::Rectangular, { fe } ) ) );
+    const vector<double> params = boxed.second.values();
+    const vector<double> fan = boxed.first->pointFanFepEfficiencies<double>( params, energies, widths );
+    for( size_t i = 0; i < energies.size(); ++i )
+    {
+      const double tau_thin = boxed.first->pointLayerOpticalDepth( iron.get(), energies[i], 0.3*cm, widths );
+      BOOST_CHECK_LT( fan[i], fan_bare[i] * std::exp( -tau_thin ) * 1.0001 );
+      BOOST_CHECK_GT( fan[i], 0.0 );
+    }
+
+    size_t ipar = params.size();
+    for( size_t i = 0; i < boxed.second.parameters().size(); ++i )
+    {
+      if( !boxed.second.parameters()[i].is_const && SpecUtils::iends_with( boxed.second.parameters()[i].name, "_dz" ) )
+        ipar = i;
+    }
+    BOOST_REQUIRE_LT( ipar, params.size() );
+
+    using Jet1 = ceres::Jet<double,1>;
+    vector<Jet1> jp( params.size() );
+    for( size_t i = 0; i < params.size(); ++i )
+      jp[i] = Jet1( params[i] );
+    jp[ipar].v[0] = 1.0;
+    const vector<Jet1> jets = boxed.first->pointFanFepEfficiencies<Jet1>( jp, energies, widths );
+
+    const double h = 1.0E-4 * cm;
+    vector<double> pp = params, pm = params;
+    pp[ipar] += h;
+    pm[ipar] -= h;
+    const vector<double> fp = boxed.first->pointFanFepEfficiencies<double>( pp, energies, widths );
+    const vector<double> fm = boxed.first->pointFanFepEfficiencies<double>( pm, energies, widths );
+    for( size_t i = 0; i < energies.size(); ++i )
+    {
+      const double numeric = (fp[i] - fm[i]) / (2.0*h);
+      BOOST_CHECK_CLOSE_FRACTION( jets[i].a, fan[i], 1.0E-12 );
+      BOOST_CHECK_CLOSE_FRACTION( jets[i].v[0], numeric, 1.0E-4 );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( ExtendedPointSourceFan )
 
 
 /** The fit report names the detector-efficiency model for the POINT sources even when the fit has

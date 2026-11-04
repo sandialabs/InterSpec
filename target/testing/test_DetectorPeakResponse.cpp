@@ -1499,7 +1499,7 @@ BOOST_AUTO_TEST_CASE( test_angle_detector_types )
     ceelo::GeometryDescriptor gd;
     BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
 
-    // The three behind-the-crystal pieces are dropped, and each says so.
+    // The two behind-the-crystal plates become back plates and the PMT wall is dropped; each says so.
     size_t n_behind_warnings = 0;
     for( const string &w : warnings )
       n_behind_warnings += (w.find("behind the") != string::npos) ? 1u : 0u;
@@ -1515,6 +1515,17 @@ BOOST_AUTO_TEST_CASE( test_angle_detector_types )
 
     // Reflecting layer 1.6 + vacuum 0.5 + end cap 0.5 mm.
     BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.26, 1.0e-3 );
+
+    // Optical coupling 2 + PMT window 2 mm, directly behind the crystal; the housing's walls run
+    //  on past them.
+    BOOST_CHECK_CLOSE( gd.back_structure_extent_cm(), 0.4, 1.0e-6 );
+    BOOST_REQUIRE( gd.layers.size() >= 3 );
+    BOOST_CHECK_CLOSE( gd.layer_back_thickness_cm( 0 ), 0.2, 1.0e-6 );
+    BOOST_CHECK_CLOSE( gd.layer_back_thickness_cm( 1 ), 0.2, 1.0e-6 );
+    BOOST_CHECK_EQUAL( gd.layers[0].front_thickness_cm, 0.0 );
+    BOOST_CHECK_EQUAL( gd.layers[0].side_thickness_cm, 0.0 );
+    BOOST_CHECK_CLOSE( gd.layers.back().z_end_cm, gd.dimensions_cm.back() + 0.4, 1.0e-6 );
+    BOOST_CHECK( gd.problems().empty() );
   }
 
   cout << "ANGLE detector types handled (planar, well refusal, NaI light path)" << endl;

@@ -246,6 +246,122 @@ namespace
 }//namespace
 
 
+/** `t` without its side & back nodes (cos theta < 0) - the table a front-only import makes. */
+ceelo::EtaTable strip_back_nodes( const ceelo::EtaTable &t )
+{
+  size_t nb = 0;
+  while( (nb < t.cos_thetas.size()) && (t.cos_thetas[nb] < 0.0) )
+    ++nb;
+
+  ceelo::EtaTable u = t;
+  u.cos_thetas.assign( t.cos_thetas.begin() + nb, t.cos_thetas.end() );
+  u.ln_eta.assign( t.energies_keV.size() * u.cos_thetas.size(), 0.0 );
+  u.frac_sigma.assign( u.ln_eta.size(), 0.0 );
+  for( size_t e = 0; e < t.energies_keV.size(); ++e )
+  {
+    for( size_t c = 0; c < u.cos_thetas.size(); ++c )
+    {
+      u.ln_eta[u.index( e, c, 0 )] = t.ln_eta[t.index( e, c + nb, 0 )];
+      u.frac_sigma[u.index( e, c, 0 )] = t.frac_sigma[t.index( e, c + nb, 0 )];
+    }
+  }
+  u.finalize();
+  return u;
+}//strip_back_nodes(...)
+
+
+/** The grid characterizes the whole sphere, so the import carries its columns past 90 degrees as
+ side & back nodes, and the DETECTOR.txt record's endcap length as the space behind the crystal:
+ the far-field grid is reproduced behind the detector, the front is unchanged by it, and a total
+ attached from a front-only donor is charged for extrapolating there. */
+BOOST_AUTO_TEST_CASE( SideAndBackFromTheGrid )
+{
+  const shared_ptr<const DetectorPeakResponse> drf = mock_drf();
+  const shared_ptr<const ceelo::DetectorResponse> grid = drf->ceeloResponse();
+  const ceelo::GeometryDescriptor &gd = grid->descriptor;
+
+  // mock_DETECTOR.txt: a 50 mm long crystal, 4 mm front gap + 1.5 mm Al endcap, a 100 mm long can
+  //  with nothing in the back slots - so 44.5 mm of vacuum behind the crystal, and side walls that
+  //  run the can's length.
+  BOOST_CHECK_CLOSE( gd.back_structure_extent_cm(), 10.0 - 0.55 - 5.0, 1.0e-6 );
+  BOOST_CHECK_CLOSE( gd.outer_envelope().z_max_cm, 10.0 - 0.55, 1.0e-6 );
+  BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.55, 1.0e-6 );
+
+  // Every grid column past 90 degrees is a node, 180 degrees exactly; the file is v4.
+  const ceelo::EtaTable &eta = grid->eta_fep;
+  BOOST_REQUIRE( !eta.cos_thetas.empty() );
+  BOOST_CHECK_EQUAL( eta.cos_thetas.front(), -1.0 );
+  size_t n_back = 0;
+  for( const double ct : eta.cos_thetas )
+    n_back += (ct < 0.0) ? 1 : 0;
+  BOOST_CHECK_EQUAL( n_back, 18 );    // 95-180 deg in 5 deg columns
+  BOOST_CHECK( grid->to_xml_string().find( "version=\"4\"" ) != string::npos );
+
+  // The far field behind the detector answers the grid on its lattice (row 80 is ~3 m, where the
+  //  nodes are); closer in it is the kernel, through the descriptor's back, that carries it.
+  const DetEffG2kPar::ParEfficiency par_eff( DetEffG2kPar::parseParFile( det_eff_path( "mock.par" ) ) );
+  const DetEffG2kPar::ParGrid &grid0 = par_eff.parFile().grids.front();
+  for( const double energy : { 60.0, 122.0, 662.0, 1400.0 } )
+  {
+    for( const int col : { 20, 27, 36 } )   // 100, 135 and 180 degrees
+    {
+      const double theta = col * grid0.theta_step_rad;
+      for( const int row : { 69, 80 } )      // ~1 m and ~3 m
+      {
+        const double d_mm = std::exp( row * grid0.r_step );
+        const double expected = par_eff.efficiency( energy, d_mm, theta );
+        const DetectorPeakResponse::EffEval value
+                  = drf->fepEfficiencyEval( static_cast<float>(energy), theta, 0.0, 0.1 * d_mm * PhysicalUnits::cm );
+        BOOST_TEST_MESSAGE( energy << " keV, " << 0.1*d_mm << " cm, " << col*5 << " deg: DRF "
+                            << value.value << " vs grid " << expected );
+        if( row == 80 )
+          BOOST_CHECK_MESSAGE( rel_diff( value.value, expected ) < 0.01,
+                               energy << " keV, " << 0.1*d_mm << " cm, " << col*5 << " deg: DRF "
+                               << value.value << " vs grid " << expected );
+        const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, 0.0, 0.1 * d_mm );
+        const ceelo::EffResult r = grid->eps_fep_at( energy, pos );
+        BOOST_CHECK( r.flag != ceelo::ResponseFlag::NeedsMc );
+        BOOST_CHECK( r.flag != ceelo::ResponseFlag::OutOfRangeClamped );
+      }
+    }
+  }
+
+  // The front evaluates exactly as without the back nodes.
+  const shared_ptr<ceelo::DetectorResponse> front_only = ceelo::DetectorResponse::from_xml_string( grid->to_xml_string() );
+  front_only->eta_fep = strip_back_nodes( front_only->eta_fep );
+  for( const double d_cm : { 1.0, 5.0, 25.0, 200.0 } )
+  {
+    for( const double theta_deg : { 0.0, 45.0, 85.0, 90.0 } )
+    {
+      const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta_deg*pi/180.0, 0.0, d_cm );
+      for( const double energy : { 45.0, 300.0, 2500.0 } )
+        BOOST_CHECK_EQUAL( front_only->eps_fep_at( energy, pos ).value, grid->eps_fep_at( energy, pos ).value );
+    }
+  }
+
+  // A total from a donor characterized beside the detector keeps the back nodes; from a front-only
+  //  donor it does not, and is charged for extrapolating there.
+  const Eigen::Vector3d beside = CeeLoUtils::sourcePositionFromFace( gd, 95.0*pi/180.0, 0.0, 40.0 );
+  BOOST_REQUIRE( beside.z() < gd.dimensions_cm.back() );   //not behind the crystal's back plane
+
+  const shared_ptr<ceelo::DetectorResponse> donor = total_donor( *grid, gd );
+  const shared_ptr<ceelo::DetectorResponse> covered = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() );
+  BOOST_CHECK_EQUAL( covered->tot_eff.eta_tot.cos_thetas.front(), -1.0 );
+  const ceelo::EffResult tot_covered = covered->eps_total_at( 662.0, beside );
+  BOOST_CHECK_LT( rel_diff( tot_covered.value, grid_fep_times_donor_ratio( *grid, beside, *donor, beside, 662.0 ) ), 1.0e-6 );
+
+  const shared_ptr<ceelo::DetectorResponse> front_donor = total_donor( *grid, gd );
+  front_donor->tot_eff.eta_tot = strip_back_nodes( front_donor->tot_eff.eta_tot );
+  const shared_ptr<ceelo::DetectorResponse> uncovered = DetEffG2kPar::attachTotalEfficiency( *grid, front_donor.get() );
+  BOOST_CHECK( !(uncovered->tot_eff.eta_tot.cos_thetas.front() < 0.0) );
+  const ceelo::EffResult tot_uncovered = uncovered->eps_total_at( 662.0, beside );
+  BOOST_CHECK( tot_uncovered.value > 0.0 );
+  BOOST_CHECK_GE( tot_uncovered.sigma_model,
+                  0.999 * ceelo::model_sigma::behind_extrapolation * tot_uncovered.value );
+  BOOST_CHECK_LT( tot_covered.sigma_model / tot_covered.value, tot_uncovered.sigma_model / tot_uncovered.value );
+}//BOOST_AUTO_TEST_CASE( SideAndBackFromTheGrid )
+
+
 /** The mock pair imports as a grid: FEP only, the importer's guessed bore, the crystal's recess as
  the setback, and the grid's own values on its lattice. */
 BOOST_AUTO_TEST_CASE( MockPairImports )
@@ -366,6 +482,7 @@ BOOST_AUTO_TEST_CASE( TotalWhereKernelUnderflows )
   lead.material_index = static_cast<int>( shielded.materials.size() ) - 1;
   lead.front_thickness_cm = lead.side_thickness_cm = 8.0;
   shielded.layers.push_back( lead );
+  shielded.set_layer_back_thickness_cm( shielded.layers.size() - 1, 8.0 );  //behind it too: the grid has side & back nodes
   const shared_ptr<ceelo::DetectorResponse> donor = total_donor( *grid, shielded );
 
   // The same physical point for each response, as attachTotalEfficiency maps them.

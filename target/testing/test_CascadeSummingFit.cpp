@@ -40,6 +40,9 @@
  This re-grounds test_data/ceelo_drf/detective_x_response.xml to the LANL
  curve and re-runs the truth MC for every configuration (hours at the
  committed statistics), rewriting the CSVs in place.  Deterministic seeds.
+ `--regenerate-side` does the same for the scenes beside/behind the detector
+ (test_data/cascade_truth_side/, through test_BackIncidence's Detective-X
+ response with side & back coverage); see side_truth_scenes().
 
  Truth counts for a peak are
      counts = activity x live_time x p_emit x eff_with_summing x k(E),
@@ -88,6 +91,7 @@
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
 #include "cascade/LevelDag.h"
+#include "physics/FepWindow.h"
 #include "cascade/CascadeTypes.h"
 #include "cascade/SandiaDecayCascade.h"
 #include "efficiency/EfficiencyCalculator.h"
@@ -113,6 +117,7 @@ namespace
 {
 string g_data_dir, g_test_data_dir;
 bool g_regenerate = false;
+bool g_regenerate_side = false;
 
 void set_data_dir()
 {
@@ -134,6 +139,8 @@ void set_data_dir()
       g_test_data_dir = arg.substr( 14 );
     if( SpecUtils::iequals_ascii( arg, "--regenerate" ) )
       g_regenerate = true;
+    if( SpecUtils::iequals_ascii( arg, "--regenerate-side" ) )
+      g_regenerate_side = true;
   }
 
   SpecUtils::ireplace_all( datadir, "%20", " " );
@@ -155,6 +162,13 @@ string truth_dir()
 string truth_path( const string &leaf )
 {
   return SpecUtils::append_path( truth_dir(), leaf );
+}
+
+/** Truth for the scenes beside/behind the detector (#side_truth_scenes) - kept apart from the front
+ set, whose CSVs predate CeeLo's source K x-rays (43096f6) and are never regenerated alongside. */
+string side_truth_dir()
+{
+  return SpecUtils::append_path( g_test_data_dir, "cascade_truth_side" );
 }
 
 string ceelo_drf_path( const string &leaf )
@@ -199,6 +213,12 @@ struct TruthScene
   double gate;             //|fit - truth| / truth acceptance
   uint64_t truth_events;   //FullRealization histories
   bool assert_now;         //asserted before the cascade fit option exists
+
+  /** A scene beside or behind the detector (#side_truth_scenes): `dist_cm` is then the Act/Shield
+   distance itself - detector face to the source CENTRE, negative behind the face plane - and
+   `offset_cm` the centre's distance off the detector axis.  Truth in cascade_truth_side/. */
+  bool side = false;
+  double offset_cm = 0.0;
 };//struct TruthScene
 
 
@@ -455,6 +475,112 @@ vector<TruthScene> truth_scenes()
 }//truth_scenes()
 
 
+/** Scenes beside and behind the detector, fitted with the Detective-X response that covers side and
+ back incidence (#side_fit_drf; its descriptor adds a 1 cm gap, the can's back and a 5 mm Cu plate
+ behind the crystal, so the housing spans 0.15 cm in front of the crystal face to 6.65 cm behind
+ it, radius 3.35 cm).
+
+ Cs-137 rows check the fitted activity itself (no summing): the response beside/behind the detector,
+ the per-ray shielding of a point source there.  The other rows check the summing correction as the
+ ratio A_off/A_on against the MC's summing factor, as the front extended scenes do - their absolute
+ activity is reported, not asserted.  Gates were set before the truth was generated (plan Phase 4:
+ 4% near a covered response, +1 point for a shield; Phase 6: summing ratio within 4%).
+ */
+vector<TruthScene> side_truth_scenes()
+{
+  const double y = PhysicalUnits::year;
+
+  const vector<double> cs137_pks{ 661.657 };
+  const vector<double> co60_pks{ 1173.228, 1332.492 };
+  const vector<double> ba133_pks{ 276.398, 302.853, 356.017, 383.851 };
+  const vector<double> eu152_pks{ 121.782, 244.692, 344.276, 778.903,
+                                  964.055, 1112.069, 1408.006 };
+
+  const auto scene = [=]( const char *id, const char *nuc, const double age, const vector<double> &pks,
+                          const SrcShape shape, const double dist_cm, const double offset_cm,
+                          const double gate, const uint64_t events ) -> TruthScene {
+    TruthScene sc;
+    sc.id = id;
+    sc.nuclide = nuc;
+    sc.age = age;
+    sc.activity = 37.0e3 * PhysicalUnits::becquerel;
+    sc.live_time = 3600.0 * PhysicalUnits::second;
+    sc.shape = shape;
+    sc.dist_cm = dist_cm;
+    sc.src_r_cm = sc.src_half_len_cm = 0.0;
+    sc.src_mat = sc.shield_mat = nullptr;
+    sc.shield_cm = 0.0;
+    sc.peaks = pks;
+    sc.gate = gate;
+    sc.truth_events = events;
+    sc.assert_now = true;
+    sc.side = true;
+    sc.offset_cm = offset_cm;
+    return sc;
+  };
+
+  // Where: beside the crystal (2.65 cm off the housing's side, ~113 deg from the face centre's
+  //  axis), behind and beside it (~144 deg, 3 cm past the housing's back corner), and on the axis
+  //  3 cm behind the housing (180 deg).
+  const double beside_d = -2.5, beside_off = 6.0;
+  const double oblique_d = -8.15, oblique_off = 6.0;
+  const double behind_d = -9.8;
+
+  vector<TruthScene> all;
+  for( const bool cascade : { false, true } )
+  {
+    const char * const nuc = cascade ? "Co60" : "Cs137";
+    const double age = cascade ? 1.0*y : 5.0*y;
+    const vector<double> &pks = cascade ? co60_pks : cs137_pks;
+    const string base = cascade ? "co60" : "cs137";
+
+    all.push_back( scene( strdup( (base + "_side_beside").c_str() ), nuc, age, pks, SrcShape::Point,
+                          beside_d, beside_off, 0.04, 20000000 ) );
+    all.push_back( scene( strdup( (base + "_side_oblique").c_str() ), nuc, age, pks, SrcShape::Point,
+                          oblique_d, oblique_off, 0.04, 20000000 ) );
+    all.push_back( scene( strdup( (base + "_side_behind").c_str() ), nuc, age, pks, SrcShape::Point,
+                          behind_d, 0.0, 0.04, 20000000 ) );
+
+    TruthScene fe = scene( strdup( (base + "_side_fe10mm_beside").c_str() ), nuc, age, pks, SrcShape::Point,
+                           beside_d, beside_off, 0.05, 40000000 );  //isotropic: shielded => no cone
+    fe.shield_mat = "Fe";
+    fe.shield_cm = 1.0;
+    all.push_back( fe );
+  }//for( Cs-137, then Co-60 )
+
+  all.push_back( scene( "ba133_side_beside", "Ba133", 2.0*y, ba133_pks, SrcShape::Point,
+                        beside_d, beside_off, 0.04, 20000000 ) );
+  all.push_back( scene( "eu152_side_beside", "Eu152", 3.0*y, eu152_pks, SrcShape::Point,
+                        beside_d, beside_off, 0.04, 20000000 ) );
+
+  {// Thin water disk (5 cm dia x 1 mm), face parallel to the detector's, its edge 2 mm off the housing.
+    TruthScene disk = scene( "co60_side_disk", "Co60", 1.0*y, co60_pks, SrcShape::DiskEndOn,
+                             beside_d, 3.35 + 2.5 + 0.2, 0.04, 40000000 );
+    disk.src_r_cm = 2.5;
+    disk.src_half_len_cm = 0.05;
+    disk.src_mat = "water";
+    all.push_back( disk );
+  }
+
+  {// Water cylinder (5 cm dia x 5 cm) beside the detector, straddling its face plane.
+    TruthScene cyl = scene( "co60_side_cyl_straddle", "Co60", 1.0*y, co60_pks, SrcShape::CylEndOn,
+                            0.0, 3.35 + 2.5 + 0.5, 0.04, 60000000 );
+    cyl.src_r_cm = 2.5;
+    cyl.src_half_len_cm = 2.5;
+    cyl.src_mat = "water";
+    all.push_back( cyl );
+  }
+
+  return all;
+}//side_truth_scenes()
+
+
+string scene_truth_path( const TruthScene &sc )
+{
+  return SpecUtils::append_path( sc.side ? side_truth_dir() : truth_dir(), string(sc.id) + ".csv" );
+}
+
+
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -502,6 +628,31 @@ shared_ptr<DetectorPeakResponse> fit_drf()
   drf->setCeeloResponse( grounded_response() );
   return drf;
 }//fit_drf()
+
+
+/** The response the side scenes' truth and fits share: Detective-X with an approximate back
+ structure, full MC with side & back coverage (test_BackIncidence's back_truth bank).  It is not
+ grounded to a measured curve, so the efficiency is the response's own, as for a DRF made with
+ the MC tool. */
+shared_ptr<ceelo::DetectorResponse> side_response()
+{
+  const string xml = read_file( ceelo_drf_path( "back_truth/detective_x_fullmc_coarse_response.xml" ) );
+  shared_ptr<ceelo::DetectorResponse> resp = ceelo::DetectorResponse::from_xml_string( xml );
+  BOOST_REQUIRE( resp && resp->grounding.empty() );
+  BOOST_REQUIRE( !resp->eta_fep.cos_thetas.empty() && (resp->eta_fep.cos_thetas.front() < 0.0) );
+  return resp;
+}//side_response()
+
+
+shared_ptr<DetectorPeakResponse> side_fit_drf()
+{
+  auto drf = make_shared<DetectorPeakResponse>( "detective_x (approximate back)", "side-scene truth" );
+  drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV, 0.0f, 0.0f,
+                                      DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf->setCeeloResponse( side_response() );
+  BOOST_REQUIRE( drf->ceeloResponse() );
+  return drf;
+}//side_fit_drf()
 
 
 /** Sum of the front thicknesses of the descriptor's attenuator layers, i.e.
@@ -636,13 +787,145 @@ bool find_gamma_transition( const SandiaDecay::Nuclide * const parent,
 // Truth regeneration (CeeLo FullRealization MC) - only with --regenerate.
 // ---------------------------------------------------------------------------
 
-void regenerate_truth()
+/** Runs the FullRealization truth MC for one scene through `resp`'s detector and writes its CSV.
+ `peak_window_keV` is the MC's full-energy window, `num_threads` its threads (0 = all cores).
+ */
+void write_scene_truth( const TruthScene &sc, const ceelo::DetectorResponse &resp,
+                        const double peak_window_keV, const int num_threads )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db );
-  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
   const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   BOOST_REQUIRE( matdb );
+
+  const ceelo::GeometryDescriptor &gd = resp.descriptor;
+  const double front_off = front_offset_cm( gd );
+
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( sc.nuclide );
+  BOOST_REQUIRE_MESSAGE( nuc, string("No nuclide ") + sc.nuclide );
+
+  ceelo::cascade_adapter::CascadeOptions copt;
+  copt.age_seconds = sc.age / PhysicalUnits::second;
+  copt.prompt_equilibrium = false;  //pure-parent ageing, as the fit and CascadeSummingCalc
+  const vector<ceelo::DecayCascade> cascades
+                        = ceelo::cascade_adapter::build_cascades( nuc, copt );
+  BOOST_REQUIRE( !cascades.empty() );
+
+  // Scene assembly: detector from the descriptor, source per config.
+  ceelo::EfficiencyCalculator calc;
+  vector<unique_ptr<ceelo::Material>> owned;
+  ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+  calc.set_air_attenuation( ceelo::AirAttenuation::AnalyticNoScatter );
+
+  // Keep host/shield ceelo materials alive for the calculator's lifetime.
+  vector<unique_ptr<ceelo::Material>> scene_mats;
+  auto ceelo_mat = [&scene_mats,&matdb]( const char *name ) -> const ceelo::Material * {
+    const shared_ptr<const Material> m = material_or_fail( *matdb, name );
+    const ceelo::MaterialSpec spec = CeeLoUtils::to_ceelo_material( *m );
+    scene_mats.push_back( make_unique<ceelo::Material>( spec.to_material() ) );
+    return scene_mats.back().get();
+  };
+
+  // Source centre in the crystal frame: a front scene's distance is to the source's nearest
+  //  surface, a side scene's is the Act/Shield distance - face to centre (TruthScene::side).
+  const double half_len = (sc.shape == SrcShape::Point) ? 0.0 : sc.src_half_len_cm;
+  const Eigen::Vector3d centre = sc.side
+        ? Eigen::Vector3d( sc.offset_cm, 0.0, -(gd.endcap_front_offset_cm() + sc.dist_cm) )
+        : Eigen::Vector3d( 0.0, 0.0, -(front_off + sc.dist_cm + half_len) );
+
+  // Beside the detector no cone about the direction to the crystal's face centre exists; the
+  //  general cone finds one about its own axis (only bare point sources are coned at all).
+  if( sc.side )
+    calc.enable_general_cone_sampling( true );
+
+  switch( sc.shape )
+  {
+    case SrcShape::Point:
+      calc.set_point_source( centre );
+      break;
+
+    case SrcShape::DiskEndOn:
+    case SrcShape::CylEndOn:
+    case SrcShape::TraceCyl:
+    {
+      calc.set_cylindrical_source( centre, sc.src_r_cm, sc.src_half_len_cm );
+      if( sc.src_mat )
+        calc.set_source_material( ceelo_mat( sc.src_mat ) );
+      break;
+    }
+  }//switch( sc.shape )
+
+  if( sc.shield_mat )
+    calc.add_source_shield( ceelo_mat( sc.shield_mat ), sc.shield_cm );
+
+  ceelo::CascadeConfig cfg;
+  cfg.cascades = cascades;
+  for( const double e : sc.peaks )
+    cfg.peaks.push_back( ceelo::PeakWindow{ e, peak_window_keV } );
+  cfg.num_events = sc.truth_events;
+  cfg.num_threads = num_threads;
+  cfg.method = ceelo::CascadeMethod::FullRealization;
+
+  BOOST_TEST_MESSAGE( "Truth MC for " << sc.id << " (" << sc.truth_events
+                      << " histories)..." );
+  const ceelo::CascadeResult result = calc.compute_cascade( cfg );
+  BOOST_REQUIRE_EQUAL( result.peaks.size(), sc.peaks.size() );
+
+  ofstream f( scene_truth_path( sc ).c_str() );
+  BOOST_REQUIRE( f.is_open() );
+  f << "# CeeLo FullRealization cascade-truth for the Act/Shield fit\n";
+  f << "# scene: id=" << sc.id << " nuclide=" << sc.nuclide
+    << " age_s=" << sc.age/PhysicalUnits::second
+    << " activity_bq=" << sc.activity/PhysicalUnits::becquerel
+    << " live_time_s=" << sc.live_time/PhysicalUnits::second
+    << " shape=" << static_cast<int>(sc.shape)
+    << " dist_cm=" << sc.dist_cm;
+  if( sc.side )
+    f << " offset_cm=" << sc.offset_cm << " fep_window_kev=" << peak_window_keV
+      << " (dist_cm: detector face to source centre)";
+  f << " src_r_cm=" << sc.src_r_cm << " src_half_len_cm=" << sc.src_half_len_cm
+    << " src_mat=" << (sc.src_mat ? sc.src_mat : "none")
+    << " shield=" << (sc.shield_mat ? sc.shield_mat : "none")
+    << " shield_cm=" << sc.shield_cm
+    << " events=" << sc.truth_events << "\n";
+  f << "# counts = activity x live_time x p_emit x eff_with_summing x k_grounding\n";
+  f << "peak_keV,net_counts,net_counts_unc,p_emit,eff_with_summing,eff_no_summing,summing_factor,k_grounding\n";
+
+  for( size_t i = 0; i < result.peaks.size(); ++i )
+  {
+    const ceelo::PeakCascadeResult &pk = result.peaks[i];
+    BOOST_REQUIRE_MESSAGE( pk.found, string(sc.id) + ": truth peak "
+            + std::to_string(sc.peaks[i]) + " keV not found in cascades" );
+
+    const double p_emit = window_emission_per_decay( nuc, sc.age, sc.peaks[i], 1.5 );
+    BOOST_REQUIRE_GT( p_emit, 0.0 );
+
+    bool clamped = false;
+    const double k = resp.grounding.empty() ? 1.0
+                      : std::exp( resp.grounding.eval_ln_k( sc.peaks[i], clamped ) );
+
+    const double rate = (sc.activity/PhysicalUnits::becquerel)
+                        * (sc.live_time/PhysicalUnits::second) * p_emit * k;
+    const double counts = rate * pk.eff_with_summing;
+    const double unc = rate * pk.eff_with_summing_unc;
+
+    const double frac_unc = (counts > 0.0) ? (unc/counts) : 1.0;
+    BOOST_CHECK_MESSAGE( frac_unc < 0.01, string(sc.id) + " " +
+        std::to_string(sc.peaks[i]) + " keV truth stat "
+        + std::to_string(100.0*frac_unc) + "% - raise truth_events" );
+
+    char line[256];
+    snprintf( line, sizeof(line), "%.3f,%.6e,%.3e,%.8e,%.8e,%.8e,%.6f,%.6f\n",
+              sc.peaks[i], counts, unc, p_emit, pk.eff_with_summing,
+              pk.eff_no_summing, pk.summing_factor, k );
+    f << line;
+  }//for( peaks )
+}//write_scene_truth(...)
+
+
+void regenerate_truth()
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
 
   SpecUtils::create_directory( truth_dir() );
 
@@ -667,119 +950,9 @@ void regenerate_truth()
   BOOST_TEST_MESSAGE( "Wrote grounded Detective-X response ("
                       << gpts.size() << " grounding points, curve-derived=" << curve_derived << ")" );
 
-  const ceelo::GeometryDescriptor &gd = resp->descriptor;
-  const double front_off = front_offset_cm( gd );
-
   // --- 2. Per-scene truth MC -------------------------------------------------
   for( const TruthScene &sc : truth_scenes() )
-  {
-    const SandiaDecay::Nuclide * const nuc = db->nuclide( sc.nuclide );
-    BOOST_REQUIRE_MESSAGE( nuc, string("No nuclide ") + sc.nuclide );
-
-    ceelo::cascade_adapter::CascadeOptions copt;
-    copt.age_seconds = sc.age / PhysicalUnits::second;
-    copt.prompt_equilibrium = false;  //pure-parent ageing, as the fit and CascadeSummingCalc
-    const vector<ceelo::DecayCascade> cascades
-                          = ceelo::cascade_adapter::build_cascades( nuc, copt );
-    BOOST_REQUIRE( !cascades.empty() );
-
-    // Scene assembly: detector from the descriptor, source per config.
-    ceelo::EfficiencyCalculator calc;
-    vector<unique_ptr<ceelo::Material>> owned;
-    ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
-    calc.set_air_attenuation( ceelo::AirAttenuation::AnalyticNoScatter );
-
-    // Keep host/shield ceelo materials alive for the calculator's lifetime.
-    vector<unique_ptr<ceelo::Material>> scene_mats;
-    auto ceelo_mat = [&scene_mats,&matdb]( const char *name ) -> const ceelo::Material * {
-      const shared_ptr<const Material> m = material_or_fail( *matdb, name );
-      const ceelo::MaterialSpec spec = CeeLoUtils::to_ceelo_material( *m );
-      scene_mats.push_back( make_unique<ceelo::Material>( spec.to_material() ) );
-      return scene_mats.back().get();
-    };
-
-    switch( sc.shape )
-    {
-      case SrcShape::Point:
-        calc.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(front_off + sc.dist_cm) ) );
-        break;
-
-      case SrcShape::DiskEndOn:
-      case SrcShape::CylEndOn:
-      case SrcShape::TraceCyl:
-      {
-        const double zc = front_off + sc.dist_cm + sc.src_half_len_cm;
-        calc.set_cylindrical_source( Eigen::Vector3d( 0.0, 0.0, -zc ),
-                                     sc.src_r_cm, sc.src_half_len_cm );
-        if( sc.src_mat )
-          calc.set_source_material( ceelo_mat( sc.src_mat ) );
-        break;
-      }
-    }//switch( sc.shape )
-
-    if( sc.shield_mat )
-      calc.add_source_shield( ceelo_mat( sc.shield_mat ), sc.shield_cm );
-
-    ceelo::CascadeConfig cfg;
-    cfg.cascades = cascades;
-    for( const double e : sc.peaks )
-      cfg.peaks.push_back( ceelo::PeakWindow{ e, 1.5 } );
-    cfg.num_events = sc.truth_events;
-    cfg.num_threads = 0;
-    cfg.method = ceelo::CascadeMethod::FullRealization;
-
-    BOOST_TEST_MESSAGE( "Truth MC for " << sc.id << " (" << sc.truth_events
-                        << " histories)..." );
-    const ceelo::CascadeResult result = calc.compute_cascade( cfg );
-    BOOST_REQUIRE_EQUAL( result.peaks.size(), sc.peaks.size() );
-
-    ofstream f( truth_path( string(sc.id) + ".csv" ).c_str() );
-    BOOST_REQUIRE( f.is_open() );
-    f << "# CeeLo FullRealization cascade-truth for the Act/Shield fit\n";
-    f << "# scene: id=" << sc.id << " nuclide=" << sc.nuclide
-      << " age_s=" << sc.age/PhysicalUnits::second
-      << " activity_bq=" << sc.activity/PhysicalUnits::becquerel
-      << " live_time_s=" << sc.live_time/PhysicalUnits::second
-      << " shape=" << static_cast<int>(sc.shape)
-      << " dist_cm=" << sc.dist_cm
-      << " src_r_cm=" << sc.src_r_cm << " src_half_len_cm=" << sc.src_half_len_cm
-      << " src_mat=" << (sc.src_mat ? sc.src_mat : "none")
-      << " shield=" << (sc.shield_mat ? sc.shield_mat : "none")
-      << " shield_cm=" << sc.shield_cm
-      << " events=" << sc.truth_events << "\n";
-    f << "# counts = activity x live_time x p_emit x eff_with_summing x k_grounding\n";
-    f << "peak_keV,net_counts,net_counts_unc,p_emit,eff_with_summing,eff_no_summing,summing_factor,k_grounding\n";
-
-    for( size_t i = 0; i < result.peaks.size(); ++i )
-    {
-      const ceelo::PeakCascadeResult &pk = result.peaks[i];
-      BOOST_REQUIRE_MESSAGE( pk.found, string(sc.id) + ": truth peak "
-              + std::to_string(sc.peaks[i]) + " keV not found in cascades" );
-
-      const double p_emit = window_emission_per_decay( nuc, sc.age, sc.peaks[i], 1.5 );
-      BOOST_REQUIRE_GT( p_emit, 0.0 );
-
-      bool clamped = false;
-      const double k = resp->grounding.empty() ? 1.0
-                        : std::exp( resp->grounding.eval_ln_k( sc.peaks[i], clamped ) );
-
-      const double rate = (sc.activity/PhysicalUnits::becquerel)
-                          * (sc.live_time/PhysicalUnits::second) * p_emit * k;
-      const double counts = rate * pk.eff_with_summing;
-      const double unc = rate * pk.eff_with_summing_unc;
-
-      const double frac_unc = (counts > 0.0) ? (unc/counts) : 1.0;
-      BOOST_CHECK_MESSAGE( frac_unc < 0.01, string(sc.id) + " " +
-          std::to_string(sc.peaks[i]) + " keV truth stat "
-          + std::to_string(100.0*frac_unc) + "% - raise truth_events" );
-
-      char line[256];
-      snprintf( line, sizeof(line), "%.3f,%.6e,%.3e,%.8e,%.8e,%.8e,%.6f,%.6f\n",
-                sc.peaks[i], counts, unc, p_emit, pk.eff_with_summing,
-                pk.eff_no_summing, pk.summing_factor, k );
-      f << line;
-    }//for( peaks )
-  }//for( scenes )
+    write_scene_truth( sc, *resp, 1.5, 0 );
 }//regenerate_truth()
 
 
@@ -798,7 +971,7 @@ GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput build_scene_inpu
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
   const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
 
-  const vector<TruthRow> truth = read_truth_csv( truth_path( string(sc.id) + ".csv" ) );
+  const vector<TruthRow> truth = read_truth_csv( scene_truth_path( sc ) );
   BOOST_REQUIRE_EQUAL( truth.size(), sc.peaks.size() );
 
   const SandiaDecay::Nuclide * const nuc = db->nuclide( sc.nuclide );
@@ -927,7 +1100,7 @@ GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput build_scene_inpu
       //  geometry.  A concentric shield around the source does not move the
       //  source center, so shield thickness is NOT added here (it enters as the
       //  shield layer's own dimensions).
-      distance = (sc.dist_cm + sc.src_half_len_cm) * PhysicalUnits::cm;
+      distance = (sc.side ? sc.dist_cm : (sc.dist_cm + sc.src_half_len_cm)) * PhysicalUnits::cm;
 
       // The trace source replaces the point source definition.
       src_definitions[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
@@ -959,11 +1132,12 @@ GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput build_scene_inpu
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
   chi_input.config.distance = distance;
+  chi_input.config.source_offsets[0] = sc.offset_cm * PhysicalUnits::cm;
   chi_input.config.geometry = geometry;
   chi_input.config.shieldings = shieldings;
   chi_input.config.sources = src_definitions;
   chi_input.config.options = options;
-  chi_input.detector = fit_drf();
+  chi_input.detector = sc.side ? side_fit_drf() : fit_drf();
   chi_input.foreground = foreground;
   chi_input.background = nullptr;
   chi_input.foreground_peaks = peaks;
@@ -1067,13 +1241,15 @@ double truth_summing_factor( const vector<TruthRow> &truth )
  */
 void check_scene( const TruthScene &sc )
 {
-  const vector<TruthRow> truth = read_truth_csv( truth_path( string(sc.id) + ".csv" ) );
+  const vector<TruthRow> truth = read_truth_csv( scene_truth_path( sc ) );
 
-  if( !is_extended_scene( sc ) )
+  // Side scenes check the summing correction as a ratio whatever the source; only their Cs-137
+  //  rows (nothing to sum) check the activity itself.
+  const bool no_cascade = SpecUtils::istarts_with( sc.id, "cs137" );
+  if( !is_extended_scene( sc ) && (!sc.side || no_cascade) )
   {
-    const bool cascade = !SpecUtils::istarts_with( sc.id, "cs137" );
     const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
-    const double fit_act = fit_activity( sc, cascade );
+    const double fit_act = fit_activity( sc, !no_cascade );
     const double fit_s = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
     const double frac_off = fabs( fit_act - sc.activity ) / sc.activity;
 
@@ -1119,14 +1295,15 @@ void check_scene( const TruthScene &sc )
 }//check_scene(...)
 
 
-/** The scenes a run should check.
+/** The scenes of `all` a run should check.
 
  Every scene by default.  `INTERSPEC_CASCADE_FIT_SCENES=id[,id...]` restricts the run to those
  scene ids (`=all` is the default set spelled out), which is the only way to run a single scene -
- needed for profiling, since one Eu-152 point fit is minutes on its own.  Mirrors
+ needed for profiling, since one Eu-152 point fit is minutes on its own.  The ids may come from
+ `all` or `other` (the front and side sets), so one setting serves both test cases.  Mirrors
  `INTERSPEC_LINE_AB_SCENARIOS` in test_VolumetricLadder.cpp.
  */
-vector<const TruthScene *> select_scenes( const vector<TruthScene> &all )
+vector<const TruthScene *> select_scenes( const vector<TruthScene> &all, const vector<TruthScene> &other )
 {
   std::set<string> only;
   if( const char * const env = std::getenv( "INTERSPEC_CASCADE_FIT_SCENES" ) )
@@ -1149,15 +1326,48 @@ vector<const TruthScene *> select_scenes( const vector<TruthScene> &all )
 
   if( !only.empty() )
   {
+    size_t known = 0;
+    for( const string &name : only )
+    {
+      const auto named = [&name]( const TruthScene &sc ){ return name == sc.id; };
+      if( std::any_of( begin(all), end(all), named ) || std::any_of( begin(other), end(other), named ) )
+        known += 1;
+    }
+
     BOOST_TEST_MESSAGE( "  (restricted to " << chosen.size() << " scene(s) by"
                         " INTERSPEC_CASCADE_FIT_SCENES)" );
-    BOOST_CHECK_MESSAGE( chosen.size() == only.size(),
+    BOOST_CHECK_MESSAGE( known == only.size(),
         "INTERSPEC_CASCADE_FIT_SCENES named " + std::to_string(only.size())
-        + " scene(s) but only " + std::to_string(chosen.size()) + " matched" );
+        + " scene(s) but only " + std::to_string(known) + " matched" );
   }
 
   return chosen;
 }//select_scenes(...)
+
+
+/** `--regenerate-side`: the side scenes' truth, through #side_response (which is not re-made - it
+ is test_BackIncidence's fixture).  Honours INTERSPEC_CASCADE_FIT_SCENES; INTERSPEC_TRUTH_THREADS
+ sets the MC's threads (default 3).  Deterministic seeds. */
+void regenerate_side_truth()
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  SpecUtils::create_directory( side_truth_dir() );
+
+  const shared_ptr<ceelo::DetectorResponse> resp = side_response();
+
+  int threads = 3;
+  if( const char * const env = std::getenv( "INTERSPEC_TRUTH_THREADS" ) )
+    threads = std::max( 1, std::atoi( env ) );
+
+  const vector<TruthScene> side = side_truth_scenes();
+  for( const TruthScene * const sc : select_scenes( side, truth_scenes() ) )
+  {
+    const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    write_scene_truth( *sc, *resp, ceelo::kDefaultFepWindowKeV, threads );
+    BOOST_TEST_MESSAGE( "  " << sc->id << ": "
+                        << std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count() << " s" );
+  }
+}//regenerate_side_truth()
 
 
 /** `INTERSPEC_CASCADE_NO_MEMO=1` turns both point-source cascade memos off, which restores the
@@ -1190,19 +1400,18 @@ BOOST_AUTO_TEST_CASE( RegenerateTruthIfRequested )
   set_data_dir();
   if( g_regenerate )
     regenerate_truth();
-  else
-    BOOST_TEST_MESSAGE( "Using committed truth fixtures (pass --regenerate to refresh)" );
+  if( g_regenerate_side )
+    regenerate_side_truth();
+  if( !g_regenerate && !g_regenerate_side )
+    BOOST_TEST_MESSAGE( "Using committed truth fixtures (pass --regenerate / --regenerate-side to refresh)" );
 }//RegenerateTruthIfRequested
 
 
-BOOST_AUTO_TEST_CASE( TruthActivityFits )
+/** Checks each scene of `set` that the INTERSPEC_CASCADE_FIT_SCENES restriction keeps
+ (#select_scenes, which also knows the names in `other`, the other scene list). */
+void check_scene_set( const vector<TruthScene> &set, const vector<TruthScene> &other, const char *label )
 {
-  set_data_dir();
-
-  apply_memo_override();
-
-  const vector<TruthScene> all = truth_scenes();
-  const vector<const TruthScene *> scenes = select_scenes( all );
+  const vector<const TruthScene *> scenes = select_scenes( set, other );
 
   const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
   for( const TruthScene * const sc : scenes )
@@ -1214,9 +1423,36 @@ BOOST_AUTO_TEST_CASE( TruthActivityFits )
   }//for( scenes )
   const double total_s = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
 
-  BOOST_TEST_MESSAGE( "Checked " << scenes.size() << " truth scenes in " << total_s << " s" );
-  BOOST_CHECK_GT( scenes.size(), 0 );
+  BOOST_TEST_MESSAGE( "Checked " << scenes.size() << " " << label << " in " << total_s << " s" );
+  if( !std::getenv( "INTERSPEC_CASCADE_FIT_SCENES" ) )
+    BOOST_CHECK_GT( scenes.size(), 0 );
+}//check_scene_set(...)
+
+
+BOOST_AUTO_TEST_CASE( TruthActivityFits )
+{
+  set_data_dir();
+
+  apply_memo_override();
+
+  // A/B hook: the response-based partner legs (built for sources beside the detector) on every
+  //  response-modeled volumetric scene - INTERSPEC_CASCADE_RESPONSE_LEGS=1.
+  const char * const resp_legs = std::getenv( "INTERSPEC_CASCADE_RESPONSE_LEGS" );
+  GammaInteractionCalc::sm_cascade_response_legs_front = (resp_legs && (std::string(resp_legs) == "1"));
+
+  check_scene_set( truth_scenes(), side_truth_scenes(), "truth scenes" );
 }//TruthActivityFits
+
+
+/** Sources beside and behind the detector (#side_truth_scenes) against their truth: the fitted
+ activity for Cs-137, the summing correction for the cascade nuclides. */
+BOOST_AUTO_TEST_CASE( SideTruthActivityFits )
+{
+  set_data_dir();
+  apply_memo_override();
+
+  check_scene_set( side_truth_scenes(), truth_scenes(), "side truth scenes" );
+}//SideTruthActivityFits
 
 
 /** Quantifies how much the GADRAS shield-scatter augmentation of the total
@@ -1595,6 +1831,55 @@ BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
 }//BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
 
 
+/** Fits `input` with the cascade memos on and off, and requires the same values AND uncertainties,
+ to `rel_tol`. */
+void check_cascade_memo_invariance( const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input,
+                                    const double rel_tol = 1.0e-9 )
+{
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  const bool prev_corr = ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo;
+  const bool prev_eff = ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo;
+
+  vector<double> memo_vals, memo_errs, plain_vals, plain_errs;
+  try
+  {
+    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = true;
+    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = true;
+    fit_params( input, memo_vals, memo_errs );
+
+    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = false;
+    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = false;
+    fit_params( input, plain_vals, plain_errs );
+  }catch( ... )
+  {
+    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = prev_corr;
+    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = prev_eff;
+    throw;
+  }
+  ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = prev_corr;
+  ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = prev_eff;
+
+  BOOST_REQUIRE_EQUAL( memo_vals.size(), plain_vals.size() );
+  BOOST_REQUIRE_EQUAL( memo_errs.size(), plain_errs.size() );
+
+  for( size_t i = 0; i < memo_vals.size(); ++i )
+  {
+    const double scale = std::max( 1.0e-12, std::fabs(plain_vals[i]) );
+    BOOST_CHECK_MESSAGE( fabs(memo_vals[i] - plain_vals[i]) <= rel_tol*scale,
+        "parameter " + std::to_string(i) + " value differs: memo=" + std::to_string(memo_vals[i])
+        + " vs no-memo=" + std::to_string(plain_vals[i]) );
+
+    const double err_scale = std::max( 1.0e-12, std::fabs(plain_errs[i]) );
+    BOOST_CHECK_MESSAGE( fabs(memo_errs[i] - plain_errs[i]) <= rel_tol*err_scale,
+        "parameter " + std::to_string(i) + " UNCERTAINTY differs: memo=" + std::to_string(memo_errs[i])
+        + " vs no-memo=" + std::to_string(plain_errs[i]) + " - a stale Jacobian shows up here first" );
+
+    BOOST_TEST_MESSAGE( "  par " << i << ": " << plain_vals[i] << " +- " << plain_errs[i]
+                        << " (memo " << memo_vals[i] << " +- " << memo_errs[i] << ")" );
+  }
+}//check_cascade_memo_invariance(...)
+
+
 /** The point-source cascade memos change no fitted number, INCLUDING when a shield dimension is
  being fitted - the case none of the other cascade tests cover, because they all pin the shielding.
 
@@ -1626,47 +1911,42 @@ BOOST_AUTO_TEST_CASE( CascadeMemoInvarianceWithFittedShield )
   input.config.shieldings[0].m_forFitting = true;
   input.config.shieldings[0].m_fitDimensions[0] = true;
 
-  const bool prev_corr = ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo;
-  const bool prev_eff = ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo;
-
-  vector<double> memo_vals, memo_errs, plain_vals, plain_errs;
-  try
-  {
-    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = true;
-    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = true;
-    fit_params( input, memo_vals, memo_errs );
-
-    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = false;
-    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = false;
-    fit_params( input, plain_vals, plain_errs );
-  }catch( ... )
-  {
-    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = prev_corr;
-    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = prev_eff;
-    throw;
-  }
-  ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = prev_corr;
-  ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = prev_eff;
-
-  BOOST_REQUIRE_EQUAL( memo_vals.size(), plain_vals.size() );
-  BOOST_REQUIRE_EQUAL( memo_errs.size(), plain_errs.size() );
-
-  for( size_t i = 0; i < memo_vals.size(); ++i )
-  {
-    const double scale = std::max( 1.0e-12, std::fabs(plain_vals[i]) );
-    BOOST_CHECK_MESSAGE( fabs(memo_vals[i] - plain_vals[i]) <= 1.0e-9*scale,
-        "parameter " + std::to_string(i) + " value differs: memo=" + std::to_string(memo_vals[i])
-        + " vs no-memo=" + std::to_string(plain_vals[i]) );
-
-    const double err_scale = std::max( 1.0e-12, std::fabs(plain_errs[i]) );
-    BOOST_CHECK_MESSAGE( fabs(memo_errs[i] - plain_errs[i]) <= 1.0e-9*err_scale,
-        "parameter " + std::to_string(i) + " UNCERTAINTY differs: memo=" + std::to_string(memo_errs[i])
-        + " vs no-memo=" + std::to_string(plain_errs[i]) + " - a stale Jacobian shows up here first" );
-
-    BOOST_TEST_MESSAGE( "  par " << i << ": " << plain_vals[i] << " +- " << plain_errs[i]
-                        << " (memo " << memo_vals[i] << " +- " << memo_errs[i] << ")" );
-  }
+  check_cascade_memo_invariance( input );
 }//BOOST_AUTO_TEST_CASE( CascadeMemoInvarianceWithFittedShield )
+
+
+/** The same beside the detector, where a point source is attenuated ray by ray over the response's
+ fan: every dimension of a box shield is then an input of the correction - including a fitted depth
+ the central ray never crosses, which the memo must not miss.  The box is shallow (1 cm across, 0.5 cm
+ deep) so that the central ray, about 22 degrees off the side direction, leaves through the box's
+ side while the fan's steeper rays leave through its depth face. */
+BOOST_AUTO_TEST_CASE( SideCascadeMemoInvarianceWithFittedBoxDepth )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+
+  const vector<TruthScene> scenes = side_truth_scenes();
+  const TruthScene *scene = nullptr;
+  for( const TruthScene &sc : scenes )
+    if( string(sc.id) == "co60_side_fe10mm_beside" )
+      scene = &sc;
+  BOOST_REQUIRE( scene );
+
+  ShieldingSourceChi2Fcn::ShieldSourceInput input = build_scene_input( *scene, true );
+  BOOST_REQUIRE_EQUAL( input.config.shieldings.size(), 1 );
+  input.config.geometry = GeometryType::Rectangular;
+  ShieldingSourceFitCalc::ShieldingInfo &shield = input.config.shieldings[0];
+  shield.m_geometry = GeometryType::Rectangular;
+  shield.m_dimensions[0] = shield.m_dimensions[1] = 1.0*PhysicalUnits::cm;
+  shield.m_dimensions[2] = 0.5*PhysicalUnits::cm;
+  shield.m_forFitting = true;
+  shield.m_fitDimensions[0] = shield.m_fitDimensions[1] = false;
+  shield.m_fitDimensions[2] = true;
+
+  // The effect is small - a memo keyed without the fan's inputs moved the answers by ~1e-10 - but a
+  //  memo is a cache: with every input noted it reproduces the plain fit to the last bit.
+  check_cascade_memo_invariance( input, 1.0e-12 );
+}//BOOST_AUTO_TEST_CASE( SideCascadeMemoInvarianceWithFittedBoxDepth )
 
 
 /** A line set that cannot be built at creation is reported, and the fit falls back to flat-disk -
@@ -1825,3 +2105,107 @@ BOOST_AUTO_TEST_CASE( CascadeBranchWeightsArePureParentAged )
   const vector<double> any_age = CascadeSummingCalc::partnerEnergies( {{th232, 0.0}} );
   BOOST_CHECK( has_energy( any_age, 2614.5 ) );
 }//BOOST_AUTO_TEST_CASE( CascadeBranchWeightsArePureParentAged )
+
+
+/** Beside the detector, cascade summing through the two independent response-based paths - a point
+ source's partner legs over its ray fan (pointFanEfficiencies) and a volumetric source's legs from
+ the response at its field nodes (build_cascade_fields) - must agree on a source small enough to be
+ both: a Co-60 point, and Co-60 spread through a 2 mm water sphere at the same place. */
+BOOST_AUTO_TEST_CASE( ExtendedCascadePointVsTinySphere )
+{
+  set_data_dir();
+  using Fcn = GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+  BOOST_REQUIRE( co60 );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  const shared_ptr<const Material> water = material_or_fail( *matdb, "water" );
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<DetectorPeakResponse> drf = fit_drf();
+
+  std::deque<std::shared_ptr<const PeakDef>> peaks;
+  for( const double e : { 1173.228, 1332.492 } )
+  {
+    auto peak = make_shared<PeakDef>();
+    peak->setMean( e );
+    peak->setSigma( 1.0 );
+    peak->setPeakArea( 1.0E4 );
+    peak->setPeakAreaUncert( 100.0 );
+    const SandiaDecay::Transition *transition = nullptr;
+    int particle_index = -1;
+    BOOST_REQUIRE( find_gamma_transition( co60, e, transition, particle_index ) );
+    peak->setNuclearTransition( co60, transition, particle_index, PeakDef::SourceGammaType::NormalGamma );
+    peak->useForShieldingSourceFit( true );
+    peaks.push_back( peak );
+  }
+
+  // Beside the detector: 3 cm behind its face plane, 6 cm off its axis.
+  const auto summing_factors = [&]( const bool tiny_sphere ) -> vector<double> {
+    vector<double> counts[2];
+    for( const bool cascade : { false, true } )
+    {
+      ShieldingSourceFitCalc::SourceFitDef src;
+      src.nuclide = co60;
+      src.activity = 10.0*PhysicalUnits::microCi;
+      src.fitActivity = true;
+      src.age = 1.0*PhysicalUnits::year;
+      src.fitAge = false;
+      src.ageDefiningNuc = nullptr;
+      src.sourceType = tiny_sphere ? ShieldingSourceFitCalc::ModelSourceType::Trace
+                                   : ShieldingSourceFitCalc::ModelSourceType::Point;
+
+      Fcn::ShieldSourceInput input;
+      input.config.distance = -3.0*cm;
+      input.config.source_offsets[0] = 6.0*cm;
+      input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+      if( tiny_sphere )
+      {
+        ShieldingSourceFitCalc::ShieldingInfo sph;
+        sph.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+        sph.m_isGenericMaterial = false;
+        sph.m_forFitting = false;
+        sph.m_material = water;
+        sph.m_dimensions[0] = 0.2*cm;
+        sph.m_fitDimensions[0] = sph.m_fitDimensions[1] = sph.m_fitDimensions[2] = false;
+        ShieldingSourceFitCalc::TraceSourceInfo trace;
+        trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+        trace.m_fitActivity = true;
+        trace.m_nuclide = co60;
+        trace.m_activity = src.activity;
+        trace.m_relaxationDistance = 0.0f;
+        sph.m_traceSources.push_back( trace );
+        input.config.shieldings = { sph };
+      }
+      input.config.sources = { src };
+      input.config.options.attenuate_for_air = false;
+      input.config.options.correct_for_cascade_summing = cascade;
+      auto foreground = make_shared<SpecUtils::Measurement>();
+      foreground->set_gamma_counts( make_shared<vector<float>>( 16, 1.0f ), 600.0f, 600.0f );
+      input.foreground = foreground;
+      input.foreground_peaks = peaks;
+      input.detector = drf;
+      input.supplemental_options.compute = false;
+
+      pair<shared_ptr<Fcn>, ShieldingSourceFitCalc::FitParameters> fcn = Fcn::create( input );
+      BOOST_REQUIRE( fcn.first->extendedScene() );
+      Fcn::NucMixtureCache cache;
+      counts[cascade ? 1 : 0] = fcn.first->expected_peak_counts_imp<double>( fcn.second.values(), cache );
+    }
+    vector<double> factors;
+    for( size_t i = 0; i < counts[0].size(); ++i )
+      factors.push_back( counts[1][i] / counts[0][i] );
+    return factors;
+  };
+
+  const vector<double> point = summing_factors( false );
+  const vector<double> sphere = summing_factors( true );
+  BOOST_REQUIRE_EQUAL( point.size(), sphere.size() );
+  for( size_t i = 0; i < point.size(); ++i )
+  {
+    BOOST_TEST_MESSAGE( "  Co-60 beside the detector, peak " << i << ": summing factor point " << point[i]
+                        << ", 2 mm sphere " << sphere[i] );
+    BOOST_CHECK( (point[i] > 0.5) && (point[i] < 1.0) );
+    BOOST_CHECK_SMALL( point[i] - sphere[i], 0.005 );
+  }
+}//BOOST_AUTO_TEST_CASE( ExtendedCascadePointVsTinySphere )

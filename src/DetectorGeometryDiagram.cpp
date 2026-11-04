@@ -468,33 +468,44 @@ DetectorGeometryDiagram::Model DetectorGeometryDiagram::buildModel( const ceelo:
   double r_in = R;        //inner radius of the next layer (layers start at the crystal radius)
   double hy_in = hy;      //and the box's y half-extent
   double z_if = 0.0;      //inner front z of the next layer (the crystal face, then each layer's front)
+  double z_ib = L;        //inner back z of the next layer (the crystal back, then each layer's back)
   for( size_t k = 0; k < gd.layers.size(); ++k )
   {
     const ceelo::LayerSpec &spec = gd.layers[k];
     const double f = std::max( 0.0, spec.front_thickness_cm );
     const double s = std::max( 0.0, spec.side_thickness_cm );
-    if( (f <= 0.0) && (s <= 0.0) )
+    const double b = gd.layer_back_thickness_cm( k );   //a back plate: z_end past the inner back
+    if( (f <= 0.0) && (s <= 0.0) && (b <= 0.0) )
       continue;
 
     const double r_out = r_in + s;
     const double hy_out = hy_in + s;
     const double z_of = z_if - f;
+    const double z_ob = z_ib + b;
 
     Region region;
     region.id = "layer" + std::to_string( k );
     region.kind = void_material( spec.material_index ) ? "void" : "layer";
-    if( (f > 0.0) && (s > 0.0) )
-      region.profile = { {z_of, 0.0, r_out}, {z_if, 0.0, r_out}, {z_if, r_in, r_out}, {L, r_in, r_out} };
-    else if( f > 0.0 )
-      region.profile = { {z_of, 0.0, r_in}, {z_if, 0.0, r_in} };          //a front disk only
-    else
-      region.profile = { {z_if, r_in, r_out}, {L, r_in, r_out} };         //a side tube only
+    // A cup: a front disk, the side tube, and a back disk - each only when it has a thickness (a
+    //  zero-width tube still separates a front disk from a back disk).
+    if( f > 0.0 )
+      region.profile = { {z_of, 0.0, r_out}, {z_if, 0.0, r_out} };
+    if( (s > 0.0) || ((f > 0.0) && (b > 0.0)) )
+    {
+      region.profile.push_back( {z_if, r_in, r_out} );
+      region.profile.push_back( {z_ib, r_in, r_out} );
+    }
+    if( b > 0.0 )
+    {
+      region.profile.push_back( {z_ib, 0.0, r_out} );
+      region.profile.push_back( {z_ob, 0.0, r_out} );
+    }
 
-    // A cup: the outer cylinder (or box) less the cavity it wraps.
+    // The outer cylinder (or box) less the cavity it wraps.
     if( box )
-      region.volume_cm3 = 4.0*r_out*hy_out*(L - z_of) - 4.0*r_in*hy_in*(L - z_if);
+      region.volume_cm3 = 4.0*r_out*hy_out*(z_ob - z_of) - 4.0*r_in*hy_in*(z_ib - z_if);
     else
-      region.volume_cm3 = kPi*r_out*r_out*(L - z_of) - kPi*r_in*r_in*(L - z_if);
+      region.volume_cm3 = kPi*r_out*r_out*(z_ob - z_of) - kPi*r_in*r_in*(z_ib - z_if);
     region.volume_cm3 = std::max( 0.0, region.volume_cm3 );
     region.mass_g = region.volume_cm3 * material_density( spec.material_index );
 
@@ -507,6 +518,8 @@ DetectorGeometryDiagram::Model DetectorGeometryDiagram::buildModel( const ceelo:
                                     .arg( compact_str( material_density(spec.material_index) ) ).toUTF8() );
     region.tip_lines.push_back( text("dgd-layer-dims").arg( length_str(f) ).arg( length_str(s) )
                                   .arg( length_str(2.0*r_out) ).toUTF8() );
+    if( b > 0.0 )
+      region.tip_lines.push_back( text("dgd-layer-back").arg( length_str(b) ).toUTF8() );
     region.tip_lines.push_back( text("dgd-volume").arg( compact_str(region.volume_cm3) ).toUTF8() );
     // A void has no mass worth quoting (`vacuumMaterialSpec` gives it 1e-25 g/cm3 so the transport
     //  code has something to work with), so say it is empty instead - as the bore does.
@@ -517,6 +530,7 @@ DetectorGeometryDiagram::Model DetectorGeometryDiagram::buildModel( const ceelo:
     r_in = r_out;
     hy_in = hy_out;
     z_if = z_of;
+    z_ib = z_ob;
   }//for( each layer )
 
   if( gd.collimator && (gd.collimator->side_thickness_cm > 0.0) )
@@ -528,14 +542,15 @@ DetectorGeometryDiagram::Model DetectorGeometryDiagram::buildModel( const ceelo:
     // The tube always spans the whole endcap: it starts at its own extension past the face, or at
     //  the outermost layer's front, whichever is further forward (as the ray trace has it).
     const double z_cs = std::min( spec.z_start_cm, z_if );
+    const double z_ce = std::max( spec.z_end_cm, z_ib );   //and reaches back at least as far
 
     collimator_region.id = "collimator";
     collimator_region.kind = void_material( spec.material_index ) ? "void" : "collimator";
-    collimator_region.profile = { {z_cs, r_in, r_out}, {L, r_in, r_out} };
+    collimator_region.profile = { {z_cs, r_in, r_out}, {z_ce, r_in, r_out} };
     if( box )
-      collimator_region.volume_cm3 = 4.0*(r_out*hy_out - r_in*hy_in)*(L - z_cs);
+      collimator_region.volume_cm3 = 4.0*(r_out*hy_out - r_in*hy_in)*(z_ce - z_cs);
     else
-      collimator_region.volume_cm3 = kPi*(r_out*r_out - r_in*r_in)*(L - z_cs);
+      collimator_region.volume_cm3 = kPi*(r_out*r_out - r_in*r_in)*(z_ce - z_cs);
     collimator_region.mass_g = collimator_region.volume_cm3 * material_density( spec.material_index );
 
     const bool coll_void = (collimator_region.kind == "void");

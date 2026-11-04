@@ -161,7 +161,7 @@ namespace
 
   /** Predicted cumulative wall-seconds after each planned node, in generation order (backbone
    energies ascending, then the angular nodes of each shape energy, then the near-field nodes of
-   each); size total + 1, [0] = 0. */
+   each, then the side & back nodes of each); size total + 1, [0] = 0. */
   std::vector<double> prior_cumulative_cost( const ceelo::ResponseGenerator::NodePlan &plan,
                                              const ceelo::GenerationOptions &opts,
                                              const McTimeCalibration *calib )
@@ -185,6 +185,10 @@ namespace
     for( const double energy : plan.shape_energies_keV )
       for( int i = 0; i < plan.n_near_positions; ++i )
         push( 3, energy );
+    for( const double energy : plan.shape_energies_keV )
+      for( int i = 0; i < plan.n_back_cos_theta * plan.n_phi; ++i )
+        cum.push_back( cum.back() + node_cost_s( opts.back_precision_scale * prec(4, energy),
+                                                 opts.scans_stop_on_total, opts, calib ) );
 
     return cum;
   }//prior_cumulative_cost(...)
@@ -303,6 +307,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_precision( nullptr ),
     m_customPrecision( nullptr ),
     m_anchorAngles( nullptr ),
+    m_backCoverage( nullptr ),
+    m_backInfo( nullptr ),
     m_groundCb( nullptr ),
     m_groundInfo( nullptr ),
     m_groundRow( nullptr ),
@@ -313,6 +319,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_profileRow( nullptr ),
     m_precRow( nullptr ),
     m_anchorAnglesRow( nullptr ),
+    m_backCoverageRow( nullptr ),
+    m_backInfoRow( nullptr ),
     m_anchorInfoRow( nullptr ),
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
@@ -481,6 +489,23 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_profile->activated().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
   HelpSystem::attachToolTipOn( m_profile, WString::tr("mmr-tt-profile"), true );
 
+  // A far-field scan beside and behind the detector, so a source there (an Activity/Shielding fit
+  //  with offsets) is answered from Monte Carlo rather than extrapolated or refused.
+  m_backCoverage = add_row( WString::tr("mmr-back-coverage") )->addNew<WComboBox>();
+  m_backCoverageRow = optsTable->rowAt( opt_row - 1 );
+  m_backCoverage->addItem( WString::tr("mmr-back-coverage-none") );    //idx0
+  m_backCoverage->addItem( WString::tr("mmr-back-coverage-coarse") );  //idx1
+  m_backCoverage->addItem( WString::tr("mmr-back-coverage-fine") );    //idx2
+  m_backCoverage->setCurrentIndex( 1 );
+  m_backCoverage->activated().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
+  HelpSystem::attachToolTipOn( m_backCoverage, WString::tr("mmr-tt-back-coverage"), true );
+
+  m_backInfo = add_wide_row()->addNew<WText>( WString::tr("mmr-back-no-structure") );
+  m_backInfoRow = optsTable->rowAt( opt_row - 1 );
+  m_backInfo->addStyleClass( "McAnchorInfo" );
+  m_backInfo->setInline( false );
+  m_backInfoRow->hide();
+
   WTableCell *precCell = add_row( WString::tr("mmr-precision") );
   m_precRow = optsTable->rowAt( opt_row - 1 );
   m_precision = precCell->addNew<WComboBox>();
@@ -606,7 +631,10 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   if( m_gridResponse )
     m_method->setCurrentIndex( static_cast<int>(Method::ImportedGrid) );
   else if( seed_resp )
+  {
     m_method->setCurrentIndex( static_cast<int>(seed_resp->provenance.method) );
+    restoreGenerationChoices( *seed_resp );
+  }
   else if( m_seedDrf && m_seedDrf->isValid() && m_seedDrf->geometry() )
     m_method->setCurrentIndex( static_cast<int>(Method::CurveTransfer) );
 
@@ -768,6 +796,7 @@ bool MakeMcResponseForDrf::State::operator==( const State &rhs ) const
          && (profile == rhs.profile)
          && (precision == rhs.precision)
          && (anchorAngles == rhs.anchorAngles)
+         && (backCoverage == rhs.backCoverage)
          && (chartMode == rhs.chartMode)
          && (groundToMeasured == rhs.groundToMeasured)
          && (customPrecision == rhs.customPrecision)
@@ -789,6 +818,7 @@ MakeMcResponseForDrf::State MakeMcResponseForDrf::currentState() const
   state.profile = m_profile->currentIndex();
   state.precision = m_precision->currentIndex();
   state.anchorAngles = m_anchorAngles->currentIndex();
+  state.backCoverage = m_backCoverage->currentIndex();
   state.chartMode = m_chartMode->currentIndex();
   state.groundToMeasured = m_groundCb->isChecked();
   state.customPrecision = m_customPrecision->text().toUTF8();
@@ -828,6 +858,7 @@ void MakeMcResponseForDrf::setState( const State &state )
   m_profile->setCurrentIndex( state.profile );
   m_precision->setCurrentIndex( state.precision );
   m_anchorAngles->setCurrentIndex( state.anchorAngles );
+  m_backCoverage->setCurrentIndex( state.backCoverage );
   m_chartMode->setCurrentIndex( state.chartMode );
   m_groundCb->setChecked( state.groundToMeasured );
   m_customPrecision->setText( WString::fromUTF8(state.customPrecision) );
@@ -889,6 +920,8 @@ void MakeMcResponseForDrf::updateMethodRows()
   m_profileRow->setHidden( (method != Method::FullMc) && !grid );
   m_precRow->setHidden( no_mc );
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
+  // The transfer methods have no back scan; an imported grid's total efficiency does.
+  m_backCoverageRow->setHidden( (method != Method::FullMc) && !grid );
   m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
   m_anchorRow->setHidden( method != Method::CurveTransfer );
 
@@ -1138,6 +1171,8 @@ void MakeMcResponseForDrf::setEditingEnabled( const bool enabled )
     m_method->setEnabled( enabled );
   if( m_profile )
     m_profile->setEnabled( enabled );
+  if( m_backCoverage )
+    m_backCoverage->setEnabled( enabled );
   if( m_precision )
     m_precision->setEnabled( enabled );
   if( m_customPrecision )
@@ -1556,6 +1591,57 @@ bool MakeMcResponseForDrf::selectedRelaxMild() const
 }//selectedRelaxMild()
 
 
+void MakeMcResponseForDrf::restoreGenerationChoices( const ceelo::DetectorResponse &resp )
+{
+  const ceelo::ResponseProvenance &prov = resp.provenance;
+  if( prov.method == ceelo::ProductionMethod::CurveTransfer )
+    return;  //no Monte Carlo: nothing was chosen beyond the method
+
+  if( prov.method == ceelo::ProductionMethod::FullMc )  //transfer mode always runs Far-field
+  {
+    switch( prov.profile )
+    {
+      case ceelo::ResponseProfile::General:  m_profile->setCurrentIndex( 0 ); break;
+      case ceelo::ResponseProfile::FarField: m_profile->setCurrentIndex( 1 ); break;
+      case ceelo::ResponseProfile::Contact:  m_profile->setCurrentIndex( 2 ); break;
+    }
+  }//if( FullMc )
+
+  // The precision options, by the target they run (see #selectedPrecision); anything else is custom.
+  const double prec = prov.node_fep_precision;
+  const bool relax = (prov.precision_profile == ceelo::PrecisionProfile::RelaxMild);
+  const auto is = [prec]( const double target ){ return fabs( prec - target ) < 1.0E-6*target; };
+  int prec_index = 4;
+  if( relax && is(0.003) )
+    prec_index = 2;
+  else if( !relax && is(0.01) )
+    prec_index = 0;
+  else if( !relax && is(0.003) )
+    prec_index = 1;
+  else if( !relax && is(0.001) )
+    prec_index = 3;
+  m_precision->setCurrentIndex( prec_index );
+  m_customPrecision->setHidden( prec_index != 4 );
+  if( prec_index == 4 )
+    m_customPrecision->setText( WString::fromUTF8( SpecUtils::printCompact( 100.0*prec, 4 ) + "%" ) );
+
+  if( prov.back_coverage )
+  {
+    switch( *prov.back_coverage )
+    {
+      case ceelo::BackCoverage::None:   m_backCoverage->setCurrentIndex( 0 ); break;
+      case ceelo::BackCoverage::Coarse: m_backCoverage->setCurrentIndex( 1 ); break;
+      case ceelo::BackCoverage::Fine:   m_backCoverage->setCurrentIndex( 2 ); break;
+    }
+  }//if( back coverage recorded )
+
+  if( prov.n_anchor_angles )
+    m_anchorAngles->setCurrentIndex( (*prov.n_anchor_angles <= 1) ? 0 : 1 );
+
+  m_groundCb->setChecked( !resp.grounding.empty() );
+}//restoreGenerationChoices(...)
+
+
 double MakeMcResponseForDrf::selectedPrecision() const
 {
   switch( m_precision->currentIndex() )
@@ -1593,6 +1679,21 @@ double MakeMcResponseForDrf::selectedPrecision() const
 void MakeMcResponseForDrf::updateEstimate()
 {
   const Method method = selectedMethod();
+
+  // A side & back scan of a geometry with nothing described behind the crystal characterizes a
+  //  bare crystal back - say so, as the real detector's back housing would shield those sources.
+  bool bare_back = false;
+  if( ((method == Method::FullMc) || (method == Method::ImportedGrid))
+      && (m_backCoverage->currentIndex() != 0) && m_geometry->isValid() )
+  {
+    try
+    {
+      bare_back = !(m_geometry->toDescriptor().back_structure_extent_cm() > 0.0);
+    }catch( std::exception & )
+    {
+    }
+  }//if( a side & back scan is selected )
+  m_backInfoRow->setHidden( !bare_back );
 
   if( method == Method::CurveTransfer )
   {
@@ -1641,6 +1742,12 @@ void MakeMcResponseForDrf::updateEstimate()
       const WString near_part = WString::tr("mmr-est-part-near").arg( plan.n_near_positions ).arg( nE );
       parts = WString::tr("mmr-est-part-join").arg( parts ).arg( near_part  );
     }//if( near-field nodes )
+
+    if( (plan.n_back() > 0) && (nE > 0) )
+    {
+      const WString back_part = WString::tr("mmr-est-part-back").arg( plan.n_back_cos_theta * plan.n_phi ).arg( nE );
+      parts = WString::tr("mmr-est-part-join").arg( parts ).arg( back_part );
+    }//if( side & back nodes )
 
     const char *durKey = "mmr-est-dur-model";
     if( m_calibrating )
@@ -2054,6 +2161,16 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
     case 2: opts.profile = ceelo::ResponseProfile::Contact; break;
     default: opts.profile = ceelo::ResponseProfile::General; break;
   }
+
+  if( (selectedMethod() == Method::FullMc) || (selectedMethod() == Method::ImportedGrid) )
+  {
+    switch( m_backCoverage->currentIndex() )
+    {
+      case 0:  opts.back_coverage = ceelo::GenerationOptions::BackCoverage::None;   break;
+      case 2:  opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Fine;   break;
+      default: opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Coarse; break;
+    }
+  }//if( Full MC, or an imported grid's total )
 
   if( selectedMethod() == Method::QuickMc )
   {

@@ -1233,7 +1233,16 @@ BOOST_AUTO_TEST_CASE(single_gamma_factor_is_unity) {
     BOOST_CHECK_CLOSE(res.peaks[0].eff_with_summing,
                       res.peaks[0].eff_no_summing, 1e-9);
     BOOST_CHECK_CLOSE(res.peaks[0].summing_factor, 1.0, 1e-9);
-    BOOST_CHECK_SMALL(res.peaks[0].summing_factor_unc, 1e-12);
+    // The correlated-ratio variance is analytically EXACTLY zero here: with
+    // X == D every history, term = (1-p)/(Np) + (1-p)/(Np) - 2(1-p)/(Np) = 0.
+    // What is computed is therefore pure catastrophic cancellation, and the
+    // final sqrt() amplifies it: the three terms are ~(1-p)/(Np) ~ 4e-4, double
+    // precision leaves ~1e-20 in `term`, and sqrt(1e-20) ~ 1e-10.  A 1e-12
+    // bound would demand cancellation to ~1e-24 -- below double precision -- so
+    // it would hold only by luck and break whenever the efficiencies' last bits
+    // shift.  1e-8 still asserts "deterministic, no statistics": genuine
+    // summing-factor uncertainties here are ~1e-4.
+    BOOST_CHECK_SMALL(res.peaks[0].summing_factor_unc, 1e-8);
 }
 
 BOOST_AUTO_TEST_CASE(two_gamma_summing_out_close_then_recovers) {

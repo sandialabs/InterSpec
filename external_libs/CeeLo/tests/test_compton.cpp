@@ -28,6 +28,7 @@
 #include "transport/ComptonScatter.h"
 
 #include <Eigen/Core>
+#include <array>
 #include <cmath>
 #include <random>
 #include <vector>
@@ -558,6 +559,50 @@ BOOST_AUTO_TEST_CASE(doppler_degenerate_low_energy) {
                 BOOST_CHECK_GE(s.scattered_energy_keV, 0.0);
             }
         }
+    }
+}
+
+// 7. The deterministic binned kernel is normalized and reproduces the exact
+//    shell/profile Monte Carlo used by finish_compton_at_angle().
+BOOST_AUTO_TEST_CASE(doppler_binned_probability_matches_sampler) {
+    constexpr double energy_keV = 100.0;
+    constexpr double cosine = -0.45;
+    constexpr int Z = 82;
+    constexpr int bins = 25;
+    constexpr int samples = 300000;
+
+    std::array<double, bins> expected{};
+    double expected_sum = 0.0;
+    for (int bin = 0; bin < bins; ++bin) {
+        const double lower = energy_keV * bin / bins;
+        const double upper = energy_keV * (bin + 1) / bins;
+        expected[bin] = doppler_energy_bin_probability(
+            energy_keV, cosine, Z, lower, upper);
+        BOOST_CHECK_GE(expected[bin], 0.0);
+        expected_sum += expected[bin];
+    }
+    BOOST_CHECK_SMALL(expected_sum - 1.0, 1e-10);
+
+    std::array<int, bins> observed{};
+    std::mt19937_64 rng(834927);
+    const Eigen::Vector3d direction(0.0, 0.0, 1.0);
+    for (int sample = 0; sample < samples; ++sample) {
+        const auto scatter = finish_compton_at_angle(
+            energy_keV, direction, cosine, rng, Z, true);
+        int bin = static_cast<int>(
+            bins * scatter.scattered_energy_keV / energy_keV);
+        bin = std::max(0, std::min(bins - 1, bin));
+        ++observed[bin];
+    }
+    for (int bin = 0; bin < bins; ++bin) {
+        const double observed_probability =
+            static_cast<double>(observed[bin]) / samples;
+        const double variance =
+            std::max(1e-12,
+                     expected[bin] * (1.0 - expected[bin]) / samples);
+        BOOST_CHECK_SMALL(
+            observed_probability - expected[bin],
+            5.0 * std::sqrt(variance) + 2e-4);
     }
 }
 

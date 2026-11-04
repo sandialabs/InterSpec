@@ -44,6 +44,8 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "geometry/ConvexSeparation.h"   //CeeLo
+
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
@@ -450,6 +452,28 @@ double detector_face_clearance( const GeometryType geometry, const double outer_
  */
 double detector_face_plane_clearance( const GeometryType geometry, const double outer_dims[3],
                                       const double distance );
+
+
+/** The solid of a source/shielding assembly's outermost shell in the assembly frame, in cm: a
+ sphere, a cylinder along z (both cylinder orientations - only the detector moves for side-on), or
+ a box.  `outer_dims` as for #detector_face_clearance (PhysicalUnits). */
+ceelo::ConvexSolid assembly_outer_solid( const GeometryType geometry, const double outer_dims[3] );
+
+/** The detector's outer envelope - crystal, housing layers, collimator and any described back
+ structure (ceelo::GeometryDescriptor::outer_envelope) - placed where a fit puts the detector
+ (#detector_geom_from_config, crystal frame rotated as the line path rotates it), in the assembly
+ frame, in cm. */
+ceelo::ConvexSolid detector_enclosure_solid( const ceelo::GeometryDescriptor &gd,
+                                             const GeometryType geometry, const double distance,
+                                             const double offset_x, const double offset_y );
+
+/** How far a source/shielding assembly - its outermost shell, or the bare source point when
+ `outer_dims` is null - stays clear of the detector's outside (PhysicalUnits); 0 when it touches or
+ overlaps.  A fit with a detector response may place a source beside or behind the detector only
+ while this is positive; flat-disk fits keep #detector_face_plane_clearance. */
+double detector_enclosure_clearance( const ceelo::GeometryDescriptor &gd, const GeometryType geometry,
+                                     const double *outer_dims, const double distance,
+                                     const double offset_x, const double offset_y );
 
 
 /*
@@ -1646,6 +1670,22 @@ public:
    */
   ShieldingSourceFitCalc::VolumetricEffMethod resolvedVolumetricEffMethod() const;
 
+  /** Whether the scene, as the fit starts, reaches beside or behind the detector - past the
+   detector-face plane.  Such a scene needs a detector response with a modelled geometry, and the
+   detector's outside (#detector_enclosure_clearance), not the face plane, is what limits it.
+   Decided once, in #create, from the starting dimensions: a fit that starts in front of the face
+   keeps the face plane as its limit. */
+  bool extendedScene() const;
+
+  /** For an extended scene: throws if the assembly's outermost shell (or the bare point source),
+   at `params`, touches or overlaps the detector's outside. */
+  void checkExtendedSceneClearance( const std::vector<double> &params ) const;
+
+  /** For an extended scene: whether the assembly's outermost shell (or the bare point source), at
+   `params`, reaches past the plane of the crystal's back face - where the efficiency rests on the
+   housing the detector response describes behind the crystal. */
+  bool reachesBehindCrystal( const std::vector<double> &params ) const;
+
   /** Human-readable note on how #resolvedVolumetricEffMethod was arrived at (e.g.
    "Auto -> MC transfer", or a fallback reason); empty when the request was used as-is.
    */
@@ -1706,6 +1746,37 @@ public:
   template<typename T>
   T pointLayerOpticalDepth( const Material *material, const double energy, const T &chord,
                             const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** Whether point sources take their efficiency from #pointFanFepEfficiencies: an extended scene
+   (see #extendedScene) on the response model. */
+  bool usePointFan() const;
+
+  /** For an extended scene's point sources: the full-energy-peak efficiency at each of `energies`
+   with the shielding and the air taken ray by ray over the response's fan - in place of the
+   central-ray shield chords, the air path to the face centre, and #pointSourceFepEff, none of which
+   describes a source beside or behind the detector, whose photons reach the crystal from a wide
+   spread of directions.
+
+       eff(E) = P(E) sum_i w_i(E) exp( -sum_l mu_l(E) c_l,i - tau_generic(E) - mu_air(E) a_i )
+
+   P the response's prefactor and w_i its per-ray kernel weights at the source position (their
+   sum is the unshielded kernel, so with nothing in the way this IS #pointSourceFepEff); c_l,i ray
+   i's chord through shell l and a_i its air path from the outermost shell to the detector's
+   outside; mu_l the shell's FEP removal coefficient (#pointLayerOpticalDepth) at its chord along
+   the fan's mean direction.  Defined in GammaInteractionCalc_imp.hpp. */
+  template<typename T>
+  std::vector<T> pointFanFepEfficiencies( const std::vector<T> &params,
+                                          const std::vector<double> &energies,
+                                          const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** #pointFanFepEfficiencies, or with `total` the any-deposit efficiency: the response's total
+   prefactor and total-kernel weights, each ray attenuated by the plain total coefficient (a
+   scattered photon still deposits). */
+  template<typename T>
+  std::vector<T> pointFanEfficiencies( const std::vector<T> &params,
+                                       const std::vector<double> &energies,
+                                       const std::vector<std::pair<double,double>> &energie_widths,
+                                       const bool total ) const;
 
   /** Fallback FEP half-window when neither a fitted peak nor a detector resolution is available. */
   static constexpr double sm_default_fep_window_keV = 1.0;
@@ -1803,6 +1874,13 @@ protected:
    #ShieldSourceConfig::source_offsets.  Set by #create; never fit.
    */
   double m_sourceOffsets[2] = { 0.0, 0.0 };
+
+  /** The outermost material shell's cumulative dimensions at `params` (as #detector_face_clearance
+   takes them); false, with zeros, when there is no material shell. */
+  bool outerShellDims( const std::vector<double> &params, double outer[3] ) const;
+
+  /** See #extendedScene. */
+  bool m_extendedScene = false;
   double m_liveTime;
 
   std::vector<PeakDef> m_peaks;
@@ -2036,6 +2114,11 @@ public:
   {
     std::vector<std::function<T(double)>> att_fcns;
     T air_dist = T(0.0);        //length units
+
+    /** Extended scenes (#usePointFan): the absolute FEP and total efficiencies - shields, air and
+     detector together, ray by ray - which the partner legs take instead of the central-ray chords.
+     Empty otherwise. */
+    std::function<T(double)> fan_fep_abs, fan_tot_abs;
     T total_ad_gcm2 = T(0.0);   //along-ray areal density, g/cm2
     T eff_an = T(0.0);          //AD-weighted effective atomic number
 

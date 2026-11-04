@@ -2308,6 +2308,22 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
       " counting (statistical) uncertainty only." );
   }
 
+  // A source behind the plane of the crystal's back face sees the detector through what the
+  //  response describes there - typically an approximation: an undescribed preamplifier or
+  //  cold-finger mass can change the efficiency there several-fold (2 cm of steel behind an HPGe:
+  //  30x at 122 keV, CeeLo MC 2026-11).
+  try
+  {
+    if( chi2Fcn.reachesBehindCrystal( params ) )
+      results.warnings.push_back( "The source reaches behind the detector's crystal, where the"
+        " efficiency depends on the housing the detector response describes behind it (Modify"
+        " Detector Response, Geom and MC tab).  That description is usually approximate, and"
+        " material it leaves out - a preamplifier, cold finger, or photomultiplier - can change the"
+        " efficiency there several-fold, most at low energies." );
+  }catch( std::exception & )
+  {
+  }
+
   // Detector-efficiency validity flags: a MC/transfer-parameterized response reports when a
   //  query fell outside its validated regime (near-field below the validity floor, refuse-grade
   //  off-axis, collimator shadowing, energy clamping).  One message per flag kind, listing the
@@ -2355,8 +2371,10 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
         case EffFlag::NeedsMc:
           results.warnings.push_back( "The detector-efficiency queries for the peaks at "
             + flag_list.second + " keV are outside the regime the detector response can represent"
-            " (e.g. far off-axis); the fitted results should not be trusted - run a full MC"
-            " characterization for this geometry." );
+            " (e.g. far off-axis, or behind a crystal the response describes nothing behind); the"
+            " fitted results should not be trusted - run a full MC characterization for this"
+            " geometry (for a source behind the detector, describe the housing behind the crystal"
+            " and keep side & back incidence on)." );
           break;
       }//switch( flag_list.first )
     }//for( each flag kind present )
@@ -3992,7 +4010,14 @@ namespace
     //  restart exactly at a bound would just re-stall.  Offset inward by min( ~0.5 g/cm2 of the
     //  shell material, 0.5% of the range ); 0.5 g/cm2 is sub-mm for dense shields, and the 0.5%
     //  cap handles a near-void shell (tiny density) whose 0.5 g/cm2 thickness would be enormous.
-    const double distance = chi2Fcn->distance();
+    // The physical scale restarts are drawn within: the distance to the face, or - beside or behind
+    //  the detector, where that can be zero or negative and the caps come from the detector's
+    //  outside instead - the distance to the face centre.
+    const double *offsets = chi2Fcn->createInput().config.source_offsets;
+    const double distance = chi2Fcn->extendedScene()
+                              ? std::sqrt( chi2Fcn->distance()*chi2Fcn->distance()
+                                           + offsets[0]*offsets[0] + offsets[1]*offsets[1] )
+                              : chi2Fcn->distance();
     const size_t nnuc = chi2Fcn->numNuclides();
     const double half_gcm2 = 0.5 * PhysicalUnits::g_per_cm2;
 

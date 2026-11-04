@@ -1053,6 +1053,16 @@ add_test( NAME TExportCAM
 #)
 
 
+# Sources beside / behind the detector: Monte-Carlo truth banks (opt-in generation) and how the
+#  responses measure against them.
+add_executable( test_BackIncidence test_BackIncidence.cpp )
+target_link_libraries( test_BackIncidence PRIVATE InterSpecLib )
+add_test( NAME TBackIncidence
+  COMMAND $<TARGET_FILE:test_BackIncidence> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 # For some reason in Xcode, the RUN_TESTS target doesnt cause the executables to be built if there
 # is code changes - it will just run the already compiled tests.  To get around this we will define
 # a target that depends on ALL_BUILD and RUN_TESTS.

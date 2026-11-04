@@ -36,9 +36,11 @@
 #include <boost/test/unit_test.hpp>
 
 #include "physics/ElectronCsda.h"
+#include "physics/estar_stopping_data.h"
 #include "cross_sections/CrossSectionData.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
+#include "geometry/SourceGeometry.h"
 #include "efficiency/EfficiencyCalculator.h"
 #include "test_fep_window.h"
 
@@ -82,12 +84,12 @@ BOOST_AUTO_TEST_CASE(stopping_power_decreases_with_energy_above_200keV)
 BOOST_AUTO_TEST_CASE(stopping_power_Al_1MeV_vs_nist)
 {
     // NIST ESTAR Al at 1 MeV: S_col ≈ 1.465 MeV cm²/g.
-    // With NIST correction factor applied, our value should be within 2%.
+    // The Geant4-calibrated correction remains consistent with ESTAR here.
     double A_Al = ElectronCsda::atomic_weight(13);
     double S = ElectronCsda::stopping_power_MeV_cm2_g(13, A_Al, 1000.0);
     BOOST_CHECK_GT(S, 1.0);   // At least 1 MeV cm²/g
     BOOST_CHECK_LT(S, 2.5);   // Not absurdly large
-    // With NIST ESTAR correction, should be within 5% of NIST:
+    // The Geant4-calibrated value should remain within 5% of NIST:
     BOOST_CHECK_GT(S, 0.95 * 1.465);
     BOOST_CHECK_LT(S, 1.05 * 1.465);
 }
@@ -132,10 +134,8 @@ BOOST_AUTO_TEST_CASE(range_NaI_at_662keV_physical_bounds)
     //   I  (Z=53): NIST ~0.24 g/cm²
     // Bragg: R_NaI ≈ 0.24 g/cm² → in cm: 0.065 cm (0.65 mm)
     //
-    // Our Bethe-Bloch formula omits shell corrections → underestimates S by 10–30%
-    // at 10–300 keV.  Since most range comes from the 50–300 keV integration region,
-    // this causes our range to be ~50% LARGER than NIST.
-    // Expected: 0.24 × 1.5 ≈ 0.36 g/cm²  (generous bounds: 0.10 to 0.70)
+    // This test deliberately keeps broad physical bounds because CeeLo uses a
+    // compact Geant4-calibrated interpolation rather than the full ESTAR tables.
     Material nai = make_NaI();
     const ElectronCsda& csda = ElectronCsda::instance();
     double R = csda.range_gcm2_material(nai, 662.0);
@@ -403,11 +403,13 @@ BOOST_AUTO_TEST_CASE(per_element_quantities_equal_uranium)
             BOOST_CHECK_EQUAL(ElectronCsda::radiation_length_gcm2_element(Z, ElectronCsda::atomic_weight(Z)),
                               ElectronCsda::radiation_length_gcm2_element(kMaxElectronTableZ, A_U));
             for (double E : {5.0, 50.0, 662.0, 3000.0, 19000.0}) {
-                for (bool positron : {false, true})
+                for (bool positron : {false, true}) {
                     BOOST_CHECK_EQUAL(
                         ElectronCsda::stopping_power_MeV_cm2_g(Z, ElectronCsda::atomic_weight(Z), E, positron),
                         ElectronCsda::stopping_power_MeV_cm2_g(kMaxElectronTableZ, A_U, E, positron));
-                BOOST_CHECK_EQUAL(csda.range_gcm2(Z, E), csda.range_gcm2(kMaxElectronTableZ, E));
+                    BOOST_CHECK_EQUAL(csda.range_gcm2(Z, E, positron),
+                                      csda.range_gcm2(kMaxElectronTableZ, E, positron));
+                }
             }
         }
     }
@@ -434,6 +436,12 @@ BOOST_AUTO_TEST_CASE(material_level_electron_physics_treats_plutonium_as_uranium
                               csda.brems_pemit_corr(*pr.second, E));
             BOOST_CHECK_EQUAL(csda.extrapolated_range_gcm2_material(*pr.first, E),
                               csda.extrapolated_range_gcm2_material(*pr.second, E));
+            for (bool positron : {false, true}) {
+                BOOST_CHECK_EQUAL(csda.brems_emission_rate_per_gcm2(*pr.first, E, positron),
+                                  csda.brems_emission_rate_per_gcm2(*pr.second, E, positron));
+                BOOST_CHECK_EQUAL(csda.delta_electron_rate_per_gcm2(*pr.first, E, 50.0, positron),
+                                  csda.delta_electron_rate_per_gcm2(*pr.second, E, 50.0, positron));
+            }
         }
         BOOST_CHECK_EQUAL(ElectronCsda::radiation_length_gcm2(*pr.first),
                           ElectronCsda::radiation_length_gcm2(*pr.second));
@@ -460,14 +468,15 @@ BOOST_AUTO_TEST_SUITE_END()
 
 
 // ============================================================
-// Suite 6: NIST ESTAR stopping power correction
+// Suite 6: Geant4-calibrated stopping-power correction
 // ============================================================
 BOOST_AUTO_TEST_SUITE(StoppingCorrection)
 
-BOOST_AUTO_TEST_CASE(correction_improves_nist_agreement)
+BOOST_AUTO_TEST_CASE(correction_remains_consistent_with_nist)
 {
-    // Spot-check: for several elements at 1 MeV, the corrected stopping power
-    // should be within 2% of NIST ESTAR values.
+    // Independent spot-check: at 1 MeV the Geant4-calibrated stopping power
+    // should remain within 8% of NIST ESTAR values.  This is deliberately not
+    // the calibration test: density/material conventions differ slightly.
     struct SpotCheck { int Z; double A; double nist_1MeV; };
     SpotCheck checks[] = {
         {13, 26.982, 1.465},   // Al
@@ -479,7 +488,28 @@ BOOST_AUTO_TEST_CASE(correction_improves_nist_agreement)
         double S = ElectronCsda::stopping_power_MeV_cm2_g(c.Z, c.A, 1000.0);
         double ratio = S / c.nist_1MeV;
         BOOST_CHECK_GT(ratio, 0.95);
-        BOOST_CHECK_LT(ratio, 1.05);
+        BOOST_CHECK_LT(ratio, 1.08);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(collision_stopping_reproduces_nist_estar_nodes)
+{
+    // The collision stopping power is the direct public-domain NIST ESTAR
+    // tabulation (not a Bethe-Bloch expression scaled by a fit to Geant4
+    // G4EmCalculator values, which are not redistributable to pin against), so
+    // the property under test is that the interpolation reproduces its own
+    // source grid.  It matches the NIST 1 MeV spot checks above to 4-5 digits;
+    // Geant4 11.4.0 Livermore eIoni differs from NIST by 0.9-3.6%.
+    for (const int Z : {13, 26, 53, 82}) {
+        for (const double E_keV : {100.0, 500.0, 1000.0, 2000.0, 5000.0}) {
+            const double actual = ElectronCsda::stopping_power_MeV_cm2_g(
+                Z, ElectronCsda::atomic_weight(Z), E_keV);
+            const double estar = estar_data::collision_stopping(Z, E_keV);
+            BOOST_TEST_CONTEXT("Z=" << Z << " E=" << E_keV << " keV") {
+                BOOST_CHECK_GT(estar, 0.0);
+                BOOST_CHECK_CLOSE(actual, estar, 0.05);
+            }
+        }
     }
 }
 
@@ -504,6 +534,250 @@ BOOST_AUTO_TEST_SUITE_END()
 // Suite 7: Bremsstrahlung in CSDA
 // ============================================================
 BOOST_AUTO_TEST_SUITE(BremsstrahlungCsda)
+
+BOOST_AUTO_TEST_CASE(seltzer_berger_absolute_emission_rate)
+{
+    // Expected number of >10 keV bremsstrahlung photons per g/cm² for a
+    // 2.29 MeV electron.  These values follow
+    //   N_A/A * Z² * millibarn/beta² * integral chi d(log kappa)
+    // over the compiled-in Seltzer-Berger table, which is derived from the
+    // public-domain NIST EPQ BergerSeltzerBrem tables (see the provenance
+    // banner in src/cross_sections/element_data.cpp).  They are pinned here as
+    // a regression lock; the ABSOLUTE normalisation they depend on is checked
+    // independently against NIST ESTAR in seltzer_berger_matches_nist_estar
+    // below.  (A G4EMLOW/Livermore extraction differs from these by only
+    // +0.07% to +0.13%.)
+    const ElectronCsda& csda = ElectronCsda::instance();
+    struct Reference {
+        int Z;
+        double rate_per_gcm2;
+    };
+    for (const auto& reference : {
+             Reference{6, 0.1251439},
+             Reference{26, 0.4140230},
+             Reference{48, 0.6692323},
+             Reference{92, 1.0937720},
+         }) {
+        Material material(
+            "element", 1.0,
+            {{static_cast<std::uint8_t>(reference.Z), 1.0}});
+        const double rate =
+            csda.brems_emission_rate_per_gcm2(
+                material, 2290.0, false);
+        BOOST_CHECK_CLOSE(rate, reference.rate_per_gcm2, 0.35);
+
+        const double positron_rate =
+            csda.brems_emission_rate_per_gcm2(
+                material, 2290.0, true);
+        BOOST_CHECK_GE(positron_rate, 0.0);
+        BOOST_CHECK_LT(positron_rate, rate);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(seltzer_berger_matches_nist_estar)
+{
+    // ABSOLUTE normalisation check for the compiled-in Seltzer-Berger table,
+    // against an independent public-domain source.  Integrating the table's own
+    // chi over kappa must reproduce the NIST ESTAR radiative stopping power:
+    //   S_rad = (N_A/A) * T * (Z^2/beta^2) * integral_0^1 chi dkappa * 1e-27
+    // with S_rad in MeV cm^2/g.  This is what makes the pinned emission rates
+    // in seltzer_berger_absolute_emission_rate meaningful rather than a pure
+    // self-consistency lock: ESTAR is not the table's own provenance (the table
+    // comes from NIST EPQ), so a table swap that shifted absolute yield would
+    // break this even if the pinned rates were regenerated alongside it.
+    const CrossSectionData& xs = CrossSectionData::instance();
+    constexpr double kAvogadro = 6.02214076e23;
+    constexpr double kMeC2_keV = 510.998950;
+
+    for (const double T_keV : {500.0, 1000.0, 2290.0, 5000.0}) {
+        const double tau = T_keV / kMeC2_keV;
+        const double beta2 =
+            tau * (tau + 2.0) / ((tau + 1.0) * (tau + 1.0));
+        for (const int Z : {6, 26, 48, 82, 92}) {
+            // Trapezoid on the table's own kappa grid.
+            double integral = 0.0;
+            for (int i = 0; i + 1 < static_cast<int>(kSB_n_kappa); ++i) {
+                const double k0 = kSB_kappa[i];
+                const double k1 = kSB_kappa[i + 1];
+                integral += 0.5
+                    * (xs.sb_chi(Z, T_keV, k0) + xs.sb_chi(Z, T_keV, k1))
+                    * (k1 - k0);
+            }
+            const double from_table =
+                (kAvogadro / xs.atomic_weight(Z)) * (T_keV * 1.0e-3)
+                * (static_cast<double>(Z) * Z / beta2) * integral * 1.0e-27;
+            const double estar = estar_data::radiative_stopping(Z, T_keV);
+            BOOST_TEST_CONTEXT("Z=" << Z << " T=" << T_keV << " keV") {
+                BOOST_CHECK_GT(estar, 0.0);
+                // Measured: |deviation| <= 0.35% at 2.29 MeV.  The 1.5%
+                // gate leaves room for the 32-node trapezoid's own error at the
+                // grid edges while still catching a table-scale regression.
+                BOOST_CHECK_CLOSE(from_table, estar, 1.5);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(moller_delta_electron_rate)
+{
+    // G4MollerBhabhaModel cross section above a 50 keV secondary cut for a
+    // 2.29 MeV electron, converted to macroscopic cross section per g/cm².
+    const ElectronCsda& csda = ElectronCsda::instance();
+    struct Reference {
+        int Z;
+        double rate_per_gcm2;
+    };
+    for (const auto& reference : {
+             Reference{6, 1.51875414},
+             Reference{26, 1.41548230},
+             Reference{48, 1.29818393},
+             Reference{92, 1.17509600},
+         }) {
+        Material material(
+            "element", 1.0,
+            {{static_cast<std::uint8_t>(reference.Z), 1.0}});
+        const double rate = csda.delta_electron_rate_per_gcm2(
+            material, 2290.0, 50.0, false);
+        BOOST_CHECK_CLOSE(rate, reference.rate_per_gcm2, 0.01);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(source_walk_emits_delta_electron_brems)
+{
+    Material uranium("uranium", 1.0, {{92, 1.0}});
+    SourceGeometry source;
+    source.configure_point(Eigen::Vector3d::Zero());
+    source.add_shield(&uranium, 1.1);
+    source.set_source_brems(true);
+    source.set_record_truth_labels(true);
+
+    std::mt19937_64 rng(0x4d4f4c4c4552ULL);
+    std::size_t secondary_count = 0;
+    for (int event = 0; event < 1000; ++event) {
+        const auto result = source.transport_source_electron(
+            Eigen::Vector3d::Zero(),
+            Eigen::Vector3d::UnitZ(),
+            2290.0, rng, false);
+        for (const auto& photon : result.created_brems_photons) {
+            if (photon.origin
+                == SourceGeometry::SourceSecondaryPhoton::Origin::
+                    SecondaryElectronBrems) {
+                ++secondary_count;
+            }
+        }
+    }
+    BOOST_CHECK_GT(secondary_count, 20U);
+}
+
+BOOST_AUTO_TEST_CASE(contained_primary_event_sampler_tracks_delta_brems)
+{
+    const ElectronCsda& csda = ElectronCsda::instance();
+    Material uranium("uranium", 1.0, {{92, 1.0}});
+    std::mt19937_64 rng(0x4f50544943414cULL);
+    std::size_t primary_count = 0;
+    std::size_t secondary_count = 0;
+
+    for (int event = 0; event < 2000; ++event) {
+        const auto photons = csda.sample_brems_in_material(
+            uranium, Eigen::Vector3d::Zero(),
+            Eigen::Vector3d::UnitZ(), 2290.0, rng);
+        for (const auto& photon : photons) {
+            if (photon.charged_generation == 0)
+                ++primary_count;
+            else if (photon.charged_generation == 1)
+                ++secondary_count;
+            BOOST_CHECK_LE(photon.charged_generation, 1);
+            BOOST_CHECK_GE(photon.energy_keV, 10.0);
+            BOOST_CHECK_LE(photon.energy_keV, 2290.0);
+        }
+    }
+
+    // Wide deterministic gates: their purpose is to ensure both competing
+    // optical-depth processes are active, not to freeze a Monte Carlo result.
+    BOOST_CHECK_GT(primary_count, 2500U);
+    BOOST_CHECK_GT(secondary_count, 150U);
+}
+
+BOOST_AUTO_TEST_CASE(contained_delta_sampler_preserves_integrated_rate)
+{
+    const ElectronCsda& csda = ElectronCsda::instance();
+    Material uranium("uranium", 1.0, {{92, 1.0}});
+    constexpr double initial_KE_keV = 1000.0;
+
+    // Independent numerical integral of the expected photon multiplicity:
+    // Lambda = integral sigma_brems(T) dR(T).
+    constexpr int intervals = 500;
+    double expected = 0.0;
+    double previous_range =
+        csda.range_gcm2_material(uranium, 10.0);
+    double previous_rate =
+        csda.brems_emission_rate_per_gcm2(
+            uranium, 10.0, false);
+    for (int i = 1; i <= intervals; ++i) {
+        const double fraction =
+            static_cast<double>(i) / intervals;
+        const double energy =
+            10.0 * std::pow(initial_KE_keV / 10.0, fraction);
+        const double range =
+            csda.range_gcm2_material(uranium, energy);
+        const double rate =
+            csda.brems_emission_rate_per_gcm2(
+                uranium, energy, false);
+        expected +=
+            0.5 * (previous_rate + rate)
+            * std::max(0.0, range - previous_range);
+        previous_range = range;
+        previous_rate = rate;
+    }
+
+    std::mt19937_64 rng(0x434f4e5441494e45ULL);
+    constexpr int events = 20000;
+    std::size_t photon_count = 0;
+    for (int event = 0; event < events; ++event) {
+        const auto photons = csda.sample_brems_in_material(
+            uranium, Eigen::Vector3d::Zero(),
+            Eigen::Vector3d::UnitZ(), initial_KE_keV, rng,
+            /*charged_generation=*/1);
+        photon_count += photons.size();
+        for (const auto& photon : photons) {
+            BOOST_CHECK_EQUAL(photon.charged_generation, 1);
+            BOOST_CHECK_GE(photon.energy_keV, 10.0);
+            BOOST_CHECK_LE(photon.energy_keV, initial_KE_keV);
+            BOOST_CHECK(std::isfinite(photon.direction.norm()));
+            BOOST_CHECK_CLOSE(photon.direction.norm(), 1.0, 1e-8);
+        }
+    }
+    const double observed =
+        static_cast<double>(photon_count) / events;
+    // Photon recoil shortens the remaining charged path slightly, so the
+    // no-recoil optical-depth integral is an upper reference rather than an
+    // exact equality. At this energy the correction is well below this gate.
+    BOOST_CHECK_CLOSE(observed, expected, 8.0);
+}
+
+BOOST_AUTO_TEST_CASE(homogeneous_material_clearance)
+{
+    Material iron("iron", 1.0, {{26, 1.0}});
+    SourceGeometry source;
+    source.configure_point(Eigen::Vector3d::Zero());
+    source.add_shield(&iron, 2.0);
+
+    BOOST_CHECK_CLOSE(
+        source.min_distance_within_material(
+            Eigen::Vector3d::Zero(), iron),
+        2.0, 1e-10);
+    BOOST_CHECK_CLOSE(
+        source.min_distance_within_material(
+            Eigen::Vector3d(0.0, 0.0, 1.25), iron),
+        0.75, 1e-10);
+
+    Material cadmium("cadmium", 1.0, {{48, 1.0}});
+    source.add_shield(&cadmium, 1.0);
+    BOOST_CHECK_EQUAL(
+        source.min_distance_within_material(
+            Eigen::Vector3d::Zero(), iron),
+        0.0);
+}
 
 BOOST_AUTO_TEST_CASE(brems_photons_emitted_at_high_energy)
 {
@@ -584,6 +858,83 @@ BOOST_AUTO_TEST_CASE(moliere_walk_produces_spread)
     // Moliere + brems at 5 MeV should give non-trivial spread
     BOOST_CHECK_GT(mean, 0.0);
     BOOST_CHECK_GT(rms, 0.001 * mean);  // At least 0.1% spread
+}
+
+BOOST_AUTO_TEST_CASE(emission_recording_walk_matches_wrapper_and_moves)
+{
+    // sample_brems_in_material is now a thin wrapper over
+    // sample_brems_emissions_in_material with an identical RNG draw sequence:
+    // same seed must give the same photons (direction, energy, generation),
+    // with the wrapper's positions collapsed to the birth point while the
+    // core reports true along-walk emission positions bounded by the CSDA
+    // range. Air-like density makes the displacement macroscopic (metres) so
+    // a bookkeeping error cannot hide below floating-point noise.
+    const ElectronCsda& csda = ElectronCsda::instance();
+    Material air("air", 0.001205,
+                 {{7, 0.755}, {8, 0.232}, {18, 0.013}});
+
+    const double KE = 2000.0;
+    const Eigen::Vector3d birth(1.0, -2.0, 3.0);
+    const Eigen::Vector3d dir0 = Eigen::Vector3d(0.3, -0.1, 1.0).normalized();
+    const double range_cm =
+        csda.range_gcm2_material(air, KE, false) / air.density();
+
+    std::mt19937_64 rng_a(777), rng_b(777);
+    int n_emissions = 0;
+    double mean_disp = 0.0;
+    for (int i = 0; i < 3000; ++i) {
+        const auto wrapped =
+            csda.sample_brems_in_material(air, birth, dir0, KE, rng_a);
+        const auto recorded =
+            csda.sample_brems_emissions_in_material(
+                air, birth, dir0, KE, rng_b, false);
+        BOOST_REQUIRE_EQUAL(wrapped.size(), recorded.size());
+        for (std::size_t j = 0; j < wrapped.size(); ++j) {
+            BOOST_CHECK_EQUAL(wrapped[j].direction.x(),
+                              recorded[j].photon_dir.x());
+            BOOST_CHECK_EQUAL(wrapped[j].direction.y(),
+                              recorded[j].photon_dir.y());
+            BOOST_CHECK_EQUAL(wrapped[j].direction.z(),
+                              recorded[j].photon_dir.z());
+            BOOST_CHECK_EQUAL(wrapped[j].energy_keV, recorded[j].photon_keV);
+            BOOST_CHECK_EQUAL(wrapped[j].charged_generation,
+                              recorded[j].charged_generation);
+            BOOST_CHECK_EQUAL(wrapped[j].position.x(), birth.x());
+
+            const double disp = (recorded[j].position - birth).norm();
+            BOOST_CHECK_LE(disp, range_cm * 1.0001);
+            mean_disp += disp;
+
+            BOOST_CHECK_GT(recorded[j].electron_KE_keV, 0.0);
+            BOOST_CHECK_LE(recorded[j].electron_KE_keV, KE * 1.0001);
+            BOOST_CHECK_CLOSE(recorded[j].electron_dir.norm(), 1.0, 1e-9);
+            BOOST_CHECK_GE(recorded[j].photon_keV, 10.0);
+            ++n_emissions;
+        }
+    }
+    BOOST_REQUIRE_GT(n_emissions, 20);
+    mean_disp /= n_emissions;
+    // Emission happens part-way along a metres-long air track: the mean
+    // displacement must be macroscopic and below the full range.
+    BOOST_TEST_MESSAGE("air emissions: " << n_emissions
+                       << ", mean displacement " << mean_disp
+                       << " cm, CSDA range " << range_cm << " cm");
+    BOOST_CHECK_GT(mean_disp, 0.01 * range_cm);
+    BOOST_CHECK_LT(mean_disp, range_cm);
+
+    // Positron variant: valid fields, no crashes (Bhabha/positron tables).
+    std::mt19937_64 rng_p(31337);
+    int n_pos = 0;
+    for (int i = 0; i < 500 && n_pos == 0; ++i) {
+        const auto rec = csda.sample_brems_emissions_in_material(
+            air, birth, dir0, KE, rng_p, true);
+        for (const auto& e : rec) {
+            BOOST_CHECK_GT(e.photon_keV, 0.0);
+            BOOST_CHECK_LE((e.position - birth).norm(), range_cm * 1.05);
+            ++n_pos;
+        }
+    }
+    BOOST_CHECK_GT(n_pos, 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
