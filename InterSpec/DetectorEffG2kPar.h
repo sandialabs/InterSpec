@@ -802,20 +802,27 @@ namespace DetEffG2kPar
      - an `EtaTotTable` on the grid's own energy x angle nodes, at the far-field pin
        (max(1000 a, 100 cm) from the crystal face); and
      - everywhere closer, a distance table (`ceelo::TotEffPayload::near_field`) holding the same
-       product at a lattice of physical points - so neither geometry's kernel decides the total, and
-       the grid's close-in FEP and the donor's close-in total/FEP both carry over.
-   Exact at the lattice nodes; between them, to the tables' interpolation of the grid's own close-in
-   FEP (0.1-1.1% on the mock pair: test_ImportedGridDrf's `TotalOnImportedGeometry` and
-   `TotalOnEditedGeometry`).  Where nothing reaches a crystal - a kernel underflowing to 0, in either
-   geometry - the ratio comes from the donor's kernel-free prefactors, so the total is 0 wherever
-   the grid's FEP is.
+       product on the GRID's own close-in lattice - its energies, angle columns and distance
+       ladder - so neither geometry's kernel decides the total, the grid's close-in FEP and the
+       donor's close-in total/FEP both carry over, and the grid's close-in structure, interpolated
+       the same way for both, cancels from total/FEP.  A rung makeDrf reads at the endcap face in
+       front of it takes the donor's ratio there too.
+   Exact at the lattice nodes; between them, total/FEP is the donor's ratio to <=0.05% from 1 cm
+   out, and 0.13% at worst at the grazing near-contact corner, on the mock pair
+   (test_ImportedGridDrf's `TotalOnEditedGeometry` and `TotalToPeakBetweenNodes`).  That table is
+   as large as the grid's own, so the response serializes to ~2.5x the bare grid (1.1 -> 2.8 MB on
+   the mock), and attaching it takes ~5 s CPU there.  Where
+   nothing reaches a crystal - a kernel underflowing to 0, in either geometry - the ratio comes from
+   the donor's kernel-free prefactors, so the total is 0 wherever the grid's FEP is.
 
    End to end on the mock pair, the app's own run (General profile, scans stopped on total
    precision - ceelo::GenerationOptions::scans_stop_on_total - at 0.3%) against direct point-source
-   Monte Carlo of the geometry the grid was made from (1-27 cm, 0-75 deg, 60-2614 keV, 0.2% MC):
-     - that geometry: worst 1.65%, RMS 0.65% (carrying the grounded donor's total instead, as this
-       did until 2026-11: worst 1.58%, RMS 0.55% - the total/FEP takes on the off-axis and close-in
-       FEP's MC noise, 0.3-1.2% at those scans);
+   Monte Carlo of the geometry the grid was made from (1-27 cm, 0-75 deg, 60-2614 keV, 0.2% MC),
+   measured when the distance table was a coarser lattice of its own (which added up to ~1% between
+   its nodes):
+     - that geometry: worst 1.65%, RMS 0.65% (carrying the grounded donor's total instead: worst
+       1.58%, RMS 0.55% - the total/FEP takes on the off-axis and close-in FEP's MC noise, 0.3-1.2%
+       at those scans);
      - the importer's guessed core: worst 2.43%, RMS 0.93% (the grounded donor's total: worst 7.6%,
        RMS 2.7%).
    And the grounded total failed outright for a geometry far from the grid's - 1 cm of lead in front
