@@ -1945,19 +1945,21 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   };
 
   // ln( total / FEP ) of the donor at `pos`, and its fractional sigma; false where it refuses the
-  //  point (behind its face plane).  From its efficiencies where they are nonzero - exact for every
-  //  total tier, each with its own kernel.  Else, where nothing reaches its crystal (a kernel
-  //  underflowing to 0, e.g. ~1 cm of lead at 15 keV), from its kernel-free prefactors: exact for an
-  //  EtaTotTable, coarser for the compact tiers, whose total prefactor (1, or b(E)) leaves out how
-  //  their No-Rayleigh kernel differs from the FEP's.
-  const auto donor_ln_ratio = [&mc,&data_frac]( const double energy, const Eigen::Vector3d &pos,
+  //  point (behind its face plane).  An EtaTotTable's total and FEP share one kernel, so their
+  //  kernel-free prefactors give the ratio exactly, without tracing it.  The compact tiers' total has
+  //  its own (No-Rayleigh) kernel, so their ratio comes from the efficiencies where they are nonzero;
+  //  where nothing reaches the crystal (a kernel underflowing to 0, e.g. ~1 cm of lead at 15 keV),
+  //  from the prefactors too - coarser, as their total prefactor (1, or b(E)) leaves out how the two
+  //  kernels differ.
+  const bool kernel_free_ratio = (mc->tot_eff.tier == TotEffTier::EtaTotTable);
+  const auto donor_ln_ratio = [&mc,&data_frac,kernel_free_ratio]( const double energy, const Eigen::Vector3d &pos,
                                                 const ApertureQuadrature &q, double &ln_r, double &frac ) -> bool {
-    EffResult tot = mc->eps_total_at( energy, pos, q );
-    EffResult fep = mc->eps_fep_at( energy, pos, q );
+    EffResult tot = kernel_free_ratio ? mc->total_prefactor( energy, pos, q ) : mc->eps_total_at( energy, pos, q );
+    EffResult fep = kernel_free_ratio ? mc->fep_prefactor( energy, pos, q ) : mc->eps_fep_at( energy, pos, q );
     if( (tot.flag == ResponseFlag::NeedsMc) || (fep.flag == ResponseFlag::NeedsMc) )
       return false;
 
-    if( !(tot.value > 0.0) || !(fep.value > 0.0) )
+    if( !kernel_free_ratio && (!(tot.value > 0.0) || !(fep.value > 0.0)) )
     {
       tot = mc->total_prefactor( energy, pos, q );
       fep = mc->fep_prefactor( energy, pos, q );
@@ -2084,37 +2086,48 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   // Inside the pin, CeeLo's near-field total table (ceelo::TotEffPayload::near_field) carries the
   //  same product close in, ln N = ln(grid FEP * donor total/FEP / the pinned far-field total above),
   //  all kernel-free.  So the grid's own close-in FEP - the file's - and the donor's measured
-  //  close-in total/FEP both carry over, and neither geometry's kernel decides the total.  The
-  //  close-in lattice is like CeeLo's own, but measured from the endcap face, so all but the grazing
-  //  nodes are places a source can be; it continues geometrically out to the pin.  The far-field
-  //  values are taken before the table is installed - an unfinalized table would otherwise apply.
+  //  close-in total/FEP both carry over, and neither geometry's kernel decides the total.
+  // The table sits on the grid's OWN near-field lattice - every file energy (the grid's energy
+  //  kinks), its angle columns and its distance ladder - so the grid's close-in FEP structure is
+  //  interpolated the same way in both tables, and total/FEP between nodes is the donor's smooth
+  //  ratio.  (A coarser lattice of its own, as this had, re-sampled that structure: 0.1-1.1% off
+  //  between nodes on the mock pair.)  It adds the crystal K-edge flanks, where the ratio steps, and
+  //  continues geometrically past the grid's ladder out to the pin.  The far-field values are taken
+  //  before the table is installed - an unfinalized table would otherwise apply.
   {
+    const NearFieldModel &gn = resp->near_field;
+    if( gn.empty() )
+      throw std::runtime_error( "attachTotalEfficiency: the grid response has no near-field table." );
+
     NearFieldModel tn;
 
-    double e_lo = resp->provenance.valid_e_min_keV, e_hi = resp->provenance.valid_e_max_keV;
-    if( !(e_lo > 0.0) || !(e_hi > e_lo) )
+    // ln N is linear in ln E, so an added node leaves the grid's part as the grid interpolates it.
+    tn.energies_keV = gn.energies_keV;
+    const double e_lo = gn.energies_keV.front(), e_hi = gn.energies_keV.back();
+    for( const double edge : resp->descriptor.crystal_k_edges( e_lo, e_hi ) )
     {
-      e_lo = eta.energies_keV.front();
-      e_hi = eta.energies_keV.back();
-    }
-    const int n_energies = 16;
-    for( int i = 0; i < n_energies; ++i )
-      tn.energies_keV.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_energies - 1) ) );
-    for( const double edge : resp->descriptor.crystal_k_edges( e_lo, e_hi ) )  //ln N is linear in ln E
-    {
-      tn.energies_keV.push_back( edge * (1.0 - 1.0e-3) );
-      tn.energies_keV.push_back( edge * (1.0 + 1.0e-3) );
+      const double below = edge * (1.0 - 1.0e-3), above = edge * (1.0 + 1.0e-3);
+      if( (below > e_lo) && (above < e_hi) )
+      {
+        tn.energies_keV.push_back( below );
+        tn.energies_keV.push_back( above );
+      }
     }
     std::sort( begin(tn.energies_keV), end(tn.energies_keV) );
     tn.energies_keV.erase( std::unique( begin(tn.energies_keV), end(tn.energies_keV) ), end(tn.energies_keV) );
 
-    tn.cos_thetas = { 0.02, 0.06, 0.105, 0.208, 0.342, 0.53, 0.766, 0.94, 1.0 };
-    for( const double f : { 0.05, 0.2, 0.45, 0.8, 1.2, 1.7, 2.4, 3.3, 4.5, 6.5, 10.0, 25.0, 60.0, 150.0, 400.0 } )
+    tn.cos_thetas = gn.cos_thetas;
+
+    // The grid's rungs (a prefix of the ladder, so rung d is the grid's rung d), then on to the pin.
+    for( const double d : gn.dists_cm )
     {
-      const double d = off_grid + f * a_cm;
       if( d < 0.9 * d_ref_cm )
         tn.dists_cm.push_back( d );
     }
+    const size_t n_grid_rungs = tn.dists_cm.size();
+    assert( n_grid_rungs > 0 );
+    for( double d = 2.0 * tn.dists_cm.back(); d < 0.9 * d_ref_cm; d *= 2.0 )
+      tn.dists_cm.push_back( d );
     tn.dists_cm.push_back( d_ref_cm );   //the ln N = 0 anchor, at the pin
 
     const size_t tne = tn.energies_keV.size(), tnc = tn.cos_thetas.size(), tnd = tn.dists_cm.size();
@@ -2123,12 +2136,23 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     tn.break_cos_thetas = { tn.cos_thetas.front(), 1.0 };
     tn.break_d_cm.assign( tne * tn.break_cos_thetas.size(), d_ref_cm );
 
+    const Eigen::Vector3d face = CeeLoUtils::detectorFacePosition( resp->descriptor );
+    const double half_pi = 0.5 * 3.14159265358979323846;
+
     for( size_t c = 0; c < tnc; ++c )
     {
       for( size_t d = 0; (d + 1) < tnd; ++d )
       {
         const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[d], tn.cos_thetas[c], 0.0 );
-        const Eigen::Vector3d donor_pos = donor_position( grid_pos );
+
+        // makeDrf reads a rung inside the endcap (frac_sigma 1, its marker) at the endcap face in
+        //  front of it; the donor is asked about that same place, not about a point inside the can.
+        const bool in_endcap = (d < n_grid_rungs) && (gn.frac_sigma[gn.index( 0, c, d )] >= 1.0);
+        const Eigen::Vector3d ratio_pos = in_endcap
+            ? CeeLoUtils::sourcePositionFromFace( resp->descriptor, half_pi, 0.0,
+                                                  std::hypot( grid_pos.x() - face.x(), grid_pos.y() - face.y() ) )
+            : grid_pos;
+        const Eigen::Vector3d donor_pos = donor_position( ratio_pos );
         const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
         const ApertureQuadrature q_donor = mc->make_quadrature( donor_pos );
 
@@ -2136,9 +2160,9 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         {
           const size_t idx = tn.index( e, c, d );
           const double energy = tn.energies_keV[e];
-          const double far = resp->total_prefactor( energy, grid_pos, q_grid ).value;
+          const double far_field = resp->total_prefactor( energy, grid_pos, q_grid ).value;
           double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
-          if( !(far > 0.0) || !std::isfinite( far )
+          if( !(far_field > 0.0) || !std::isfinite( far_field )
               || !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )
               || !donor_ln_ratio( energy, donor_pos, q_donor, ln_r, r_frac ) )
           {
@@ -2148,7 +2172,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
             continue;
           }
 
-          tn.ln_n[idx] = ln_f + ln_r - std::log( far );
+          tn.ln_n[idx] = ln_f + ln_r - std::log( far_field );
           tn.frac_sigma[idx] = std::sqrt( f_frac*f_frac + r_frac*r_frac );
         }//for( each energy )
       }//for( each distance, but the anchor )
@@ -2197,15 +2221,16 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
     }//for( three energies )
   }//for( three angles )
 
-  // And at near-field nodes, where the table must reproduce it too.
+  // And at near-field nodes, where the table must reproduce it too - away from the grazing
+  //  near-contact corner, whose rungs may sit inside the endcap.
   {
     const NearFieldModel &tn = resp->tot_eff.near_field;
-    const size_t e = tn.energies_keV.size() / 2;
-    for( const size_t c : { size_t(1), tn.cos_thetas.size() - 1 } )
+    const size_t e = tn.energies_keV.size() / 2, d = tn.dists_cm.size() / 4;
+    for( const size_t c : { tn.cos_thetas.size() / 2, tn.cos_thetas.size() - 1 } )
     {
-      if( tn.frac_sigma[tn.index( e, c, 2 )] >= 1.0 )
+      if( tn.frac_sigma[tn.index( e, c, d )] >= 1.0 )
         continue;   //a held node: nothing to compare with
-      check_node( tn.energies_keV[e], source_position( tn.dists_cm[2], tn.cos_thetas[c], 0.0 ), "near-field" );
+      check_node( tn.energies_keV[e], source_position( tn.dists_cm[d], tn.cos_thetas[c], 0.0 ), "near-field" );
     }
   }
 #endif

@@ -134,11 +134,18 @@ jobs:
       - name: Build and package
         shell: pwsh
         working-directory: ${{ runner.temp }}/build_wt4_wx_app
+        # pwsh does not stop when a native program fails - the step's result is just the LAST
+        #  command's exit code - so each one is checked explicitly.  Without that, a failed compile
+        #  went on to zip and upload a headers-only "build", and the job only failed later, at the
+        #  smoke test, with a misleading "cannot find InterSpec.exe".
         run: |
+          $ErrorActionPreference = "Stop"
           $install_dir = "$env:INSTALL_DIR_NAME"
           if (Test-Path $install_dir) { Remove-Item $install_dir -Recurse -Force }
           cmake --build . --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build . --config Release --target install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $notes = "$install_dir\build_info.txt"
           echo "This is an automated build of the InterSpec upgrade/Wt4 branch, built on the GitHub infrastructure at $(Get-Date -AsUTC -Format o)" >> $notes
@@ -154,6 +161,7 @@ jobs:
             --git-sha "${{ github.sha }}" `
             --timestamp "$(Get-Date -AsUTC -Format o)" `
             --output "$install_dir/InterSpec_sbom.cdx.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           Get-ChildItem "$install_dir*.zip" -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Path $_.FullName }
           Compress-Archive -CompressionLevel Optimal -Path ".\$install_dir" -DestinationPath "$($install_dir)_$(Get-Date -f yyyy-MM-dd).zip"
