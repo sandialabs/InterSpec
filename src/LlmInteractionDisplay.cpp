@@ -49,12 +49,14 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PopupDiv.h"
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/LlmInteractionDisplay.h"
 #include "InterSpec/LlmSubAgentFollowup.h"
@@ -62,6 +64,11 @@
 
 using namespace Wt;
 using namespace std;
+
+/** Leaves each tool calls invocation ID (e.g., "(ID: toolu_bdrk_01Dfm4fer8...)") out of the display
+ with debug options on; set to 0 to show them.  They are also in the "Show Tool Results JSON" dialog.
+ */
+#define NO_TOOL_CALL_ID_TEXT 1
 
 namespace
 {
@@ -126,18 +133,182 @@ namespace
     return (call.status == LlmToolCall::CallStatus::Error) && !is_cancelled( call );
   }
 
-  /** The tool name (bold) with a status marker, as XHTML; the model-derived name is escaped. */
-  string tool_name_html( const LlmToolCall &call )
+  /** The status marker of a tool call (e.g., "[ERROR]"), as XHTML; empty if it succeeded. */
+  string tool_status_html( const LlmToolCall &call )
   {
-    string html = "<b>" + Wt::Utils::htmlEncode( call.toolName ) + "</b>";
     if( is_cancelled( call ) )
-      html += " <span class='LlmToolStatusPending'>[CANCELLED]</span>";
-    else if( call.status == LlmToolCall::CallStatus::Error )
-      html += " <span class='LlmToolStatusError'>[ERROR]</span>";
-    else if( call.status == LlmToolCall::CallStatus::Pending && !call.sub_agent_conversation )
-      html += " <span class='LlmToolStatusPending'>[PENDING]</span>";
-    return html;
-  }//string tool_name_html( const LlmToolCall &call )
+      return "<span class='LlmToolStatusPending'>[CANCELLED]</span>";
+    if( call.status == LlmToolCall::CallStatus::Error )
+      return "<span class='LlmToolStatusError'>[ERROR]</span>";
+    if( call.status == LlmToolCall::CallStatus::Pending && !call.sub_agent_conversation )
+      return "<span class='LlmToolStatusPending'>[PENDING]</span>";
+    return "";
+  }//string tool_status_html( const LlmToolCall &call )
+
+
+  /** The arguments the LLM gave a tool call.  If the call could not be run, LlmInterface replaced them
+   with {"_raw": <the arguments as sent>, "_execution_error": ...}, so they are parsed back out.
+   */
+  nlohmann::json tool_call_args( const LlmToolCall &call )
+  {
+    const nlohmann::json &params = call.toolParameters;
+    const nlohmann::json::const_iterator raw_iter = params.is_object() ? params.find( "_raw" ) : params.end();
+    if( (raw_iter == params.end()) || !raw_iter->is_string() )
+      return params;
+
+    const string &raw = raw_iter->get_ref<const string &>();
+    if( raw.empty() )
+      return nlohmann::json::object();
+
+    const nlohmann::json parsed = nlohmann::json::parse( raw, nullptr, false );
+    return parsed.is_discarded() ? nlohmann::json( raw ) : parsed;
+  }//nlohmann::json tool_call_args( const LlmToolCall &call )
+
+
+  /** Compact JSON with a space after each ':' and ',', e.g. `{"energy": 2103.65, "refit": true}`;
+   invalid UTF-8 from the model is replaced, rather than throwing. */
+  string compact_json( const nlohmann::json &j )
+  {
+    if( !j.is_structured() )
+      return j.dump( -1, ' ', false, nlohmann::json::error_handler_t::replace );
+
+    string out = j.is_object() ? "{" : "[";
+    for( nlohmann::json::const_iterator iter = j.begin(); iter != j.end(); ++iter )
+    {
+      if( iter != j.begin() )
+        out += ", ";
+      if( j.is_object() )
+        out += compact_json( nlohmann::json( iter.key() ) ) + ": ";
+      out += compact_json( iter.value() );
+    }
+    return out + (j.is_object() ? "}" : "]");
+  }//string compact_json( const nlohmann::json &j )
+
+
+  /** compact_json() of `j`, shortened to about `max_bytes`. */
+  string short_json( const nlohmann::json &j, const size_t max_bytes )
+  {
+    string str = compact_json( j );
+    if( str.size() <= max_bytes )
+      return str;
+    SpecUtils::utf8_limit_str_size( str, max_bytes );
+    return str + (j.is_string() ? "...\"" : "...");
+  }//string short_json(...)
+
+
+  /** The names of the arguments of a tool to show first, as they tell the most about a call: for some
+   tools, as listed here; and then the tool's required arguments, in the order its definition
+   (`schema`, its JSON-schema parameters) lists them.  May include duplicates.
+   */
+  vector<string> leading_arg_names( const string &toolName, const nlohmann::json &schema )
+  {
+    static const map<string, vector<string>> s_tool_orders = {
+      { "add_analysis_peak", { "source", "energy" } },
+      { "edit_analysis_peak", { "energy", "action", "source", "userLabel" } },
+      { "set_peak_shape", { "energy", "skewType", "continuumType" } },
+      { "get_peaks", { "filter", "lowerEnergy", "upperEnergy" } },
+      { "currie_mda_calc", { "nuclide", "energy", "distance" } },
+      { "load_spectrum_file", { "path", "specType" } },
+      { "load_detector_efficiency_function", { "identifier", "drfName", "detectorName" } },
+      { "modify_shielding_source_config", { "operation", "nuclide", "material", "geometry" } },
+      { "activity_fit_one_off", { "sources", "peak_energies" } },
+      { "peak_based_relative_efficiency", { "sources", "peak_energies" } },
+      { "get_spectrum_image", { "energy_range" } }
+    };
+
+    vector<string> names;
+    const map<string, vector<string>>::const_iterator order_iter = s_tool_orders.find( toolName );
+    if( order_iter != s_tool_orders.end() )
+      names = order_iter->second;
+
+    const nlohmann::json::const_iterator required_iter = schema.is_object() ? schema.find( "required" ) : schema.end();
+    if( (required_iter != schema.end()) && required_iter->is_array() )
+    {
+      for( const nlohmann::json &name : *required_iter )
+      {
+        if( name.is_string() )
+          names.push_back( name.get<string>() );
+      }
+    }//if( the tool has required arguments )
+
+    return names;
+  }//vector<string> leading_arg_names(...)
+
+
+  /** A tool call's arguments as (name, value) pairs, in the order to show them: those named in
+   `leading` first, then the rest (alphabetically).  Empty if `params` is not a JSON object.
+   */
+  vector<pair<string, const nlohmann::json *>> ordered_args( const nlohmann::json &params,
+                                                              const vector<string> &leading )
+  {
+    vector<pair<string, const nlohmann::json *>> args;
+    if( !params.is_object() )
+      return args;
+
+    const auto add = [&args]( const string &name, const nlohmann::json &value ){
+      for( const pair<string, const nlohmann::json *> &arg : args )
+      {
+        if( arg.first == name )
+          return;
+      }
+      args.emplace_back( name, &value );
+    };
+
+    for( const string &name : leading )
+    {
+      const nlohmann::json::const_iterator iter = params.find( name );
+      if( iter != params.end() )
+        add( name, *iter );
+    }
+
+    for( nlohmann::json::const_iterator iter = params.begin(); iter != params.end(); ++iter )
+      add( iter.key(), iter.value() );
+
+    return args;
+  }//ordered_args(...)
+
+
+  /** A tool call's arguments as XHTML for its one-line header, `{"energy": 2103.65, "refit": true}`:
+   each of `args` (with long names and values shortened) is in a "LlmArg" span, and there is a
+   hidden ",..." "LlmArgMore" span before the closing brace, so LlmFitToolArgs can show only the
+   arguments that fit.  Empty if there are no arguments.
+   */
+  string tool_args_html( const nlohmann::json &params, const vector<pair<string, const nlohmann::json *>> &args )
+  {
+    // E.g., arguments that were not valid JSON; just left to the CSS ellipsis.
+    if( !params.is_null() && !params.is_object() )
+      return Wt::Utils::htmlEncode( short_json( params, 80 ) );
+
+    if( args.empty() )
+      return "";
+
+    string html = "{";
+    for( size_t i = 0; i < args.size(); ++i )
+    {
+      const string item = short_json( nlohmann::json( args[i].first ), 40 ) + ": " + short_json( *args[i].second, 40 );
+      html += "<span class=\"LlmArg\">" + Wt::Utils::htmlEncode( (i ? ", " : "") + item ) + "</span>";
+    }
+
+    return html + "<span class=\"LlmArgMore\">,...</span><span class=\"LlmArgClose\">}</span>";
+  }//string tool_args_html(...)
+
+
+  /** All of a tool call's arguments, in full, as compact JSON in the order of `args`; for the
+   debug-options header, which wraps it onto as many lines as needed.  Empty if there are none.
+   */
+  string tool_args_full( const nlohmann::json &params, const vector<pair<string, const nlohmann::json *>> &args )
+  {
+    if( !params.is_null() && !params.is_object() )
+      return compact_json( params );
+
+    if( args.empty() )
+      return "";
+
+    string text = "{";
+    for( size_t i = 0; i < args.size(); ++i )
+      text += (i ? ", " : "") + compact_json( nlohmann::json( args[i].first ) ) + ": " + compact_json( *args[i].second );
+    return text + "}";
+  }//string tool_args_full(...)
 
   /** The name of a tool for a title: a sub-agent invocation ("invoke_X") is shown as "X agent". */
   string tool_display_name( const string &toolName, bool &isAgent )
@@ -286,6 +457,94 @@ WT_DECLARE_WT_MEMBER
   el.textContent = text;
 }
 );
+
+
+/** Shows as many whole arguments as fit on a tool call's one-line header (see
+ LlmToolResultsDisplay::renderCallHeader()), ending in ",...}" if some don't.  Done when the header is
+ first shown (it is often made in a collapsed panel), and again if its width changes in the following
+ second; if it later gets narrower, CSS cuts it with an ellipsis.
+ */
+WT_DECLARE_WT_MEMBER
+(LlmFitToolArgs, Wt::JavaScriptFunction, "LlmFitToolArgs",
+  function( header )
+{
+  var el = header ? header.querySelector( '.LlmToolArgs' ) : null;
+  var more = el ? el.querySelector( '.LlmArgMore' ) : null;
+  var close = el ? el.querySelector( '.LlmArgClose' ) : null;
+  if( !more || !close )
+    return;
+
+  var tries = 0, fitWidth = -1;
+  var fit = function(){
+    // LlmToolGui.css may not have been applied yet, the first time the assistant is shown.
+    if( getComputedStyle( header ).display !== 'flex' ){
+      if( ++tries < 50 )
+        setTimeout( fit, 100 );
+      return;
+    }
+
+    // Lay out every argument, and the ",...", then see where each ends; if they don't all fit, the
+    //  arguments element is shrunk to the width available to it.
+    var args = el.querySelectorAll( '.LlmArg' );
+    if( !args.length )
+      return;
+    for( var i = 0; i < args.length; ++i )
+      args[i].style.display = 'inline';
+    more.style.display = 'inline';
+
+    // The unrounded width (clientWidth is rounded, so could overstate it), less a pixel to spare, as
+    //  overflowing by even a fraction of one has the CSS ellipsis cut off the ",...}".
+    var elRect = el.getBoundingClientRect();
+    var left = elRect.left;
+    var avail = elRect.width - 1;
+    var moreWidth = more.getBoundingClientRect().width;
+    var closeWidth = close.getBoundingClientRect().width;
+    var end = function( i ){ return args[i].getBoundingClientRect().right - left; };
+
+    // All of them, or as many as fit followed by ",...}" - but at least the first (cut by the ellipsis).
+    var nshow = args.length;
+    if( end( nshow - 1 ) + closeWidth > avail ){
+      nshow = 1;
+      while( (nshow < args.length) && ((end( nshow ) + moreWidth + closeWidth) <= avail) )
+        ++nshow;
+    }
+
+    for( var i = nshow; i < args.length; ++i )
+      args[i].style.display = 'none';
+    more.style.display = (nshow < args.length) ? 'inline' : 'none';
+    fitWidth = header.clientWidth;
+  };
+
+  // Wt may still be laying out the page (e.g., just after the assistant moved to the side panel), so
+  //  fit again if the width soon changes.
+  var fitAndRecheck = function(){
+    fit();
+    var recheck = function(){
+      if( (fitWidth >= 0) && (header.clientWidth !== fitWidth) )
+        fit();
+    };
+    setTimeout( recheck, 200 );
+    setTimeout( recheck, 1000 );
+  };
+
+  if( el.getClientRects().length ){
+    fitAndRecheck();
+  }else if( window.IntersectionObserver ){
+    // Not displayed yet (e.g., a collapsed panel, a hidden tab, or debug options are on, which show
+    //  all the arguments instead), so fit it once it first is.
+    var observer = new IntersectionObserver( function( entries ){
+      for( var i = 0; i < entries.length; ++i ){
+        if( entries[i].isIntersecting ){
+          observer.disconnect();
+          fitAndRecheck();
+          return;
+        }
+      }
+    } );
+    observer.observe( el );
+  }
+}
+);
 }//namespace
 
 
@@ -381,16 +640,37 @@ namespace
   }//getFirstLine(...)
 
 
-  /** Format JSON string with indentation for display */
+  /** Appends `j` to `out` for people to read: indented, but with any object or array that fits within
+   about 100 characters kept on one line (so a table of numbers is not one number per line). */
+  void append_readable_json( const nlohmann::json &j, const size_t indent, string &out )
+  {
+    const string compact = compact_json( j );
+    if( !j.is_structured() || j.empty() || ((indent + compact.size()) <= 100) )
+    {
+      out += compact;
+      return;
+    }
+
+    out += j.is_object() ? "{\n" : "[\n";
+    for( nlohmann::json::const_iterator iter = j.begin(); iter != j.end(); ++iter )
+    {
+      out.append( indent + 2, ' ' );
+      if( j.is_object() )
+        out += compact_json( nlohmann::json( iter.key() ) ) + ": ";
+      append_readable_json( iter.value(), indent + 2, out );
+      out += (std::next( iter ) == j.end()) ? "\n" : ",\n";
+    }
+    out.append( indent, ' ' );
+    out += j.is_object() ? "}" : "]";
+  }//append_readable_json(...)
+
+
+  /** Format JSON for display; see append_readable_json(). */
   string formatJson( const nlohmann::json &j )
   {
-    try
-    {
-      return j.dump(2);  // Indent with 2 spaces
-    }catch( std::exception & )
-    {
-      return j.dump();  // Fallback to compact format
-    }
+    string out;
+    append_readable_json( j, 0, out );
+    return out;
   }//formatJson(...)
 
 
@@ -406,6 +686,16 @@ namespace
       return jsonStr;  // Not valid JSON, return as-is
     }
   }//formatJsonString(...)
+
+
+  /** Shows a tool's result in `area`: formatted for reading, if JSON, with rows for up to 15 lines. */
+  void set_tool_result_text( WTextArea *area, const string &content )
+  {
+    const string text = formatJsonString( content );
+    const int nlines = 1 + static_cast<int>( std::count( begin(text), end(text), '\n' ) );
+    area->setText( WString::fromUTF8( text ) );
+    area->setRows( std::min( std::max( nlines, 2 ), 15 ) );
+  }//set_tool_result_text(...)
 
 
   /** Whether a turn's rawContent() is a request sent *to* the LLM (true) or a response received
@@ -1127,9 +1417,11 @@ void LlmToolRequestDisplay::createBodyContent()
     nameText->setTextFormat( TextFormat::UnsafeXHTML );
     nameText->addStyleClass( "LlmToolName" );
 
+#if( !NO_TOOL_CALL_ID_TEXT )
     // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
     WText *idText = callDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
     idText->addStyleClass( "LlmInvocationId LlmDebugOnly" );
+#endif
 
     // Parameters (in a tool round, the results display shows them, so we don't repeat them here)
     if( !m_round && !call.toolParameters.empty() )
@@ -1267,48 +1559,14 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   const bool debugOnlyHeader = !m_phoneVisuals && call.sub_agent_conversation && !is_failed( call )
                                && (m_results->toolCalls().size() == 1);
 
-  // Tool name with status indicator
-  WText * const nameText = resultDiv->addNew<WText>( tool_name_html( call ) );
-  nameText->setTextFormat( TextFormat::UnsafeXHTML );
-  nameText->addStyleClass( "LlmToolName" );
+  // The one line of tool name, arguments, status, and duration
+  LlmJsRenderedDiv * const header = resultDiv->addNew<LlmJsRenderedDiv>();
+  header->addStyleClass( "LlmToolCallHeader" );
   if( debugOnlyHeader )
-    nameText->addStyleClass( "LlmDebugOnly" );
+    header->addStyleClass( "LlmDebugOnly" );
   if( call.sub_agent_conversation )
-    m_subAgentNameTexts[call.sub_agent_conversation] = nameText;
-
-  // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
-  if( !m_phoneVisuals )
-  {
-    WText *idText = resultDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
-    idText->addStyleClass( "LlmInvocationId LlmDebugOnly" );
-  }
-
-  // Execution duration
-  if( call.executionDuration.has_value() )
-  {
-    const WString durationStr = formatDuration( call.executionDuration.value() );
-    WText *durationText = resultDiv->addNew<WText>( WString::tr( "lcw-tool-took" ).arg( durationStr ) );
-    durationText->addStyleClass( "LlmDuration" );
-    if( debugOnlyHeader )
-      durationText->addStyleClass( "LlmDebugOnly" );
-  }
-
-  // Parameters - as for the raw result, only for developing the tools.  A sub-agents parameters are
-  //  the task it was given, which its conversation shows as its question.
-  if( !m_phoneVisuals && !call.sub_agent_conversation && !call.toolParameters.empty() )
-  {
-    WContainerWidget * const paramsDiv = resultDiv->addNew<WContainerWidget>();
-    paramsDiv->addStyleClass( "LlmDebugOnly" );
-
-    WText * const paramsLabel = paramsDiv->addNew<WText>( "Parameters:" );
-    paramsLabel->addStyleClass( "LlmParamsLabel" );
-
-    WTextArea * const paramsArea = paramsDiv->addNew<WTextArea>();
-    paramsArea->setReadOnly( true );
-    paramsArea->setText( formatJson( call.toolParameters ) );
-    paramsArea->setRows( 3 );
-    paramsArea->addStyleClass( "LlmToolParams" );
-  }//if( show parameters )
+    m_subAgentHeaders[call.sub_agent_conversation] = header;
+  renderCallHeader( call, header );
 
   // Result content - show if not pending, available, and (no sub-agent OR sub-agent completed).
   //  The raw result is for developing the tools, so phones skip it, and it is debug-only otherwise.
@@ -1325,8 +1583,7 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
 
     WTextArea * const resultArea = rawResultDiv->addNew<WTextArea>();
     resultArea->setReadOnly( true );
-    resultArea->setText( call.content );
-    resultArea->setRows( 5 );
+    set_tool_result_text( resultArea, call.content );
     resultArea->addStyleClass( "LlmToolResult" );
   }
 
@@ -1347,6 +1604,77 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   for( const LlmToolCall::VisualContent &visual : call.visualContent )
     renderVisualContent( visual, m_phoneVisuals ? m_phoneVisuals : resultDiv );
 }//renderToolCallResult(...)
+
+
+void LlmToolResultsDisplay::renderCallHeader( const LlmToolCall &call, LlmJsRenderedDiv *header )
+{
+  // The duration comes first, so that with debug options on, where the header wraps, it can float to
+  //  the right of the first line; otherwise CSS (flex `order`) shows it after the arguments and status.
+  if( call.executionDuration.has_value() )
+  {
+    const WString durationStr = formatDuration( call.executionDuration.value() );
+    WText * const durationText = header->addNew<WText>( WString::tr( "lcw-tool-duration" ).arg( durationStr ) );
+    durationText->addStyleClass( "LlmDuration" );
+  }
+
+  // The model-derived name is escaped, but the intentional <b> markup kept.
+  WText * const nameText = header->addNew<WText>( "<b>" + Wt::Utils::htmlEncode( call.toolName ) + "</b>",
+                                                  TextFormat::UnsafeXHTML );
+  nameText->addStyleClass( "LlmToolName" );
+
+  // The arguments: normally on one line, as many as fit (client-side) with all of them in the
+  //  tooltip, and with debug options on, all of them in full, wrapping as needed.  Phones skip them,
+  //  and a sub-agents arguments are the task it was given, which its conversation shows as its question.
+  const nlohmann::json callArgs = (m_phoneVisuals || call.sub_agent_conversation) ? nlohmann::json()
+                                                                                  : tool_call_args( call );
+
+  // The tool's own required arguments are generally the most telling; see leading_arg_names().
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  const shared_ptr<const LlmTools::ToolRegistry> registry = llm ? llm->toolRegistry() : nullptr;
+  const LlmTools::SharedTool * const tool = registry ? registry->getTool( call.toolName ) : nullptr;
+  const vector<pair<string, const nlohmann::json *>> args
+                = ordered_args( callArgs, leading_arg_names( call.toolName, tool ? tool->parameters_schema : nlohmann::json() ) );
+
+  const string argsHtml = tool_args_html( callArgs, args );
+  if( !argsHtml.empty() )
+  {
+    WText * const argsText = header->addNew<WText>( argsHtml, TextFormat::UnsafeXHTML );
+    argsText->addStyleClass( "LlmToolArgs" );
+
+    // One argument per line
+    string tooltip = args.empty() ? compact_json( callArgs ) : string();
+    for( const pair<string, const nlohmann::json *> &arg : args )
+      tooltip += (tooltip.empty() ? "" : "\n") + arg.first + ": " + compact_json( *arg.second );
+    if( tooltip.size() > 2000 )
+    {
+      SpecUtils::utf8_limit_str_size( tooltip, 2000 );
+      tooltip += "...";
+    }
+    argsText->setToolTip( WString::fromUTF8( tooltip ), TextFormat::Plain );
+
+    WText * const fullArgsText = header->addNew<WText>( WString::fromUTF8( tool_args_full( callArgs, args ) ),
+                                                        TextFormat::Plain );
+    fullArgsText->addStyleClass( "LlmToolArgsFull LlmDebugOnly" );
+
+    // Run again whenever the DOM element is re-created, e.g., moving the assistant to a window, where
+    //  the width will differ.
+    LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmFitToolArgs );
+    header->setRenderJs( "Wt.WT.LlmFitToolArgs(" + header->jsRef() + ");" );
+  }//if( !argsHtml.empty() )
+
+  const string status = tool_status_html( call );
+  if( !status.empty() )
+    header->addNew<WText>( status, TextFormat::UnsafeXHTML );
+
+#if( !NO_TOOL_CALL_ID_TEXT )
+  // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
+  if( !m_phoneVisuals )
+  {
+    WText * const idText = header->addNew<WText>( "(ID: " + call.invocationId + ")", TextFormat::Plain );
+    idText->addStyleClass( "LlmInvocationId LlmDebugOnly" );
+  }
+#endif
+}//renderCallHeader(...)
 
 
 void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualContent &visual,
@@ -1753,7 +2081,7 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
   if( m_round )
     m_round->updateTitle();
 
-  // If it failed, mark its result item, and always show its name line, with the error marker (it
+  // If it failed, mark its result item, and always show its header line, with the error marker (it
   //  was rendered while the sub-agent was running, so may be debug-only).
   for( const LlmToolCall &call : m_results->toolCalls() )
   {
@@ -1763,11 +2091,13 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
     if( runningDivIter != m_subAgentResultDivs.end() )
       runningDivIter->second->addStyleClass( "LlmToolResultError" );
 
-    const auto nameIter = m_subAgentNameTexts.find( subAgent );
-    if( nameIter != m_subAgentNameTexts.end() )
+    const auto headerIter = m_subAgentHeaders.find( subAgent );
+    if( headerIter != m_subAgentHeaders.end() )
     {
-      nameIter->second->setText( tool_name_html( call ) );
-      nameIter->second->removeStyleClass( "LlmDebugOnly" );
+      LlmJsRenderedDiv * const header = headerIter->second;
+      header->clear();
+      renderCallHeader( call, header );
+      header->removeStyleClass( "LlmDebugOnly" );
     }
     break;
   }//for( loop over calls to find a failed sub-agent )
@@ -1804,8 +2134,7 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
 
       WTextArea * const resultArea = rawResultDiv->addNew<WTextArea>();
       resultArea->setReadOnly( true );
-      resultArea->setText( call.content );
-      resultArea->setRows( 5 );
+      set_tool_result_text( resultArea, call.content );
       resultArea->addStyleClass( "LlmToolResult" );
 
       break;

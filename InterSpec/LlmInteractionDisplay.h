@@ -339,10 +339,16 @@ protected:
   void handleAsyncToolCompleted( const std::string &invocationId );
 
   /** Render a single tool call result into the given container div.
-   Populates the div with tool name, status, duration, and result content.
+   Populates the div with the header line (see renderCallHeader()), and result content.
    Does not handle sub-agent specific rendering.
    */
   void renderToolCallResult( const LlmToolCall &call, Wt::WContainerWidget *resultDiv );
+
+  /** Fills `header` with the one line summary of a tool call, "name{arguments} [status] (duration)".
+   The arguments are fit to the width client-side (whole arguments, then ",...}"), and not shown on
+   phones; with debug options on, they are shown in full, wrapping, with the duration at the right.
+   */
+  void renderCallHeader( const LlmToolCall &call, LlmJsRenderedDiv *header );
 
   /** Render a single visual content item (chart, diagram, SVG, HTML) into the given container. */
   void renderVisualContent( const LlmToolCall::VisualContent &visual,
@@ -360,8 +366,8 @@ private:
   // Map from sub-agent conversation to its result container div
   std::map<std::shared_ptr<LlmInteraction>, Wt::WContainerWidget*> m_subAgentResultDivs;
 
-  // Map from sub-agent conversation to the tool-name text of its result (updated if it fails)
-  std::map<std::shared_ptr<LlmInteraction>, Wt::WText*> m_subAgentNameTexts;
+  // Map from sub-agent conversation to the header line of its result (re-rendered if it fails)
+  std::map<std::shared_ptr<LlmInteraction>, LlmJsRenderedDiv*> m_subAgentHeaders;
 
   // Map from invocationId to result container div (for async tool updates)
   std::map<std::string, Wt::WContainerWidget*> m_asyncToolResultDivs;
