@@ -719,7 +719,11 @@ struct RelEffCurveInput
    this Rel. Eff. curve.  If any indices are provided, a number of requirements must be met.
    - The indices provided must be for Physical Model defined rel. eff. curves, and the indix of this curve may not be provided.
    - The `Options::same_external_shielding_for_all_rel_eff_curves` option must be false.
-   - The curve(s) shielding this curve may not also be shielded by this curve.
+   - The curve(s) shielding this curve may not also be shielded by this curve, either directly or through a chain of
+     other curves.
+
+   The indices are not transitive: if this curve is behind curve B, which is behind curve C, then both B and C must be
+   listed for C's shieldings to also attenuate this curve.
    */
   std::set<size_t> shielded_by_other_phys_model_curve_shieldings;
 

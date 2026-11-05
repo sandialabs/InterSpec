@@ -304,7 +304,7 @@ public:
    records undo/redo steps for the dialog this tool is a section of. */
   struct State
   {
-    int method = 0, profile = 0, precision = 0, anchorAngles = 0, chartMode = 0;
+    int method = 0, profile = 0, precision = 0, anchorAngles = 0, chartMode = 0, backCoverage = 1;
     bool groundToMeasured = true;
     std::string customPrecision, refDistance, chartDistance;
     std::shared_ptr<const ceelo::DetectorResponse> result;
@@ -437,6 +437,11 @@ protected:
       graded relax_mild precision map (ceelo::PrecisionProfile::RelaxMild). */
   bool selectedRelaxMild() const;
 
+  /** Sets the "Location Support" options to the ones `resp` was generated with, so regenerating
+   repeats that run.  A choice the response does not record (one saved before it was) keeps its
+   default.  Only sets the widgets - the caller updates the dependent rows and estimate. */
+  void restoreGenerationChoices( const ceelo::DetectorResponse &resp );
+
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_seedDrf;
 
@@ -499,6 +504,11 @@ protected:
   Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Balanced (relax_mild) | Thorough (0.1%) | Custom
   Wt::WLineEdit *m_customPrecision;
   Wt::WComboBox *m_anchorAngles;    //On-axis only | 3 cos-theta anchors
+  Wt::WComboBox *m_backCoverage;    //Side & back incidence: None | Coarse | Fine (Full MC only)
+
+  /** Says the side & back response will see a bare crystal back, when the geometry describes
+   nothing behind the crystal. */
+  Wt::WText *m_backInfo;
 
   /** Whether the generated response is corrected (k(E) + covariance) to the DRFs measured
    efficiency; disabled, and forced off, for a DRF that has none. */
@@ -513,6 +523,8 @@ protected:
   Wt::WTableRow *m_profileRow;
   Wt::WTableRow *m_precRow;
   Wt::WTableRow *m_anchorAnglesRow;
+  Wt::WTableRow *m_backCoverageRow;
+  Wt::WTableRow *m_backInfoRow;
   Wt::WTableRow *m_anchorInfoRow;   //full-width description of the measured-curve anchor
   Wt::WTableRow *m_anchorRow;       //the anchor reference-distance input
 

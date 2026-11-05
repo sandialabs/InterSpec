@@ -5758,25 +5758,22 @@ struct RelActAutoCostFcn
       }//for( size_t re_eff_index = 0; re_eff_index < num_rel_eff_curves; ++re_eff_index )
 
       // If a physical curve is shielded by other physical curves, we want to evaluate the outer curves first, so we can
-      //  use the computed thickenses for the inner curves.  So here we'll figure out this order
-      deque<size_t> rel_eff_indices;
+      //  use the computed thickenses for the inner curves.  So here we'll figure out this order, using a depth-first
+      //  topological sort (shielding cycles were rejected by `check_same_corr_fcn_and_external_shielding_specifications()`).
+      vector<size_t> rel_eff_indices;
+      vector<bool> rel_eff_index_ordered( num_rel_eff_curves, false );
+      std::function<void(size_t)> order_outer_curves_first;
+      order_outer_curves_first = [&]( const size_t rel_eff_index ){
+        if( (rel_eff_index >= num_rel_eff_curves) || rel_eff_index_ordered[rel_eff_index] )
+          return;
+        rel_eff_index_ordered[rel_eff_index] = true;
+        for( const size_t shielding_index : options.rel_eff_curves[rel_eff_index].shielded_by_other_phys_model_curve_shieldings )
+          order_outer_curves_first( shielding_index );
+        rel_eff_indices.push_back( rel_eff_index );
+      };//order_outer_curves_first lambda
+
       for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
-      {
-        const auto index_pos = std::find( begin(rel_eff_indices), end(rel_eff_indices), rel_eff_index );
-        if( index_pos == end(rel_eff_indices) )
-          rel_eff_indices.push_back( rel_eff_index );
-
-        const auto &rel_eff_curve = options.rel_eff_curves[rel_eff_index];
-        if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          continue;
-
-        for( const size_t shielding_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
-        {
-          const auto shield_index_pos = std::find( begin(rel_eff_indices), end(rel_eff_indices), shielding_index );
-          if( shield_index_pos == end(rel_eff_indices) )
-            rel_eff_indices.push_front( shielding_index );
-        }
-      }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+        order_outer_curves_first( rel_eff_index );
 
       assert( rel_eff_indices.size() == num_rel_eff_curves );
 
@@ -6606,9 +6603,8 @@ struct RelActAutoCostFcn
                 if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
                   continue;
 
-                // For only two curves, with one shielding the other, we should be totally fine, but for more complex
-                //  dependencies there could be an issue that we arent evaluating things in the correct order; this is
-                //  fixable, but since it is such an edge case, we'll just put in a warning for now.
+                // `rel_eff_indices` is ordered so outer curves are seeded first, so the outer curve should always have
+                //  been computed already; this check is just defensive.
                 bool has_been_computed = false;
 
                 for( size_t index = 0; index < re_eff_index_index; ++index )
@@ -20156,9 +20152,8 @@ void Options::check_same_corr_fcn_and_external_shielding_specifications() const
     throw logic_error( "Lorentzian x-rays can only be used with NoSkew or GaussPlusBortel skew types." );
   }
 
-  if( !same_corr_fcn_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
-    return;
-
+  // Note: even when neither the correction function nor the external shielding is shared, we still need to get to the
+  //  `else` of `if( same_external_shielding_for_all_rel_eff_curves )` below, to validate curves shielding other curves.
   if( same_corr_fcn_for_all_rel_eff_curves )
   {
     size_t num_corr_fcn_curves = 0;
@@ -20294,7 +20289,8 @@ void Options::check_same_corr_fcn_and_external_shielding_specifications() const
                         "you must have at least two relative efficiency curves with the external shielding enabled." );
   }else //if( same_external_shielding_for_all_rel_eff_curves )
   {
-    // TODO: when there are more than 2 curves, we could enforce a little more consistency, like if curve 1 is shielded by {2,3}, and 2 is by {3,4}, then 1 should also be shielded by 4
+    // Shielding sets are explicit (not transitive) by design: if curve 1 is shielded by {2}, and 2 by {3}, curve 1 is
+    //  only shielded by 3 if it lists it.  The GUI fills in these implied layers when the user selects shielding curves.
     for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = rel_eff_curves[rel_eff_index];
@@ -20319,17 +20315,37 @@ void Options::check_same_corr_fcn_and_external_shielding_specifications() const
           throw logic_error( "A non-physical model rel eff curve can not shield another curve." );
 
         if( !shielding_curve.phys_model_self_atten && shielding_curve.phys_model_external_atten.empty() )
-          throw logic_error( "The physical model curve shielding another curve doesnt have any shielding defined." );
-
-        for( const size_t other_curve_index : shielding_curve.shielded_by_other_phys_model_curve_shieldings )
-        {
-          // The calculations would work if tow Rel. Eff. curves shielded each other, but I dont know what this would
-          //  mean physically, so we wont allow it.
-          if( other_curve_index == rel_eff_index )
-            throw logic_error( "Two physical model curves can not shield each other." );
-        }
+          throw logic_error( "The physical model curve "
+                             + (shielding_curve.name.empty() ? std::to_string(shielding_curve_index)
+                                                             : ("'" + shielding_curve.name + "'"))
+                             + " shielding another curve doesnt have any shielding defined." );
       }//for( size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
     }//for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index
+
+    // The calculations would work if curves shielded each other, either directly or through a chain of other curves,
+    //  but this has no physical meaning, and seeding requires evaluating outer curves first, so we wont allow it.
+    //  We walk outward from each curve, through the curves shielding it, and make sure we never get back to it.
+    for( size_t start_index = 0; start_index < rel_eff_curves.size(); ++start_index )
+    {
+      const set<size_t> &start_shieldings = rel_eff_curves[start_index].shielded_by_other_phys_model_curve_shieldings;
+      vector<size_t> to_visit( begin(start_shieldings), end(start_shieldings) );
+      set<size_t> visited;
+      while( !to_visit.empty() )
+      {
+        const size_t index = to_visit.back();
+        to_visit.pop_back();
+        if( index == start_index )
+          throw logic_error( "Physical model curves can not shield each other, either directly or through a chain"
+                             " of other curves." );
+
+        // Indices were range-checked above
+        if( !visited.insert( index ).second )
+          continue;
+
+        const set<size_t> &outer_indices = rel_eff_curves[index].shielded_by_other_phys_model_curve_shieldings;
+        to_visit.insert( end(to_visit), begin(outer_indices), end(outer_indices) );
+      }//while( !to_visit.empty() )
+    }//for( size_t start_index = 0; start_index < rel_eff_curves.size(); ++start_index )
   }//if( same_external_shielding_for_all_rel_eff_curves ) / else
 }//void Options::check_same_corr_fcn_and_external_shielding_specifications() const
 

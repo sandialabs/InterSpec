@@ -19,6 +19,17 @@ option(CEELO_BUILD_TESTS "Build unit tests" ON)
 option(CEELO_BUILD_EXAMPLES "Build examples" ON)
 option(CEELO_BUILD_GEANT4_VALIDATION "Build GEANT4 validation (requires GEANT4)" OFF)
 option(CEELO_WITH_SANDIADECAY "Build the SandiaDecay cascade adapter" OFF)
+option(CEELO_BUILD_CERES_TESTS
+    "Build FullSpecApprox ceres::Jet Jacobian validation (CeeLo remains independent)"
+    OFF)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_ceelo_full_spectrum_tools_default ON)
+else()
+    set(_ceelo_full_spectrum_tools_default OFF)
+endif()
+option(CEELO_BUILD_FULL_SPECTRUM_TOOLS
+    "Build the full-spectrum bake tools (tools/full_spectrum: detector, source-escape, charged-particle and environment-scatter campaigns)"
+    ${_ceelo_full_spectrum_tools_default})
 
 # Storable MC-parameterized detector-response payload (io/DetectorResponse,
 # io/ResponseGenerator, ...) + its tests and the golden-fixture tool.  Needs
@@ -179,4 +190,8 @@ endif()
 if(CEELO_BUILD_GEANT4_VALIDATION)
     find_package(Geant4 REQUIRED)
     add_subdirectory(tools/geant4_validation)
+endif()
+
+if(CEELO_BUILD_FULL_SPECTRUM_TOOLS)
+    add_subdirectory(tools/full_spectrum)
 endif()

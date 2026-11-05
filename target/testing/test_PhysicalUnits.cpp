@@ -179,6 +179,30 @@ BOOST_AUTO_TEST_CASE( testStringToDistance ) {
 }//BOOST_AUTO_TEST_CASE( testStringToDistance )
 
 
+// Positions (a source behind the detector-face plane) can be negative: the plain parser still refuses
+//  a sign, the signed one applies it to the whole value, and printing picks the unit by magnitude.
+BOOST_AUTO_TEST_CASE( testSignedDistance ) {
+  using namespace PhysicalUnits;
+
+  BOOST_CHECK_THROW( stringToDistance( "-5 cm" ), std::exception );
+  BOOST_CHECK_CLOSE_FRACTION( stringToSignedDistance( " -5 cm" ), -5.0*cm, 1.0E-12 );
+  BOOST_CHECK_CLOSE_FRACTION( stringToSignedDistance( "-1m 20cm" ), -1.2*m, 1.0E-12 );
+  BOOST_CHECK_CLOSE_FRACTION( stringToSignedDistance( "+3 in" ), 3.0*2.54*cm, 1.0E-12 );
+  BOOST_CHECK_EQUAL( stringToSignedDistance( "-0" ), 0.0 );
+  BOOST_CHECK_THROW( stringToSignedDistance( "--5 cm" ), std::exception );
+
+  BOOST_CHECK_EQUAL( printToBestLengthUnits( 25.0*cm ), "25.00 cm" );
+  BOOST_CHECK_EQUAL( printToBestLengthUnits( -25.0*cm ), "-25.00 cm" );
+  BOOST_CHECK_EQUAL( printToBestLengthUnits( -2.5*mm ), "-2.50 mm" );
+  BOOST_CHECK_EQUAL( printToBestLengthUnits( -1.5*m ), "-1.50 m" );
+  BOOST_CHECK_EQUAL( printToBestLengthUnitsCompact( -20.0*cm ), "-20 cm" );
+  BOOST_CHECK( printToBestLengthUnits( -25.0*cm, 1.0*cm, 1 ) == L"-25.0 (\x00B1" L"1.0) cm" );
+
+  for( const double d : { -1.234567*m, -20.0*cm, -3.3*mm, 0.0, 7.5*cm } )
+    BOOST_CHECK_CLOSE_FRACTION( stringToSignedDistance( printToBestLengthUnits( d, 6 ) ) + 1.0, d + 1.0, 1.0E-9 );
+}//BOOST_AUTO_TEST_CASE( testSignedDistance )
+
+
 BOOST_AUTO_TEST_CASE( testStringToTimeDuration ) {
   map<string,double> validCases;
 

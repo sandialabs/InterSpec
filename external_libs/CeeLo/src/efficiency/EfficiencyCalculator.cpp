@@ -27,6 +27,7 @@
 #include "cascade/LevelDag.h"
 #include "cross_sections/CrossSectionData.h"
 #include "export/Geant4Export.h"
+#include "geometry/BoundingCone.h"
 #include "geometry/RayTrace.h"
 #include "geometry/SourceGeometry.h"
 #include "physics/ElectronCsda.h"
@@ -1107,6 +1108,41 @@ Eigen::Vector3d EfficiencyCalculator::sample_cone_direction(
     const Eigen::Vector3d& from_pos,
     double cos_theta_max, std::mt19937_64& rng) const
 {
+    Eigen::Vector3d to_detector = -from_pos;
+    to_detector.normalize();
+    return sample_cone_about(to_detector, cos_theta_max, rng);
+}
+
+EfficiencyCalculator::SamplingCone EfficiencyCalculator::sampling_cone(
+    const Eigen::Vector3d& from_pos) const
+{
+    SamplingCone c;
+    c.half_angle = compute_cone_half_angle(from_pos);
+    c.axis = -from_pos;
+    c.axis.normalize();
+
+    if (general_cone_sampling_ && !(c.half_angle < kPi - 0.01)) {
+        // Beside the detector: no cone about the direction to the origin exists, but one about
+        // its own axis usually does.  outer_bounding_radius x outer_z_extent is the same envelope
+        // the legacy cone bounds (a box detector's circumscribed cylinder).
+        const auto [z_min, z_max] = geometry_.outer_z_extent();
+        Eigen::Vector3d axis;
+        double cos_alpha = -1.0;
+        if (envelope_bounding_cone(true, geometry_.outer_bounding_radius(), 0.0, 0.0,
+                                   z_min, z_max, from_pos, axis, cos_alpha)) {
+            c.half_angle = std::min(std::acos(cos_alpha) * 1.025, kPi);
+            c.axis = axis;
+        }
+    }
+
+    c.cos_max = std::cos(c.half_angle);
+    return c;
+}
+
+Eigen::Vector3d EfficiencyCalculator::sample_cone_about(
+    const Eigen::Vector3d& axis_in,
+    double cos_theta_max, std::mt19937_64& rng) const
+{
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     double cos_theta = 1.0 - uniform(rng) * (1.0 - cos_theta_max);
@@ -1119,8 +1155,7 @@ Eigen::Vector3d EfficiencyCalculator::sample_cone_direction(
         cos_theta
     );
 
-    Eigen::Vector3d to_detector = -from_pos;
-    to_detector.normalize();
+    const Eigen::Vector3d& to_detector = axis_in;
 
     Eigen::Vector3d z_axis(0.0, 0.0, 1.0);
     double cos_rot = z_axis.dot(to_detector);
@@ -1289,12 +1324,19 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
 
     double energy_MeV = energy_keV * 1e-3;
 
-    // Pre-compute air attenuation coefficient (excluding Rayleigh) once per thread.
-    double mu_air_no_rs = 0.0;
-    if (air_attenuation_ == AirAttenuation::AnalyticNoScatter) {
-        static const Material air_mat = make_Air();
+    // Pre-compute the air removal coefficient once per thread. AnalyticNoScatter
+    // drops Rayleigh (open geometry: out-scatter is compensated by in-scatter);
+    // AnalyticCollimated keeps it (a collimated path blocks the compensating
+    // in-scatter, so coherent scatter is genuine removal).
+    double mu_air_removal = 0.0;
+    if (air_attenuation_ != AirAttenuation::None) {
+        static const Material default_air = make_Air();
+        const Material& air_mat =
+            air_material_override_ ? *air_material_override_ : default_air;
         MacroscopicXS air_xs = air_mat.macroscopic_xs(energy_MeV);
-        mu_air_no_rs = air_xs.mu_pe + air_xs.mu_cs + air_xs.mu_pp;
+        mu_air_removal = air_xs.mu_pe + air_xs.mu_cs + air_xs.mu_pp;
+        if (air_attenuation_ == AirAttenuation::AnalyticCollimated)
+            mu_air_removal += air_xs.mu_rs;
     }
 
     // Pre-compute forced-first-interaction transport config (variance
@@ -1325,10 +1367,13 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
     double pre_cone_half_angle = kPi;
     double pre_cos_theta_max   = -1.0;
     double pre_event_weight    = 1.0;
+    Eigen::Vector3d pre_cone_axis(0.0, 0.0, 1.0);   // used for a point source only
     bool per_position_cone = false;
     if (use_cone_sampling_) {
         if (source_type_ == SourceType::Point) {
-            pre_cone_half_angle = compute_cone_half_angle(source_position_);
+            const SamplingCone cone = sampling_cone(source_position_);
+            pre_cone_half_angle = cone.half_angle;
+            pre_cone_axis = cone.axis;
         } else {
             // For solid-angle-matched sampling, per-position cones are
             // essential: the radial IS weight q(r) ∝ r/(r²+h²) is designed
@@ -1345,6 +1390,10 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 double omega_worst = kTwoPi * (1.0 - std::cos(worst));
                 double omega_best  = kTwoPi * (1.0 - std::cos(best));
                 if (omega_worst > 2.0 * omega_best) {
+                    per_position_cone = true;
+                } else if (general_cone_sampling_ && !(worst < kPi - 0.01)) {
+                    // Some of the source is beside the detector: only per-position cones, each
+                    // with its own axis, can avoid sampling the full sphere there.
                     per_position_cone = true;
                 } else {
                     pre_cone_half_angle = worst;
@@ -1435,10 +1484,10 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 double omega_frac = 1.0;
                 bool coned = false;
                 if (use_cone_sampling_) {
-                    const double cone_half = compute_cone_half_angle(src_pos);
-                    if (cone_half < kPi - 0.01) {
-                        const double cos_max = std::cos(cone_half);
-                        direction = sample_cone_direction(src_pos, cos_max, rng);
+                    const SamplingCone cone = sampling_cone(src_pos);
+                    if (cone.half_angle < kPi - 0.01) {
+                        const double cos_max = cone.cos_max;
+                        direction = sample_cone_about(cone.axis, cos_max, rng);
                         omega_frac = 0.5 * (1.0 - cos_max);
                         coned = true;
                     }
@@ -1465,13 +1514,13 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 }
                 if (!first_seg) continue;
 
-                if (mu_air_no_rs > 0.0) {
+                if (mu_air_removal > 0.0) {
                     // Air gap = distance to detector entry minus the path
                     // inside the source geometry along this ray.
                     double air_dist =
                         std::max(first_seg->t_start, 0.0) - src_path_cm;
                     if (air_dist > 0.0)
-                        w *= std::exp(-mu_air_no_rs * air_dist);
+                        w *= std::exp(-mu_air_removal * air_dist);
                 }
 
                 Eigen::Vector3d entry_point =
@@ -1526,26 +1575,24 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             bool mixture_done = false;
 
             if (alpha > 0.0 && alpha <= 1.0) {
-                const double cone_half = compute_cone_half_angle(src_pos);
+                const SamplingCone cone = sampling_cone(src_pos);
                 // Degenerate cone (source beside/inside the detector
                 // envelope): fall back to pure isotropic with weight 1.
-                if (cone_half < kPi - 0.01) {
-                    const double cos_max = std::cos(cone_half);
+                if (cone.half_angle < kPi - 0.01) {
+                    const double cos_max = cone.cos_max;
                     const double omega_c = kTwoPi * (1.0 - cos_max);
                     bool in_cone;
                     if (uniform(rng) < alpha) {
                         // Isotropic branch; membership test must use the
-                        // same axis the cone sampler rotates onto:
-                        // normalize(-src_pos), toward the detector origin.
+                        // same axis the cone sampler rotates onto.
                         double ct = 2.0 * uniform(rng) - 1.0;
                         double st = std::sqrt(1.0 - ct * ct);
                         double ph = kTwoPi * uniform(rng);
                         direction = Eigen::Vector3d(
                             st * std::cos(ph), st * std::sin(ph), ct);
-                        const Eigen::Vector3d axis = -src_pos.normalized();
-                        in_cone = direction.dot(axis) >= cos_max;
+                        in_cone = direction.dot(cone.axis) >= cos_max;
                     } else {
-                        direction = sample_cone_direction(src_pos, cos_max, rng);
+                        direction = sample_cone_about(cone.axis, cos_max, rng);
                         in_cone = true;
                     }
                     w_mix = in_cone
@@ -1738,9 +1785,9 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 Eigen::Vector3d entry_point = pos +
                     dir * std::max(first_seg->t_start, 0.0);
 
-                if (mu_air_no_rs > 0.0 && !air_applied) {
+                if (mu_air_removal > 0.0 && !air_applied) {
                     double air_dist = std::max(first_seg->t_start, 0.0);
-                    src_air_w *= std::exp(-mu_air_no_rs * air_dist);
+                    src_air_w *= std::exp(-mu_air_removal * air_dist);
                     air_applied = true;
                 }
 
@@ -2023,19 +2070,28 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             event_weight = w;
         } else if (use_cone_sampling_) {
             double cone_half_angle, cos_theta_max;
+            Eigen::Vector3d cone_axis;
             if (per_position_cone) {
-                cone_half_angle = compute_cone_half_angle(src_pos);
-                cos_theta_max = std::cos(cone_half_angle);
+                const SamplingCone cone = sampling_cone(src_pos);
+                cone_half_angle = cone.half_angle;
+                cos_theta_max = cone.cos_max;
+                cone_axis = cone.axis;
                 double solid_angle = kTwoPi * (1.0 - cos_theta_max);
                 event_weight = solid_angle / kFourPi;
             } else {
                 cone_half_angle = pre_cone_half_angle;
                 cos_theta_max   = pre_cos_theta_max;
                 event_weight    = pre_event_weight;
+                if (source_type_ == SourceType::Point) {
+                    cone_axis = pre_cone_axis;
+                } else {
+                    cone_axis = -src_pos;
+                    cone_axis.normalize();
+                }
             }
 
             if (cone_half_angle < kPi - 0.01) {
-                direction = sample_cone_direction(src_pos, cos_theta_max, rng);
+                direction = sample_cone_about(cone_axis, cos_theta_max, rng);
             } else {
                 double cos_theta = 2.0 * uniform(rng) - 1.0;
                 double sin_theta = std::sqrt(1.0 - cos_theta * cos_theta);
@@ -2096,15 +2152,15 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             }
 
             // Air attenuation: distance from source exit to detector entry
-            if (mu_air_no_rs > 0.0) {
+            if (mu_air_removal > 0.0) {
                 Eigen::Vector3d det_entry = src_pos + direction * std::max(first_seg->t_start, 0.0);
                 double air_dist = (det_entry - src_result.exit_position).norm();
-                total_weight *= std::exp(-mu_air_no_rs * air_dist);
+                total_weight *= std::exp(-mu_air_removal * air_dist);
             }
-        } else if (mu_air_no_rs > 0.0) {
+        } else if (mu_air_removal > 0.0) {
             // No source effects: air gap = distance from source to detector entry
             double air_dist = std::max(first_seg->t_start, 0.0);
-            total_weight *= std::exp(-mu_air_no_rs * air_dist);
+            total_weight *= std::exp(-mu_air_removal * air_dist);
         }
 
         Eigen::Vector3d entry_point = src_pos + direction * std::max(first_seg->t_start, 0.0);
@@ -2199,21 +2255,29 @@ inline bool cascade_corr_link(const DecayCascade& dc, std::size_t a, std::size_t
     return false;
 }
 
-/// Sample the x-ray emitted when a vacancy in shell `f` is filled: returns the
-/// line energy (keV), or 0 for an Auger transition (no x-ray). Works for both
-/// FluorescenceData (K) and LSubshellFluor (one L subshell) -- same member layout.
-template <class FD>
-inline double sample_vacancy_xray(const FD* f,
-                                  std::uniform_real_distribution<double>& u,
-                                  std::mt19937_64& rng) {
-    if (!f || f->num_lines == 0) return 0.0;
-    if (u(rng) >= f->fluorescence_yield) return 0.0;  // Auger, no x-ray
+/// K-vacancy x-ray: the line energy (0 for an Auger transition) and, for a line
+/// filled from the L shell (K-alpha), the L subshell (0..2) the filling electron
+/// left, -1 otherwise. Draws the yield, then for an x-ray the line.
+struct KVacancyXray {
+    double line_keV = 0.0;
+    int l_subshell = -1;
+};
+inline KVacancyXray sample_k_vacancy_xray(const FluorescenceData* f,
+                                          std::uniform_real_distribution<double>& u,
+                                          std::mt19937_64& rng) {
+    KVacancyXray out;
+    if (!f || f->num_lines == 0) return out;
+    if (u(rng) >= f->fluorescence_yield) return out;  // Auger, no x-ray
     double xi = u(rng), cum = 0.0;
+    int chosen = 0;
     for (int li = 0; li < f->num_lines; ++li) {
         cum += f->line_probability[li];
-        if (xi <= cum) return f->line_energy_keV[li];
+        if (xi <= cum) { chosen = li; break; }
     }
-    return f->line_energy_keV[0];
+    out.line_keV = f->line_energy_keV[chosen];
+    const uint8_t filling = f->line_filling_subshell[chosen];
+    if (filling >= kEadlL1 && filling <= kEadlL3) out.l_subshell = filling - kEadlL1;
+    return out;
 }
 
 /// P(member m emitted | member pi emitted) within one decay branch, from the
@@ -3354,7 +3418,8 @@ double EfficiencyCalculator::emit_vacancy_xray_deposit(
     };
 
     if (is_L) return emit_l(l_subshell);
-    const double ex = sample_vacancy_xray(fl, u, rng);
+    const KVacancyXray kx = sample_k_vacancy_xray(fl, u, rng);
+    const double ex = kx.line_keV;
     if (ex <= 0.0)  // K-Auger: deposit the K binding locally (was dropped).
         return ic_electrons && fl
             ? emit_ic_electron(fl->k_edge_keV, 0.0, ic_electrons,
@@ -3362,14 +3427,14 @@ double EfficiencyCalculator::emit_vacancy_xray_deposit(
             : 0.0;
     double D = transport_cascade_member(
         vertex, sample_isotropic_dir(u, rng), ex, seg_buffer, rng);
-    if (fl && ex < 0.93 * fl->k_edge_keV) D += emit_l(-1);  // Kalpha -> L vacancy
+    if (kx.l_subshell >= 0) D += emit_l(kx.l_subshell);  // Kalpha -> L vacancy
     return D;
 }
 
 EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread(
     const std::vector<DecayCascade>& cascades, std::size_t primary_branch,
     std::size_t primary_index, double peak_keV, double tol_keV,
-    double cos_theta_max, bool coned,
+    double cos_theta_max, bool coned, const Eigen::Vector3d& cone_axis,
     const std::vector<CascadeVacancyDraw>& prim_vacancies,
     const std::vector<CascadeSumPairChannel>& channels,
     uint64_t num_events, uint64_t seed, bool ic_electrons,
@@ -3447,7 +3512,7 @@ EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread
 
         // Primary gamma: cone-biased toward the detector (else isotropic).
         const Eigen::Vector3d pdir = coned
-            ? sample_cone_direction(vertex, cos_theta_max, rng)
+            ? sample_cone_about(cone_axis, cos_theta_max, rng)
             : sample_isotropic_dir(uniform, rng);
         const double dep_primary =
             transport_cascade_member(vertex, pdir, primary.energy_keV, seg_buffer, rng);
@@ -3688,7 +3753,7 @@ EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread
                         ch.weak_outcome_posterior.size()) - 1;
             }
             const Eigen::Vector3d da = coned
-                ? sample_cone_direction(vertex, cos_theta_max, rng)
+                ? sample_cone_about(cone_axis, cos_theta_max, rng)
                 : sample_isotropic_dir(uniform, rng);
             double dsum = transport_cascade_member(vertex, da, ch.e_a_keV, seg_buffer, rng);
             double a2 = 0.0, a4 = 0.0;
@@ -4029,7 +4094,7 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
         const LevelScheme& ls = dc.level_scheme;
         int n_kvac = 0;
         int n_lvac[3] = {0, 0, 0};  // resolved IC vacancies per subshell L1/L2/L3
-        int n_lvac_unres = 0;       // EC / Kalpha-induced (subshell by occupancy)
+        int n_lvac_unres = 0;       // EC-induced (subshell by occupancy)
         // K/L binding energies of the daughter atom, for the IC-electron KE
         // (E_IC = E_transition - E_binding(shell)). Only l3_edge is tabulated;
         // it stands in for L1/L2 (a few keV high, negligible vs the peak window).
@@ -4258,7 +4323,8 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
             const LFluorescenceData* flL =
                 CrossSectionData::instance().l_fluorescence(ls.daughter_Z);
             for (int v = 0; v < n_kvac; ++v) {
-                const double ex = sample_vacancy_xray(fl, uniform, rng);
+                const KVacancyXray kx = sample_k_vacancy_xray(fl, uniform, rng);
+                const double ex = kx.line_keV;
                 if (ex <= 0.0) {
                     // Auger: the K binding energy is carried off by Auger
                     // electrons (previously dropped). Deposit it as a local-ish
@@ -4268,7 +4334,7 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
                 }
                 D += transport_cascade_member(
                     vertex, sample_isotropic_dir(uniform, rng), ex, seg_buffer, rng);
-                if (fl && ex < 0.93 * fl->k_edge_keV) ++n_lvac_unres;  // Kalpha -> L vacancy
+                if (kx.l_subshell >= 0) ++n_lvac[kx.l_subshell];  // Kalpha -> L vacancy
             }
             for (int s = 0; s < 3; ++s)
                 for (int v = 0; v < n_lvac[s]; ++v) D += emit_l_xray(flL, s);
@@ -4367,15 +4433,16 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
                     D += emit_l_xray(flL, l_subshell);
                     return;
                 }
-                const double ex = sample_vacancy_xray(fl, uniform, rng);
+                const KVacancyXray kx = sample_k_vacancy_xray(fl, uniform, rng);
+                const double ex = kx.line_keV;
                 if (ex <= 0.0) {
                     D += ic_e(k_bind, 0.0);
                     return;
                 }
                 D += transport_cascade_member(
                     vertex, sample_isotropic_dir(uniform, rng), ex, seg_buffer, rng);
-                if (fl && ex < 0.93 * fl->k_edge_keV)
-                    D += emit_l_xray(flL, -1);
+                if (kx.l_subshell >= 0)
+                    D += emit_l_xray(flL, kx.l_subshell);
             };
 
             // EC is part of the global weak categorical law, never an
@@ -4429,16 +4496,17 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
                     D += emit_l_xray(flL, kv.l_subshell);
                     continue;
                 }
-                const double ex = sample_vacancy_xray(fl, uniform, rng);
+                const KVacancyXray kx = sample_k_vacancy_xray(fl, uniform, rng);
+                const double ex = kx.line_keV;
                 if (ex <= 0.0) {  // K-Auger: deposit the K binding locally.
                     D += ic_e(k_bind, 0.0);
                     continue;
                 }
                 D += transport_cascade_member(
                     vertex, sample_isotropic_dir(uniform, rng), ex, seg_buffer, rng);
-                // K x-ray from L (Kalpha) leaves an L vacancy -> L x-ray.
-                if (fl && ex < 0.93 * fl->k_edge_keV)
-                    D += emit_l_xray(flL, -1);
+                // K x-ray from L (Kalpha) leaves a vacancy in that L subshell.
+                if (kx.l_subshell >= 0)
+                    D += emit_l_xray(flL, kx.l_subshell);
             }
         }
       }  // end else (member-realization + independent vacancy model)
@@ -4771,9 +4839,13 @@ CascadeResult EfficiencyCalculator::compute_cascade(const CascadeConfig& config)
     // photon can reach the detector from outside any cone, so cone biasing would
     // be biased there).
     double cone_half = kPi;
+    Eigen::Vector3d cone_axis(0.0, 0.0, 1.0);
     if (use_cone_sampling_ && source_type_ == SourceType::Point
-        && !source_geometry_.has_source_effects())
-        cone_half = compute_cone_half_angle(source_position_);
+        && !source_geometry_.has_source_effects()) {
+        const SamplingCone cone = sampling_cone(source_position_);
+        cone_half = cone.half_angle;
+        cone_axis = cone.axis;
+    }
     const bool coned = (cone_half < kPi - 0.01);
     const double cos_max = std::cos(cone_half);
     const double prim_w = coned ? 0.5 * (1.0 - cos_max) : 1.0;  // Omega/4pi
@@ -4888,10 +4960,10 @@ CascadeResult EfficiencyCalculator::compute_cascade(const CascadeConfig& config)
             }
             const bool ic_e = config.enable_ic_electrons;
             futures.push_back(std::async(std::launch::async,
-                [this, &config, bp, mip, pkv, tolv, cos_max, coned,
+                [this, &config, bp, mip, pkv, tolv, cos_max, coned, cone_axis,
                  &prim_vacs, &channels, ne, seed, ic_e, flush] {
                     return cascade_peak_thread(config.cascades, bp, mip, pkv, tolv,
-                                               cos_max, coned, prim_vacs, channels,
+                                               cos_max, coned, cone_axis, prim_vacs, channels,
                                                ne, seed, ic_e, flush);
                 }));
         }
@@ -5005,7 +5077,7 @@ BiasingConfig EfficiencyCalculator::compute_effective_biasing(
         Eigen::Vector3d ref_pos = source_position_;
         if (source_type_ == SourceType::Cylindrical) ref_pos = cyl_src_.center;
         if (source_type_ == SourceType::Rectangular) ref_pos = rect_src_.center;
-        const double cone_half = compute_cone_half_angle(ref_pos);
+        const double cone_half = sampling_cone(ref_pos).half_angle;
         const double omega_frac = 0.5 * (1.0 - std::cos(cone_half));
         if (cone_half < kPi - 0.01 && omega_frac < 0.15) {
             const bool total_or_spectrum =
@@ -5416,9 +5488,12 @@ CascadeCorrectionResult EfficiencyCalculator::cascade_correction(
 // --- GEANT4 Export ---
 
 void EfficiencyCalculator::export_geant4_gdml(const std::string& filename,
-                                               bool vacuum_world) const {
+                                               bool vacuum_world,
+                                               double min_world_half_xy_cm,
+                                               double min_world_half_z_cm) const {
     const SourceGeometry* sg = source_geometry_.has_source_effects() ? &source_geometry_ : nullptr;
-    write_gdml(geometry_, filename, sg, vacuum_world);
+    write_gdml(geometry_, filename, sg, vacuum_world,
+               min_world_half_xy_cm, min_world_half_z_cm);
 }
 
 void EfficiencyCalculator::export_geant4_macro(const std::string& filename,

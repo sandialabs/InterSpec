@@ -1,0 +1,6 @@
+# CeeLo FullRealization cascade-truth for the Act/Shield fit
+# scene: id=co60_side_disk nuclide=Co60 age_s=3.1557e+07 activity_bq=37000 live_time_s=3600 shape=1 dist_cm=-2.5 offset_cm=6.05 fep_window_kev=0.75 (dist_cm: detector face to source centre) src_r_cm=2.5 src_half_len_cm=0.05 src_mat=water shield=none shield_cm=0 events=40000000
+# counts = activity x live_time x p_emit x eff_with_summing x k_grounding
+peak_keV,net_counts,net_counts_unc,p_emit,eff_with_summing,eff_no_summing,summing_factor,k_grounding
+1173.228,1.887155e+06,2.525e+03,9.98499990e-01,1.41891108e-02,1.54847340e-02,0.916329,1.000000
+1332.492,1.699303e+06,2.394e+03,9.99826014e-01,1.27597486e-02,1.40156126e-02,0.910395,1.000000

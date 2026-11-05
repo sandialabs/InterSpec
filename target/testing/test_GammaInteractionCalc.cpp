@@ -50,6 +50,9 @@
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
+#include "io/DetectorResponse.h"
+#include "materials/Material.h"
+
 #include "GeometryReference.h"
 
 //#define BOOST_TEST_DYN_LINK
@@ -1491,3 +1494,50 @@ BOOST_AUTO_TEST_CASE( DetectorFacePlaneClearance )
     BOOST_CHECK_SMALL( detector_face_plane_clearance( GeometryType::Spherical, sph, 15.0*cm ) + 3.0*cm, eps );
   }
 }//BOOST_AUTO_TEST_CASE( DetectorFacePlaneClearance )
+
+
+
+/** The detector enclosure as a fit places it, and the clearance of sources in front, beside and
+ behind it. */
+BOOST_AUTO_TEST_CASE( DetectorEnclosureClearance )
+{
+  const double cm = PhysicalUnits::cm;
+  const double eps = 1.0E-6 * cm;
+
+  // A 3"x3" NaI in a 0.5 mm Al can, with a 1 cm back plate.
+  ceelo::GeometryDescriptor gd;
+  gd.set_dimensions( ceelo::CylinderDims{ 3.81, 7.62 } );
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+  gd.crystal_material_index = 0;
+  ceelo::LayerSpec can;
+  can.material_index = 1;
+  can.front_thickness_cm = 0.05;
+  can.side_thickness_cm = 0.05;
+  can.z_end_cm = 7.62;
+  gd.layers.push_back( can );
+  gd.set_layer_back_thickness_cm( 0, 1.0 );
+  const double R = 3.86, back = 7.62 + 1.0;   // outer radius; back face behind the crystal face
+
+  // In front, on axis: the face plane is `distance` from the source centre.
+  const double sph[3] = { 5.0*cm, 0.0, 0.0 };
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::Spherical, sph, 10.0*cm, 0.0, 0.0 )
+                     - 5.0*cm, eps );
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::Spherical, nullptr, 10.0*cm, 0.0, 0.0 )
+                     - 10.0*cm, eps );
+
+  // Beside: an end-on cylinder centred on the face plane, 8 cm off the detector axis.
+  const double cyl[3] = { 2.0*cm, 10.0*cm, 0.0 };
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::CylinderEndOn, cyl, 0.0, 8.0*cm, 0.0 )
+                     - (8.0 - 2.0 - R)*cm, eps );
+  // ...and overlapping it when only 5 cm off.
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::CylinderEndOn, cyl, 0.0, 5.0*cm, 0.0 ), eps );
+
+  // Behind, on axis: a point 20 cm behind the face plane is (20 - 0.05 - back) from the back plate.
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::Spherical, nullptr, -20.0*cm, 0.0, 0.0 )
+                     - (20.0 - 0.05 - back)*cm, eps );
+
+  // Side-on geometry puts the detector along +x; a point source beside it, 6 cm off in y.
+  BOOST_CHECK_SMALL( detector_enclosure_clearance( gd, GeometryType::CylinderSideOn, nullptr, -2.0*cm, 6.0*cm, 0.0 )
+                     - (6.0 - R)*cm, eps );
+}//BOOST_AUTO_TEST_CASE( DetectorEnclosureClearance )

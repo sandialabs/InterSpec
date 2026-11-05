@@ -205,6 +205,44 @@ double CrossSectionData::interpolate_rayleigh(
     return pow10(low + t * (decode_log(i_hi) - low));
 }
 
+// Log-value interpolation on a log-spaced grid. Used for F(x,Z), which spans
+// many decades and falls steeply, so interpolating the stored log10 values
+// directly (as the process curves do) keeps the relative error small.
+double CrossSectionData::interpolate_angular_log_log(
+    const PhotonAngularCurve& curve, double log_x)
+{
+    const uint16_t n = curve.size;
+    if (n == 0) return 0.0;
+
+    const float* log_grid = g_photon_angular_log_x + curve.data_offset;
+    const uint16_t* packed_log_values =
+        g_photon_angular_log_value_q + curve.data_offset;
+
+    const auto decode_log = [=](size_t index) {
+        const uint16_t code = packed_log_values[index];
+        return code == 0 ? -30.0
+                         : static_cast<double>(curve.value_offset)
+                           + static_cast<double>(code - 1) * curve.value_scale;
+    };
+
+    if (log_x <= log_grid[0])
+        return packed_log_values[0] ? pow10(decode_log(0)) : 0.0;
+    if (log_x >= log_grid[n - 1])
+        return packed_log_values[n - 1] ? pow10(decode_log(n - 1)) : 0.0;
+
+    const float log_x_f = static_cast<float>(log_x);
+    auto it = std::upper_bound(log_grid, log_grid + n, log_x_f);
+    size_t i_hi = static_cast<size_t>(it - log_grid);
+    if (i_hi == 0) i_hi = 1;
+    const size_t i_lo = i_hi - 1;
+
+    const double t = (log_x - static_cast<double>(log_grid[i_lo]))
+                   / (static_cast<double>(log_grid[i_hi])
+                      - static_cast<double>(log_grid[i_lo]));
+    const double low = decode_log(i_lo);
+    return pow10(low + t * (decode_log(i_hi) - low));
+}
+
 // Linear-in-value interpolation on a log-spaced grid. Used for S(x,Z), which
 // rises smoothly from zero to Z.
 double CrossSectionData::interpolate_log_lin(
@@ -328,6 +366,14 @@ CrossSectionData::all_cross_sections(int Z, double energy_MeV) const {
     return result;
 }
 
+double CrossSectionData::form_factor_F(int Z, double x) const {
+    assert(Z >= 1 && Z <= kMaxZ);
+    const auto& curve = g_photon_epics_data[Z - 1].form_factor;
+    if (curve.size == 0) return static_cast<double>(Z); // fallback: x -> 0 limit
+    if (!(x > 0.0)) return static_cast<double>(Z);      // F(0,Z) = Z exactly
+    return interpolate_angular_log_log(curve, std::log10(x));
+}
+
 double CrossSectionData::scattering_function_S(int Z, double x) const {
     assert(Z >= 1 && Z <= kMaxZ);
     const auto& curve = g_photon_epics_data[Z - 1].scattering_function;
@@ -343,6 +389,31 @@ const FluorescenceData* CrossSectionData::fluorescence(int Z) const {
     const auto& data = g_epics_k_relaxation[Z];
     if (data.fluorescence_yield <= 0.0f || data.num_lines == 0) return nullptr;
     return &data;
+}
+
+bool l_photoelectric_shares(const LFluorescenceData& fl, double energy_keV,
+                            double shares[3]) {
+    const int n = fl.num_pe_share_nodes;
+    if (n == 0) return false;
+    const float* node = fl.pe_share;
+    if (energy_keV <= node[0]) {
+        for (int s = 0; s < 3; ++s) shares[s] = node[1 + s];
+    } else if (energy_keV >= node[4 * (n - 1)]) {
+        for (int s = 0; s < 3; ++s) shares[s] = node[4 * (n - 1) + 1 + s];
+    } else {
+        // Last node at or below the energy: at a duplicated edge this picks the
+        // above-edge value.
+        int i = 0;
+        while (i + 1 < n && node[4 * (i + 1)] <= energy_keV) ++i;
+        const double x0 = node[4 * i], x1 = node[4 * (i + 1)];
+        const double t = std::log(energy_keV / x0) / std::log(x1 / x0);
+        for (int s = 0; s < 3; ++s) {
+            const double y0 = node[4 * i + 1 + s], y1 = node[4 * (i + 1) + 1 + s];
+            shares[s] = y0 + t * (y1 - y0);
+        }
+    }
+    for (int s = 0; s < 3; ++s) shares[s] = std::max(0.0, shares[s]);
+    return true;
 }
 
 const LFluorescenceData* CrossSectionData::l_fluorescence(int Z) const {

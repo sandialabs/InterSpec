@@ -23,10 +23,13 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <cmath>
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <optional>
+#include <vector>
 #include <fstream>
 #include <iostream>
 #include <algorithm>
@@ -333,6 +336,76 @@ namespace
     }
   }//check_fitted_areal_density_user_bounds(...)
 }//namespace
+
+
+// Three stacked objects (e.g., a source behind an HEU layer, behind a DU layer) need one curve shielded by two
+//  others, and one of those shielded by the third; any chain of curves shielding each other must be rejected.
+BOOST_AUTO_TEST_CASE( three_curve_shielding_chain_and_cycle_validation )
+{
+  const auto make_options = []( const vector<set<size_t>> &shielded_by ) -> RelActCalcAuto::Options {
+    RelActCalcAuto::Options options;
+    for( const set<size_t> &shieldings : shielded_by )
+    {
+      auto self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>();
+      self_atten->atomic_number = 92.0;
+      self_atten->areal_density = 1.0 * PhysicalUnits::g_per_cm2;
+
+      RelActCalcAuto::RelEffCurveInput curve;
+      curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+      curve.phys_model_self_atten = self_atten;
+      curve.shielded_by_other_phys_model_curve_shieldings = shieldings;
+      options.rel_eff_curves.push_back( curve );
+    }
+    return options;
+  };//make_options
+
+  // Curve 0 is behind curves 1 and 2, and curve 1 is behind curve 2
+  BOOST_CHECK_NO_THROW( make_options( {{1,2}, {2}, {}} ).check_same_corr_fcn_and_external_shielding_specifications() );
+
+  // Same physical arrangement, but with the outermost curve first
+  BOOST_CHECK_NO_THROW( make_options( {{}, {0}, {0,1}} ).check_same_corr_fcn_and_external_shielding_specifications() );
+
+  // Two curves shielding each other directly
+  BOOST_CHECK_THROW( make_options( {{1}, {0}, {}} ).check_same_corr_fcn_and_external_shielding_specifications(),
+                     std::logic_error );
+
+  // Three curves shielding each other through a chain
+  BOOST_CHECK_THROW( make_options( {{1}, {2}, {0}} ).check_same_corr_fcn_and_external_shielding_specifications(),
+                     std::logic_error );
+  BOOST_CHECK_THROW( make_options( {{1,2}, {2}, {0}} ).check_same_corr_fcn_and_external_shielding_specifications(),
+                     std::logic_error );
+}//BOOST_AUTO_TEST_CASE( three_curve_shielding_chain_and_cycle_validation )
+
+
+// A curve shielded only by other curves (e.g., a Eu152 source behind HEU and DU layers) has no self-attenuation, so its
+//  equation text starts with the external attenuations; and undefined external attenuations are skipped.
+BOOST_AUTO_TEST_CASE( physical_model_eqn_text_separators )
+{
+  const auto shield = []( const double atomic_number, const double areal_density_g_cm2 ) {
+    RelActCalc::PhysModelShield<double> answer;
+    answer.atomic_number = atomic_number;
+    answer.areal_density = areal_density_g_cm2 * PhysicalUnits::g_per_cm2;
+    return answer;
+  };
+
+  const auto eqn_text = [](  const optional<RelActCalc::PhysModelShield<double>> &self_atten,
+                             const vector<RelActCalc::PhysModelShield<double>> &external_attens ) -> string {
+    return RelActCalc::physical_model_rel_eff_eqn_text( self_atten, external_attens, nullptr, std::nullopt, std::nullopt,
+                                                        false, 0.0, 0.0, 0.0, RelActCalc::PhysModelCorrFcn::None );
+  };
+
+  BOOST_CHECK_EQUAL( eqn_text( std::nullopt, { shield(92,7.2), shield(26,0.0) } ),
+                     "[exp(-7.2*μ_92) * exp(-0*μ_26)] * [Det. Eff.]" );
+
+  // An undefined (atomic number zero, no material) first external attenuation is skipped
+  BOOST_CHECK_EQUAL( eqn_text( std::nullopt, { shield(0,0.0), shield(26,1.0) } ), "[exp(-1*μ_26)] * [Det. Eff.]" );
+  BOOST_CHECK_EQUAL( eqn_text( std::nullopt, { shield(0,0.0) } ), "[Det. Eff.]" );
+  BOOST_CHECK_EQUAL( eqn_text( std::nullopt, {} ), "[Det. Eff.]" );
+
+  BOOST_CHECK_EQUAL( eqn_text( shield(92,7.2), { shield(92,12.5) } ),
+                     "(1 - exp(-7.2*μ_92))/(7.2*μ_92) * [exp(-12.5*μ_92)] * [Det. Eff.]" );
+  BOOST_CHECK_EQUAL( eqn_text( shield(92,7.2), {} ), "(1 - exp(-7.2*μ_92))/(7.2*μ_92) * [Det. Eff.]" );
+}//BOOST_AUTO_TEST_CASE( physical_model_eqn_text_separators )
 
 
 // First multi-curve regression test (2026-07 review, M8e): the simulated "easy" two-disk case

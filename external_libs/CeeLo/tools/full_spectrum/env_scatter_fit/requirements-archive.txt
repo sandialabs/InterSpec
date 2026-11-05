@@ -1,0 +1,2 @@
+-r requirements-fit.txt
+h5py>=3.10

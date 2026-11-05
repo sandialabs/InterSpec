@@ -80,6 +80,39 @@ public:
     /// Called by SteppingAction: record an e-/e+ entering crystal from outside.
     void SetExternalElectronEntry() { has_external_electron_ = true; }
 
+    /// Called by SteppingAction: record the PRIMARY photon's KE (keV) at its
+    /// FIRST crossing into the detector (fluence-at-detector scorer for the
+    /// air-scatter study). Only the first entry per event is kept.
+    void AddPrimaryFluenceEntry(double energy_keV) {
+        if (!primary_fluence_recorded_) {
+            fluence_entry_keV_.push_back(energy_keV);
+            primary_fluence_recorded_ = true;
+        }
+    }
+
+    /// Enable fluence-at-detector scoring.
+    void EnableFluence(bool on) { fluence_enabled_ = on; }
+
+    /// Sphere-flux scorer plumbing: the per-event primary-interaction flag lives
+    /// on SteppingAction and the per-event tally fold lives on RunAction, so
+    /// both need to be reachable from the event boundaries.
+    void SetSphereActions(class SteppingAction* sa, class RunAction* ra) {
+        sphere_step_action_ = sa;
+        sphere_run_action_ = ra;
+    }
+
+    /// Called by SteppingAction when any gamma in the event undergoes pair
+    /// production. This opt-in truth label lets the histogram classifier
+    /// distinguish the physical 511-keV annihilation atom from unrelated
+    /// continuum events in the same energy window.
+    void SetPairProductionHistory() { had_pair_production_ = true; }
+    bool HadPairProductionHistory() const {
+        return had_pair_production_;
+    }
+    void AddPairSecondaryCompton() {
+        ++pair_secondary_compton_count_;
+    }
+
     /// Called by SteppingAction: the primary gamma had a physics interaction
     /// outside the active crystal before first reaching it (u/s source-class
     /// decomposition; mirrors CeeLo's SourceEffectDiag).
@@ -97,6 +130,7 @@ public:
 
     /// Enable diagnostic histogram mode.
     void EnableHistogram(bool on) { histogram_enabled_ = on; }
+    void EnableComponentLabels(bool on) { component_labels_enabled_ = on; }
 
     /// Enable per-interaction diagnostics.
     void EnableDiagnostics(bool on) { diagnostics_enabled_ = on; }
@@ -120,8 +154,12 @@ private:
     double     edep_electron_MeV_ = 0.0;
     double     edep_gamma_MeV_ = 0.0;
     bool       histogram_enabled_ = false;
+    bool       component_labels_enabled_ = false;
     bool       diagnostics_enabled_ = false;
     bool       entry_diag_enabled_ = false;
+    bool       fluence_enabled_ = false;
+    class SteppingAction* sphere_step_action_ = nullptr;
+    class RunAction* sphere_run_action_ = nullptr;
 
     // Per-event interaction records (cleared each event)
     std::vector<G4InteractionRecord> interactions_;
@@ -138,7 +176,14 @@ private:
     // Per-event external electron entry flag
     bool has_external_electron_ = false;
 
+    // Per-event primary photon energy (keV) at first detector entry (fluence
+    // scorer). At most one entry per event; primary_fluence_recorded_ dedups.
+    std::vector<double> fluence_entry_keV_;
+    bool primary_fluence_recorded_ = false;
+
     // Per-event u/s source-class flags
     bool primary_interacted_outside_ = false;
     bool primary_reached_crystal_ = false;
+    bool had_pair_production_ = false;
+    int pair_secondary_compton_count_ = 0;
 };

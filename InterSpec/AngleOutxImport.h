@@ -405,9 +405,9 @@ struct AngleOutxContents
     double front = 0.0;
     double side = 0.0;
     /** True for pieces that sit BEHIND the crystal (the optical coupling and
-     photomultiplier tube of a NaI detector).  CeeLo models no back layers, so
-     these are carried for fidelity but dropped - with a warning - when a
-     `ceelo::GeometryDescriptor` is built. */
+     photomultiplier tube of a NaI detector).  When a `ceelo::GeometryDescriptor`
+     is built, the plates (coupling, PMT window) become back plates directly
+     behind the crystal and the PMT wall is dropped - each with a warning. */
     bool behindCrystal = false;
   };//struct Layer
 

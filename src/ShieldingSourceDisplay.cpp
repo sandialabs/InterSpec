@@ -109,6 +109,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
@@ -599,6 +600,20 @@ namespace
       edit->setText( diststr );
     }
   }//void make_sure_distance_units_present( Wt::WLineEdit *edit )
+
+
+  /** The detector description a fit with `det` traces the detector's outside from, for the
+   resolved volumetric `method` (as ShieldingSourceChi2Fcn::resolveVolumetricEffMethod picks it): an
+   EFFTRAN transfer of an imported grid goes through the user's edited geometry, everything else
+   through `geometry()` - which, with a response attached, is that response's own descriptor. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> fit_geometry( const DetectorPeakResponse &det,
+                                                    const ShieldingSourceFitCalc::VolumetricEffMethod method )
+  {
+    if( (method == ShieldingSourceFitCalc::VolumetricEffMethod::EffTran)
+        && DetEffG2kPar::isGridResponse( det.ceeloResponse() ) )
+      return det.monteCarloGeometry();
+    return det.geometry();
+  }//fit_geometry(...)
 }//namespace
 
 
@@ -3990,7 +4005,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFi
     
   const GeometryType geom = geometry();
   const string distanceStr = m_distanceEdit->text().toUTF8();
-  const double distance = PhysicalUnits::stringToDistance( distanceStr );
+  const double distance = PhysicalUnits::stringToSignedDistance( distanceStr );
   shared_ptr<SpecMeas> meas_file = m_specViewer->measurment(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const SpecUtils::Measurement> foreground = m_specViewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const SpecUtils::Measurement> background = m_specViewer->displayedHistogram(SpecUtils::SpectrumType::Background);
@@ -5695,7 +5710,7 @@ void ShieldingSourceDisplay::updateCascadeAvailability()
     double distance = 1.0*PhysicalUnits::meter;
     try
     {
-      distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+      distance = PhysicalUnits::stringToSignedDistance( m_distanceEdit->text().toUTF8() );
     }catch( std::exception & )
     {
     }
@@ -5717,8 +5732,20 @@ void ShieldingSourceDisplay::updateCascadeAvailability()
 
       double offset_x = 0.0, offset_y = 0.0;
       sourceOffsets( offset_x, offset_y );
-      const double clearance = GammaInteractionCalc::detector_face_clearance( geometry(), outer,
+      double clearance = GammaInteractionCalc::detector_face_clearance( geometry(), outer,
                                                                     distance, offset_x, offset_y );
+      // Beside or behind the detector, what matters is how near the source comes to the detector's
+      //  outside, not to the centre of its face.
+      using ShieldingSourceFitCalc::VolumetricEffMethod;
+      const VolumetricEffMethod requested = m_volEffMethodCombo
+            ? static_cast<VolumetricEffMethod>( std::max(0, m_volEffMethodCombo->currentIndex()) )
+            : VolumetricEffMethod::Auto;
+      const shared_ptr<const ceelo::GeometryDescriptor> gd = fit_geometry( *det,
+                  GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, requested ) );
+      if( gd && ((distance <= 0.0)
+                 || (GammaInteractionCalc::detector_face_plane_clearance( geometry(), outer, distance ) < 0.0)) )
+        clearance = GammaInteractionCalc::detector_enclosure_clearance( *gd, geometry(), outer, distance,
+                                                                        offset_x, offset_y );
       distance = std::max( 0.1*PhysicalUnits::cm, clearance );
     }catch( std::exception & )
     {
@@ -5923,7 +5950,7 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   setup.geometry = geometry();
   try
   {
-    setup.distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+    setup.distance = PhysicalUnits::stringToSignedDistance( m_distanceEdit->text().toUTF8() );
   }catch( std::exception & )
   {
     passMessage( "Invalid distance.", WarningWidget::WarningMsgHigh );
@@ -6086,9 +6113,9 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
   
   try
   {
-    const double distance = PhysicalUnits::stringToDistance( distanceStr );
-    if( distance <= 0.0 )
-      throw runtime_error( "Must have a non-zero distance" );
+    // Zero or negative puts the source centre beside or behind the detector-face plane, which the
+    //  fit accepts only for a detector response that models the detector - it checks that.
+    PhysicalUnits::stringToSignedDistance( distanceStr );   //throws on an unparsable distance
     
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && !undoRedo->isInUndoOrRedo() )
@@ -6503,7 +6530,47 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   }//for( WWidget *widget : m_shieldingSelects->children() )
 
   const string distanceStr = m_distanceEdit->text().toUTF8();
-  distance = PhysicalUnits::stringToDistance( distanceStr );
+  distance = PhysicalUnits::stringToSignedDistance( distanceStr );
+
+  // Past the detector-face plane - beside or behind the detector.  With a detector response that
+  //  models the detector, that is a valid scene so long as it stays clear of the detector itself,
+  //  and shrinking along the axis would only change what the user set up; the fit checks the
+  //  clearance against the detector's outside again as it runs.
+  const bool in_front = (distance > 0.0) && (shieldrad <= distance);
+  if( !in_front && det )
+  {
+    using ShieldingSourceFitCalc::VolumetricEffMethod;
+    const VolumetricEffMethod requested
+          = static_cast<VolumetricEffMethod>( std::max(0, m_volEffMethodCombo->currentIndex()) );
+    const VolumetricEffMethod method
+          = GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, requested );
+    const shared_ptr<const ceelo::GeometryDescriptor> gd = fit_geometry( *det, method );
+    if( gd && (method != VolumetricEffMethod::FlatDisk) )
+    {
+      double outer[3] = { 0.0, 0.0, 0.0 };
+      for( ShieldingSelect *select : shieldings )
+      {
+        const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+        for( int i = 0; i < 3; ++i )
+          outer[i] += std::max( 0.0, info.m_dimensions[i] );
+      }
+      double offset_x = 0.0, offset_y = 0.0;
+      sourceOffsets( offset_x, offset_y );
+      const double clearance = GammaInteractionCalc::detector_enclosure_clearance( *gd, type,
+                                 (shieldings.empty() ? nullptr : outer), distance, offset_x, offset_y );
+      if( clearance > 0.0 )
+        return;
+
+      // Overlapping it: a source centred in front of the face is shrunk back in front of the face
+      //  plane, as always; beside or behind the face there is nothing along the axis to shrink to.
+      if( distance <= 0.0 )
+        throw runtime_error( WString::tr("ssd-err-overlaps-detector").toUTF8() );
+    }//if( the fit will use the response )
+
+    if( distance <= 0.0 )
+      throw runtime_error( WString::tr("ssd-err-behind-needs-response").toUTF8() );
+  }//if( beside or behind the detector )
+
   if( distance <= 0.0 )
     throw runtime_error( "Distance must be greater than zero" );
 
@@ -6915,8 +6982,11 @@ void ShieldingSourceDisplay::updateDrfUncertMethodAvailability()
     {
       try
       {
-        const double distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
-        summary = DrfModifyCalc::uncertSummary( *det, summary.energy, distance );
+        // The summary is asked on the axis, so beside or behind the detector (distance <= 0) it
+        //  would land inside it; the far-field summary will do there.
+        const double distance = PhysicalUnits::stringToSignedDistance( m_distanceEdit->text().toUTF8() );
+        if( distance > 0.0 )
+          summary = DrfModifyCalc::uncertSummary( *det, summary.energy, distance );
       }catch( std::exception & )
       {
         //Unparsable distance - the far-field summary will do
@@ -8672,7 +8742,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::seri
   const std::string dist_text = m_distanceEdit->valueText().toUTF8();
   try
   {
-    config->distance = PhysicalUnits::stringToDistance( dist_text );
+    config->distance = PhysicalUnits::stringToSignedDistance( dist_text );
   }catch( const std::exception & )
   {
     config->distance = 0.0;
@@ -10808,7 +10878,7 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   string distanceStr = m_distanceEdit->text().toUTF8();
   double distance = 100.0 * PhysicalUnits::cm; // Default
   try {
-     distance = PhysicalUnits::stringToDistance( distanceStr );
+     distance = PhysicalUnits::stringToSignedDistance( distanceStr );
   } catch(...) {
      // Ignore, use default or what was parsed.
   }

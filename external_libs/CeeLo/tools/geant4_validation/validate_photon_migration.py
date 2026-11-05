@@ -53,6 +53,7 @@ from generate_epics_photon import (  # noqa: E402
     ENERGY_MIN_EV,
     PHOTON_Z_MAX,
     RAYLEIGH_XS_GROUP_SIZE,
+    RUNTIME_ANGULAR_SPECS,
 )
 
 # The historical Geant4-fitted cache (DEFAULT_BASELINE) covers only Z=1..92 over
@@ -150,7 +151,9 @@ def direct_curves(text: str) -> dict[tuple[int, str], tuple[list[float], list[fl
                 re.sub(r"//.*", "", descriptor_lines[z - 1])
             )
         ]
-        if len(fields) != 22:
+        # Rayleigh {offset, scale}, four process curves and the runtime angular
+        # curves at four numbers each; only the leading curves are compared.
+        if len(fields) != 2 + 4 * 4 + 4 * len(RUNTIME_ANGULAR_SPECS):
             raise ValueError(f"Z={z}: malformed compact descriptor")
         group = (z - 1) // RAYLEIGH_XS_GROUP_SIZE
         lane = (z - 1) % RAYLEIGH_XS_GROUP_SIZE

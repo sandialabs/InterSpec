@@ -71,7 +71,11 @@ namespace ceelo {
 // the unknown tier string onto KernelExact and would serve a bare kernel as a
 // verified total efficiency, so only responses that use that tier are stamped
 // v3.
-const int DetectorResponse::sm_xmlSerializationVersion = 3;
+//
+// v4 = side & back coverage: eta tables with nodes below cos theta = 0.  A pre-v4 reader would
+// interpolate one PCHIP across the front and back node sets (EtaTable::eval_ln keeps them apart),
+// changing values in FRONT of the face too, so only covered responses are stamped v4.
+const int DetectorResponse::sm_xmlSerializationVersion = 4;
 
 namespace {
 
@@ -244,6 +248,23 @@ const char* to_string(ResponseProfile p) {
     return "?";
 }
 
+const char* to_string(PrecisionProfile p) {
+    switch (p) {
+        case PrecisionProfile::Uniform:   return "uniform";
+        case PrecisionProfile::RelaxMild: return "relax_mild";
+    }
+    return "?";
+}
+
+const char* to_string(BackCoverage b) {
+    switch (b) {
+        case BackCoverage::None:   return "none";
+        case BackCoverage::Coarse: return "coarse";
+        case BackCoverage::Fine:   return "fine";
+    }
+    return "?";
+}
+
 namespace {
 ResponseProfile profile_from_string(const char* s) {
     if (s) {
@@ -252,71 +273,20 @@ ResponseProfile profile_from_string(const char* s) {
     }
     return ResponseProfile::General;
 }
+
+// The recorded generation choices are optional: absent or unrecognised reads as not recorded.
+std::optional<PrecisionProfile> precision_profile_from_string(const char* s) {
+    for (const PrecisionProfile p : {PrecisionProfile::Uniform, PrecisionProfile::RelaxMild})
+        if (s && (std::strcmp(s, to_string(p)) == 0)) return p;
+    return std::nullopt;
+}
+
+std::optional<BackCoverage> back_coverage_from_string(const char* s) {
+    for (const BackCoverage b : {BackCoverage::None, BackCoverage::Coarse, BackCoverage::Fine})
+        if (s && (std::strcmp(s, to_string(b)) == 0)) return b;
+    return std::nullopt;
+}
 }  // namespace
-
-// ---------------------------------------------------------------------------
-// MaterialSpec / GeometryDescriptor
-// ---------------------------------------------------------------------------
-
-MaterialSpec MaterialSpec::from(const Material& m) {
-    MaterialSpec s;
-    s.name = m.name();
-    s.density_g_per_cm3 = m.density();
-    s.composition = m.composition();
-    return s;
-}
-
-void GeometryDescriptor::set_dimensions(const CylinderDims& dims) {
-    shape = DetectorShape::Cylinder;
-    dimensions_cm = to_dimensions_vector(dims);
-}
-
-void GeometryDescriptor::set_dimensions(const BoxDims& dims) {
-    shape = DetectorShape::Box;
-    dimensions_cm = to_dimensions_vector(dims);
-}
-
-CylinderDims GeometryDescriptor::cylinder_dims() const {
-    assert(shape == DetectorShape::Cylinder);
-    return cylinder_dims_from_vector(dimensions_cm);
-}
-
-BoxDims GeometryDescriptor::box_dims() const {
-    assert(shape == DetectorShape::Box);
-    return box_dims_from_vector(dimensions_cm);
-}
-
-Geometry GeometryDescriptor::build_geometry(
-    std::vector<std::unique_ptr<Material>>& owned) const {
-    if (crystal_material_index < 0 ||
-        crystal_material_index >= static_cast<int>(materials.size()))
-        throw std::runtime_error("GeometryDescriptor: bad crystal material index");
-
-    // Validate BEFORE rebuilding `owned`: finalize() assigns geometry_ only on
-    // success, so throwing after the clear would leave a previously-finalized
-    // response holding Material* into the vector we just freed. Geometry's own
-    // preconditions are asserts, so in a release build this is the only thing
-    // standing between a bad descriptor and a silently garbage trace.
-    const std::vector<GeometryProblem> probs = problems();
-    if (!probs.empty())
-        throw std::runtime_error(std::string("GeometryDescriptor: ")
-                                 + to_string(probs.front()));
-
-    owned.clear();
-    owned.reserve(materials.size());
-    for (const MaterialSpec& spec : materials)
-        owned.push_back(std::make_unique<Material>(spec.to_material()));
-
-    auto mat_at = [&](int idx) -> const Material* {
-        if (idx < 0 || idx >= static_cast<int>(owned.size()))
-            throw std::runtime_error("GeometryDescriptor: bad material index");
-        return owned[static_cast<size_t>(idx)].get();
-    };
-
-    Geometry g;
-    apply_detector_side(g, *this, mat_at);
-    return g;
-}
 
 const char* to_string(ProductionMethod m) {
     switch (m) {
@@ -325,198 +295,6 @@ const char* to_string(ProductionMethod m) {
         case ProductionMethod::CurveTransfer:   return "curve_transfer";
     }
     return "full_mc";
-}
-
-
-const char* to_string(GeometryProblem p) {
-    switch (p) {
-        case GeometryProblem::DimensionsMissing:
-            return "the crystal dimensions are missing (need radius+length, or 3 half-widths)";
-        case GeometryProblem::DeadLayerTooThick:
-            return "the dead layer consumes the whole crystal";
-        case GeometryProblem::BulletOnNonCylinder:
-            return "a front-edge fillet needs a cylindrical crystal";
-        case GeometryProblem::BulletNotFinite:
-            return "the front-edge fillet radius is not a finite, non-negative length";
-        case GeometryProblem::BulletTooWide:
-            return "the front-edge fillet radius is not less than the crystal radius";
-        case GeometryProblem::BulletTooLong:
-            return "the front-edge fillet radius is not less than the crystal length";
-        case GeometryProblem::BulletNoDeadLayerRoom:
-            return "the dead layer leaves no room for the front-edge fillet";
-        case GeometryProblem::BoreOnNonCylinder:
-            return "a bore hole needs a cylindrical crystal";
-        case GeometryProblem::BoreNotFinite:
-            return "the bore radius and depth are not finite, positive lengths";
-        case GeometryProblem::BoreTooWide:
-            return "the bore radius is not less than the crystal radius";
-        case GeometryProblem::BoreTooDeep:
-            return "the bore depth is not less than the crystal length";
-        case GeometryProblem::BoreTipTooBlunt:
-            return "a rounded bore tip needs the bore at least as deep as its radius";
-        case GeometryProblem::BoreOutsideFillet:
-            return "the bore ends where the filleted crystal is narrower than the bore";
-        case GeometryProblem::BoreInsideDeadLayer:
-            return "the bore radius is not less than the active (post dead layer) radius";
-    }
-    assert(0 && "unhandled GeometryProblem");
-    return "invalid geometry";
-}
-
-std::vector<GeometryProblem> GeometryDescriptor::problems() const {
-    std::vector<GeometryProblem> out;
-
-    const bool cyl = (shape == DetectorShape::Cylinder);
-    const double R = (cyl && dimensions_cm.size() > 0) ? dimensions_cm[0] : 0.0;
-    const double L = cyl ? (dimensions_cm.size() > 1 ? dimensions_cm[1] : 0.0)
-                         : (dimensions_cm.size() > 2 ? dimensions_cm[2] : 0.0);
-    const double df = dead_layer ? dead_layer->front : 0.0;
-    const double ds = dead_layer ? dead_layer->side : 0.0;
-    const double db = dead_layer ? dead_layer->back : 0.0;
-    const double rb = bullet_radius_cm;
-
-    // --- crystal itself: set_detector_from_dimensions_vector() indexes
-    //     dimensions_cm unchecked ---
-    // Its only guard is assert(size() >= 2 / >= 3), so a short vector (a saved
-    // response with a missing or truncated <Dimensions>) would read past the
-    // end of the vector in a release build.
-    const size_t need = cyl ? 2u : 3u;
-    if (dimensions_cm.size() < need) {
-        out.push_back(GeometryProblem::DimensionsMissing);
-        return out;   // every check below reads R / L
-    }
-
-    // A dead layer at least as thick as the crystal leaves the tracer working
-    // on a negative-extent solid. Checked here rather than only inside the
-    // fillet branch, since it is wrong with or without a fillet. NOTE the
-    // transverse extent is shape-dependent -- R is meaningless for a box, and
-    // using it here would reject every box outright.
-    const double half_extent = cyl ? R
-                                   : std::min(dimensions_cm[0], dimensions_cm[1]);
-    if (!std::isfinite(half_extent) || !std::isfinite(L)
-        || half_extent <= 0.0 || L <= 0.0
-        || (half_extent - ds) <= 0.0 || (L - df - db) <= 0.0)
-        out.push_back(GeometryProblem::DeadLayerTooThick);
-
-    // --- front-edge fillet: Geometry::set_bullet_radius asserts ---
-    // Anything but an exact 0 is a request for a fillet, so negatives and NaN
-    // get reported rather than silently reading as "sharp edge".
-    if (rb != 0.0) {
-        if (!cyl) {
-            out.push_back(GeometryProblem::BulletOnNonCylinder);
-        } else if (!std::isfinite(rb) || rb < 0.0) {
-            out.push_back(GeometryProblem::BulletNotFinite);
-        } else {
-            if (rb >= R) out.push_back(GeometryProblem::BulletTooWide);
-            if (rb >= L) out.push_back(GeometryProblem::BulletTooLong);
-            // The active volume gets the fillet offset inward by the dead
-            // layer; trace_cylinder_geometry asserts it still has room.
-            const double dl_r = R - ds;
-            const double rba = std::max(0.0, rb - std::max(df, ds));
-            if (!(dl_r > 0.0 && rba < dl_r && (df + rba) <= (L - db)))
-                out.push_back(GeometryProblem::BulletNoDeadLayerRoom);
-        }
-    }
-
-    // --- bore: Geometry::set_bore_hole asserts, plus the active-radius one
-    // that RayTrace relies on but no assert covers ---
-    if (bore) {
-        const double br = bore->radius;
-        const double bd = bore->depth;
-        if (!cyl) {
-            out.push_back(GeometryProblem::BoreOnNonCylinder);
-        } else if (!std::isfinite(br) || !std::isfinite(bd)
-                   || br <= 0.0 || bd <= 0.0) {
-            out.push_back(GeometryProblem::BoreNotFinite);
-        } else {
-            if (br >= R) out.push_back(GeometryProblem::BoreTooWide);
-            if (bd >= L) out.push_back(GeometryProblem::BoreTooDeep);
-            if (bore->rounded_tip && br > bd)
-                out.push_back(GeometryProblem::BoreTipTooBlunt);
-            // Only meaningful once the bore is narrower than the crystal:
-            // bore_fits() returns false for br >= R too, and blaming that on
-            // the fillet would make relaxGeometryFeatures() drop a perfectly
-            // good fillet for a problem it cannot fix.
-            if (br < R && rb > 0.0 && std::isfinite(rb)) {
-                // The outer solid, and then the dead-layer-offset active solid
-                // -- which carries a tighter fillet (radius rb - max(df,ds)
-                // about a centre at z = df), so it can be violated when the
-                // outer one is not. trace_cylinder_geometry cuts the bore out
-                // of that one.
-                const double act_r = R - ds;
-                const double act_len = L - df - db;
-                const double act_rb = std::max(0.0, rb - std::max(df, ds));
-                if (!bore_fits(br, bd, R, L, rb)
-                    || (act_r > 0.0 && act_len > 0.0
-                        && !bore_fits(br, bd - db, act_r, act_len, act_rb)))
-                    out.push_back(GeometryProblem::BoreOutsideFillet);
-            }
-            // trace_cylinder_geometry cuts the bore out of the ACTIVE cylinder
-            // (radius R - side dead layer), which set_bore_hole never checks.
-            // No assert covers this: such a bore simply yields zero active
-            // volume. Rejecting is a deliberate policy choice -- a response
-            // that silently computes zero efficiency is worse than one that
-            // refuses to load -- so unlike the fillet it is NOT relaxable.
-            if (br >= (R - ds))
-                out.push_back(GeometryProblem::BoreInsideDeadLayer);
-        }
-    }
-
-    return out;
-}
-
-double GeometryDescriptor::transverse_half_extent() const {
-    double r = 0.0;
-    if (shape == DetectorShape::Cylinder) {
-        r = dimensions_cm.size() > 0 ? dimensions_cm[0] : 0.0;
-    } else {
-        const double hx = dimensions_cm.size() > 0 ? dimensions_cm[0] : 0.0;
-        const double hy = dimensions_cm.size() > 1 ? dimensions_cm[1] : 0.0;
-        r = std::hypot(hx, hy);
-    }
-    double side = 0.0;
-    if (dead_layer) side += dead_layer->side;
-    for (const LayerSpec& l : layers) side += l.side_thickness_cm;
-    if (collimator) side += collimator->side_thickness_cm;
-    return r + side;
-}
-
-double GeometryDescriptor::endcap_front_offset_cm() const {
-    double front = 0.0;
-    // ONLY the attenuator shells: they are what stands between the endcap front
-    // and the crystal. The dead layer must NOT be added -- it is carved out of
-    // the INSIDE of the crystal solid (trace_cylinder_geometry insets the
-    // active volume within [0, L]; the solid still starts at z = 0), so it does
-    // not push the crystal face away from the endcap. Adding it made
-    // query_position() place every EndcapFront-referenced source one dead-layer
-    // thickness too far away -- ~0.7 mm on a typical HPGe, worth ~3% of the
-    // efficiency at contact geometry, and nothing at all in the far field.
-    for (const LayerSpec& l : layers) front += l.front_thickness_cm;
-    // A collimator extending past the face does NOT define the endcap front
-    // (it is an open tube); the reference plane is the front surface stack.
-    return front;
-}
-
-std::vector<double> GeometryDescriptor::crystal_k_edges(double e_min_keV,
-                                                        double e_max_keV) const {
-    std::vector<double> edges;
-    if (crystal_material_index < 0 ||
-        static_cast<size_t>(crystal_material_index) >= materials.size())
-        return edges;
-    const CrossSectionData& db = CrossSectionData::instance();
-    const MaterialSpec& crystal =
-        materials[static_cast<size_t>(crystal_material_index)];
-    for (const MaterialComponent& c : crystal.composition) {
-        if (const FluorescenceData* f = db.fluorescence(c.Z)) {
-            const double e = f->k_edge_keV;
-            if (e > e_min_keV * 1.02 && e < e_max_keV * 0.98) edges.push_back(e);
-        }
-    }
-    std::sort(edges.begin(), edges.end());
-    edges.erase(std::unique(edges.begin(), edges.end(),
-                            [](double a, double b) { return b - a < 0.01; }),
-                edges.end());
-    return edges;
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +410,9 @@ void EtaTable::finalize() {
     const size_t ne = energies_keV.size();
     const size_t nc = cos_thetas.size();
     const size_t np = phis_deg.empty() ? 1 : phis_deg.size();
+    // Every reader takes cos_thetas.front() / .back() once the table has energies.
+    if (nc == 0)
+        throw std::runtime_error("EtaTable: energies but no cos-theta nodes");
     if (ln_eta.size() != ne * nc * np)
         throw std::runtime_error("EtaTable: ln_eta size mismatch");
     if (frac_sigma.size() != ln_eta.size())
@@ -764,13 +545,51 @@ double EtaTable::eval_ln(double energy_keV_q, double cos_theta, double phi_deg,
         pq = clamp(pq, phis_deg.front(), phis_deg.back());
     }
 
+    // Side & back coverage (nodes below cos theta = 0): the front nodes and the back nodes are
+    //  interpolated as separate sets, so the front of a covered table evaluates exactly as a table
+    //  without coverage does - including below its grazing node, where both clamp to it.  Behind
+    //  the face plane, the gap from the last back node up to the plane is bridged linearly to that
+    //  clamped grazing value.
+    size_t c_lo = 0, c_hi = nc;
+    bool gap = false;
+    if ((nc > 1) && (cos_thetas.front() < 0.0)) {
+        size_t k0 = 0;
+        while ((k0 < nc) && (cos_thetas[k0] < 0.0))
+            ++k0;
+        if ((k0 < nc) && (ct >= cos_thetas[k0])) {
+            c_lo = k0;
+        } else if ((k0 > 0) && (ct <= cos_thetas[k0 - 1])) {
+            c_hi = k0;
+        } else if ((k0 < nc) && (ct >= 0.0)) {
+            c_lo = k0;
+            c_hi = k0 + 1;
+            clamped = true;
+        } else if ((k0 > 0) && (k0 < nc)) {
+            gap = true;
+            c_lo = k0 - 1;
+            c_hi = k0 + 1;
+        }
+    }
+
     // Per phi node: energy eval per ct node, then PCHIP across cos-theta.
     auto eval_at_phi = [&](size_t p) -> double {
-        std::vector<double> y(nc);
-        for (size_t c = 0; c < nc; ++c)
-            y[c] = curves_[c * np + p].eval(lnE, clamped);
-        if (nc == 1) return y[0];
-        const Pchip ang(cos_thetas, y);
+        const size_t n = c_hi - c_lo;
+        std::vector<double> y(n);
+        for (size_t c = c_lo; c < c_hi; ++c)
+            y[c - c_lo] = curves_[c * np + p].eval(lnE, clamped);
+        if (n == 1) return y[0];
+        if (gap) {
+            const double x0 = cos_thetas[c_lo];   // < 0; the grazing value holds from 0 up
+            const double f = (ct - x0) / (0.0 - x0);
+            return (1.0 - f) * y[0] + f * y[1];
+        }
+        if (n == nc) {
+            const Pchip ang(cos_thetas, y);
+            return ang(ct);
+        }
+        const std::vector<double> xs(cos_thetas.begin() + static_cast<std::ptrdiff_t>(c_lo),
+                                     cos_thetas.begin() + static_cast<std::ptrdiff_t>(c_hi));
+        const Pchip ang(xs, y);
         return ang(ct);
     };
 
@@ -782,6 +601,18 @@ double EtaTable::eval_ln(double energy_keV_q, double cos_theta, double phi_deg,
     const double v0 = eval_at_phi(p0);
     if (p0 == p1) return v0;
     return (1.0 - w) * v0 + w * eval_at_phi(p1);
+}
+
+bool EtaTable::is_angle_flat() const {
+    const size_t nc = cos_thetas.size();
+    const size_t np = phis_deg.empty() ? 1 : phis_deg.size();
+    if (nc < 2) return true;
+    for (size_t e = 0; e < energies_keV.size(); ++e)
+        for (size_t p = 0; p < np; ++p)
+            for (size_t c = 1; c < nc; ++c)
+                if (ln_eta[index(e, c, p)] != ln_eta[index(e, 0, p)])
+                    return false;
+    return true;
 }
 
 double EtaTable::node_frac_sigma(double energy_keV_q, double cos_theta,
@@ -806,7 +637,23 @@ double EtaTable::node_frac_sigma(double energy_keV_q, double cos_theta,
     size_t e0, e1, c0, c1;
     double we, wc;
     bracket(lnEs, std::log(std::max(energy_keV_q, kLnClampEps)), e0, e1, we);
-    bracket(cos_thetas, cos_theta, c0, c1, wc);
+
+    // In front of the face plane a covered table brackets only its front nodes, as a table without
+    //  coverage does (clamping below the grazing node).
+    size_t k0 = 0;
+    if (cos_theta >= 0.0) {
+        while ((k0 < cos_thetas.size()) && (cos_thetas[k0] < 0.0)) ++k0;
+        if (k0 == cos_thetas.size()) k0 = 0;
+    }
+    if (k0 == 0) {
+        bracket(cos_thetas, cos_theta, c0, c1, wc);
+    } else {
+        const std::vector<double> front(cos_thetas.begin() + static_cast<std::ptrdiff_t>(k0),
+                                        cos_thetas.end());
+        bracket(front, cos_theta, c0, c1, wc);
+        c0 += k0;
+        c1 += k0;
+    }
 
     auto s2 = [&](size_t e, size_t c) {
         const double s = frac_sigma[index(e, c, p)];
@@ -890,7 +737,23 @@ double NearFieldModel::node_frac_sigma(double energy_keV_q, double cos_theta,
     size_t e0, e1, c0, c1, d0, d1;
     double we, wc, wd;
     bracket(lnEs, std::log(std::max(energy_keV_q, kLnClampEps)), e0, e1, we);
-    bracket(cos_thetas, cos_theta, c0, c1, wc);
+
+    // In front of the face plane a covered table brackets only its front nodes, as a table without
+    //  coverage does (clamping below the grazing node).
+    size_t k0 = 0;
+    if (cos_theta >= 0.0) {
+        while ((k0 < cos_thetas.size()) && (cos_thetas[k0] < 0.0)) ++k0;
+        if (k0 == cos_thetas.size()) k0 = 0;
+    }
+    if (k0 == 0) {
+        bracket(cos_thetas, cos_theta, c0, c1, wc);
+    } else {
+        const std::vector<double> front(cos_thetas.begin() + static_cast<std::ptrdiff_t>(k0),
+                                        cos_thetas.end());
+        bracket(front, cos_theta, c0, c1, wc);
+        c0 += k0;
+        c1 += k0;
+    }
     bracket(lnDs, std::log(std::max(d_cm, 1e-6)), d0, d1, wd);
 
     auto s2 = [&](size_t e, size_t c, size_t d) {
@@ -968,7 +831,10 @@ SigmaTransferModel::Components SigmaTransferModel::components(
     double d_over_a, double cos_theta, double energy_keV) const {
     Components c;
     c.far_onaxis = far_onaxis;
-    const double s2 = std::max(0.0, 1.0 - cos_theta * cos_theta);
+    // Behind the face plane the crystal is seen from the side or back - the regime the off-axis
+    //  envelope saturates toward - so sin^2 stays at its 90-degree value rather than falling
+    //  back to 0 as if the source were on axis again.
+    const double s2 = (cos_theta < 0.0) ? 1.0 : std::max(0.0, 1.0 - cos_theta * cos_theta);
     // Low-E weight: 0 at/above mid_e_ref, 1 at/below low_e_ref (ln ramp).
     double w = 0.0;
     if (energy_keV < mid_e_ref_keV) {
@@ -1245,6 +1111,7 @@ struct DetectorResponse::SigmaBudget {
     // Model envelopes, each fully correlated across energies
     enum Term : size_t { Floor, BehindPlane, Shadow, NearUnmodeled, Buildup,
                          ModelFar, ModelOff, ModelNear, GroundFar, GroundOff, GroundNear,
+                         BehindExtrapolation, BackStructureApprox,
                          NumTerms };
     std::array<double, NumTerms> model{};
 
@@ -1265,6 +1132,10 @@ struct DetectorResponse::EvalCommon {
     double cos_theta = 1.0;
     double phi_deg = 0.0;
     double a_cm = 0.0;          // transverse half-extent
+    // The distance the near-field gates measure: d_cm in front of the face plane; behind it,
+    //  a + the clearance past the detector's outside - from the face-centre origin a source
+    //  touching the side wall or the back is d >~ L away, which says nothing about how near it is.
+    double d_near_cm = 0.0;
     bool near_regime = false;
     ResponseFlag flag = ResponseFlag::Ok;
     SigmaBudget budget;         // geometry-only terms filled here; the rest per quantity
@@ -1273,6 +1144,22 @@ struct DetectorResponse::EvalCommon {
 namespace {
 void raise_flag(ResponseFlag& current, ResponseFlag f) {
     if (static_cast<int>(f) > static_cast<int>(current)) current = f;
+}
+
+/// The cos-theta an eta table is evaluated at: the query's, except behind the face plane on an
+/// angle-flat table, which is evaluated at its own grazing node - the same value, without a clamp
+/// flag that would say something was lost.
+double eta_cos_theta(const EtaTable& t, const double cos_theta) {
+    if ((cos_theta < 0.0) && !t.empty() && t.is_angle_flat())
+        return t.cos_thetas.front();
+    return cos_theta;
+}
+
+/// Behind the face plane, whether a table that stops at its grazing node is being extrapolated -
+/// which common_eval, judging coverage by the FEP table, does not charge a TOTAL table for (an
+/// imported grid has side & back FEP nodes, but its total may come from a front-only donor).
+bool extrapolated_behind(const EtaTable& t, const double cos_theta) {
+    return (cos_theta < 0.0) && !t.empty() && !(t.cos_thetas.front() < 0.0) && !t.is_angle_flat();
 }
 }  // namespace
 
@@ -1284,7 +1171,18 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
     ec.cos_theta = (ec.d_cm > 0.0) ? (-src_cm.z() / ec.d_cm) : 1.0;
     ec.phi_deg = std::atan2(src_cm.y(), src_cm.x()) * 180.0 / 3.14159265358979323846;
     ec.a_cm = descriptor.transverse_half_extent();
-    ec.near_regime = ec.d_cm < floors.near_regime_a * ec.a_cm;
+    ec.d_near_cm = ec.d_cm;
+    bool behind_back_plane = false;
+    if (ec.cos_theta < 0.0) {
+        // How near the source comes to the detector's outside - the nearest point of it, not the
+        //  exit along the ray from the face centre, which overstates it beside a long detector.
+        const ConvexSolid outside = descriptor.outer_envelope().solid();
+        const double clearance = (src_cm - outside.project(src_cm)).norm();
+        ec.d_near_cm = ec.a_cm + clearance;
+        behind_back_plane = (!descriptor.dimensions_cm.empty())
+                            && (src_cm.z() > descriptor.dimensions_cm.back());
+    }
+    ec.near_regime = ec.d_near_cm < floors.near_regime_a * ec.a_cm;
 
     // Energy validity from provenance (falls back to the table range).
     const double e_lo = provenance.valid_e_min_keV > 0.0
@@ -1296,12 +1194,32 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
     if (e_hi > 0.0 && (energy_keV < e_lo || energy_keV > e_hi))
         raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
 
-    // Behind the face plane: unmodeled (theta > 90; Marinelli-class needs
-    // dedicated nodes -- deferred). Value is a clamped guess.
+    // Behind the face plane (theta > 90 degrees).  The kernel K is ray-traced from the real
+    //  position through the geometry as described, so what is in question is the residual tables
+    //  and the description itself:
+    //   - behind the crystal's back plane with no back structure described: the response knows
+    //     nothing of what sits there - refuse-grade, as before;
+    //   - angle-flat tables (curve / flat transfers) lose nothing to the clamp: the transfer
+    //     envelope (saturated in sin^2 below) carries it;
+    //   - tables that stop at the grazing node: extrapolated, with a measured envelope;
+    //   - behind a described back: what approximating that back costs.
     SigmaBudget& b = ec.budget;
+    bool behind_uncovered = false;
     if (ec.cos_theta < 0.0) {
-        raise_flag(ec.flag, ResponseFlag::NeedsMc);
-        b.model[SigmaBudget::BehindPlane] = model_sigma::behind_plane;
+        const bool has_back = descriptor.back_structure_extent_cm() > 0.0;
+        const bool covered = !eta_fep.empty() && (eta_fep.cos_thetas.front() < 0.0);
+        behind_uncovered = !covered;
+        if (behind_back_plane && !has_back) {
+            raise_flag(ec.flag, ResponseFlag::NeedsMc);
+            b.model[SigmaBudget::BehindPlane] = model_sigma::behind_plane;
+        } else {
+            if (!covered && !eta_fep.is_angle_flat()) {
+                raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+                b.model[SigmaBudget::BehindExtrapolation] = model_sigma::behind_extrapolation;
+            }
+            if (behind_back_plane)
+                b.model[SigmaBudget::BackStructureApprox] = model_sigma::back_structure_approx;
+        }
     }
 
     // EFFTRAN transfer envelope: inflate sigma where the (angle-flat) eta of a
@@ -1310,14 +1228,28 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
     // FEP and total via this shared path.
     if (model_transfer) {
         const SigmaTransferModel::Components c = model_transfer->components(
-            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
+            ec.a_cm > 0.0 ? ec.d_near_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
         b.model[SigmaBudget::ModelFar] = c.far_onaxis;
         b.model[SigmaBudget::ModelOff] = c.offaxis;
         b.model[SigmaBudget::ModelNear] = c.near_field;
     }
 
-    // Collimator shadow gate (spec sec 4.5): s = transmitted/geometric.
-    if (descriptor.collimator && q.omega_frac_active > 0.0) {
+    // Collimator shadow gate (spec sec 4.5): s = transmitted/geometric.  In front of the face, for
+    //  a collimator.  Behind it, the same gate on what the direct path crosses: once that blocks
+    //  most of the path, photons scattered in at full energy - which the removal-only kernel does
+    //  not count - are much of what arrives, and vary steeply with energy and direction.  Against
+    //  MC around two HPGe and two NaI detectors (2026-11):
+    //   - no side & back nodes: behind the crystal's back plane the model read ~-11% at s 0.1-0.3,
+    //     ~-33% at s 1e-4..1e-2 and ~-100% below, within ~5% above 0.3; beside the crystal,
+    //     through thin side walls, it stayed within ~7% down to s 0.01 (the grazing node's eta
+    //     carries that scatter) - so gated behind the back plane, or behind a collimator wall;
+    //   - with side & back nodes: within ~5-8% above s 0.3, but 20-70% off below it, beside the
+    //     crystal as well as behind it (the nodes' scatter-dominated values interpolate badly
+    //     between them) - so gated everywhere past the face plane.
+    const bool shadow_gate = (ec.cos_theta >= 0.0)
+        ? descriptor.collimator.has_value()
+        : (!behind_uncovered || behind_back_plane || descriptor.collimator.has_value());
+    if (shadow_gate && q.omega_frac_active > 0.0) {
         const double s = kernel_transmitted(energy_keV, q) / q.omega_frac_active;
         if (s < model_sigma::shadow_refuse_s) {
             raise_flag(ec.flag, ResponseFlag::NeedsMc);
@@ -1358,6 +1290,9 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
     // unmodeled (far-field profile).  The gate is the near-field model's own breakpoint (energy
     // and angle dependent) or the provenance floor - NOT the floor regime `near_regime`.
     ln_N = 0.0;
+    // Behind the face plane the near-field table has no nodes: the boost is the kernel's alone,
+    //  and the gate measures how near the source is to the detector's outside (d_near_cm).
+    const bool behind = (ec.cos_theta < 0.0);
     const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
     double d_gate = std::max(d_break, provenance.min_distance_cm);
     // With no near-field table the gate would be provenance.min_distance_cm, which the
@@ -1366,8 +1301,8 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
     // switched off and nothing else covered it.  Widen it to the floor's own near regime.
     if (near_field.empty())
         d_gate = std::max(d_gate, floors.near_regime_a * ec.a_cm);
-    if (ec.d_cm < d_gate) {
-        if (!near_field.empty()) {
+    if (ec.d_near_cm < d_gate) {
+        if (!near_field.empty() && !behind) {
             ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
             const double nf_sig =
                 near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
@@ -1393,7 +1328,7 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
         if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
         b.var_ln_k = grounding.var_ln_k(energy_keV);
         const SigmaTransferModel::Components c = grounding.transfer.components(
-            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
+            ec.a_cm > 0.0 ? ec.d_near_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
         b.model[SigmaBudget::GroundFar] = c.far_onaxis;
         b.model[SigmaBudget::GroundOff] = c.offaxis;
         b.model[SigmaBudget::GroundNear] = c.near_field;
@@ -1409,7 +1344,8 @@ double DetectorResponse::total_near_ln(double energy_keV, EvalCommon& ec) const 
     // Gated on the table's own breakpoint, as the FEP's is; the outermost distance node is an
     // ln N = 0 anchor, so the correction fades to nothing there.
     const NearFieldModel& nf = tot_eff.near_field;
-    if (nf.empty() || (ec.d_cm >= nf.breakpoint_d_cm(energy_keV, ec.cos_theta)))
+    if (nf.empty() || (ec.cos_theta < 0.0)
+        || (ec.d_cm >= nf.breakpoint_d_cm(energy_keV, ec.cos_theta)))
         return 0.0;
     const double sig = nf.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
     ec.budget.node2 += sig * sig;
@@ -1423,7 +1359,7 @@ EffResult DetectorResponse::fep_prefactor(
 
     bool clamped = false;
     const double ln_eta =
-        eta_fep.eval_ln(energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+        eta_fep.eval_ln(energy_keV, eta_cos_theta(eta_fep, ec.cos_theta), ec.phi_deg, clamped);
     if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
 
     double ln_N = 0.0, ln_k = 0.0;
@@ -1467,7 +1403,7 @@ EffResult DetectorResponse::total_prefactor(
         case TotEffTier::EtaTotTable: {
             bool clamped = false;
             const double ln_eta = tot_eff.eta_tot.eval_ln(
-                energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+                energy_keV, eta_cos_theta(tot_eff.eta_tot, ec.cos_theta), ec.phi_deg, clamped);
             if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
             double ln_k = 0.0;
             if (!grounding.empty()) {
@@ -1478,6 +1414,8 @@ EffResult DetectorResponse::total_prefactor(
             value = std::exp(ln_eta + ln_k);
             node_sig = tot_eff.eta_tot.node_frac_sigma(energy_keV, ec.cos_theta,
                                                        ec.phi_deg);
+            if (extrapolated_behind(tot_eff.eta_tot, ec.cos_theta))
+                ec.budget.model[SigmaBudget::BehindExtrapolation] = model_sigma::behind_extrapolation;
             break;
         }
     }
@@ -1539,7 +1477,7 @@ EffResult DetectorResponse::eps_total_impl(
         case TotEffTier::EtaTotTable: {
             bool clamped = false;
             const double ln_eta = tot_eff.eta_tot.eval_ln(
-                energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+                energy_keV, eta_cos_theta(tot_eff.eta_tot, ec.cos_theta), ec.phi_deg, clamped);
             if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
             double ln_k = 0.0;
             if (!grounding.empty()) {
@@ -1551,6 +1489,8 @@ EffResult DetectorResponse::eps_total_impl(
                     kernel_K(energy_keV, q, MuChoice::Total, t_src);
             node_sig = tot_eff.eta_tot.node_frac_sigma(energy_keV, ec.cos_theta,
                                                        ec.phi_deg);
+            if (extrapolated_behind(tot_eff.eta_tot, ec.cos_theta))
+                ec.budget.model[SigmaBudget::BehindExtrapolation] = model_sigma::behind_extrapolation;
             break;
         }
     }
@@ -2018,8 +1958,12 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         // than load wrongly. Only responses that actually use the tier are
         // stamped v3, so every existing file keeps its bytes and content_hash.
         const bool needs_v3 = !tot_eff.characterized();
+        // v4 = side & back coverage (see sm_xmlSerializationVersion).
+        const bool needs_v4 = (!eta_fep.cos_thetas.empty() && (eta_fep.cos_thetas.front() < 0.0))
+                              || (!tot_eff.eta_tot.empty() && !tot_eff.eta_tot.cos_thetas.empty()
+                                  && (tot_eff.eta_tot.cos_thetas.front() < 0.0));
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%i", needs_v3 ? 3 : (needs_v2 ? 2 : 1));
+        std::snprintf(buf, sizeof(buf), "%i", needs_v4 ? 4 : (needs_v3 ? 3 : (needs_v2 ? 2 : 1)));
         append_attrib(doc, root, "version", buf);
     }
 
@@ -2031,6 +1975,12 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, p, "profile", to_string(provenance.profile));
         append_attrib(doc, p, "nodeFepPrecision",
                       fmt_double(provenance.node_fep_precision));
+        if (provenance.precision_profile)
+            append_attrib(doc, p, "precisionProfile", to_string(*provenance.precision_profile));
+        if (provenance.back_coverage)
+            append_attrib(doc, p, "backCoverage", to_string(*provenance.back_coverage));
+        if (provenance.n_anchor_angles)
+            append_attrib(doc, p, "anchorAngles", std::to_string(*provenance.n_anchor_angles));
         append_attrib(doc, p, "fepWindowKeV",
                       fmt_double(provenance.fep_window_keV));
         append_attrib(doc, p, "generationSeed",
@@ -2221,6 +2171,14 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         if (const char* v = attrib_value(p, "createdUtc")) pr.created_utc = v;
         pr.profile = profile_from_string(attrib_value(p, "profile"));
         pr.node_fep_precision = attrib_double(p, "nodeFepPrecision", 0.003);
+        pr.precision_profile = precision_profile_from_string(attrib_value(p, "precisionProfile"));
+        pr.back_coverage = back_coverage_from_string(attrib_value(p, "backCoverage"));
+        if (const char* v = attrib_value(p, "anchorAngles")) {
+            char* end = nullptr;
+            const long n = std::strtol(v, &end, 10);
+            if ((end != v) && (*end == '\0') && (n > 0) && (n < 1000))
+                pr.n_anchor_angles = static_cast<int>(n);
+        }
         pr.fep_window_keV =
             attrib_double(p, "fepWindowKeV", kDefaultFepWindowKeV);
         if (const char* v = attrib_value(p, "generationSeed"))
@@ -2409,6 +2367,18 @@ uint64_t DetectorResponse::content_hash() const {
     h.text(provenance.created_utc);
     h.text(to_string(provenance.profile));
     h.number(provenance.node_fep_precision);
+    if (provenance.precision_profile) {
+        h.tag("precisionProfile");
+        h.text(to_string(*provenance.precision_profile));
+    }
+    if (provenance.back_coverage) {
+        h.tag("backCoverage");
+        h.text(to_string(*provenance.back_coverage));
+    }
+    if (provenance.n_anchor_angles) {
+        h.tag("anchorAngles");
+        h.integer(*provenance.n_anchor_angles);
+    }
     h.number(provenance.fep_window_keV);
     h.integer(static_cast<int64_t>(provenance.generation_seed));
     h.integer(provenance.kernel_n_rays);

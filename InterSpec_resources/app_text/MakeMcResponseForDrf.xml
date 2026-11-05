@@ -53,8 +53,8 @@
     near-field. All three profiles cover the <b>full front hemisphere</b>
     (source angle 0&#176; on-axis through 90&#176; grazing) and the detector&apos;s whole
     energy range; they differ only in the closest distance they model. (Sources
-    <i>behind</i> the detector face - angles &gt; 90&#176;, e.g. Marinelli
-    beakers - are not modeled by any profile.)</p>
+    <i>beside or behind</i> the detector - angles &gt; 90&#176; - are covered by the
+    separate <b>Side &amp; back</b> option.)</p>
     <ul>
     <li><b>Far-field only</b> - no near-field model at all. Accurate from
     roughly a few detector-widths outward; queries closer than that are flagged
@@ -69,6 +69,27 @@
     right against the endcap. Most Monte Carlo, but the only profile accurate at
     contact off-axis.</li>
     </ul></message>
+  <message id="mmr-back-coverage">Side &amp; back:</message>
+  <message id="mmr-back-coverage-none">None (front only)</message>
+  <message id="mmr-back-coverage-coarse">Coarse (default)</message>
+  <message id="mmr-back-coverage-fine">Fine</message>
+  <message id="mmr-tt-back-coverage"><p>Whether the response is also characterized for sources
+    <i>beside or behind</i> the detector - source angles past 90&#176; from the axis, for example
+    a source placed to the side of the detector in the Activity/Shielding fit.</p>
+    <ul>
+    <li><b>None</b> - the front hemisphere only. A source beside the detector is extrapolated with
+    a large uncertainty, and one behind the crystal is not modeled.</li>
+    <li><b>Coarse (default)</b> - 6 angles from 93&#176; to 180&#176; at each shape energy, at half
+    the precision of the front nodes. Adds roughly a tenth to the run time.</li>
+    <li><b>Fine</b> - 11 angles; for sources often placed beside or behind the detector.</li>
+    </ul>
+    <p>These are far-field nodes; close beside the detector the ray-traced geometry carries the
+    distance dependence, with a larger uncertainty. Behind the crystal the response is only as good
+    as the housing described there - give the housing layers a back thickness in the geometry.
+    The response's front values are the same whichever option is chosen.</p></message>
+  <message id="mmr-back-no-structure">The geometry describes nothing behind the crystal, so sources
+    behind the detector will see a bare crystal back; giving the housing a back thickness makes
+    them see the real detector's back.</message>
   <message id="mmr-precision">MC precision:</message>
   <message id="mmr-precision-fast">Fast (1% per node)</message>
   <message id="mmr-precision-normal">Normal (0.3% per node)</message>
@@ -140,6 +161,7 @@
   <message id="mmr-est-part-angular-box">{1} angles × {2} azimuths × {3} energies</message>
   <message id="mmr-est-part-anchors">{1} angle anchors × {2} energies</message>
   <message id="mmr-est-part-near">{1} near-field positions × {2} energies</message>
+  <message id="mmr-est-part-back">{1} side &amp; back angles × {2} energies</message>
   <message id="mmr-est-part-join">{1} + {2}</message>
   <message id="mmr-est-dur-model">very roughly {1}</message>
   <message id="mmr-est-dur-measuring">very roughly {1} (timing a short test run...)</message>
@@ -239,6 +261,8 @@
   <message id="dgi-layer-material-ph">blank = vacuum</message>
   <message id="dgi-layer-front">Front thickness</message>
   <message id="dgi-layer-side">Side thickness</message>
+  <message id="dgi-layer-back">Back thickness</message>
+  <message id="dgi-layer-back-ph">open</message>
   <message id="dgi-add-layer">Add layer</message>
   <message id="dgi-remove-layer">Remove layer</message>
   <message id="dgi-collimator-cb">Collimator (side shield)</message>
@@ -263,6 +287,6 @@
   <message id="dgi-err-bullet-wide">The front edge fillet radius must be less than the crystal radius.</message>
   <message id="dgi-err-bullet-long">The front edge fillet radius must be less than the crystal length.</message>
   <message id="dgi-err-bullet-dead">The dead layer leaves no room for the front edge fillet - reduce the fillet radius or the dead layer.</message>
-  <message id="dgi-err-layer">Each layer needs a front and/or side thickness (a blank material means a vacuum gap).</message>
+  <message id="dgi-err-layer">Each layer needs a front, side and/or back thickness (a blank material means a vacuum gap).</message>
   <message id="dgi-err-material">Material &apos;{1}&apos; was not found in the material database.</message>
 </messages>

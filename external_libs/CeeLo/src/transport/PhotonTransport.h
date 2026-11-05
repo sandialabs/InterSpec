@@ -49,6 +49,16 @@ class Geometry;
 struct PathSegment;
 struct ElectronDepositResult;
 
+/// Which detector-side electron walk to run (see ElectronCsda).
+enum class ElectronTransport : std::uint8_t {
+    /// Straight-line CSDA below 200 keV, Highland condensed-history walk above:
+    /// the validated default for FEP and total efficiency.
+    Fast,
+    /// Mixed elastic walk at every energy with EEDL-fitted large-angle
+    /// scattering (diffusion and backscatter at surfaces): spectrum fidelity.
+    Detailed,
+};
+
 /// Configuration for the transport simulation.
 struct TransportConfig {
     int max_compton_scatters = 40;  ///< N_max: force absorption after this many in-crystal Compton scatters.
@@ -108,6 +118,20 @@ struct TransportConfig {
     /// (studies/high_e_fep/FINDINGS.md).  Delta-ray production is still not
     /// modelled.
     bool enable_electron_csda = true;
+
+    /// The electron walk enable_electron_csda runs. Detailed fixes the
+    /// partial-deposit continuum of electrons born near a crystal surface or
+    /// dead-layer boundary (straight-line paths reach too far and never
+    /// backscatter) and costs a little speed; FEP and total move by ~0.2% or
+    /// less, so it is a spectrum-fidelity option. disable_moliere overrides it.
+    ElectronTransport electron_transport = ElectronTransport::Fast;
+
+    /// Electron-impact K-shell ionization in the Detailed walk: K x-rays from
+    /// the EEDL cross section, emitted like brems photons, with their energy
+    /// taken out of the local deposit (the stopping power already holds it).
+    /// Restores the E0 - E_K escape lines of electrons near a surface. Needs
+    /// ElectronTransport::Detailed; a spectrum-fidelity option.
+    bool enable_impact_ionization = false;
 
     // --- Diagnostic flags for GEANT4 comparison ---
 
@@ -174,6 +198,10 @@ struct FluorescenceRecord {
     bool fluorescence_escaped = false;    ///< Did the X-ray escape the scoring volume?
     double fluorescence_deposit_in_scoring = 0.0; ///< Energy deposited by X-ray in scoring (keV)
     bool from_compton = false;      ///< K vacancy left by a Compton collision, not PE
+    /// EADL subshell that filled the K vacancy (0: Auger or no K vacancy);
+    /// `k_line_family()` gives the x-ray's K-alpha / K-beta family.
+    uint8_t filling_subshell = 0;
+    bool from_impact = false;       ///< K vacancy from electron-impact ionization
 };
 
 /// Result of transporting a single photon through the detector.
@@ -220,6 +248,61 @@ struct TransportResult {
     /// Populated at every recursive transport_photon() call site (fluorescence,
     /// bremsstrahlung, pair annihilation). Zero-cost when empty.
     std::vector<EscapedPhoton> escaped_secondaries;
+
+    /// Fate of the first pair-production vertex and of the two annihilation
+    /// photons it produced. Populated only when
+    /// config.record_interactions == true, entirely from values the pair
+    /// branch has already computed: no extra random draws are made and no
+    /// branch outside the diagnostic guard is added, so transport results and
+    /// the random-number stream are bit-identical when diagnostics are off.
+    ///
+    /// Only the first pair vertex of a history is described. A pair vertex
+    /// inside an annihilation photon's own sub-history (possible only for an
+    /// in-flight photon above 1022 keV) belongs to that sub-history.
+    struct PairHistory {
+        /// One annihilation photon of the first pair vertex.
+        struct AnnihilationPhoton {
+            double emitted_energy_keV = 0.0;
+            double deposited_in_scoring_keV = 0.0;
+            double exit_energy_keV = 0.0;
+            bool escaped = false;
+            /// Compton scattered in the scoring volume before leaving it.
+            bool scattered_before_escape = false;
+        };
+
+        bool occurred = false;
+        /// Pair conversion happened inside the scoring volume.
+        bool in_scoring = false;
+        /// Positron annihilated in flight, so the photon pair is not 511/511.
+        bool annihilated_in_flight = false;
+        /// Positron left the geometry before annihilating, so no photon pair
+        /// was emitted (`annihilation` stays default).
+        bool positron_escaped = false;
+        /// Kinetic energy of the electron-positron pair, before escape (keV).
+        double pair_kinetic_energy_keV = 0.0;
+        /// Pair lepton kinetic energy deposited in the scoring volume (keV).
+        double lepton_deposit_in_scoring_keV = 0.0;
+        /// Bremsstrahlung energy emitted by the pair leptons (keV).
+        double lepton_brems_energy_keV = 0.0;
+        std::array<AnnihilationPhoton, 2> annihilation{};
+
+        /// Number of annihilation photons that left the detector geometry.
+        int escape_count() const
+        {
+            return (annihilation[0].escaped ? 1 : 0)
+                 + (annihilation[1].escaped ? 1 : 0);
+        }
+
+        /// Did any annihilation photon Compton scatter in the scoring volume
+        /// before escaping?
+        bool any_scattered_escape() const
+        {
+            return annihilation[0].scattered_before_escape
+                || annihilation[1].scattered_before_escape;
+        }
+    };
+
+    PairHistory pair_history;
 };
 
 /// Transport a single photon through the detector geometry.
@@ -248,8 +331,8 @@ TransportResult transport_photon(
     std::mt19937_64& rng);
 
 /// Walk an electron (or positron) from `position` through the detector
-/// geometry (ElectronCsda::deposited_in_scoring, with `config`'s
-/// disable_moliere and disable_brems).
+/// geometry with the walk `config` selects (electron_transport,
+/// disable_moliere, disable_brems).
 ElectronDepositResult walk_electron(const Eigen::Vector3d& position,
                                     const Eigen::Vector3d& direction,
                                     double KE_keV,

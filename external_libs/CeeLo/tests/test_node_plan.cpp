@@ -340,9 +340,19 @@ BOOST_AUTO_TEST_CASE(other_degenerate_options_rejected) {
         BOOST_CHECK_THROW(ResponseGenerator::generate(gd, o), std::runtime_error);
     }
 
-    for (const double ct : {1.0, 1.5}) {
+    // The front grid stays in front of the face plane: a non-positive cutoff would make front
+    //  nodes read as side & back ones.
+    for (const double ct : {1.0, 1.5, 0.0, -0.05}) {
         GenerationOptions o = tiny_options();
         o.cos_theta_min = ct;
+        BOOST_CHECK_THROW(ResponseGenerator::generate(gd, o), std::runtime_error);
+    }
+
+    // Side & back coverage is a fixed-grid full-MC option; the transfer mode would ignore it.
+    {
+        GenerationOptions o = tiny_options();
+        o.transfer_mode = true;
+        o.back_coverage = BackCoverage::Coarse;
         BOOST_CHECK_THROW(ResponseGenerator::generate(gd, o), std::runtime_error);
     }
 

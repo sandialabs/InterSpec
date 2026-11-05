@@ -429,7 +429,10 @@ padding-bottom: 1px;
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  
+  /* Dont stretch: the self-attenuation widget is a direct child, but the external-attenuation widgets are inside their
+     own container, so stretching made the self-attenuation box taller whenever the curve options were taller. */
+  align-items: center;
+
   /* flex: 1 1 auto; */
   gap: 10px;
 }
@@ -478,6 +481,43 @@ padding-bottom: 1px;
   font-size: small;
   /*padding-left: 40px;*/
   transform: scale(0.80);
+}
+
+/* Keep each checkbox on one line (Wt puts an inline `white-space: normal` on checkbox text), as a wrapped label makes
+   the options too tall for the fixed-height curve options stack. */
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCbDiv label,
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCbDiv label > span
+{
+  white-space: nowrap !important;
+}
+
+/* The per-curve "Shielded by other curves" checkboxes, in a row below the other checkboxes; spans both grid columns, so
+   scale from the left edge.  The curve options stack is given room for this extra row only while it is shown. */
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .ShieldingCurvesDiv
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  padding-left: 20px;
+  transform-origin: left center;
+}
+
+.RelActAutoGui .RelEffCurveOptsStack.ShowingShieldingCurves
+{
+  height: 84px;
+}
+
+/* The correction-function label and drop-down (only shown for Chebyshev configs), sharing one grid cell */
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .CorrFcnDiv
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 4px;
+  white-space: nowrap;
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > label

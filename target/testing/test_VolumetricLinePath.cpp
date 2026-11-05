@@ -3929,3 +3929,103 @@ BOOST_AUTO_TEST_CASE( LineProposalMixtureSweep, * boost::unit_test::disabled() )
   sm_volumetric_line_hemi_frac = save_hemi;
   sm_volumetric_line_hemi_ratio = save_ratio;
 }//BOOST_AUTO_TEST_CASE( LineProposalMixtureSweep )
+
+
+/** Sources BESIDE and BEHIND the detector (extended scenes): the line path, with the back face on
+ its hull and lines from behind the face plane kept, against the independent random reference -
+ which traces from each source point through the geometry as it is, and knows nothing of a face
+ plane.  Air off, so the comparison is the geometry and the response alone. */
+BOOST_AUTO_TEST_CASE( ExtendedLinePathVsReference )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<const Material> water = MaterialDB::instance()->material( "water" );
+  BOOST_REQUIRE( water );
+
+  struct Scene
+  {
+    const char *name;
+    GeometryType geom;
+    std::array<double,3> dims_cm;
+    double distance_cm, offset_cm;   //the offset is along x
+  };
+  const std::vector<Scene> scenes = {
+    { "end-on cylinder straddling the face plane", GeometryType::CylinderEndOn, { 2.0, 5.0, 0.0 }, 0.0, 9.0 },
+    { "sphere beside, behind the face plane",      GeometryType::Spherical,     { 3.0, 0.0, 0.0 }, -4.0, 10.0 },
+    { "box beside, centre behind the face",        GeometryType::Rectangular,   { 3.0, 3.0, 4.0 }, -2.0, 9.0 },
+    { "side-on cylinder beside",                   GeometryType::CylinderSideOn,{ 2.0, 5.0, 0.0 }, 0.0, 9.0 },
+    { "sphere directly behind",                    GeometryType::Spherical,     { 2.0, 0.0, 0.0 }, -20.0, 0.0 },
+  };
+
+  double worst = 0.0;
+  for( const Scene &sc : scenes )
+  {
+    for( const double energy : { 60.0, 661.7 } )
+    for( const bool air : { false, true } )
+    {
+      DistributedSrcCalcT<double> calc;
+      calc.m_geometry = sc.geom;
+      calc.m_materialIndex = 0;
+      calc.m_attenuateForAir = air;
+      calc.m_airTransLenCoef = air ? transmission_length_coefficient_air( energy ) : 0.0;
+      calc.m_isInSituExponential = false;
+      calc.m_inSituRelaxationLength = -1.0;
+      calc.m_srcVolumetricActivity = 1.0;
+      calc.m_normalizeByVolume = false;
+      calc.m_energy = energy;
+      calc.m_nuclide = nullptr;
+      calc.integral = 0.0;
+      calc.m_effResponse = det.mc_transfer;
+      calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+      calc.m_detector = detector_geom_from_config<double>( sc.geom, sc.distance_cm*cm,
+                                                           det.gd.transverse_half_extent()*cm, 0.0,
+                                                           sc.offset_cm*cm, 0.0 );
+      DistributedSrcCalcT<double>::ShellInfo shell;
+      shell.dims = { sc.dims_cm[0]*cm, sc.dims_cm[1]*cm, sc.dims_cm[2]*cm };
+      shell.trans_len_coef = transmition_length_coefficient( water.get(), energy );
+      shell.type = ShellType::Material;
+      calc.m_shells.push_back( shell );
+
+      // Clear of the detector, and genuinely past its face plane.
+      const double outer[3] = { shell.dims[0], shell.dims[1], shell.dims[2] };
+      BOOST_REQUIRE_GT( detector_enclosure_clearance( det.gd, sc.geom, outer, sc.distance_cm*cm,
+                                                      sc.offset_cm*cm, 0.0 ), 0.0 );
+      BOOST_REQUIRE_LT( detector_face_plane_clearance( sc.geom, outer, sc.distance_cm*cm ), 0.0 );
+
+      // The line path, two replicas.
+      double line_mean = 0.0;
+      std::shared_ptr<const VolumetricLineCache> extended_cache;
+      for( int k = 0; k < 2; ++k )
+      {
+        DistributedSrcCalcT<double> c = calc;
+        integrate_on_path( c, VolumetricIntegrator::Line, 1 << 16, sobol_replica( k ), true );
+        extended_cache = c.m_lineCache;
+        line_mean += 0.5 * c.integral;
+      }
+
+      // The independent reference (an extended cache attached so it measures the air the same way).
+      DistributedSrcCalcT<double> c = calc;
+      c.m_lineCache = extended_cache;
+      c.finalize_shell_coefficients();
+      VolRef::McRefOptions mc;
+      mc.n_samples = 1 << 21;
+      mc.sampling = VolRef::RefSampling::Uniform;
+      const VolRef::McRefResult ref = VolRef::reference_random( c, mc );
+
+      const double rel = line_mean/ref.value - 1.0;
+      const double sig = ref.std_err/ref.value;
+      BOOST_TEST_MESSAGE( "  " << sc.name << " @ " << energy << " keV" << (air ? ", air" : "") << ": line/ref " << std::showpos << std::fixed
+                          << std::setprecision(3) << 100.0*rel << "%" << std::noshowpos << " (ref +- "
+                          << 100.0*sig << "%)" );
+      BOOST_CHECK_MESSAGE( std::fabs( rel ) < std::max( 0.02, 4.0*sig ),
+                           sc.name << " @ " << energy << " keV: the line path is off the reference by "
+                           << 100.0*rel << "%" );
+      worst = std::max( worst, std::fabs( rel ) );
+    }//for( energies )
+  }//for( scenes )
+  BOOST_TEST_MESSAGE( "  worst |line/ref - 1|: " << 100.0*worst << "%" );
+}//BOOST_AUTO_TEST_CASE( ExtendedLinePathVsReference )

@@ -264,9 +264,33 @@ public:
 
     /// A secondary photon produced in source material (e.g., 511 keV from PP).
     struct SourceSecondaryPhoton {
-        Eigen::Vector3d position;   ///< Exit position from source material
-        Eigen::Vector3d direction;  ///< Exit direction
+        enum class Origin : std::uint8_t {
+            Unknown,
+            PairAnnihilation,
+            PairAnnihilationInFlight,
+            PhotoelectronBrems,
+            ComptonElectronBrems,
+            PairElectronBrems,
+            PrimaryElectronBrems,
+            SecondaryElectronBrems,
+            RadioactiveBetaBrems,
+            ConversionElectronBrems,
+            PrimaryPositronAnnihilation,
+            PrimaryPositronAnnihilationInFlight,
+            Fluorescence,
+            ImpactIonization   ///< K x-ray from electron-impact ionization
+        };
+
+        /// Exit phase-space coordinates for transported photons. The
+        /// `created_brems_photons` diagnostic uses the creation coordinates
+        /// instead, before photon transport.
+        Eigen::Vector3d position;
+        Eigen::Vector3d direction;
         double energy_keV;          ///< Photon energy
+        Origin origin = Origin::Unknown;
+        std::uint16_t compton_interactions = 0;
+        std::uint16_t rayleigh_interactions = 0;
+        bool pair_history = false;
     };
 
     /// A Compton recoil electron that escaped source material toward the detector.
@@ -284,15 +308,22 @@ public:
 
     /// Result of full MC transport through source material + shielding.
     struct SourceFullTransportResult {
+        struct TruthLabels {
+            std::uint16_t photoelectric_interactions = 0;
+            std::uint16_t compton_interactions = 0;
+            std::uint16_t rayleigh_interactions = 0;
+            std::uint16_t pair_production_interactions = 0;
+            bool pair_history = false;
+        };
+
         bool survived;              ///< Photon not absorbed
         Eigen::Vector3d position;   ///< Exit position
         Eigen::Vector3d direction;  ///< Exit direction (may have changed)
         double energy_keV;          ///< Exit energy (may have decreased from Compton)
 
         /// Secondary photons that exited the source geometry: 511 keV
-        /// annihilation gammas from PP, K x-rays from photoelectric
-        /// absorption, and bremsstrahlung from electrons stopping in source
-        /// material/shielding.
+        /// annihilation gammas from PP, and bremsstrahlung from electrons
+        /// stopping in source material/shielding.
         std::vector<SourceSecondaryPhoton> secondaries;
 
         /// Compton recoil electrons that escaped source material toward the detector.
@@ -310,7 +341,29 @@ public:
         /// is off. Must be multiplied into the EVENT weight by the caller
         /// (one weight per event, applied once at the tally).
         double bias_weight = 1.0;
+
+        /// Opt-in transport truth. All fields remain zero when diagnostics are
+        /// disabled. Updating these counters consumes no random numbers.
+        TruthLabels truth;
     };
+
+    /// Enable component truth labels for source-escape research campaigns.
+    /// Disabled by default; the analog transport and RNG stream are unchanged.
+    void set_record_truth_labels(bool enable) {
+        record_truth_labels_ = enable;
+    }
+    bool record_truth_labels() const { return record_truth_labels_; }
+
+    /// Enable bound-electron Doppler broadening for Compton collisions in
+    /// source material and shielding. Disabled by default so existing
+    /// efficiency calculations and RNG streams remain unchanged; the
+    /// FullSpecApprox source-escape campaign enables it explicitly.
+    void set_compton_doppler_enabled(bool enable) {
+        compton_doppler_enabled_ = enable;
+    }
+    bool compton_doppler_enabled() const {
+        return compton_doppler_enabled_;
+    }
 
     /// Compton-angle mixture biasing for the primary photon's first few
     /// Compton vertices in the source geometry: the scatter direction is
@@ -367,6 +420,40 @@ public:
         double energy_keV,
         std::mt19937_64& rng) const;
 
+    /// Result of transporting a primary electron or positron born inside the
+    /// source geometry. Escaped photons and escaped charged particles are kept
+    /// as separate measures: `photons` contains only bremsstrahlung,
+    /// annihilation, and photon-transport descendants.
+    struct SourcePrimaryElectronResult {
+        /// Brems photons at creation, before source photon transport. Populated
+        /// only when truth-label recording is enabled, so normal efficiency
+        /// transport has no diagnostic allocation or tally overhead.
+        std::vector<SourceSecondaryPhoton> created_brems_photons;
+        std::vector<SourceSecondaryPhoton> photons;
+        bool escaped = false;
+        SourceElectron escaped_electron;
+        double traversed_gcm2 = 0.0;
+        Eigen::Vector3d stop_position{0.0, 0.0, 0.0};
+        bool annihilated_in_flight = false;
+        double residual_KE_at_annih_keV = 0.0;
+    };
+
+    /// Transport an independently supplied electron/positron source through
+    /// source material and shielding. This is the public entry point used for
+    /// beta-decay and internal-conversion electrons; it does not depend on the
+    /// detector-directed source-electron efficiency switch.
+    ///
+    /// `brems_origin` labels bremsstrahlung photons produced by the primary
+    /// charged particle. Photon descendants retain their own physical origin.
+    SourcePrimaryElectronResult transport_source_electron(
+        const Eigen::Vector3d& position,
+        const Eigen::Vector3d& direction,
+        double kinetic_energy_keV,
+        std::mt19937_64& rng,
+        bool is_positron = false,
+        SourceSecondaryPhoton::Origin brems_origin =
+            SourceSecondaryPhoton::Origin::PrimaryElectronBrems) const;
+
     /// Result of checking whether a photon from outside can re-enter the
     /// Marinelli water volume (e.g., after exiting the crystal).
     struct MarinelliReentryInfo {
@@ -402,13 +489,43 @@ public:
     void set_source_brems(bool enable) { source_brems_enabled_ = enable; }
     bool source_brems_enabled() const { return source_brems_enabled_; }
 
+    /// Track pair-production positrons to rest/escape and include in-flight
+    /// annihilation (default on). A positron that escapes the source geometry
+    /// emits no source annihilation photons; with source-electron transport on
+    /// it is handed to the detector as a SourceElectron with is_positron set.
+    /// Off annihilates every positron at rest at the pair vertex (A/B only).
+    void set_source_positron_transport(bool enable) {
+        source_positron_transport_enabled_ = enable;
+    }
+    bool source_positron_transport_enabled() const {
+        return source_positron_transport_enabled_;
+    }
+
     /// Emit the K x-ray of a photoelectric K-shell vacancy in source material
     /// and shields (default on), transported through the remaining source
-    /// geometry like the other secondaries. It changes total efficiency and
-    /// the spectrum of high-Z sources and shields, never the FEP of the
-    /// emitted line. Off deposits the binding energy locally (A/B only).
+    /// geometry like the other secondaries (Origin::Fluorescence). It changes
+    /// total efficiency and the spectrum of high-Z sources and shields, never
+    /// the FEP of the emitted line. Off deposits the binding energy locally
+    /// (A/B only).
     void set_source_fluorescence(bool enable) { source_fluorescence_enabled_ = enable; }
     bool source_fluorescence_enabled() const { return source_fluorescence_enabled_; }
+
+    /// Emit electron-impact ionization K x-rays from electrons and positrons
+    /// in source material and shields (Origin::ImpactIonization), from the
+    /// EEDL K-shell cross section (Z <= 92): per step of a walked electron,
+    /// and over the whole slowing-down at the birth point of one that is not
+    /// walked. Off by default; spectrum fidelity and the full-spectrum
+    /// campaigns turn it on.
+    void set_source_impact_ionization(bool enable) { source_impact_ionization_enabled_ = enable; }
+    bool source_impact_ionization_enabled() const { return source_impact_ionization_enabled_; }
+
+    /// Include coherent (Rayleigh) scattering in source material and shields.
+    /// Enabled by default to preserve the general CeeLo transport behavior.
+    /// FullSpecApprox far-field source campaigns disable it because the v1
+    /// centered-sphere kernel treats elastic angular redistribution as
+    /// cancelling in the angle-integrated far field.
+    void set_rayleigh_enabled(bool enable) { rayleigh_enabled_ = enable; }
+    bool rayleigh_enabled() const { return rayleigh_enabled_; }
 
     /// Enable/disable geometric pre-check (electron ray must hit detector bounding cylinder).
     void set_source_electron_geom_check(bool enable) { source_electron_geom_check_ = enable; }
@@ -479,7 +596,12 @@ private:
 
     // Bremsstrahlung from electrons stopping in source material/shielding
     bool source_brems_enabled_ = true;
+    bool source_positron_transport_enabled_ = true;
     bool source_fluorescence_enabled_ = true;
+    bool source_impact_ionization_enabled_ = false;
+    bool record_truth_labels_ = false;
+    bool rayleigh_enabled_ = true;
+    bool compton_doppler_enabled_ = false;
 
     // Source electron transport
     bool source_electron_enabled_ = false;
@@ -596,6 +718,16 @@ public:
     ///   Returns 0.0 for Point (no material volume) when false.
     double min_distance_to_boundary(const Eigen::Vector3d& position,
                                     bool include_shields = true) const;
+
+    /// Conservative clearance from `position` to the nearest boundary of the
+    /// connected region occupied by `material`.
+    ///
+    /// Returns zero when that proof is not cheap (for example, a particle born
+    /// in a shield layer of a multi-material geometry), which simply selects
+    /// the full charged-particle geometry walk.
+    double min_distance_within_material(
+        const Eigen::Vector3d& position,
+        const Material& material) const;
 
     /// A segment through a single material layer (for source transport).
     struct SourcePathSegment {

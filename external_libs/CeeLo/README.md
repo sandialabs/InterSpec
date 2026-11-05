@@ -14,10 +14,14 @@ shielding around it, and a source configuration, and it computes:
 - **Total efficiency** — probability it deposits any energy at all
 - **Pulse-height spectrum** — energy-deposit histogram, in a format spectral
   analysis software can read. `enable_spectrum_fidelity(true)` adds the detector physics
-  that shapes the spectrum without moving FEP or total: x-rays from Compton K-shell
-  vacancies, which fill out the K x-ray escape peaks above ~300 keV
+  that shapes the spectrum without moving FEP or total (a detailed electron walk that
+  diffuses and backscatters at surfaces, x-rays from Compton K-shell vacancies), at
+  ~1.3× the CPU time for HPGe below 1 MeV, rising to 3–6× for MeV lines in NaI or a small
+  CZT
 - **True-coincidence (cascade) summing corrections** — summing-in and
   summing-out factors for multi-gamma decays
+- **A full-spectrum approximation** — fitted, Monte-Carlo-free operators that
+  predict whole pulse-height spectra in milliseconds (see below)
 
 Sources can be points, cylinders (solid or annular), boxes (solid or hollow
 shells), spheres (solid or void-centre shells), or Marinelli beakers — each with
@@ -65,6 +69,40 @@ The trade is deliberate: CeeLo does photon transport (with the electron physics
 needed to get photon deposits right) and nothing else — no neutrons, no hadronic
 physics, no optical photons, no beamline. It is validated from 30 keV to 3 MeV;
 its photon data span 10 keV – 20 MeV.
+
+---
+
+## Full-spectrum approximation
+
+The Monte Carlo engine answers one configuration in seconds. Fitting activity and
+shielding to a measured spectrum needs whole spectra for arbitrary source, shield,
+distance and environment in milliseconds, and differentiable in the shield
+parameters. The full-spectrum approximation provides that by composing separately
+fitted operators, each a compact coefficient payload trained on labelled CeeLo
+Monte Carlo truth:
+
+- **source escape** — photons leaving a shielded source (uncollided and
+  Rayleigh-only lines, single/double/multiple Compton, secondaries, the shield's
+  own K and L x-rays);
+- **charged-particle source** — bremsstrahlung, annihilation photons and shield
+  K and L x-rays from β⁻/β⁺/conversion electrons in their matrix;
+- **detector response** — the deposited-energy spectrum per incident photon
+  (line atoms plus continua), including the response to a scattered field from
+  any direction and a finite source distance;
+- **environment scatter** — air and ground scatter reaching the detector (not
+  yet composed with the other three).
+
+Because the approximation is fitted to CeeLo's spectra, spectral fidelity —
+continuum shape, escape peaks, x-ray lines — matters here as much as the two
+efficiencies.
+
+**Status:** the payloads are regenerated from this source tree by the bake drivers
+in `tools/full_spectrum/` ([runbook](tools/full_spectrum/README.md)) and are not
+committed yet. The source-escape and charged-particle payloads await a re-bake with
+their shield x-ray components; the detector bake still misses its full-energy-atom
+gate, and the environment campaign has not reached publication. Design, accuracy and the history of approaches tried
+are in [DESIGN.md](DESIGN.md#full-spectrum-approximation); open items lead
+[TODO.md](TODO.md).
 
 ---
 
@@ -269,11 +307,13 @@ regeneration instructions are in
 
 | Data | Source |
 |---|---|
-| Photon cross-sections (photoelectric, K-shell photoelectric, Compton, Rayleigh, pair), Z=1–98 (H–Cf), 10 keV–20 MeV | Direct **EPICS2023 EPDL** records, with process-specific grids retaining thresholds and absorption-edge sides |
+| Photon cross-sections (photoelectric, K-shell photoelectric, Compton, Rayleigh, pair), Z=1–98 (H–Cf), 10 keV–20 MeV; L1–L3 photoelectric shares for Z=69–98 | Direct **EPICS2023 EPDL** records, with process-specific grids retaining thresholds and absorption-edge sides |
 | Incoherent scattering functions S(x,Z), coherent Rayleigh sampling CDFs | Direct **EPICS2023 EPDL**; form factors are used during offline CDF generation but are not embedded as runtime lookup tables; Compton-profile support and atomic weights via BSD-licensed [xraylib](https://github.com/tschoonj/xraylib) 4.2.1 |
 | Bremsstrahlung spectra (Seltzer–Berger), Z=1–92 | Public-domain **NIST EPQ** at pinned commit `ce1e589`, with one fixed low-κ interpolation rule; Np–Cf reuse the uranium table |
-| Atomic relaxation: K and L fluorescence yields, lines, Coster–Kronig (Z=1–99 for decay daughters) | Direct **EPICS2023 EADL** MF=28/MT=533 |
+| Atomic relaxation: K and L fluorescence yields, lines (energies from EADL's subshell binding energies), Coster–Kronig (Z=1–99 for decay daughters) | Direct **EPICS2023 EADL** MF=28/MT=533 |
 | Electron stopping powers | Direct **NIST ESTAR** collision and radiative values for every Z=1–92 at all 53 nodes from 10 keV–20 MeV; Np–Cf reuse the uranium values |
+| Electron elastic transport moments (spectrum-fidelity walk), Z=1–92 | Direct **EPICS2023 EEDL** MF=23/26 MT=525 |
+| Electron-impact K-shell ionization (spectrum fidelity), Z=1–92 | Direct **EPICS2023 EEDL** MF=23 MT=534 |
 | Material compositions | **ICRU Report 37** (air), **IAEA-TECDOC-1011**, CRC Handbook |
 | Nuclear decay data (cascade summing, optional) | **ENSDF** via [SandiaDecay](https://github.com/sandialabs/SandiaDecay) |
 
@@ -339,13 +379,16 @@ src/            The library
   efficiency/     EfficiencyCalculator — the main entry point
   export/         GDML + GEANT4 macro export
   geometry/       Ray tracing, attenuator shells, source geometry
-  io/             Storable detector response, efficiency transfer (mostly optional)
+  full_spectrum/  Full-spectrum approximation operators and their composition
+  io/             Storable detector response, efficiency transfer, environment-scatter
+                  payloads (mostly optional)
   materials/      Material definitions and built-ins
   physics/        Electron CSDA, stopping powers, multiple scattering
   transport/      Photon transport: Compton, PE, Rayleigh, pair, fluorescence
 examples/       Runnable examples and benchmark configurations
 tests/          Boost.Test suites + reference data
-tools/          Cross-section regeneration, GEANT4 validation harness
+tools/          Cross-section regeneration, GEANT4 validation harness,
+                full-spectrum campaigns, fitters and bake drivers
 profiling/      The GEANT4 validation gate script
 visualization/  Dependency-free WebGL viewer for exported GDML geometries
 ```

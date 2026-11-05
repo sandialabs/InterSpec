@@ -1107,31 +1107,29 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
     }//if( html_format ) / else
   }//if( using self attenuation )
   
-  if( !external_attens.empty() )
+  // There may be no self-attenuation term before the external attenuations, and undefined external attenuations are
+  //  skipped, so only add " * " separators between terms actually written.
+  string ext_atten_eqn;
+  for( const PhysModelShield<double> &atten : external_attens )
   {
-    eqn += " * [";
-    
-    for( size_t i = 0; i < external_attens.size(); ++i )
+    if( !atten.material && ((atten.atomic_number < 0.9) || (atten.atomic_number > 98.1)) )
+      continue;
+
+    ext_atten_eqn += (ext_atten_eqn.empty() ? "" : " * ");
+    const shared_ptr<const Material> &mat = atten.material;
+    const string mu_name = mat ? cleanup_mat_name(mat) : SpecUtils::printCompact(atten.atomic_number, 3);
+    const string ad_str = SpecUtils::printCompact(atten.areal_density/PhysicalUnits::g_per_cm2, 3);
+    if( html_format )
     {
-      const PhysModelShield<double> &atten = external_attens[i];
-      if( !atten.material && ((atten.atomic_number < 0.9) || (atten.atomic_number > 98.1)) )
-        continue;
-        
-      eqn += (i ? " * " : "");
-      const shared_ptr<const Material> &mat = atten.material;
-      const string mu_name = mat ? cleanup_mat_name(mat) : SpecUtils::printCompact(atten.atomic_number, 3);
-      const string ad_str = SpecUtils::printCompact(atten.areal_density/PhysicalUnits::g_per_cm2, 3);
-      if( html_format )
-      { 
-        eqn += "exp(-" + ad_str + "*μ<sub>" + mu_name + "</sub>)";
-      }else
-      {
-        eqn += "exp(-" + ad_str + "*μ_" + mu_name + ")";
-      }//if( html_format ) / else
-    }//for( size_t i = 0; i < external_attens.size(); ++i )
-    
-    eqn += "]";
-  }//if( !external_attens.empty() )
+      ext_atten_eqn += "exp(-" + ad_str + "*μ<sub>" + mu_name + "</sub>)";
+    }else
+    {
+      ext_atten_eqn += "exp(-" + ad_str + "*μ_" + mu_name + ")";
+    }//if( html_format ) / else
+  }//for( const PhysModelShield<double> &atten : external_attens )
+
+  if( !ext_atten_eqn.empty() )
+    eqn += (eqn.empty() ? "[" : " * [") + ext_atten_eqn + "]";
 
   eqn += (eqn.empty() ? "" : " * ");
   eqn += "[Det. Eff.]";

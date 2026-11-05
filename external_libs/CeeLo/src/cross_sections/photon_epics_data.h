@@ -59,10 +59,11 @@ struct PhotonEpicsElementData {
     PhotonProcessCurve pair_production;   // EPDL MF=23 MT=516
     PhotonProcessCurve photoelectric;     // EPDL MF=23 MT=522
     PhotonProcessCurve k_photoelectric;   // EPDL MF=23 MT=534
+    PhotonAngularCurve form_factor;        // EPDL MF=27 MT=502
     PhotonAngularCurve scattering_function; // EPDL MF=27 MT=504
 };
 
-static_assert(sizeof(PhotonEpicsElementData) == 68,
+static_assert(sizeof(PhotonEpicsElementData) == 80,
               "Per-element photon descriptors must remain compact");
 
 /// Hand-maintained declarations of the generated tables. The generated

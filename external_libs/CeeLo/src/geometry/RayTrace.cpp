@@ -179,13 +179,22 @@ std::pair<double, double> Geometry::outer_z_extent() const {
         z_max += dead_layer_->back;
     }
 
-    // Attenuators may extend further
+    // Attenuators may extend further. trace_ray() stacks each shell's front on
+    // the previous shell's (front_z_min = inner_z_min - front_thickness), so a
+    // stack of layers that all start at z_start = 0 -- the GeometryDescriptor
+    // convention -- reaches further forward than any single z_start - front.
+    // The envelope encloses both, so a geometry it already enclosed keeps the
+    // same envelope.
+    double shell_z_min = 0.0;
+    double shell_z_max = length_;
     for (const auto& att : attenuators_) {
         z_min = std::min(z_min, att.z_start - att.front_thickness);
         z_max = std::max(z_max, att.z_end);
+        shell_z_min = std::min(shell_z_min - att.front_thickness, att.z_start);
+        shell_z_max = std::max(shell_z_max, att.z_end);
     }
 
-    return {z_min, z_max};
+    return {std::min(z_min, shell_z_min), std::max(z_max, shell_z_max)};
 }
 
 bool Geometry::ray_hits_outer_boundary(const Eigen::Vector3d& origin,
@@ -632,6 +641,81 @@ void Geometry::trace_box_geometry(
               [](const PathSegment& a, const PathSegment& b) {
                   return a.t_start < b.t_start;
               });
+}
+
+
+double Geometry::safety_distance(const Eigen::Vector3d& p) const {
+    double d = std::numeric_limits<double>::infinity();
+    auto plane_z = [&](double z0) { d = std::min(d, std::abs(p.z() - z0)); };
+    const double rho = std::hypot(p.x(), p.y());
+
+    const double t_front = dead_layer_ ? dead_layer_->front : 0.0;
+    const double t_side  = dead_layer_ ? dead_layer_->side  : 0.0;
+    const double t_back  = dead_layer_ ? dead_layer_->back  : 0.0;
+    plane_z(0.0);
+    plane_z(length_);
+    if (dead_layer_) {
+        plane_z(t_front);
+        plane_z(length_ - t_back);
+    }
+
+    double inner_z_min = 0.0, inner_z_max = length_;
+    if (shape_ == DetectorShape::Box) {
+        auto box = [&](double hx, double hy) {
+            d = std::min({d, std::abs(std::abs(p.x()) - hx), std::abs(std::abs(p.y()) - hy)});
+        };
+        box(half_x_, half_y_);
+        if (dead_layer_) box(half_x_ - t_side, half_y_ - t_side);
+        double hx = half_x_, hy = half_y_;
+        for (const auto& att : attenuators_) {
+            hx += att.side_thickness;
+            hy += att.side_thickness;
+            inner_z_min = std::min(inner_z_min - att.front_thickness, att.z_start);
+            inner_z_max = std::max(inner_z_max, att.z_end);
+            box(hx, hy);
+            plane_z(inner_z_min);
+            plane_z(inner_z_max);
+        }
+        return d;
+    }
+
+    auto cylinder = [&](double r) { d = std::min(d, std::abs(rho - r)); };
+    cylinder(radius_);
+    if (dead_layer_) cylinder(radius_ - t_side);
+    if (bore_hole_) {
+        const double r_b = bore_hole_->radius;
+        const double z_apex = length_ - bore_hole_->depth;
+        cylinder(r_b);
+        plane_z(z_apex);
+        if (bore_hole_->rounded_tip) {
+            const Eigen::Vector3d c(0.0, 0.0, z_apex + r_b);
+            d = std::min(d, std::abs((p - c).norm() - r_b));
+        }
+    }
+    if (bullet_radius_ > 0.0) {
+        auto torus = [&](const FrontFillet& f) {
+            d = std::min(d, std::abs(std::hypot(rho - f.rho_c, p.z() - f.z_c) - f.r_b));
+        };
+        torus(make_front_fillet(radius_, 0.0, bullet_radius_));
+        if (dead_layer_) {
+            const double r_b_active = std::max(
+                0.0, bullet_radius_ - std::max(t_front, t_side));
+            if (r_b_active > 0.0)
+                torus(make_front_fillet(radius_ - t_side, t_front, r_b_active));
+            else
+                d = 0.0;  // degenerate active corner: no claim
+        }
+    }
+    double r = radius_;
+    for (const auto& att : attenuators_) {
+        r += att.side_thickness;
+        inner_z_min = std::min(inner_z_min - att.front_thickness, att.z_start);
+        inner_z_max = std::max(inner_z_max, att.z_end);
+        cylinder(r);
+        plane_z(inner_z_min);
+        plane_z(inner_z_max);
+    }
+    return d;
 }
 
 
