@@ -582,8 +582,6 @@
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
   <message id="app-tt-det-disp">当前选定的探测器。点击选择不同的探测器或修改此探测器。</message>
-  <message id="app-det-select-txt">点击选择</message>
-  <message id="app-det-select-txt-mobile">轻触选择</message>
   <message id="app-default-manual-det-name">用户定义的探测器</message>
 
 

@@ -22,10 +22,12 @@
  */
 #include "InterSpec_config.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
 #include <iomanip>
+#include <iostream>
 
 #include <Wt/WText.h>
 #include <Wt/WString.h>
@@ -47,6 +49,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/DrfAppearance.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -62,21 +65,23 @@ Shielding2DView::Shielding2DView( const std::vector<ShieldingSourceFitCalc::Shie
                                   double detectorDistance,
                                   double detectorDiameter,
                                   double sourceOffset0,
-                                  double sourceOffset1 )
+                                  double sourceOffset1,
+                                  std::shared_ptr<const DetectorPeakResponse> drf )
   : Wt::WContainerWidget(),
     m_shieldings( shieldings ),
     m_sources( sources ),
     m_geometry( geometry ),
     m_detectorDistance( detectorDistance ),
     m_detectorDiameter( detectorDiameter ),
-    m_sourceOffsets{ sourceOffset0, sourceOffset1 }
+    m_sourceOffsets{ sourceOffset0, sourceOffset1 },
+    m_drf( drf )
 {
   setStyleClass("Shielding2DView");
   
   // Load JS and CSS
   Wt::WApplication *app = Wt::WApplication::instance();
   app->require("InterSpec_resources/d3.v3.min.js", "d3.v3.js");
-  app->require("InterSpec_resources/Shielding2DView.js?v=2");
+  app->require("InterSpec_resources/Shielding2DView.js?v=4");
   app->useStyleSheet("InterSpec_resources/Shielding2DView.css");
   
   defineJavaScript();
@@ -116,7 +121,8 @@ std::string createShieldingDiagramJson(
     double detectorDistance,
     double detectorDiameter,
     double sourceOffset0,
-    double sourceOffset1
+    double sourceOffset1,
+    std::shared_ptr<const DetectorPeakResponse> drf
 )
 {
   nlohmann::json j;
@@ -159,6 +165,28 @@ std::string createShieldingDiagramJson(
   //  The JS interprets them per geometry (see Shielding2DView/Shielding3DView).
   j["sourceOffset0"] = sourceOffset0 / PhysicalUnits::mm;
   j["sourceOffset1"] = sourceOffset1 / PhysicalUnits::mm;
+
+  // For the 2D view: the instrument's side-view icon (mm, with the detector face centre at (0,0);
+  //  see DrfAppearance) and its crystal and layers (the 3D view's profiles, without the 3D model).
+  if( drf )
+  {
+    const shared_ptr<const DrfAppearance> look = drf->appearance();
+    if( look && !look->icon_svg.empty() )
+    {
+      try
+      {
+        const array<double,4> vb = look->icon_view_box();
+        j["detectorIcon"] = { {"uri", look->icon_data_uri()}, {"viewBox", {vb[0], vb[1], vb[2], vb[3]}} };
+      }catch( std::exception &e )
+      {
+        cerr << "createShieldingDiagramJson: ignoring the DRF's icon: " << e.what() << endl;
+      }
+    }//if( an icon )
+
+    const string det_json = Shielding3DView::createDetectorJson( drf, false );
+    if( det_json != "null" )
+      j["detector"] = nlohmann::json::parse( det_json );
+  }//if( drf )
 
   j["fitSources"] = nlohmann::json::array();
   for( const ShieldingSourceFitCalc::SourceFitDef &src : sources )
@@ -346,7 +374,7 @@ std::string createShieldingDiagramJson(
 std::string Shielding2DView::createJsonData() const
 {
   return createShieldingDiagramJson( m_shieldings, m_sources, m_geometry, m_detectorDistance,
-                                     m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
+                                     m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1], m_drf );
 }
 
 void Shielding2DView::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
@@ -355,7 +383,8 @@ void Shielding2DView::updateData( const std::vector<ShieldingSourceFitCalc::Shie
                                   double detectorDistance,
                                   double detectorDiameter,
                                   double sourceOffset0,
-                                  double sourceOffset1 )
+                                  double sourceOffset1,
+                                  std::shared_ptr<const DetectorPeakResponse> drf )
 {
   m_shieldings = shieldings;
   m_sources = sources;
@@ -364,6 +393,7 @@ void Shielding2DView::updateData( const std::vector<ShieldingSourceFitCalc::Shie
   m_detectorDiameter = detectorDiameter;
   m_sourceOffsets[0] = sourceOffset0;
   m_sourceOffsets[1] = sourceOffset1;
+  m_drf = drf;
 
   // Update JavaScript chart with new data
   if( isRendered() )
@@ -395,7 +425,8 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
   setStyleClass("Shielding3DView");
 
   Wt::WApplication *app = Wt::WApplication::instance();
-  app->require("InterSpec_resources/Shielding3DView.js?v=7");
+  app->require("InterSpec_resources/GltfMini.js?v=2");
+  app->require("InterSpec_resources/Shielding3DView.js?v=8");
   app->useStyleSheet("InterSpec_resources/Shielding3DView.css");
 
   defineJavaScript();
@@ -417,47 +448,64 @@ std::string Shielding3DView::createJsonData() const
 }
 
 
-std::string Shielding3DView::createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf )
+std::string Shielding3DView::createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                                 const bool include_exterior )
 {
+  nlohmann::json j = nlohmann::json::object();
+
   const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->geometry() : nullptr;
-  if( !gd )
-    return "null";
-
-  // buildModel writes (unused here) tooltip text through WString::tr
-  InterSpec *viewer = InterSpec::instance();
-  if( viewer )
-    viewer->useMessageResourceBundle( "DetectorGeometryDiagram" );
-
-  const DetectorGeometryDiagram::Model model = DetectorGeometryDiagram::buildModel( *gd );
-
-  nlohmann::json regions = nlohmann::json::array();
-  for( const DetectorGeometryDiagram::Region &region : model.regions )
+  if( gd )
   {
-    if( region.kind == "void" )  //vacuum gaps and the bore are left empty
-      continue;
+    // buildModel writes (unused here) tooltip text through WString::tr
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      viewer->useMessageResourceBundle( "DetectorGeometryDiagram" );
 
-    nlohmann::json profile = nlohmann::json::array();
-    for( const DetectorGeometryDiagram::Plane &p : region.profile )
-      profile.push_back( { p.z, p.rmin, p.rmax } );
+    const DetectorGeometryDiagram::Model model = DetectorGeometryDiagram::buildModel( *gd );
 
-    nlohmann::json r;
-    r["kind"] = region.kind;
-    r["profile"] = profile;
-    regions.push_back( r );
-  }//for( each region )
+    nlohmann::json regions = nlohmann::json::array();
+    for( const DetectorGeometryDiagram::Region &region : model.regions )
+    {
+      if( region.kind == "void" )  //vacuum gaps and the bore are left empty
+        continue;
 
-  if( regions.empty() )
+      nlohmann::json profile = nlohmann::json::array();
+      for( const DetectorGeometryDiagram::Plane &p : region.profile )
+        profile.push_back( { p.z, p.rmin, p.rmax } );
+
+      nlohmann::json r;
+      r["kind"] = region.kind;
+      r["profile"] = profile;
+      regions.push_back( r );
+    }//for( each region )
+
+    if( !regions.empty() )
+    {
+      const vector<double> &dims = gd->dimensions_cm;
+
+      j["box"] = model.box;
+      // A box crystal's y half-extent exceeds its x half-extent (the profiles' "radius") by the same
+      //  amount for the crystal and every layer, since each layer grows both by its side thickness.
+      j["boxDy"] = (model.box && (dims.size() >= 2)) ? (dims[1] - dims[0]) : 0.0;
+      j["endcapOffset"] = gd->endcap_front_offset_cm();
+      j["regions"] = regions;
+    }//if( !regions.empty() )
+  }//if( gd )
+
+  const shared_ptr<const DrfAppearance> look = drf ? drf->appearance() : nullptr;
+  if( include_exterior && look && !look->model_gltf.empty() )
+  {
+    try
+    {
+      j["exterior"] = nlohmann::json::parse( look->model_gltf );
+    }catch( std::exception &e )
+    {
+      cerr << "Shielding3DView::createDetectorJson: ignoring the DRF's model: " << e.what() << endl;
+    }
+  }//if( a model )
+
+  if( j.empty() )
     return "null";
-
-  const vector<double> &dims = gd->dimensions_cm;
-
-  nlohmann::json j;
-  j["box"] = model.box;
-  // A box crystal's y half-extent exceeds its x half-extent (the profiles' "radius") by the same
-  //  amount for the crystal and every layer, since each layer grows both by its side thickness.
-  j["boxDy"] = (model.box && (dims.size() >= 2)) ? (dims[1] - dims[0]) : 0.0;
-  j["endcapOffset"] = gd->endcap_front_offset_cm();
-  j["regions"] = regions;
 
   return j.dump( -1, ' ', false, nlohmann::json::error_handler_t::replace );
 }//createDetectorJson(...)
@@ -557,7 +605,7 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   m_viewHolder->setPositionScheme( Wt::PositionScheme::Relative );
 
   // Create initial 2D view
-  m_2DView = m_viewHolder->addNew<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
+  m_2DView = m_viewHolder->addNew<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1], m_drf );
   fill_view_holder( m_2DView );
 
   WContainerWidget *type_row = m_layout->addWidget( std::make_unique<WContainerWidget>() );
@@ -623,7 +671,7 @@ void ShieldingDiagramDialog::updateData( const std::vector<ShieldingSourceFitCal
 
   // Update whichever view(s) exist, so switching views shows updated data.
   if( m_2DView )
-    m_2DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1 );
+    m_2DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1, drf );
 
   if( m_3DView )
     m_3DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1, drf );
@@ -676,7 +724,7 @@ void ShieldingDiagramDialog::switchView( bool show3D )
       m_3DView = nullptr;
     }
 
-    m_2DView = m_viewHolder->addNew<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
+    m_2DView = m_viewHolder->addNew<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1], m_drf );
     fill_view_holder( m_2DView );
   }//if( !show3D && !m_2DView )
 }

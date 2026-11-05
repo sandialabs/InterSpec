@@ -1,7 +1,7 @@
 /* Shielding3DView.js - WebGL version */
 
-// `detector` is the DRF's geometry (see Shielding3DView::createDetectorJson), or null to draw a
-//  placeholder detector.
+// `detector` is the DRF's geometry and/or exterior model (see Shielding3DView::createDetectorJson;
+//  the model is read with GltfMini.js), or null to draw a placeholder detector.
 Shielding3DView = function(id, data, detector) {
   var container = document.getElementById(id);
   if (!container) return null;
@@ -545,7 +545,7 @@ Shielding3DView = function(id, data, detector) {
           gl.disable(gl.POLYGON_OFFSET_FILL);
       }
 
-      gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, gl.UNSIGNED_SHORT, 0);
+      gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, mesh.buffer.indexType || gl.UNSIGNED_SHORT, 0);
     }
 
     // --- Draw distance annotation overlay ---
@@ -692,14 +692,21 @@ Shielding3DView.prototype.setData = function(data, detector) {
     gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshData.normal), gl.STATIC_DRAW);
     
+    // 16-bit indices unless the mesh has too many vertices for them (a detailed detector model)
+    var use32 = (meshData.position.length / 3) > 65535;
+    if (use32 && !gl.getExtension('OES_element_index_uint'))
+      use32 = false;  // (every WebGL we support has it)
+
     var idxBuf = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(meshData.indices), gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, use32 ? new Uint32Array(meshData.indices)
+                                                 : new Uint16Array(meshData.indices), gl.STATIC_DRAW);
     
     return {
       position: posBuf,
       normal: normBuf,
       indices: idxBuf,
+      indexType: use32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
       numElements: meshData.indices.length
     };
   }
@@ -912,7 +919,21 @@ Shielding3DView.prototype.setData = function(data, detector) {
   var detHoverCenter, detHoverRadius, detFarZ, detTransverse;
 
   var det = this.detector;
-  if (det && det.regions && det.regions.length) {
+  var hasRegions = !!(det && det.regions && det.regions.length);
+
+  // The instrument's exterior model, if the DRF has one (see DrfAppearance)
+  var exterior = null;
+  if (det && det.exterior && (typeof GltfMini !== 'undefined')) {
+    try {
+      exterior = GltfMini.parse(det.exterior);
+    } catch (e) {
+      console.log('Shielding3DView: could not read the detector model: ' + e);
+    }
+    if (exterior && !exterior.length)
+      exterior = null;
+  }
+
+  if (hasRegions) {
     // The DRF's own geometry, to scale: the crystal face sits `endcapOffset` behind the detector face.
     var faceZ = detDistance + det.endcapOffset * CM;
     var boxDy = det.box ? (det.boxDy || 0) : 0;
@@ -950,9 +971,9 @@ Shielding3DView.prototype.setData = function(data, detector) {
         twoSided: true
       });
     }
-  } else {
-    // No geometry recorded: a placeholder cylinder of the DRF's diameter (as long as it is wide),
-    //  with a cartoon instrument body behind it.
+  } else if (!exterior) {
+    // No geometry or model recorded: a placeholder cylinder of the DRF's diameter (as long as it is
+    //  wide), with a cartoon instrument body behind it.
     var detDiam = (data.detectorDiameter !== undefined) ? (data.detectorDiameter * MM) : (3.0 * INCH);
     var detRad = detDiam / 2.0;
     var detLen = detDiam;
@@ -990,6 +1011,57 @@ Shielding3DView.prototype.setData = function(data, detector) {
     detFarZ = detDistance + detLen + boxDim;
     detTransverse = Math.max(boxDim/2, handY + handH/2, detRad);
   }
+
+  if (exterior) {
+    // glTF metres, +Y up, looking along +Z, origin at the detector face.  The scene's detector looks
+    //  along -Z from its face at z = detDistance, so this is a 180 degree turn about Y:
+    //  (x, y, z) -> (offX - 1000x, offY + 1000y, detDistance - 1000z).
+    var METRE = 1000 * MM;
+    var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    var parts = exterior.map(function(part) {
+      var P = part.position, N = part.normal;
+      var pos = new Float32Array(P.length), nrm = new Float32Array(N.length);
+      for (var i = 0; i < P.length; i += 3) {
+        pos[i]   = offX - METRE * P[i];
+        pos[i+1] = offY + METRE * P[i+1];
+        pos[i+2] = detDistance - METRE * P[i+2];
+        nrm[i] = -N[i];  nrm[i+1] = N[i+1];  nrm[i+2] = -N[i+2];
+        for (var k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k], pos[i+k]);
+          hi[k] = Math.max(hi[k], pos[i+k]);
+        }
+      }
+      return { position: pos, normal: nrm, indices: part.indices, color: part.color };
+    });
+
+    // See-through when the DRF's crystal is drawn inside it, else as the model colours it.
+    var modelCenter = [0.5*(lo[0] + hi[0]), 0.5*(lo[1] + hi[1]), 0.5*(lo[2] + hi[2])];
+    for (var pi = 0; pi < parts.length; pi++) {
+      var c = parts[pi].color;
+      var alpha = hasRegions ? Math.min(c[3], 0.2) : c[3];
+      meshes.push({
+        buffer: createBufferInfo(gl, parts[pi]),
+        color: [c[0], c[1], c[2], alpha],
+        matrix: this.Mat4.create(),
+        center: modelCenter,
+        transparent: (alpha < 1.0),
+        twoSided: true
+      });
+    }
+
+    // Framing and hover cover the whole instrument (and any crystal standing outside it).
+    var modelTransverse = Math.sqrt(Math.pow(Math.max(hi[0] - offX, offX - lo[0]), 2)
+                                    + Math.pow(Math.max(hi[1] - offY, offY - lo[1]), 2));
+    var frontZ = Math.min(lo[2], detDistance), backZ = hi[2];
+    if (hasRegions) {
+      backZ = Math.max(backZ, detFarZ);
+      modelTransverse = Math.max(modelTransverse, detTransverse);
+    }
+    detFarZ = backZ;
+    detTransverse = modelTransverse;
+    detHoverCenter = [offX, offY, 0.5*(frontZ + backZ)];
+    detHoverRadius = 1.05 * Math.sqrt(0.25*(backZ - frontZ)*(backZ - frontZ) + modelTransverse*modelTransverse);
+  }//if (exterior)
 
   // 4. Shielding, drawn inner to outer.  Dimensions are thickness increments: a sphere's radius,
   //  a cylinder's radius and HALF-length, a box's HALF-width, -height and -depth.

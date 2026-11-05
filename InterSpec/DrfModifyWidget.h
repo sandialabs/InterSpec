@@ -40,6 +40,7 @@
 #include "InterSpec/MakeMcResponseForDrf.h"
 
 class DrfChart;
+struct DrfAppearance;
 class InterSpec;
 class SwitchCheckbox;
 class EccUncertOptions;
@@ -58,6 +59,7 @@ namespace Wt
   class WComboBox;
   class WLineEdit;
   class WTextArea;
+  class WFileUpload;
   class WPushButton;
   class WStackedWidget;
   class WContainerWidget;
@@ -188,6 +190,9 @@ public:
     std::string name, description;
     int tabIndex = 0;
 
+    /** The icon and exterior model the General tab holds; nullptr for none. */
+    std::shared_ptr<const DrfAppearance> appearance;
+
     /** Whether the far-field response is Geometry-Modeled (a Monte-Carlo response is/should be
      attached) rather than Flat Disk.  Always false for fixed-geometry DRFs (no Geom & MC tab). */
     bool geometryModeled = false;
@@ -290,6 +295,18 @@ protected:
    a separate detector property the Monte Carlo never sees).  Everything #markEdited does except
    marking the response stale - offering to regenerate over one of these is just confusing. */
   void markEditedNoRegen();
+
+  /** Opens a dialog to upload the icon (an SVG) or, with `is_model`, the exterior model (glTF). */
+  void startAppearanceUpload( const bool is_model );
+
+  /** Makes an uploaded file the icon or model; a file that can not be used changes nothing, and the
+   General tab says why. */
+  void handleAppearanceUpload( const std::string &spool_file, const bool is_model );
+
+  void removeAppearancePart( const bool is_model );
+
+  /** Shows #m_appearance on the General tab. */
+  void updateAppearanceDisplay();
 
 
   /** Re-baselines #m_currentState, and (when flagged) records the step from the old baseline. */
@@ -492,6 +509,15 @@ protected:
 
   Wt::WLineEdit *m_name;
   Wt::WTextArea *m_description;
+
+  /** General tab: the instrument's icon and exterior model as currently set (see DrfAppearance);
+   nullptr for none.  Seeded from the DRF; changed only by the upload and remove buttons. */
+  std::shared_ptr<const DrfAppearance> m_appearance;
+  Wt::WText *m_appearanceIcon;
+  Wt::WText *m_appearanceSummary;
+  Wt::WPushButton *m_removeIconBtn;
+  Wt::WPushButton *m_removeModelBtn;
+  Wt::WText *m_appearanceError;
 
   /** General tab: a live chart of the efficiency + FWHM, and a summary of what the detector
    carries; both rebuilt from a quiet preview of the working DRF (see #refreshGeneralTab). */

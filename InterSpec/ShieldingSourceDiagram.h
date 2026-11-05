@@ -145,19 +145,23 @@ std::string createShieldingDiagramJson(
                                        double detectorDistance,
                                        double detectorDiameter,
                                        double sourceOffset0 = 0.0,
-                                       double sourceOffset1 = 0.0
+                                       double sourceOffset1 = 0.0,
+                                       std::shared_ptr<const DetectorPeakResponse> drf = nullptr
                                        );
 
 class Shielding2DView : public Wt::WContainerWidget
 {
 public:
+  /** `drf`, when given, lets the detector be drawn as the instrument's icon with its crystal inside
+   (see DrfAppearance); without it (or them), a plain box of the DRF's diameter. */
   Shielding2DView( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
@@ -166,7 +170,8 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
 private:
   void defineJavaScript();
@@ -178,6 +183,7 @@ private:
   double m_detectorDistance;
   double m_detectorDiameter;
   double m_sourceOffsets[2];
+  std::shared_ptr<const DetectorPeakResponse> m_drf;
 };
 
 // Shielding3DView class (merged from Shielding3DView.h)
@@ -203,12 +209,15 @@ public:
                    double sourceOffset1 = 0.0,
                    std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
-  /** The detector's geometry for the 3D view: `null` when the DRF records none (the JS then draws
-   a placeholder), else each region of `DetectorGeometryDiagram::buildModel` as a polycone profile
-   in the crystal frame (cm), plus the endcap-front offset that places the crystal face behind the
-   detector face the source distance is measured to.
+  /** The detector for the 3D (and 2D) view: `null` when the DRF records neither a geometry nor an
+   exterior model (the JS then draws a placeholder).  Else, when it has a geometry, each region of
+   `DetectorGeometryDiagram::buildModel` as a polycone profile in the crystal frame (cm), plus the
+   endcap-front offset that places the crystal face behind the detector face the source distance is
+   measured to; and with `include_exterior`, its exterior model (glTF JSON; see DrfAppearance) as
+   `exterior`.
    */
-  static std::string createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf );
+  static std::string createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                         const bool include_exterior = true );
 
   /** Shows integration lines (JSON from the dialog), or none for "null". */
   void setVolumetricLines( const std::string &json );

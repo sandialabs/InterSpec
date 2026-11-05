@@ -1592,37 +1592,98 @@ button.Wt-btn.with-label.LightButton,
   
   
   
+  /* The detector selector: the DRF's icon (or a generic one) and its name, outlined like a light
+     button with a chevron, so it reads as a setting that can be changed - clicking it opens
+     Detector Select. */
   .DetectorDisplay
   {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: center;
-    align-content: flex-start;
-    gap: 5px;
-    
-    padding: 0px;
-    padding-left: 5px;
-    padding-right: 2px;
+    gap: 6px;
+
+    padding: 0px 4px 0px 7px;
     margin: 0px;
-    font-weight: bold;
-    background: var(--interspec-button-background);
-    color: var(--interspec-button-text-color);
-    border: 1px solid var(--interspec-border-color);
+    background: transparent;
+    color: var(--interspec-text-color);
+    /* Halfway between the theme's hairline and its stronger outline: enough to read as a control
+       without standing out; engines without color-mix() get the outline. */
+    border: 1px solid var(--interspec-outline-color);
+    border-color: color-mix( in srgb, var(--interspec-outline-color) 50%, var(--interspec-border-color) );
+    border-radius: 5px;
     cursor: pointer;
     height: 24px;
     white-space: nowrap;
     width: 250px;
   }
-  
+
+  .DetectorDisplay:hover
+  {
+    background: var(--interspec-hover-background);  /* translucent, so it reads on any surface */
+  }
+
+  /* The chevron at the right end */
+  .DetectorDisplay::after
+  {
+    content: "";
+    flex: 0 0 auto;
+    margin-left: auto;
+    margin-right: 5px;
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    opacity: 0.7;
+  }
+
   .DetectorDisplay .DetName
   {
     display: inline-block;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
+    font-weight: 500;
   }
-  
+
+  .DetectorDisplay .DetName.DetNone
+  {
+    font-weight: normal;
+    color: var(--interspec-secondary-text-color);
+  }
+
+  /* A DRF's own icon (DrfAppearance::icon_html): its SVG masks the text colour, so the silhouette
+     follows the theme; the size and mask image are set inline. */
+  .DrfIcon
+  {
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: middle;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+  }
+
+  .DetectorDisplay .DrfIconHolder
+  {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* The generic detector, for a DRF without an icon of its own: drawn the same way. */
+  .DrfIcon.DrfIconGeneric
+  {
+    width: 27px;
+    height: 15px;
+    -webkit-mask-image: url(images/detector_generic.svg);
+    mask-image: url(images/detector_generic.svg);
+  }
+
   
   .UseInstructionHeader
   {

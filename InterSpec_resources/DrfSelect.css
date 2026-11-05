@@ -261,6 +261,11 @@ div.RelEffFile select
   color: var(--interspec-text-color);
 }
 
+.DrfContentChips .DrfAppearanceChip .DrfIcon
+{
+  margin-bottom: 2px;
+}
+
 .DrfContentChips .DrfChipAbsent
 {
   /* Muted by colour, not by `opacity`: fading the whole chip took its text down with it, which is

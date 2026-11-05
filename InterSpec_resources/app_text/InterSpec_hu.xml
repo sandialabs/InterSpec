@@ -585,8 +585,6 @@
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
   <message id="app-tt-det-disp">A jelenleg kiválasztott detektor. Kattintson másik detektor kiválasztásához vagy a jelenlegi módosításához.</message>
-  <message id="app-det-select-txt">kattintson a kiválasztáshoz</message>
-  <message id="app-det-select-txt-mobile">érintse meg a kiválasztáshoz</message>
   <message id="app-default-manual-det-name">Felhasználó által definiált detektor</message>
 
 

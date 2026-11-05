@@ -586,8 +586,6 @@
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
   <message id="app-tt-det-disp">Текущий выбранный детектор. Щёлкните для выбора другого детектора или изменения этого.</message>
-  <message id="app-det-select-txt">щёлкните для выбора</message>
-  <message id="app-det-select-txt-mobile">коснитесь для выбора</message>
   <message id="app-default-manual-det-name">Пользовательский детектор</message>
 
 
