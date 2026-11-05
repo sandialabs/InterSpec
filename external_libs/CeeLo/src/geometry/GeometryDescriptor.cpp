@@ -485,7 +485,9 @@ GeometryDescriptor GeometryDescriptor::from_text(const std::string& text) {
             header = true;
             continue;
         }
-        auto need = [&](auto&... values) {
+        // Explicit captures: MSVC fails to implicitly capture names used next to a
+        // fold expression in a generic lambda (C2065 on number_of_line / key).
+        auto need = [&fields, &number_of_line, &key](auto&... values) {
             if (!((fields >> values) && ...))
                 text_error(number_of_line, "malformed '" + key + "'");
         };
