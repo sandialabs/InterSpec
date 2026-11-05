@@ -1984,7 +1984,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
         if( !peak )
           continue;
         
-        auto nearpeak = nearest_peak( peak->mean(), allpeaks );
+        auto nearpeak = nearest_peak( peak->mean(), answer );
         const double peak_sigma = peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth();
         if( !nearpeak || (fabs(nearpeak->mean() - peak->mean()) > peak_sigma) )
           answer.push_back( peak );

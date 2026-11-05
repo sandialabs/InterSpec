@@ -2160,9 +2160,9 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         {
           const size_t idx = tn.index( e, c, d );
           const double energy = tn.energies_keV[e];
-          const double far = resp->total_prefactor( energy, grid_pos, q_grid ).value;
+          const double far_field = resp->total_prefactor( energy, grid_pos, q_grid ).value;
           double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
-          if( !(far > 0.0) || !std::isfinite( far )
+          if( !(far_field > 0.0) || !std::isfinite( far_field )
               || !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )
               || !donor_ln_ratio( energy, donor_pos, q_donor, ln_r, r_frac ) )
           {
@@ -2172,7 +2172,7 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
             continue;
           }
 
-          tn.ln_n[idx] = ln_f + ln_r - std::log( far );
+          tn.ln_n[idx] = ln_f + ln_r - std::log( far_field );
           tn.frac_sigma[idx] = std::sqrt( f_frac*f_frac + r_frac*r_frac );
         }//for( each energy )
       }//for( each distance, but the anchor )
