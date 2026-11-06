@@ -3119,7 +3119,7 @@ void InterSpec::acceptFitSkewParamsWindow()
     return;
 
   FitSkewParamsTool *tool = m_fitSkewParamsWindow->tool();
-  if( !tool )
+  if( !tool || !tool->canAccept() ) // e.g., an Accept click queued before the fit started
     return;
 
   // Capture old state for undo

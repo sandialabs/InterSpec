@@ -414,6 +414,7 @@ void FitSkewParamsTool::doFit()
   m_isCalculating = true;
   m_fitBtn->setEnabled( false);
   m_statusText->setText( WString::tr( "fsw-fitting" ));
+  m_resultUpdated.emit(); // So the dialog disables "Accept" until the fit finishes
 
   // Cancel any previous calculation
   if( m_cancelCalc )
@@ -490,6 +491,7 @@ void FitSkewParamsTool::doFit()
     m_isCalculating = false;
     m_fitBtn->setEnabled( true);
     m_statusText->setText( "");
+    m_resultUpdated.emit();
     return;
   }
 
@@ -548,12 +550,14 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
 
   m_isCalculating = false;
   m_fitBtn->setEnabled( true);
+  m_resultUpdated.emit(); // Re-enables "Accept", whether or not the fit succeeded
 
   if( !results
      || results->status != PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success )
   {
     const string errMsg = results ? results->error_message : "Unknown error";
     m_statusText->setText( WString::tr( "fsw-fit-failed" ).arg( errMsg ));
+    wApp->triggerUpdate();
     return;
   }
 
@@ -624,8 +628,6 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
   }
 
   m_statusText->setText( statusMsg);
-
-  m_resultUpdated.emit();
 
   wApp->triggerUpdate();
 }//void handleFitResults(...)
@@ -1171,6 +1173,7 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
   m_tool->resultUpdated().connect( this, [this](){
     m_acceptBtn->setEnabled( m_tool->canAccept());
   } );
+  m_acceptBtn->setEnabled( m_tool->canAccept() );
 
   resizeScaledWindow( 0.7, 0.7);
   centerWindow();
