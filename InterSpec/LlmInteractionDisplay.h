@@ -283,9 +283,9 @@ private:
 };//class LlmInteractionFinalResponseDisplay
 
 
-/** Display for LLM tool call requests.  In a tool round (see LlmToolRoundDisplay), it is only shown
- with debug options on (for its menu of the raw JSON), and leaves out the parameters, which the
- rounds results display shows.
+/** Display for LLM tool call requests: the names of the tools called.  In a tool round (see
+ LlmToolRoundDisplay), it is only shown with debug options on (for its menu of the raw JSON); the
+ parameters are shown by the rounds results display.
  */
 class LlmToolRequestDisplay : public LlmInteractionTurnDisplay
 {

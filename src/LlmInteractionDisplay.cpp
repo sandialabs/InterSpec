@@ -1423,21 +1423,7 @@ void LlmToolRequestDisplay::createBodyContent()
     idText->addStyleClass( "LlmInvocationId LlmDebugOnly" );
 #endif
 
-    // Parameters (in a tool round, the results display shows them, so we don't repeat them here)
-    if( !m_round && !call.toolParameters.empty() )
-    {
-      WContainerWidget * const paramsDiv = callDiv->addNew<WContainerWidget>();
-      paramsDiv->addStyleClass( "LlmDebugOnly" );
-
-      WText *paramsLabel = paramsDiv->addNew<WText>( "Parameters:" );
-      paramsLabel->addStyleClass( "LlmParamsLabel" );
-
-      WTextArea *paramsArea = paramsDiv->addNew<WTextArea>();
-      paramsArea->setReadOnly( true );
-      paramsArea->setText( formatJson(call.toolParameters) );
-      paramsArea->setRows( 5 );
-      paramsArea->addStyleClass( "LlmToolParams" );
-    }
+    // The parameters are shown by the tool round's results display, on each call's header line.
   }
 }//createBodyContent()
 

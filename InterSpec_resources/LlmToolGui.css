@@ -17,8 +17,8 @@
   height: 100%;
 }
 
-/* Details only of use when developing the assistant (raw JSON menus, invocation IDs, raw tool
-   parameters and results); LlmToolGui adds .LlmHideDebug to itself unless the user asked to see them. */
+/* Details only of use when developing the assistant (raw JSON menus, full tool parameters, raw tool
+   results); LlmToolGui adds .LlmHideDebug to itself unless the user asked to see them. */
 .LlmHideDebug .LlmDebugOnly {
   display: none !important;
 }
