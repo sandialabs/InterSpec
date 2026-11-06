@@ -48,6 +48,7 @@
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/LlmConversationHistory.h"
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
@@ -133,7 +134,9 @@ namespace
     unique_ptr<Wt::WApplication::UpdateLock> m_update_lock;
     InterSpec *m_interspec;
 
-    ResumeFixture()
+    /** @param create_tool Open the assistant; without it, as the stdio MCP server before its first
+               prompt, or the desktop app with the assistant closed. */
+    ResumeFixture( const bool create_tool = true )
       : m_env( nullptr ), m_app( nullptr ), m_interspec( nullptr )
     {
       set_data_dir();
@@ -149,6 +152,9 @@ namespace
       BOOST_REQUIRE( m_interspec );
 
       BOOST_REQUIRE( LlmToolGui::llmToolIsConfigured() );
+      if( !create_tool )
+        return;
+
       m_interspec->createLlmTool();
       BOOST_REQUIRE( tool() );
       BOOST_REQUIRE( tool()->llmInterface() );
@@ -784,3 +790,192 @@ BOOST_AUTO_TEST_CASE( SpectrumSwitchInterruptsStoppedRound )
   BOOST_CHECK( llm.resumeInterrupted( convo ) );
   BOOST_CHECK( llm.isConversationStopped( convo ) );
 }//SpectrumSwitchInterruptsStoppedRound
+
+
+// An MCP client starts a new conversation with load_spectrum_file's conversation "new" and no path,
+//  whether or not a foreground is loaded; without "new", unloading leaves the conversation alone.
+BOOST_AUTO_TEST_CASE( McpUnloadWithNewConversationClearsIt )
+{
+  ResumeFixture fixture;
+  LlmInterface &llm = fixture.llm();
+  LlmToolGui &tool = *fixture.tool();
+  InterSpec * const viewer = fixture.m_interspec;
+  const shared_ptr<const LlmTools::ToolRegistry> registry = llm.toolRegistry();
+  BOOST_REQUIRE( registry );
+
+  const auto ask = [&llm]( const string &prompt ) -> shared_ptr<LlmInteraction> {
+    const shared_ptr<LlmInteraction> convo = llm.sendUserMessage( prompt );
+    BOOST_REQUIRE( convo );
+    llm.handleJavaScriptResponse( final_response( "Cs-137." ), pending_request_id( llm ) );
+    BOOST_REQUIRE( convo->finishTime.has_value() );
+    return convo;
+  };
+
+  const json unload_new = { {"specType", "Foreground"}, {"conversation", "new"} };
+
+  // No foreground: just the conversation is cleared.
+  BOOST_REQUIRE( !viewer->measurment( SpecUtils::SpectrumType::Foreground ) );
+  const shared_ptr<LlmInteraction> unattached = ask( "What is in my spectrum?" );
+  BOOST_REQUIRE( history_shown( tool, unattached ) );
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry->executeTool( "load_spectrum_file", unload_new, viewer ) );
+  BOOST_CHECK_EQUAL( result.value( "conversation", string() ), "new" );
+  BOOST_CHECK( !history_shown( tool, unattached ) );
+  BOOST_CHECK( !tool.getConversationHistory() );
+
+  // With a foreground: unloaded, the conversation is cleared, and the file keeps its conversation.
+  const shared_ptr<SpecMeas> first = make_spectrum_file( "first.n42", 661.7 );
+  viewer->setSpectrum( first, {}, SpecUtils::SpectrumType::Foreground, {} );
+  const shared_ptr<LlmInteraction> attached = ask( "And now?" );
+  BOOST_REQUIRE_NO_THROW( result = registry->executeTool( "load_spectrum_file", unload_new, viewer ) );
+  BOOST_CHECK( !viewer->measurment( SpecUtils::SpectrumType::Foreground ) );
+  BOOST_CHECK( !tool.getConversationHistory() );
+  const shared_ptr<vector<shared_ptr<LlmInteraction>>> saved = first->llmConversationHistory( {1} );
+  BOOST_CHECK( saved && (std::find( begin(*saved), end(*saved), attached ) != end(*saved)) );
+
+  // Without "new", unloading the foreground keeps the conversation.
+  viewer->setSpectrum( first, {}, SpecUtils::SpectrumType::Foreground, {} );
+  BOOST_REQUIRE( history_shown( tool, attached ) );
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "load_spectrum_file", json{ {"specType", "Foreground"} }, viewer ) );
+  BOOST_CHECK( !viewer->measurment( SpecUtils::SpectrumType::Foreground ) );
+  BOOST_CHECK( history_shown( tool, attached ) );
+
+  // "resume" needs a file, and is refused before anything is unloaded.
+  viewer->setSpectrum( first, {}, SpecUtils::SpectrumType::Foreground, {} );
+  BOOST_CHECK_THROW( registry->executeTool( "load_spectrum_file",
+                       json{ {"specType", "Foreground"}, {"conversation", "resume"} }, viewer ), std::exception );
+  BOOST_CHECK( viewer->measurment( SpecUtils::SpectrumType::Foreground ) == first );
+
+  // Loading the displayed foreground's path again with "new" keeps that copy of the file (and its
+  //  work); as for any foreground load, its unfinished work is set aside with the file (interrupted).
+  const string n42_path = SpecUtils::temp_file_name( "mcp_new_convo", SpecUtils::temp_dir() ) + ".n42";
+  {
+    ofstream out( n42_path.c_str(), ios::binary | ios::out );
+    BOOST_REQUIRE( first->write_2012_N42( out ) );
+  }
+  const json load_new = { {"path", n42_path}, {"specType", "Foreground"}, {"conversation", "new"} };
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "load_spectrum_file", load_new, viewer ) );
+  const shared_ptr<SpecMeas> loaded = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  BOOST_REQUIRE( loaded && (loaded != first) );
+
+  const shared_ptr<LlmInteraction> again = ask( "What about now?" );
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "load_spectrum_file", load_new, viewer ) );
+  BOOST_CHECK( viewer->measurment( SpecUtils::SpectrumType::Foreground ) == loaded );
+  BOOST_CHECK( !history_shown( tool, again ) );
+  BOOST_CHECK( !tool.getConversationHistory() );
+  SpecUtils::remove_file( n42_path );
+}//McpUnloadWithNewConversationClearsIt
+
+
+// Clearing the conversation (as "new" does) ends a turn stopped on a paused sub-agent, rather than
+//  leaving it pointing at a removed conversation.
+BOOST_AUTO_TEST_CASE( ClearConversationEndsStoppedRound )
+{
+  ResumeFixture fixture;
+  LlmInterface &llm = fixture.llm();
+  LlmToolGui &tool = *fixture.tool();
+
+  const shared_ptr<SpecMeas> first = make_spectrum_file( "first.n42", 661.7 );
+  fixture.m_interspec->setSpectrum( first, {}, SpecUtils::SpectrumType::Foreground, {} );
+
+  const shared_ptr<LlmInteraction> convo = llm.sendUserMessage( "What is in my spectrum?" );
+  BOOST_REQUIRE( convo );
+  const json args = { {"context", "A test spectrum."}, {"task", "Fit the activity."} };
+  llm.handleJavaScriptResponse( tool_call_response( "invoke_ActivityFit", "call_1", args ), pending_request_id( llm ) );
+  llm.cancelAll();
+  BOOST_REQUIRE( llm.isConversationStopped( convo ) );
+
+  tool.clearConversationHistory();
+  BOOST_CHECK( !llm.isConversationStopped( convo ) );
+  BOOST_CHECK( convo->finishTime.has_value() );
+  BOOST_CHECK( !tool.getConversationHistory() );
+}//ClearConversationEndsStoppedRound
+
+
+namespace
+{
+  /** Writes a file carrying a conversation, as an N42 saved by InterSpec (or made up by someone
+   else), to a new temporary file; returns its path. */
+  string write_n42_with_conversation( const string &question )
+  {
+    const shared_ptr<LlmInteraction> saved = LlmInteraction::createUserInteractionForMainConvo( question );
+    const shared_ptr<SpecMeas> source = make_spectrum_file( "saved.n42", 661.7 );
+    source->setLlmConversationHistory( {1}, make_shared<vector<shared_ptr<LlmInteraction>>>( 1, saved ) );
+    const string n42_path = SpecUtils::temp_file_name( "mcp_saved_convo", SpecUtils::temp_dir() ) + ".n42";
+    ofstream out( n42_path.c_str(), ios::binary | ios::out );
+    BOOST_REQUIRE( source->write_2012_N42( out ) );
+    return n42_path;
+  }//write_n42_with_conversation(...)
+
+
+  /** In a session with no assistant open, loads an N42 that carries a conversation with
+   load_spectrum_file's conversation `mode`, then opens the assistant; returns how many conversations
+   it shows (and checks the load's result reported the same).
+   */
+  size_t turns_opened_after_loading( const string &mode )
+  {
+    ResumeFixture fixture( false );
+    InterSpec * const viewer = fixture.m_interspec;
+    BOOST_REQUIRE( !fixture.tool() );
+
+    const shared_ptr<const LlmConfig> config = LlmConfig::load();
+    BOOST_REQUIRE( config );
+    const LlmTools::ToolRegistry registry( *config );
+
+    const string n42_path = write_n42_with_conversation( "Saved question" );
+    const json load = { {"path", n42_path}, {"specType", "Foreground"}, {"conversation", mode} };
+    json result;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "load_spectrum_file", load, viewer ) );
+    SpecUtils::remove_file( n42_path );
+    BOOST_REQUIRE( result.contains( "restored" ) );
+    const size_t reported = result["restored"].value( "conversation_turns", size_t(999) );
+
+    viewer->createLlmTool();
+    BOOST_REQUIRE( fixture.tool() );
+    const shared_ptr<vector<shared_ptr<LlmInteraction>>> shown = fixture.tool()->getConversationHistory();
+    const size_t turns = shown ? shown->size() : size_t(0);
+    BOOST_CHECK_MESSAGE( reported == turns, mode << ": the load reported " << reported
+                         << " conversations, the assistant shows " << turns );
+    return turns;
+  }//turns_opened_after_loading(...)
+}//namespace
+
+
+// Without an assistant open yet (the stdio MCP server before its first prompt, or the desktop app
+//  with the assistant closed), "keep" and "new" decide the conversation it opens with, as they do
+//  for an open one: a loaded file's saved conversation is only taken up with "resume".
+BOOST_AUTO_TEST_CASE( ConversationModeWithoutAssistantOpen )
+{
+  BOOST_CHECK_EQUAL( turns_opened_after_loading( "resume" ), 1 );
+  BOOST_CHECK_EQUAL( turns_opened_after_loading( "new" ), 0 );
+  BOOST_CHECK_EQUAL( turns_opened_after_loading( "keep" ), 0 );
+}//ConversationModeWithoutAssistantOpen
+
+
+// With the assistant closed (as in the desktop app), "keep" carries the shown foreground's
+//  conversation over to the new one, as it does with the assistant open.
+BOOST_AUTO_TEST_CASE( KeepWithoutAssistantOpenCarriesConversation )
+{
+  ResumeFixture fixture( false );
+  InterSpec * const viewer = fixture.m_interspec;
+  const shared_ptr<const LlmConfig> config = LlmConfig::load();
+  BOOST_REQUIRE( config );
+  const LlmTools::ToolRegistry registry( *config );
+
+  const shared_ptr<LlmInteraction> current = LlmInteraction::createUserInteractionForMainConvo( "Current question" );
+  const shared_ptr<SpecMeas> first = make_spectrum_file( "first.n42", 1460.8 );
+  first->setLlmConversationHistory( {1}, make_shared<vector<shared_ptr<LlmInteraction>>>( 1, current ) );
+  viewer->setSpectrum( first, {}, SpecUtils::SpectrumType::Foreground, {} );
+
+  const string n42_path = write_n42_with_conversation( "Saved question" );
+  const json load = { {"path", n42_path}, {"specType", "Foreground"}, {"conversation", "keep"} };
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "load_spectrum_file", load, viewer ) );
+  SpecUtils::remove_file( n42_path );
+  BOOST_REQUIRE( viewer->measurment( SpecUtils::SpectrumType::Foreground ) != first );
+
+  viewer->createLlmTool();
+  BOOST_REQUIRE( fixture.tool() );
+  const shared_ptr<vector<shared_ptr<LlmInteraction>>> shown = fixture.tool()->getConversationHistory();
+  BOOST_REQUIRE( shown && (shown->size() == 1) );
+  BOOST_CHECK( shown->front() == current );
+}//KeepWithoutAssistantOpenCarriesConversation
