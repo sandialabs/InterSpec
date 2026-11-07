@@ -312,6 +312,64 @@ namespace
       }//try / catch
     }//void handleRequest(...)
   };//class RelActAutoReportResource
+
+
+  /** Returns all curves that shield `curve`, either directly, or through a chain of curves.
+
+   @param shielded_by The curves directly shielding each curve (i.e., `shielded_by_other_phys_model_curve_shieldings`).
+   */
+  set<size_t> outer_curves_of( const vector<set<size_t>> &shielded_by, const size_t curve )
+  {
+    set<size_t> answer;
+    if( curve >= shielded_by.size() )
+      return answer;
+
+    vector<size_t> to_visit( begin(shielded_by[curve]), end(shielded_by[curve]) );
+    while( !to_visit.empty() )
+    {
+      const size_t index = to_visit.back();
+      to_visit.pop_back();
+      if( (index >= shielded_by.size()) || !answer.insert(index).second )
+        continue;
+      to_visit.insert( end(to_visit), begin(shielded_by[index]), end(shielded_by[index]) );
+    }
+
+    return answer;
+  }//outer_curves_of(...)
+
+
+  /** Makes the `outer` curve shield the `inner` curve, while keeping the shielding physically consistent:
+   - Any cycle this would create is broken by no longer having `outer` (or the curves shielding it) be shielded by
+     `inner`; i.e., the latest choice wins.
+   - The curves shielding `outer` are also added to `inner`, and `outer`, along with the curves shielding it, are also
+     added to every curve behind `inner`; the solver does not do this implicitly.
+   */
+  void add_shielding_curve( vector<set<size_t>> &shielded_by, const size_t inner, const size_t outer )
+  {
+    assert( (inner < shielded_by.size()) && (outer < shielded_by.size()) && (inner != outer) );
+    if( (inner >= shielded_by.size()) || (outer >= shielded_by.size()) || (inner == outer) )
+      return;
+
+    set<size_t> outer_and_beyond = outer_curves_of( shielded_by, outer );
+    outer_and_beyond.insert( outer );
+    for( const size_t index : outer_and_beyond )
+      shielded_by[index].erase( inner );
+
+    // Breaking cycles may have changed which curves shield `outer`, so recompute
+    outer_and_beyond = outer_curves_of( shielded_by, outer );
+    outer_and_beyond.insert( outer );
+    assert( !outer_and_beyond.count(inner) );
+
+    vector<size_t> inner_and_behind{ inner };
+    for( size_t index = 0; index < shielded_by.size(); ++index )
+    {
+      if( (index != inner) && outer_curves_of( shielded_by, index ).count(inner) )
+        inner_and_behind.push_back( index );
+    }
+
+    for( const size_t index : inner_and_behind )
+      shielded_by[index].insert( begin(outer_and_beyond), end(outer_and_beyond) );
+  }//void add_shielding_curve(...)
 }//namespace
 
 
@@ -1682,6 +1740,9 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
   assert( num_rel_eff_curves > 0 );
+  const vector<set<size_t>> gui_shielding_curves = guiShieldingCurves();
+  assert( gui_shielding_curves.size() == static_cast<size_t>(num_rel_eff_curves) );
+
   for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
   {
     const RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( rel_eff_curve_index );
@@ -1710,19 +1771,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
       same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
       same_corr_fcn_all_curves = (same_corr_fcn_all_curves || opts->physModelSameCorrFcnOnAllCurves());
 
-      if( opts->physModelShieldedByOtherCurves() )
-      {
-        for( int outer_index = 0; outer_index < num_rel_eff_curves; ++outer_index )
-        {
-          if( outer_index == rel_eff_curve_index )
-            continue;
-          const RelActAutoGuiRelEffOptions *outer_opts = getRelEffCurveOptions( outer_index );
-          if( !outer_opts )
-            throw runtime_error( "Failed to get outer RelActAutoGuiRelEffOptions" );
-          if( outer_opts->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-            rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.insert( outer_index );
-        }//for( int outer_index = 0; outer_index < num_rel_eff_curves; ++outer_index )
-      }//if( opts->physModelShieldedByOtherCurves() )
+      rel_eff_curve.shielded_by_other_phys_model_curve_shieldings = gui_shielding_curves.at( rel_eff_curve_index );
     }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
 
     options.rel_eff_curves.push_back( rel_eff_curve );
@@ -1991,7 +2040,106 @@ void RelActAutoGui::updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *chan
     if( options )
       options->setHasMultiplePhysicalModels( multiple_phys_models );
   }
+
+  // Let each curve know which other physical model curves could shield it
+  vector<pair<const RelActAutoGuiRelEffOptions *,WString>> phys_model_curves;
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    const RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    if( options && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+    {
+      const WString name = options->name().empty() ? WString::fromUTF8("Curve " + std::to_string(i)) : options->name();
+      phys_model_curves.emplace_back( options, name );
+    }
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    if( !options )
+      continue;
+
+    vector<pair<const RelActAutoGuiRelEffOptions *,WString>> other_curves;
+    for( const pair<const RelActAutoGuiRelEffOptions *,WString> &curve : phys_model_curves )
+    {
+      if( curve.first != options )
+        other_curves.push_back( curve );
+    }
+    options->setOtherPhysModelCurves( other_curves );
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+
+  updateShieldingCurvesLayout();
 }//void updateMultiPhysicalModelUI()
+
+
+vector<set<size_t>> RelActAutoGui::guiShieldingCurves() const
+{
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  vector<const RelActAutoGuiRelEffOptions *> curves( std::max(num_rel_eff_curves, 0), nullptr );
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+    curves[i] = getRelEffCurveOptions( i );
+
+  vector<set<size_t>> shielded_by( curves.size() );
+  for( size_t inner = 0; inner < curves.size(); ++inner )
+  {
+    if( !curves[inner] )
+      continue;
+
+    const set<const RelActAutoGuiRelEffOptions *> shielding_curves = curves[inner]->shieldingCurves();
+    for( size_t outer = 0; outer < curves.size(); ++outer )
+    {
+      if( (outer != inner) && curves[outer] && shielding_curves.count( curves[outer] )
+         && (curves[outer]->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        shielded_by[inner].insert( outer );
+      }
+    }//for( size_t outer = 0; outer < curves.size(); ++outer )
+  }//for( size_t inner = 0; inner < curves.size(); ++inner )
+
+  return shielded_by;
+}//vector<set<size_t>> guiShieldingCurves() const
+
+
+void RelActAutoGui::setGuiShieldingCurves( const vector<set<size_t>> &shielded_by )
+{
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  for( int inner = 0; inner < num_rel_eff_curves; ++inner )
+  {
+    RelActAutoGuiRelEffOptions * const inner_curve = getRelEffCurveOptions( inner );
+    assert( inner_curve );
+    if( !inner_curve )
+      continue;
+
+    // `setShieldingCurves(...)` ignores curves that arent other physical model curves
+    set<const RelActAutoGuiRelEffOptions *> shielding_curves;
+    if( static_cast<size_t>(inner) < shielded_by.size() )
+    {
+      for( const size_t outer : shielded_by[inner] )
+      {
+        if( outer < static_cast<size_t>(num_rel_eff_curves) )
+          shielding_curves.insert( getRelEffCurveOptions( static_cast<int>(outer) ) );
+      }
+    }//if( static_cast<size_t>(inner) < shielded_by.size() )
+
+    inner_curve->setShieldingCurves( shielding_curves );
+  }//for( int inner = 0; inner < num_rel_eff_curves; ++inner )
+
+  updateShieldingCurvesLayout();
+}//void setGuiShieldingCurves(...)
+
+
+void RelActAutoGui::updateShieldingCurvesLayout()
+{
+  // We'll grow the curve options for all curves, if any curve shows the extra row, so switching curves wont jump around
+  bool any_showing = false;
+  for( int i = 0; !any_showing && (i < m_rel_eff_opts_menu->count()); ++i )
+  {
+    const RelActAutoGuiRelEffOptions * const options = getRelEffCurveOptions( i );
+    any_showing = (options && options->isShowingShieldingCurves());
+  }
+
+  m_rel_eff_opts_stack->toggleStyleClass( "ShowingShieldingCurves", any_showing );
+}//void updateShieldingCurvesLayout()
 
 
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
@@ -2773,7 +2921,17 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   handleNuclidesChanged();
   
   // Make sure all
+  //  Note: this call, and the `setGuiShieldingCurves(...)` below, must remain after *all* curves have been set from
+  //  `options`.  While the loop above sets each curve, a curve name change rebuilds the per-curve "shielded by"
+  //  checkboxes (see `handleRelEffCurveNameChanged(...)`) using curve types that may not have been updated yet, so
+  //  those intermediate checkbox lists and selections may be wrong; this is where they are made correct again.
   updateMultiPhysicalModelUI( nullptr, nullptr );
+
+  // Now that each curve knows the other physical model curves, we can set which curves shield each curve
+  vector<set<size_t>> shielded_by;
+  for( const RelActCalcAuto::RelEffCurveInput &rel_eff : options.rel_eff_curves )
+    shielded_by.push_back( rel_eff.shielded_by_other_phys_model_curve_shieldings );
+  setGuiShieldingCurves( shielded_by );
   
   // Just to make sure if we have multie Phys Model curves, and they should all have the same
   //  external shieldings, we will enforce that, even though its probably already true.
@@ -3314,6 +3472,8 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
       options->update_external_atten_shield_widget( ext_atten_widgets );
     }
   }//for( int i = 0; i < num_rel_eff_curves; ++i )
+
+  updateShieldingCurvesLayout();
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -3331,26 +3491,94 @@ void RelActAutoGui::handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptio
   const bool shielded_by_others = rel_eff_curve_gui->physModelShieldedByOtherCurves();
   if( shielded_by_others )
   {
-    rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( false );
-
-    for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+    const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+    int curve_index = -1;
+    for( int index = 0; index < num_rel_eff_curves; ++index )
     {
-      WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
-      RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+      RelActAutoGuiRelEffOptions *this_curve = getRelEffCurveOptions( index );
       assert( this_curve );
-      if( this_curve && (this_curve != rel_eff_curve_gui) )
-      {
-        this_curve->setPhysModelShieldedByOtherCurves( false );
+      if( this_curve )
         this_curve->setPhysModelSameExtShieldAllCurves( false );
-      }
+      if( this_curve == rel_eff_curve_gui )
+        curve_index = index;
     }
+
+    assert( curve_index >= 0 );
+    if( curve_index >= 0 )
+    {
+      // Any previous (hidden) selection of shielding curves is replaced by the default selection: all other physical
+      //  model curves not already behind this curve.  If there are none of these (e.g., there are two curves, and the
+      //  other curve is shielded by this one), then this latest choice wins, and the reverse shielding is removed.
+      vector<set<size_t>> shielded_by = guiShieldingCurves();
+      shielded_by[curve_index].clear();
+
+      vector<size_t> other_curves, unshielded_curves;
+      for( int index = 0; index < num_rel_eff_curves; ++index )
+      {
+        const RelActAutoGuiRelEffOptions *this_curve = getRelEffCurveOptions( index );
+        if( (index == curve_index) || !this_curve
+           || (this_curve->rel_eff_eqn_form() != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+        {
+          continue;
+        }
+
+        other_curves.push_back( index );
+        if( !outer_curves_of( shielded_by, index ).count( curve_index ) )
+          unshielded_curves.push_back( index );
+      }//for( int index = 0; index < num_rel_eff_curves; ++index )
+
+      for( const size_t outer_index : (unshielded_curves.empty() ? other_curves : unshielded_curves) )
+        add_shielding_curve( shielded_by, curve_index, outer_index );
+
+      setGuiShieldingCurves( shielded_by );
+    }//if( curve_index >= 0 )
   }//if( shielded_by_others )
+
+  updateShieldingCurvesLayout();
 
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+
+
+void RelActAutoGui::handleShieldingCurveToggled( RelActAutoGuiRelEffOptions *rel_eff_curve_gui,
+                                                 const RelActAutoGuiRelEffOptions *shielding_curve,
+                                                 const bool is_shielding )
+{
+  assert( rel_eff_curve_gui && shielding_curve );
+  if( !rel_eff_curve_gui || !shielding_curve )
+    return;
+
+  int curve_index = -1, shielding_index = -1;
+  for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+  {
+    const RelActAutoGuiRelEffOptions *this_curve = getRelEffCurveOptions( index );
+    if( this_curve == rel_eff_curve_gui )
+      curve_index = index;
+    if( this_curve == shielding_curve )
+      shielding_index = index;
+  }
+
+  assert( (curve_index >= 0) && (shielding_index >= 0) );
+  if( (curve_index < 0) || (shielding_index < 0) )
+    return;
+
+  // When a shielding curve is removed, we wont remove any of the layers implied by it, so the user can choose to keep
+  //  them; but when one is added, we will add the layers implied by it, and break any cycle it would cause.
+  vector<set<size_t>> shielded_by = guiShieldingCurves();
+  if( is_shielding )
+    add_shielding_curve( shielded_by, curve_index, shielding_index );
+
+  // Will also uncheck "Shielded by other curves", if no shielding curves are left
+  setGuiShieldingCurves( shielded_by );
+
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handleShieldingCurveToggled(...)
 
 
 void RelActAutoGui::handleRelEffEqnOrderChanged()
@@ -5482,6 +5710,11 @@ void RelActAutoGui::handleAddRelEffCurve()
     handleShieldedByOtherCurvesChanged( a1 );
   } );
 
+  rel_eff_curve->shieldingCurveToggled().connect( this,
+    [this]( RelActAutoGuiRelEffOptions *a1, const RelActAutoGuiRelEffOptions *a2, const bool a3 ){
+      handleShieldingCurveToggled( a1, a2, a3 );
+  } );
+
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
 
   m_rel_eff_opts_menu->setHidden( single_curve );
@@ -5652,6 +5885,13 @@ void RelActAutoGui::handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *cu
   assert( nuc_changed_item );
   if( nuc_changed_item )
     nuc_changed_item->setText( name );
+
+  // Update the curve names next to the "Shielded by other curves" checkboxes.
+  //  Note: when loading a config, `RelActAutoGuiRelEffOptions::setRelEffCurveInput(...)` emits the name change before
+  //  setting the curve's equation type (and later curves may not be set yet), so this rebuild may see stale curve types;
+  //  `setCalcOptionsGui(...)` and `updateFromCalc(...)` rebuild, and re-apply the shielding selections, once all curves
+  //  are set.
+  updateMultiPhysicalModelUI( nullptr, nullptr );
 
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
@@ -7285,6 +7525,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   setOptionsForValidSolution();
   
   
+  bool any_curve_reset = false;
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
   {
     if( rel_eff_index >= m_solution->m_options.rel_eff_curves.size() )
@@ -7311,7 +7552,10 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       correct_curve = false;
 
     if( !correct_curve )
+    {
+      any_curve_reset = true;
       opts->setRelEffCurveInput( rel_eff );
+    }
 
     std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo> phys_info;
     if( rel_eff_index < m_solution->m_phys_model_results.size() )
@@ -7349,6 +7593,21 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       opts->setEqnTxt( "Error getting equation text" );
     }
   }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+
+  // Cross-curve shielding isnt set by `setRelEffCurveInput(...)`, since it depends on the other curves.
+  //  Note: this must remain after the loop above has set *all* curves: a curve name change inside that loop rebuilds the
+  //  per-curve "shielded by" checkboxes (see `handleRelEffCurveNameChanged(...)`) using curve types that may not have
+  //  been updated yet, so this is where the checkbox lists and selections are made correct again.  (A name change
+  //  always sets `any_curve_reset`.)
+  if( any_curve_reset )
+  {
+    updateMultiPhysicalModelUI( nullptr, nullptr );
+
+    vector<set<size_t>> shielded_by;
+    for( const RelActCalcAuto::RelEffCurveInput &rel_eff : m_solution->m_options.rel_eff_curves )
+      shielded_by.push_back( rel_eff.shielded_by_other_phys_model_curve_shieldings );
+    setGuiShieldingCurves( shielded_by );
+  }//if( any_curve_reset )
 
   
   m_solution_updated.emit( m_solution );

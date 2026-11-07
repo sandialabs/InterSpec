@@ -63,6 +63,14 @@ Shielding2DView = function(id, data, options) {
     .attr("height", "100%")
     .style("background-color", "var(--d3spec-background-color, none)");
 
+  // Tints a DRF's icon (a black silhouette; see DrfAppearance) in the theme's axis colour.  Kept
+  //  outside `g`, which every render clears.
+  this.tintId = "s2dDetTint_" + id;
+  var tint = this.svg.append("defs").append("filter").attr("id", this.tintId)
+    .attr("color-interpolation-filters", "sRGB");
+  tint.append("feFlood").attr("class", "detector-tint-flood");
+  tint.append("feComposite").attr("in2", "SourceAlpha").attr("operator", "in");
+
   this.g = this.svg.append("g");
   
   // Set initial data if provided
@@ -75,40 +83,6 @@ Shielding2DView = function(id, data, options) {
 Shielding2DView.prototype.setData = function(data) {
   this.data = data;
   this.processData();
-  
-  // Check if detector distance is more than 4x any outer dimension
-  // If so, automatically uncheck "Show Detector"
-  if (this.processedLayers && this.processedLayers.length > 0) {
-      var maxOuterDim = 0;
-      var geo = data.geometry;
-      
-      // Find the maximum outer dimension
-      for (var i = 0; i < this.processedLayers.length; i++) {
-          var layer = this.processedLayers[i];
-          if (geo === "Spherical") {
-              maxOuterDim = Math.max(maxOuterDim, layer.outerDims[0]);
-          } else if (geo === "CylinderEndOn" || geo === "CylinderSideOn") {
-              maxOuterDim = Math.max(maxOuterDim, layer.outerDims[0]); // radius
-              maxOuterDim = Math.max(maxOuterDim, 2 * layer.outerDims[1]); // full length
-          } else if (geo === "Rectangular") {
-              maxOuterDim = Math.max(maxOuterDim, layer.outerDims[0]); // width
-              maxOuterDim = Math.max(maxOuterDim, layer.outerDims[1]); // height
-              maxOuterDim = Math.max(maxOuterDim, layer.outerDims[2]); // depth
-          }
-      }
-      
-      // Check if detector distance > 4x max outer dimension
-      if (data.distance > 4 * maxOuterDim) {
-          this.showDetector = false;
-          // Update checkbox if container exists and checkbox is found
-          if (this.container) {
-              var chkDet = this.container.querySelector('input[type="checkbox"]');
-              if (chkDet) {
-                  chkDet.checked = false;
-              }
-          }
-      }
-  }
   
   this.render();
 };
@@ -299,11 +273,23 @@ Shielding2DView.prototype.processData = function() {
   // Store detector info for bounds calculation.  sourceOffset0 is the in-plane
   //  off-axis offset (source_offsets[0]); the second offset is out of this 2D
   //  cross-section plane for every geometry, so it isn't drawn here (see the 3D view).
+  //  A detector more than 4x the shielding's size away would leave the shielding a speck if drawn
+  //  to scale, so it is then drawn at a fixed size beyond a break in the distance axis instead.
+  var maxOuterDim = 0;
+  for (var li = 0; li < layers.length; li++) {
+      var od = layers[li].outerDims;
+      if (data.geometry === "Spherical") maxOuterDim = Math.max(maxOuterDim, od[0]);
+      else if (data.geometry === "Rectangular") maxOuterDim = Math.max(maxOuterDim, od[0], od[1], od[2]);
+      else maxOuterDim = Math.max(maxOuterDim, od[0], 2 * od[1]);  // cylinder radius, full length
+  }
+
   this.detectorInfo = {
     distance: data.distance,
     diameter: (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4),
     geometry: data.geometry,
-    sourceOffset0: (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0
+    sourceOffset0: (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0,
+    shape: Shielding2DView.detectorShape(data),
+    far: (layers.length > 0) && (data.distance > 4 * maxOuterDim)
   };
   
   // Calculate bounds with detector (will be recalculated in render() based on showDetector)
@@ -319,27 +305,83 @@ Shielding2DView.prototype.calculateBounds = function(shieldingBounds, detectorIn
     maxY: shieldingBounds.maxY
   };
   
-  if (includeDetector && detectorInfo) {
+  // A far detector is drawn outside these bounds, at a fixed size (see render()).
+  if (includeDetector && detectorInfo && !detectorInfo.far) {
     var detDist = detectorInfo.distance;
-    var detDiam = detectorInfo.diameter;
-    var detRad = detDiam / 2.0;
-    var detLen = detDiam;
     var off = detectorInfo.sourceOffset0 || 0;  // in-plane off-axis offset
+    var lo = detectorInfo.shape.lo, hi = detectorInfo.shape.hi;  // detector frame, see detectorShape
 
     if (detectorInfo.geometry === "Spherical") {
-        // Detector is above the source (line of sight = -Y); offset shifts it in X.
-        bounds.minY = Math.min(bounds.minY, -detDist - detLen);
-        bounds.maxX = Math.max(bounds.maxX, off + detRad);
-        bounds.minX = Math.min(bounds.minX, off - detRad);
+        // Detector is above the source, looking down (line of sight = -Y); offset shifts it in X.
+        bounds.minX = Math.min(bounds.minX, off + lo[1]);
+        bounds.maxX = Math.max(bounds.maxX, off + hi[1]);
+        bounds.minY = Math.min(bounds.minY, -detDist - hi[0]);
+        bounds.maxY = Math.max(bounds.maxY, -detDist - lo[0]);
     } else {
         // Detector is to the right (line of sight = +X); offset shifts it in -Y.
-        bounds.maxX = Math.max(bounds.maxX, detDist + detLen);
-        bounds.maxY = Math.max(bounds.maxY, -off + detRad);
-        bounds.minY = Math.min(bounds.minY, -off - detRad);
+        bounds.minX = Math.min(bounds.minX, detDist + lo[0]);
+        bounds.maxX = Math.max(bounds.maxX, detDist + hi[0]);
+        bounds.minY = Math.min(bounds.minY, -off + lo[1]);
+        bounds.maxY = Math.max(bounds.maxY, -off + hi[1]);
     }
   }
   
   return bounds;
+};
+
+// The detector in its own frame - millimetres, origin at the centre of the detector face, +x into
+//  the detector (away from the source), +y toward the instrument's bottom (SVG's y is down) - which
+//  is the frame of a DRF's icon (see DrfAppearance).  Returns what to draw, and its box `lo`/`hi`:
+//  the icon, the crystal and its layers in cross-section, or (with neither) a box as long as the
+//  DRF is wide.
+Shielding2DView.detectorShape = function(data) {
+  var shape = { icon: null, regions: [], box: null };
+  var lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+  function grow(x, y) {
+    lo[0] = Math.min(lo[0], x); hi[0] = Math.max(hi[0], x);
+    lo[1] = Math.min(lo[1], y); hi[1] = Math.max(hi[1], y);
+  }
+  function path(pts) {
+    return "M" + pts.map(function(p) { return p[0] + "," + p[1]; }).join("L") + "Z";
+  }
+  function flip(pts) { return pts.map(function(p) { return [p[0], -p[1]]; }); }
+
+  var icon = data.detectorIcon;
+  if (icon && icon.uri && icon.viewBox && (icon.viewBox.length === 4)) {
+    var vb = icon.viewBox;
+    shape.icon = { uri: icon.uri, x: vb[0], y: vb[1], w: vb[2], h: vb[3] };
+    grow(vb[0], vb[1]);
+    grow(vb[0] + vb[2], vb[1] + vb[3]);
+  }
+
+  // Polycone profiles [z, rmin, rmax] (cm) in the crystal frame, whose face is `endcapOffset`
+  //  behind the detector face; a box crystal (and each layer) is `boxDy` taller than it is wide.
+  var det = data.detector;
+  if (det && det.regions) {
+    var ec = det.endcapOffset || 0, dy = det.box ? (det.boxDy || 0) : 0;
+    det.regions.forEach(function(region) {
+      var prof = region.profile;
+      if (!prof || prof.length < 2) return;
+      var outer = prof.map(function(p) { return [10*(p[0] + ec), 10*(p[2] + dy)]; });
+      var inner = prof.map(function(p) { return [10*(p[0] + ec), (p[1] > 0) ? 10*(p[1] + dy) : 0]; });
+      var solid = prof.every(function(p) { return p[1] <= 0; });
+      var d = solid ? path(flip(outer).concat(outer.slice().reverse()))  // top edge out, bottom back
+                    : path(flip(outer).concat(flip(inner).reverse())) + path(outer.concat(inner.slice().reverse()));
+      outer.forEach(function(p) { grow(p[0], -p[1]); grow(p[0], p[1]); });
+      shape.regions.push({ kind: region.kind, d: d });
+    });
+  }
+
+  if (!shape.icon && !shape.regions.length) {
+    var diam = (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4);
+    shape.box = { len: diam, diam: diam };
+    grow(0, -diam/2);
+    grow(diam, diam/2);
+  }
+
+  shape.lo = lo;
+  shape.hi = hi;
+  return shape;
 };
 
 // Render the graphic
@@ -487,6 +529,25 @@ Shielding2DView.prototype.render = function() {
   var availableH = height - padTop - padBottom;
   if (availableW < 1) availableW = 1;
 
+  // A far detector (see processData) gets a fixed-size spot beyond a stretch of broken axis: to the
+  //  right of the labels, or above the source for Spherical.  `k` is its px per mm.
+  var isSpherical = (data.geometry === "Spherical");
+  var detShape = (self.showDetector && self.detectorInfo) ? self.detectorInfo.shape : null;
+  var farDet = null;
+  if (detShape && self.detectorInfo.far) {
+      var farGapPx = 60;
+      var lenMm = detShape.hi[0] - detShape.lo[0], wideMm = detShape.hi[1] - detShape.lo[1];
+      var acrossPx = Math.max(40, Math.min(120, 0.35 * (isSpherical ? usableW : availableH)));
+      var k = acrossPx / wideMm;
+      var alongMax = 0.3 * (isSpherical ? availableH : usableW);
+      if (k * lenMm > alongMax) k = alongMax / lenMm;
+      farDet = { k: k, gap: farGapPx, along: k * lenMm };
+      if (isSpherical) availableH -= (farGapPx + farDet.along);
+      else availableW -= (farGapPx + farDet.along);
+      if (availableW < 1) availableW = 1;
+      if (availableH < 1) availableH = 1;
+  }
+
   var contentW = bounds.maxX - bounds.minX;
   var contentH = bounds.maxY - bounds.minY;
 
@@ -506,7 +567,8 @@ Shielding2DView.prototype.render = function() {
   //  [padLeft, padLeft+availableW]; the reserved band on the right holds the labels.
   this.currentScale = scale;
   this.currentTx = padLeft + (availableW / 2) - cx * scale;
-  this.currentTy = (height / 2) - cy * scale;
+  this.currentTy = (farDet && isSpherical) ? (height - padBottom - (availableH / 2) - cy * scale)
+                                           : ((height / 2) - cy * scale);
   
   // Helper functions to scale coordinates
   var scaleCoord = function(x) { return x * scale; };
@@ -1064,41 +1126,117 @@ Shielding2DView.prototype.render = function() {
   }
   
   // Detector
-  if (self.showDetector) {
+  if (self.showDetector && detShape) {
       var detDist = data.distance;
-      var detDiam = (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4);
-      var detRad = detDiam / 2.0;
-      var detLen = detDiam;
       var detGroup = this.g.append("g").attr("class", "detector-group");
 
       // In-plane off-axis offset (source_offsets[0]).  The second offset is out of
       //  this cross-section plane for every geometry, so it isn't shown in 2D.
       var off0 = (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0;
+      var dlo = detShape.lo, dhi = detShape.hi;
 
-      if (data.geometry === "Spherical") {
-          // Detector above the source (line of sight = -Y); offset shifts it in +X.
-          detGroup.append("rect")
-              .attr("class", "detector-shape detector-rect")
-              .attr("x", scaleX(off0 - detRad))
-              .attr("y", scaleY(-detDist - detLen))
-              .attr("width", scaleX(detDiam))
-              .attr("height", scaleY(detLen))
-              .attr("fill", "#ccc")
-              .attr("stroke", "var(--d3spec-axis-color, black)")
-              .style("stroke-width", "1px"); // Fixed pixel width
+      // Where the detector face goes (in this.g's px), and the detector's px per mm.  To scale, the
+      //  face is at its distance (offset sideways by off0); far, it is at a fixed spot beyond the
+      //  shielding's labels (or above the source), on axis.  Spherical has the detector above the
+      //  source looking down, so its frame is turned -90 degrees.
+      var faceX, faceY, detK = farDet ? farDet.k : scale;
+      if (!farDet) {
+          faceX = isSpherical ? scaleX(off0) : scaleX(detDist);
+          faceY = isSpherical ? scaleY(-detDist) : scaleY(-off0);
+      } else if (isSpherical) {
+          faceX = 0;
+          faceY = padTop + detK * dhi[0] - this.currentTy;
+      } else {
+          faceX = padLeft + availableW + labelReserve + farDet.gap - detK * dlo[0] - this.currentTx;
+          faceY = 0;
+      }
+      // The face's distance as drawn (mm, along the axis) - what the hover guides measure to.
+      var drawnDist = isSpherical ? (-faceY / scale) : (faceX / scale);
 
+      var placement = "translate(" + faceX + "," + faceY + ") rotate(" + (isSpherical ? -90 : 0) + ")";
+
+      if (detShape.icon) {
+          // Sized in px rather than through the scale below: an icon's own CSS (e.g., hiding its
+          //  labels when drawn small) sees the size it is drawn at only this way.
+          var ic = detShape.icon;
+          detGroup.append("g").attr("transform", placement)
+            .append("image").attr("class", "detector-icon")
+              .attr("x", detK * ic.x).attr("y", detK * ic.y).attr("width", detK * ic.w).attr("height", detK * ic.h)
+              .attr("preserveAspectRatio", "none")
+              .attr("href", ic.uri).attr("xlink:href", ic.uri)
+              .attr("filter", "url(#" + self.tintId + ")");
+      }
+
+      var body = detGroup.append("g").attr("class", "detector-body")
+          .attr("transform", placement + " scale(" + detK + ")");
+
+      // The crystal and its layers, coloured as in the 3D view
+      var kindFill = { crystal: "rgb(115,168,230)", dead: "rgba(77,107,153,0.55)",
+                       layer: "rgba(150,155,165,0.45)", collimator: "rgba(77,79,87,0.6)" };
+      detShape.regions.forEach(function(region) {
+          body.append("path").attr("class", "detector-region")
+              .attr("d", region.d)
+              .attr("fill", kindFill[region.kind] || "rgba(150,150,150,0.4)");
+      });
+
+      // What the hover guides hang off: the plain box itself, else an invisible box around it all.
+      var hit = body.append("rect").attr("class", "detector-shape detector-rect")
+          .attr("x", dlo[0]).attr("y", dlo[1]).attr("width", dhi[0] - dlo[0]).attr("height", dhi[1] - dlo[1])
+          .attr("vector-effect", "non-scaling-stroke")
+          .style("stroke-width", "1px"); // Fixed pixel width
+      if (detShape.box) {
+          hit.attr("fill", "#ccc").attr("stroke", "var(--d3spec-axis-color, black)")
+             .attr("data-base-stroke", "var(--d3spec-axis-color, black)");
+
+          var boxCx = isSpherical ? faceX : (faceX + 0.5 * detK * detShape.box.len);
+          var boxCy = isSpherical ? (faceY - 0.5 * detK * detShape.box.len) : faceY;
           detGroup.append("text")
-              .attr("x", scaleX(off0))
-              .attr("y", scaleY(-detDist - detLen/2))
+              .attr("x", boxCx)
+              .attr("y", boxCy)
               .attr("text-anchor", "middle")
               .attr("dy", "0.3em")
               .text("Detector")
-              .style("font-size", Math.min(scaleX(detDiam/4), scaleY(detLen/4), 12) + "px") // Scale with box size, but ensure it fits
+              .style("font-size", Math.min(detK * detShape.box.diam / 4, 12) + "px") // Scale with box size, but ensure it fits
               .attr("fill", "var(--d3spec-text-color, black)")
               .style("pointer-events", "none");
+      } else {
+          hit.attr("fill", "transparent").attr("stroke", "none").attr("data-base-stroke", "none");
+      }
 
+      if (farDet) {
+          // The broken stretch of axis from the shielding to the detector, with the true distance.
+          var shieldEdge = isSpherical ? scaleY(self.processedBoundsShieldingOnly.minY)
+                                       : scaleX(self.processedBoundsShieldingOnly.maxX);
+          var detEdge = isSpherical ? (faceY - detK * dlo[0]) : (faceX + detK * dlo[0]);
+          var brk = isSpherical ? (detEdge + 0.5 * farDet.gap) : (detEdge - 0.5 * farDet.gap);
+          var axisColor = "var(--d3spec-axis-color, black)";
+          var line = function(x1, y1, x2, y2, width) {
+              return detGroup.append("line").attr("class", "detector-far-axis")
+                  .attr("x1", x1).attr("y1", y1).attr("x2", x2).attr("y2", y2)
+                  .attr("stroke", axisColor).style("stroke-width", width);
+          };
+          if (isSpherical) {
+              line(0, shieldEdge, 0, brk + 4, "1px");
+              line(0, brk - 4, 0, detEdge, "1px");
+              line(-6, brk + 1, 6, brk + 7, "1.5px");    // the break: two parallel slashes
+              line(-6, brk - 7, 6, brk - 1, "1.5px");
+          } else {
+              line(shieldEdge, 0, brk - 4, 0, "1px");
+              line(brk + 4, 0, detEdge, 0, "1px");
+              line(brk - 7, 6, brk - 1, -6, "1.5px");
+              line(brk + 1, 6, brk + 7, -6, "1.5px");
+          }
+          detGroup.append("text").attr("class", "detector-far-label")
+              .attr("x", isSpherical ? 10 : brk).attr("y", isSpherical ? brk : -10)
+              .attr("text-anchor", isSpherical ? "start" : "middle")
+              .attr("dy", isSpherical ? "0.3em" : "0")
+              .text(formatLength(detDist, 1) + (Math.abs(off0) > 1e-6 ? (", offset " + formatLength(off0, 1)) : ""))
+              .style("font-size", "11px")
+              .attr("fill", "var(--d3spec-text-color, black)")
+              .style("pointer-events", "none");
+      } else if (Math.abs(off0) > 1e-6) {
           // Dashed indicator from the on-axis point to the offset detector center.
-          if (Math.abs(off0) > 1e-6) {
+          if (isSpherical) {
               detGroup.append("line").attr("class", "offset-indicator")
                   .attr("x1", scaleX(0)).attr("y1", scaleY(-detDist))
                   .attr("x2", scaleX(off0)).attr("y2", scaleY(-detDist))
@@ -1108,31 +1246,7 @@ Shielding2DView.prototype.render = function() {
                   .attr("text-anchor", "middle")
                   .text("Offset: " + formatLength(off0, 1))
                   .style("font-size", "11px").attr("fill", "orange").style("pointer-events", "none");
-          }
-      } else {
-          // Detector to the right (line of sight = +X); offset shifts it in -Y.
-          detGroup.append("rect")
-              .attr("class", "detector-shape detector-rect")
-              .attr("x", scaleX(detDist))
-              .attr("y", scaleY(-off0 - detRad))
-              .attr("width", scaleX(detLen))
-              .attr("height", scaleY(detDiam))
-              .attr("fill", "#ccc")
-              .attr("stroke", "var(--d3spec-axis-color, black)")
-              .style("stroke-width", "1px"); // Fixed pixel width
-
-          detGroup.append("text")
-              .attr("x", scaleX(detDist + detLen/2))
-              .attr("y", scaleY(-off0))
-              .attr("text-anchor", "middle")
-              .attr("dy", "0.3em")
-              .text("Detector")
-              .style("font-size", Math.min(scaleX(detLen/4), scaleY(detDiam/4), 12) + "px") // Scale with box size, but ensure it fits
-              .attr("fill", "var(--d3spec-text-color, black)")
-              .style("pointer-events", "none");
-
-          // Dashed indicator from the on-axis point to the offset detector center.
-          if (Math.abs(off0) > 1e-6) {
+          } else {
               detGroup.append("line").attr("class", "offset-indicator")
                   .attr("x1", scaleX(detDist)).attr("y1", scaleY(0))
                   .attr("x2", scaleX(detDist)).attr("y2", scaleY(-off0))
@@ -1149,6 +1263,7 @@ Shielding2DView.prototype.render = function() {
       detGroup.selectAll(".detector-shape")
           .on("mouseover", function() {
                d3.select(this).attr("stroke", "orange").style("stroke-width", "3px"); // Fixed pixel width
+               // (vector-effect keeps it 3px inside the scaled detector group)
                
                // Find Outer Shielding Dimension
                var outerDim = 0;
@@ -1157,30 +1272,30 @@ Shielding2DView.prototype.render = function() {
                        if (data.geometry === "Spherical") outerDim = Math.max(outerDim, l.outerDims[0]);
                        else if (data.geometry === "CylinderSideOn") outerDim = Math.max(outerDim, l.outerDims[0]);
                        else if (data.geometry === "CylinderEndOn") outerDim = Math.max(outerDim, l.outerDims[1]);
-                       else if (data.geometry === "Rectangular") outerDim = Math.max(outerDim, l.outerDims[1]);
+                       else if (data.geometry === "Rectangular") outerDim = Math.max(outerDim, l.outerDims[2]);  // half-depth, along the line of sight
                    });
                }
                
                var pFace = {x:0, y:0}, pCenter = {x:0, y:0}, pSurf = {x:0, y:0};
                
                if (data.geometry === "Spherical") {
-                   pFace = {x:0, y:-detDist};
+                   pFace = {x:0, y:-drawnDist};
                    pCenter = {x:0, y:0};
                    pSurf = {x:0, y:-outerDim};
                    
                    self.g.append("line").attr("class", "guide-line")
-                      .attr("x1", scaleX(-10)).attr("y1", scaleY(-outerDim))
-                      .attr("x2", scaleX(10)).attr("y2", scaleY(-outerDim))
+                      .attr("x1", -10).attr("y1", scaleY(-outerDim))
+                      .attr("x2", 10).attr("y2", scaleY(-outerDim))
                       .attr("stroke", "orange").style("stroke-width", "2px"); // Fixed pixel width
                       
                } else {
-                   pFace = {x:detDist, y:0};
+                   pFace = {x:drawnDist, y:0};
                    pCenter = {x:0, y:0};
                    pSurf = {x:outerDim, y:0};
                    
                    self.g.append("line").attr("class", "guide-line")
-                      .attr("x1", scaleX(outerDim)).attr("y1", scaleY(-10))
-                      .attr("x2", scaleX(outerDim)).attr("y2", scaleY(10))
+                      .attr("x1", scaleX(outerDim)).attr("y1", -10)
+                      .attr("x2", scaleX(outerDim)).attr("y2", 10)
                       .attr("stroke", "orange").style("stroke-width", "2px"); // Fixed pixel width
                }
                
@@ -1195,11 +1310,11 @@ Shielding2DView.prototype.render = function() {
                var pTxtC = {}, pTxtS = {};
                
                if (data.geometry === "Spherical") {
-                    pTxtC = { x: scaleX(txtOff), y: scaleY((pFace.y + pCenter.y)/2) };
-                    pTxtS = { x: scaleX(-txtOff), y: scaleY((pFace.y + pSurf.y)/2) };
+                    pTxtC = { x: txtOff, y: scaleY((pFace.y + pCenter.y)/2) };
+                    pTxtS = { x: -txtOff, y: scaleY((pFace.y + pSurf.y)/2) };
                } else {
-                    pTxtC = { x: scaleX((pFace.x + pCenter.x)/2), y: scaleY(-txtOff) };
-                    pTxtS = { x: scaleX((pFace.x + pSurf.x)/2), y: scaleY(txtOff) };
+                    pTxtC = { x: scaleX((pFace.x + pCenter.x)/2), y: -txtOff };
+                    pTxtS = { x: scaleX((pFace.x + pSurf.x)/2), y: txtOff };
                }
 
                var anchorC = (data.geometry === "Spherical") ? "start" : "middle";
@@ -1220,7 +1335,7 @@ Shielding2DView.prototype.render = function() {
                   .style("font-size", "11px").attr("fill", "orange"); // Fixed pixel font size
           })
           .on("mouseout", function() {
-               d3.select(this).attr("stroke", "var(--d3spec-axis-color, black)").style("stroke-width", "1px"); // Fixed pixel width
+               d3.select(this).attr("stroke", d3.select(this).attr("data-base-stroke")).style("stroke-width", "1px"); // Fixed pixel width
                self.g.selectAll(".guide-line").remove();
                self.g.selectAll(".guide-text").remove();
           });

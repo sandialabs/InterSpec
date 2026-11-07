@@ -527,13 +527,20 @@ std::vector<float> bare_point_spectrum(const std::string& nuc, double z_cm,
 BOOST_AUTO_TEST_CASE(ic_electron_g4_magnitude_ba133_2cm) {
     const std::vector<float> on  = bare_point_spectrum("Ba133", 2.0, true,  500, 3000000);
     const std::vector<float> off = bare_point_spectrum("Ba133", 2.0, false, 500, 3000000);
-    struct Ref { const char* name; int lo, hi; double g4; double rlo, rhi; bool ic_sensitive; };
+    // How each peak responds to the IC-electron channel.  This is a DIRECTION,
+    // not a boolean: the conversion electron's energy removes counts from a
+    // singles peak (summing-OUT) but ADDS them to a coincidence sum peak
+    // (summing-IN), so the two families move opposite ways and cannot share one
+    // assertion.  Treating sum356+81 as a summing-OUT peak is what made this
+    // case fail: flag-OFF does not over-predict it, it under-predicts it.
+    enum IcResponse { kSummingOut, kSummingIn, kInsensitive };
+    struct Ref { const char* name; int lo, hi; double g4; double rlo, rhi; IcResponse ic; };
     // G4 (1.5M, 2 cm, AIR world): per-decay area, and the accepted ON/G4 band.
     const std::vector<Ref> refs = {
-        {"Kx31",       29,  33, 1.460387e-1, 0.95, 1.04, true},   // ON 0.99
-        {"P356",      353, 359, 5.337600e-2, 0.95, 1.06, true},   // ON 1.00
-        {"sum356+81", 434, 440, 6.667333e-3, 0.88, 1.14, true},   // ON 1.01 (1% G4 stat)
-        {"P81",        79,  83, 5.645200e-2, 0.97, 1.08, false},  // ON 1.03 -- IC-independent
+        {"Kx31",       29,  33, 1.460387e-1, 0.95, 1.04, kSummingOut},   // OFF 1.12 -> ON 0.99
+        {"P356",      353, 359, 5.337600e-2, 0.95, 1.06, kSummingOut},   // OFF 1.07 -> ON 0.99
+        {"sum356+81", 434, 440, 6.667333e-3, 0.88, 1.14, kSummingIn},    // OFF 1.00 -> ON 1.01
+        {"P81",        79,  83, 5.645200e-2, 0.97, 1.08, kInsensitive},  // ON 1.03 -- IC-independent
     };
     for (const Ref& r : refs) {
         const double aon = area(on, r.lo, r.hi);
@@ -543,12 +550,32 @@ BOOST_AUTO_TEST_CASE(ic_electron_g4_magnitude_ba133_2cm) {
         BOOST_CHECK_MESSAGE(aon / r.g4 > r.rlo && aon / r.g4 < r.rhi,
                             "Ba133 " << r.name << " @2cm: flag-ON/G4 " << (aon / r.g4)
                             << " outside [" << r.rlo << ", " << r.rhi << "]");
-        // On the IC-sensitive peaks, turning the flag ON must move the engine
-        // TOWARD G4 (flag-OFF over-predicts by missing the summing-out).
-        if (r.ic_sensitive)
+        // Turning the flag ON must move each peak the way its channel dictates.
+        //
+        // For the summing-OUT peaks this is also a "closer to G4" statement,
+        // because flag-OFF misses the summing-out and over-predicts by 7-12% --
+        // far outside the ~1% statistics, so the ordering is real.
+        //
+        // For the summing-IN peak it is NOT: flag-OFF sits at 1.00 of G4 and
+        // flag-ON at 1.01, both inside G4's own ~1% statistics on a 6.7e-3
+        // per-decay peak (1.5M-decay reference).  Requiring flag-ON to land
+        // strictly closer there asserts an ordering the data cannot support --
+        // it is a coin flip on which side of its error bar the reference sits.
+        // What IS testable is the sign of the shift, so that is what is checked;
+        // the ON/G4 band above still bounds the magnitude.  Resolving the
+        // ordering would need ~25x the reference statistics (see TODO.md).
+        if (r.ic == kSummingOut) {
+            BOOST_CHECK_MESSAGE(aon < aoff,
+                                "Ba133 " << r.name << " @2cm: flag-ON (" << aon
+                                << ") should summing-OUT below flag-OFF (" << aoff << ")");
             BOOST_CHECK_MESSAGE(std::abs(aon - r.g4) < std::abs(aoff - r.g4),
                                 "Ba133 " << r.name << " @2cm: flag-ON (" << aon
                                 << ") not closer to G4 (" << r.g4 << ") than flag-OFF (" << aoff << ")");
+        } else if (r.ic == kSummingIn) {
+            BOOST_CHECK_MESSAGE(aon > aoff,
+                                "Ba133 " << r.name << " @2cm: flag-ON (" << aon
+                                << ") should summing-IN above flag-OFF (" << aoff << ")");
+        }
     }
 }
 

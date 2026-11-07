@@ -60,12 +60,20 @@ CONFIGS = {
     1: ('nai_3x3_10cm_multi.csv', 1.0, 0.4),
     2: ('nai_3x3_al1mm_10cm_multi.csv', 1.0, 1.6),
     3: ('labr3_2x2_al05mm_5cm_multi.csv', 1.5, 1.1),
-    5: ('czt_1x1x05cm_5cm_multi.csv', 7.0, 0.8),   # e- escape >1 MeV documented
+    # CZT: the worst row is -2.38% @1500 (z 1.3).  The 3.0% bound clears that
+    # residual but trips on the thin-crystal electron-escape deficit (-5.3%
+    # @1500) that a mishandled condensed-history walk produces.
+    5: ('czt_1x1x05cm_5cm_multi.csv', 3.0, 0.8),
     6: ('nai_3x3_offaxis45_15cm_multi.csv', 0.9, 0.6),
     7: ('nai_3x3_al1mm_pb2mm_15cm_multi.csv', 1.0, 1.1),
     11: ('nai_3x3_fe05cm_shield_10cm_multi.csv', 0.6, 1.2),
     12: ('nai_3x3_ss304box_cellulose_15cm_multi.csv', 2.1, 1.9),
     8: ('nai_3x3_al05mm_marinelli_water_multi.csv', 2.5, 1.0),  # 32M ref regen Jun26; FEP bound by 59 keV -2.1% near-peak-scatter residual
+    # High-Z wall boxes: out-of-sample Z = 13..82 generalization.  Worst rows:
+    # cfg 20 FEP 1.27% @2614 / total 1.53% @662; cfg 21 FEP 1.48% @662 / total
+    # 1.63% @2614.  The totals set the bounds.
+    20: ('nai_3x3_pbbox_cellulose_15cm_multi.csv', 1.5, 1.6),
+    21: ('nai_3x3_wbox_cellulose_15cm_multi.csv', 1.6, 1.7),
     # Matched HPGe pair (GEM35-70 coax, point source 5 cm): 25 is the sharp
     # front edge, 26 the bulletized edge + round-tipped bore.  Gating both
     # pins the bulletized geometry itself -- the ~2-16% efficiency difference

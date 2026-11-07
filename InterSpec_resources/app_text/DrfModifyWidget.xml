@@ -14,6 +14,26 @@
   <message id="dmw-tt-use-needs-mc">This detector was imported for its geometry only, so it has no efficiency yet. Generate a response on the Monte Carlo tab to give it one.</message>
   <message id="dmw-err-no-backbone">Could not build an efficiency curve from the generated response: {1}</message>
 
+  <!-- General tab: the instrument's icon and exterior 3D model (DrfAppearance). -->
+  <message id="dmw-appearance">Picture</message>
+  <message id="dmw-appearance-none">No icon or 3D model</message>
+  <message id="dmw-appearance-no-model">No 3D model</message>
+  <message id="dmw-appearance-model">3D model</message>
+  <message id="dmw-appearance-model-size">3D model, {1} &#215; {2} &#215; {3} cm (L &#215; W &#215; H)</message>
+  <message id="dmw-appearance-upload-icon">Upload icon...</message>
+  <message id="dmw-appearance-remove-icon">Remove icon</message>
+  <message id="dmw-appearance-upload-model">Upload 3D model...</message>
+  <message id="dmw-appearance-remove-model">Remove 3D model</message>
+  <message id="dmw-appearance-icon-title">Detector Icon</message>
+  <message id="dmw-appearance-model-title">Detector 3D Model</message>
+  <message id="dmw-appearance-icon-note"><p>An SVG side view of the instrument, shown on the detector button and drawn to scale in the shielding diagram.  It is shown as a silhouette, so only its shape (and opacity) matters.</p>
+    <p>Draw it in millimetres, with the point the source distance is measured to (the centre of the detector face) at (0,0), the face on the left, and the top of the instrument up.  Its viewBox should just enclose the drawing.</p></message>
+  <message id="dmw-appearance-model-note"><p>A glTF 2.0 model (.glb, or .gltf with embedded data) of the outside of the instrument, drawn in the 3D shielding view around the detector's crystal.</p>
+    <p>Model it to scale in metres, with +Y up, the detector looking along +Z, and the point the source distance is measured to (the centre of the detector face) at the origin.  Only triangle meshes and plain colours are used.</p></message>
+  <message id="dmw-appearance-invalid">That file could not be used: {1}</message>
+  <message id="dmw-appearance-too-large">That file is too large to upload.</message>
+  <message id="dmw-appearance-read-error">The uploaded file could not be read.</message>
+
   <!-- Flat Disk / Geometry Modeled mode toggle (Geom &amp; MC tab). -->
   <message id="dmw-mode-flat">Flat Disk</message>
   <message id="dmw-mode-geom">Geometry Modeled</message>

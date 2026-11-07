@@ -73,6 +73,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/DrfAppearance.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -980,6 +981,7 @@ void DetectorPeakResponse::reset()
   m_geometry.reset();
   m_geometryDisabled = false;
   m_measuredPoints.reset();
+  m_appearance.reset();
 }//void reset()
 
 
@@ -1004,6 +1006,8 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_peakFitDetPrefs && !rhs.m_peakFitDetPrefs)
               || (m_peakFitDetPrefs && rhs.m_peakFitDetPrefs
                   && (*m_peakFitDetPrefs == *rhs.m_peakFitDetPrefs)))
+          && ((!m_appearance && !rhs.m_appearance)
+              || (m_appearance && rhs.m_appearance && (*m_appearance == *rhs.m_appearance)))
           && ((!m_totalEfficiency && !rhs.m_totalEfficiency)
               || (m_totalEfficiency && rhs.m_totalEfficiency
                   && (*m_totalEfficiency == *rhs.m_totalEfficiency)))
@@ -1038,6 +1042,20 @@ void DetectorPeakResponse::setPeakFitDetPrefs( shared_ptr<const PeakFitDetPrefs>
 {
   m_peakFitDetPrefs = prefs;
 }//setPeakFitDetPrefs(...)
+
+
+shared_ptr<const DrfAppearance> DetectorPeakResponse::appearance() const
+{
+  return m_appearance;
+}//appearance()
+
+
+void DetectorPeakResponse::setAppearance( shared_ptr<const DrfAppearance> appearance )
+{
+  if( appearance && appearance->empty() )
+    appearance.reset();
+  m_appearance = appearance;
+}//setAppearance(...)
 
 
 shared_ptr<const DetectorEfficiencyUncert> DetectorPeakResponse::efficiencyUncert() const
@@ -1551,7 +1569,7 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
   const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
   if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse
-      && !m_geometry && m_fixedGeomSetupXml.empty() && !m_peakFitDetPrefs )
+      && !m_geometry && m_fixedGeomSetupXml.empty() && !m_peakFitDetPrefs && !m_appearance )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -1596,6 +1614,9 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   if( m_peakFitDetPrefs )
     m_peakFitDetPrefs->toXml( base_node, &doc );
 
+  if( m_appearance )
+    m_appearance->toXml( base_node, &doc );
+
   string answer;
   rapidxml::print( std::back_inserter(answer), doc, rapidxml::print_no_indenting );
 
@@ -1620,6 +1641,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_geometryDisabled = false;
   m_fixedGeomSetupXml.clear();
   m_peakFitDetPrefs.reset();
+  m_appearance.reset();
 
   // Cleared above, before this early-out: an extras column that no longer carries a geometry (or
   //  a response) must not leave the previous one in place - `persist()` calls this on every read
@@ -1707,6 +1729,16 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
              << e.what() << "') - ignoring them." << endl;
       }
     }//if( prefs_node )
+
+    // Also on its own: a picture must never cost the DRF its other extras.
+    try
+    {
+      m_appearance = DrfAppearance::fromXml( base_node->first_node( "Appearance" ) );
+    }catch( std::exception &e )
+    {
+      cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse appearance ('"
+           << e.what() << "') - ignoring it." << endl;
+    }
   }catch( std::exception &e )
   {
     m_totalEfficiency.reset();
@@ -1715,6 +1747,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_geometry.reset();
     m_geometryDisabled = false;
     m_peakFitDetPrefs.reset();
+    m_appearance.reset();
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -5636,6 +5669,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
                                     20, m_fixedGeomSetupXml.size() );
     base_node->append_node( setup );
   }
+
+  // Doesnt change the version written: older readers look nodes up by name, and skip it.
+  if( m_appearance )
+    m_appearance->toXml( base_node, doc );
 }//toXml(...)
 
 
@@ -6095,6 +6132,16 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   node = parent->first_node( "FixedGeomSourceSetup", 20 );
   if( node )
     m_fixedGeomSetupXml.assign( node->value(), node->value_size() );
+
+  // Cosmetic, so a bad one is dropped rather than failing the DRF.
+  m_appearance.reset();
+  try
+  {
+    m_appearance = DrfAppearance::fromXml( parent->first_node( "Appearance", 10 ) );
+  }catch( std::exception &e )
+  {
+    cerr << "DetectorPeakResponse::fromXml: ignoring the appearance: " << e.what() << endl;
+  }
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -6311,6 +6358,18 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
   if( lhs.geometryModifiedFromImport()
       && (lhs.m_geometry->to_xml_string() != rhs.m_geometry->to_xml_string()) )
     throw runtime_error( "DetectorPeakResponse: modified detector geometry doesnt match" );
+
+  // Not in the hash, so only caught here.
+  if( (!lhs.m_appearance) != (!rhs.m_appearance) )
+    throw runtime_error( "DetectorPeakResponse: availability of the appearance doesnt match" );
+
+  if( lhs.m_appearance && rhs.m_appearance
+      && (lhs.m_appearance->icon_svg != rhs.m_appearance->icon_svg) )
+    throw runtime_error( "DetectorPeakResponse: the icon doesnt match" );
+
+  if( lhs.m_appearance && rhs.m_appearance
+      && (lhs.m_appearance->model_gltf != rhs.m_appearance->model_gltf) )
+    throw runtime_error( "DetectorPeakResponse: the exterior model doesnt match" );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 

@@ -69,7 +69,11 @@ python3 tools/prepare_cross_sections/sb_tables_epq.py \
 python3 tools/prepare_cross_sections/generate_epics_photon.py \
   --epdl "$CACHE/downloads/EPDL2023.ALL"
 python3 tools/prepare_cross_sections/generate_eadl_relaxation.py \
-  --eadl "$CACHE/downloads/EADL2023.ALL"
+  --eadl "$CACHE/downloads/EADL2023.ALL" --epdl "$CACHE/downloads/EPDL2023.ALL"
+python3 tools/prepare_cross_sections/generate_eedl_elastic.py \
+  --eedl "$CACHE/downloads/EEDL2023.ALL"
+python3 tools/prepare_cross_sections/generate_eedl_ionization.py \
+  --eedl "$CACHE/downloads/EEDL2023.ALL"
 python3 tools/prepare_cross_sections/generate_estar_stopping.py \
   --estar-dir "$CACHE/generated/nist_estar_text"
 python3 tools/geant4_validation/validate_photon_migration.py

@@ -29,6 +29,7 @@
 #include <sstream>
 #include <iostream>
 #include <iomanip>
+#include <algorithm>
 
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
@@ -2376,10 +2377,10 @@ void ShieldingSelect::init()
 
   m_dimensionsStack = addNew<WStackedWidget>();
 
-  // Begin setting up generic material widgets.  Use CSS flex rows (the .DimDiv/.DimEditRow
-  //  pattern shared with the geometry dimension inputs) rather than a WGridLayout: a
-  //  WGridLayout-managed container collapses to zero height inside the WStackedWidget under
-  //  Wt 4 and its contents get clipped - this is exactly why the geometry rows below use flex.
+  // Begin setting up generic material widgets.  Use a CSS flex row (like the CSS grid the
+  //  geometry dimension inputs below use) rather than a WGridLayout: a WGridLayout-managed
+  //  container collapses to zero height inside the WStackedWidget under Wt 4 and its contents
+  //  get clipped.
   m_genericDiv = m_dimensionsStack->addNew<WContainerWidget>();
   m_genericDiv->addStyleClass( "DimDiv GenericMatRow" );
 
@@ -2488,13 +2489,12 @@ void ShieldingSelect::init()
   
   
   // A lambda for setting up dimension edits for the various geometry dimensions.
-  //  Uses CSS flex layout instead of WGridLayout to avoid Wt4's absolute-positioning
-  //  issue inside WStackedWidget (overflow:hidden clips zero-height layout containers).
+  //  The label, edit, and Fit checkbox are added directly to `parent`, a CSS grid (.DimGrid), so
+  //  all rows share column widths.  CSS is used instead of WGridLayout to avoid Wt4's
+  //  absolute-positioning issue inside WStackedWidget (overflow:hidden clips zero-height layouts).
   auto setupDimEdit = [this,distValidator]( const WString &labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WContainerWidget *parent ){
-    WContainerWidget *row = parent->addNew<WContainerWidget>();
-    row->addStyleClass( "DimEditRow" );
-
-    WLabel * const label = row->addNew<WLabel>( labelTxt );
+    WLabel * const label = parent->addNew<WLabel>( labelTxt );
+    label->addStyleClass( "DimLabel" );
 
     auto editUniq = std::make_unique<WLineEdit>( "1.0 cm" );
     edit = editUniq.get();
@@ -2517,7 +2517,7 @@ void ShieldingSelect::init()
     edit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     edit->enterPressed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
 
-    row->addWidget( std::move(editUniq) );
+    parent->addWidget( std::move(editUniq) );
 
     if( m_forFitting )
     {
@@ -2525,7 +2525,7 @@ void ShieldingSelect::init()
       fitCb = fitCbUniq.get();
       fitCb->setChecked( false );
       fitCb->addStyleClass( "CbNoLineBreak" );
-      row->addWidget( std::move(fitCbUniq) );
+      parent->addWidget( std::move(fitCbUniq) );
 
       fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
       fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
@@ -2543,7 +2543,7 @@ void ShieldingSelect::init()
 
   // Begin setting up spherical widgets
   m_sphericalDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  m_sphericalDiv->addStyleClass( "DimDiv" );
+  m_sphericalDiv->addStyleClass( m_forFitting ? "DimDiv DimGrid" : "DimDiv DimWrapRow" );
 
   const bool fistShield = (!m_shieldSrcDisp || !m_shieldSrcDisp->numberShieldings());
 
@@ -2556,16 +2556,13 @@ void ShieldingSelect::init()
     //       in the Shielding/Activity fit tool, which we always have (m_forFitting == true), but
     //       if geometry is cylindrical or rectangular, and (m_forFitting == false), then the
     //       material summary wont be visible.
-    auto summaryUniq = this->removeWidget( m_materialSummary );
-    // Add material summary to the first (and only) DimEditRow in sphericalDiv
-    WContainerWidget *firstRow = dynamic_cast<WContainerWidget *>( m_sphericalDiv->children().front() );
-    if( firstRow )
-      firstRow->addWidget( std::move(summaryUniq) );
+    // The summary shares the thickness row, dropping below it when too narrow (see .DimWrapRow)
+    m_sphericalDiv->addWidget( this->removeWidget( m_materialSummary ) );
   }//if( !m_forFitting )
 
   // Begin setting up cylindrical widgets
   m_cylindricalDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  m_cylindricalDiv->addStyleClass( "DimDiv" );
+  m_cylindricalDiv->addStyleClass( "DimDiv DimGrid" );
 
   lbltxt_key = fistShield ? "ss-radius" : "ss-radial-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_cylRadiusEdit, m_fitCylRadiusCB, m_cylindricalDiv );
@@ -2575,7 +2572,7 @@ void ShieldingSelect::init()
 
   // Begin setting up rectangular widgets
   m_rectangularDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  m_rectangularDiv->addStyleClass( "DimDiv" );
+  m_rectangularDiv->addStyleClass( "DimDiv DimGrid" );
 
   lbltxt_key = fistShield ? "ss-half-width"  : "ss-width-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_rectWidthEdit, m_fitRectWidthCB, m_rectangularDiv );
@@ -4982,10 +4979,13 @@ void ShieldingSelect::updateMaterialSummary()
   m_densityEdit->setValue( static_cast<float>(density) );
   m_materialSummary->toggleStyleClass( "DensityOverridden", overridden );
 
-  // Size the input to its content, so it reads as text rather than as a form field.  Quantized
-  //  to half-em steps, so typing a value of similar length doesnt nudge the rest of the row.
-  const size_t nchar = std::max( size_t(3), m_densityEdit->valueText().toUTF8().size() );
-  const double width_em = std::min( 7.0, std::ceil( 2.0*(0.62*nchar + 0.5) ) / 2.0 );
+  // Size the input to its content, so it reads as text rather than as a form field: digits are
+  //  ~0.56em wide, a '.' half that, plus ~0.3em of padding and border.  Quantized to quarter-em
+  //  steps, so typing a value of similar length doesnt nudge the rest of the row.
+  const string density_txt = m_densityEdit->valueText().toUTF8();
+  const size_t ndot = static_cast<size_t>( std::count( begin(density_txt), end(density_txt), '.' ) );
+  const double text_em = 0.56*(density_txt.size() - ndot) + 0.28*ndot + 0.3;
+  const double width_em = std::min( 7.0, std::max( 1.5, std::ceil( 4.0*text_em ) / 4.0 ) );
   m_densityEdit->setWidth( WLength( width_em, LengthUnit::FontEm ) );
 
   char buffer[128];

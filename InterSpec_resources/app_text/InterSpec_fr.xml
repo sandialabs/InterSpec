@@ -585,8 +585,6 @@
 
   <!-- L'affichage du détecteur. Défini ici pour que nous n'ayons pas à charger un tout nouveau fichier XML pour juste ces quelques entrées. -->
   <message id="app-tt-det-disp">Le détecteur actuellement sélectionné. Cliquez pour sélectionner un détecteur différent, ou modifier celui-ci.</message>
-  <message id="app-det-select-txt">cliquer pour sélectionner</message>
-  <message id="app-det-select-txt-mobile">toucher pour sélectionner</message>
   <message id="app-default-manual-det-name">Détecteur défini par l'utilisateur</message>
 
 

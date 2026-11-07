@@ -60,6 +60,7 @@ struct GadrasDetectorDat;
 class PeakDef;
 class PeakModel;
 class InterSpecUser;
+struct DrfAppearance;
 struct PeakFitDetPrefs;
 namespace SpecUtils{ class Measurement; }
 
@@ -609,6 +610,14 @@ public:
 
   std::shared_ptr<const PeakFitDetPrefs> peakFitDetPrefs() const;
   void setPeakFitDetPrefs( std::shared_ptr<const PeakFitDetPrefs> prefs );
+
+  /** The optional icon and exterior 3D model of the instrument (see DrfAppearance); may be nullptr.
+   Cosmetic only: not part of the hash, and not carried by #toAppUrl.
+   */
+  std::shared_ptr<const DrfAppearance> appearance() const;
+
+  /** Sets, or with nullptr (or an empty appearance) clears, the appearance; does not change the hash. */
+  void setAppearance( std::shared_ptr<const DrfAppearance> appearance );
 
   /** The result of parsing an ISOCS .ECC file. */
   struct EccParseResult
@@ -1787,6 +1796,11 @@ protected:
    <FixedGeomSourceSetup> node (XML + DrfExtra/DB), absent when empty.
    */
   std::string m_fixedGeomSetupXml;
+
+  /** Optional icon and exterior model; see #appearance.  Serialized as the optional <Appearance>
+   node (XML + DrfExtra/DB); never null-but-empty.
+   */
+  std::shared_ptr<const DrfAppearance> m_appearance;
 
   /** Optional raw measured efficiency points the DRF was characterized from
    (see #MeasuredDrfPoints) - provenance + grounding input.

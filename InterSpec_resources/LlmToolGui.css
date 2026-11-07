@@ -17,8 +17,8 @@
   height: 100%;
 }
 
-/* Details only of use when developing the assistant (raw JSON menus, invocation IDs, raw tool
-   parameters and results); LlmToolGui adds .LlmHideDebug to itself unless the user asked to see them. */
+/* Details only of use when developing the assistant (raw JSON menus, full tool parameters, raw tool
+   results); LlmToolGui adds .LlmHideDebug to itself unless the user asked to see them. */
 .LlmHideDebug .LlmDebugOnly {
   display: none !important;
 }
@@ -563,6 +563,83 @@
   background-color: var(--interspec-background-color);
   border-left: 3px solid var(--interspec-link-color);
   border-radius: 4px;
+}
+
+/* A tool call's header, "name{arguments} [status] (duration)".  With debug options on, it has all the
+   arguments in full (.LlmToolArgsFull), wrapping onto as many lines as needed, with the duration
+   (first in the DOM, so it can) floated to the right of the first line. */
+.LlmToolCallHeader {
+  display: flow-root;
+}
+
+.LlmToolCallHeader > * {
+  margin-left: 5px;
+}
+
+.LlmToolCallHeader > .LlmToolName,
+.LlmToolCallHeader > .LlmToolArgs,
+.LlmToolCallHeader > .LlmToolArgsFull {
+  margin-left: 0;
+}
+
+.LlmToolCallHeader > .LlmToolArgs {
+  display: none;
+}
+
+.LlmToolArgs, .LlmToolArgsFull {
+  font-size: 13px;
+  color: var(--interspec-label-color);
+}
+
+.LlmToolArgsFull {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Otherwise it is one line: only the arguments shrink, showing as many as fit (see LlmFitToolArgs),
+   or cut with an ellipsis. */
+.LlmHideDebug .LlmToolCallHeader {
+  display: flex;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.LlmHideDebug .LlmToolCallHeader > * {
+  flex: none;
+}
+
+.LlmHideDebug .LlmToolCallHeader > .LlmToolArgs {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Shown by LlmFitToolArgs, when not all the arguments fit. */
+.LlmToolArgs > .LlmArgMore {
+  display: none;
+}
+
+.LlmToolCallHeader > .LlmDuration {
+  float: right;
+  margin-left: 10px;
+  margin-right: 0;
+  font-size: 13px;
+  color: var(--interspec-label-color);
+}
+
+/* On the one line, the duration (and any invocation ID) is at the far right, after the arguments and
+   status; the padding keeps it apart from arguments cut short. */
+.LlmHideDebug .LlmToolCallHeader > .LlmDuration {
+  order: 1;
+  margin-left: auto;
+  padding-left: 10px;
+}
+
+.LlmHideDebug .LlmToolCallHeader > .LlmInvocationId {
+  order: 2;
 }
 
 /* Error state for tool results */

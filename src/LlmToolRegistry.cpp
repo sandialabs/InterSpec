@@ -3108,13 +3108,16 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     submitTool.description =
       "Submit a prompt into the InterSpec assistant conversation as if the user typed it.  The"
       " assistant analyzes the loaded spectra with its own tools (and sub-agents), and answers."
+      "  No spectrum is needed for general questions (nuclear data, decay, dose, and the like)."
       "  Returns {status, turn_id}: with status \"done\" the result has the assistant's final"
       " response text, the tools it called, and any questions it asked (answered with a stated"
       " assumption, as there is no interactive user); with status \"running\" the turn is still"
       " going - call assistant_get_result with the turn_id to wait for it, or assistant_cancel."
       "  Clients that send a progressToken (and, over HTTP, accept text/event-stream) also get"
       " progress notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
-      " run in order.";
+      " run in order.  The conversation continues across prompts; to start a new one, call"
+      " load_spectrum_file with specType \"Foreground\" and conversation \"new\" - with the current"
+      " foreground's path to keep it, or with no path (unloading any foreground).";
     submitTool.mcpDescription = submitTool.description;
     submitTool.parameters_schema = json::parse(R"({
         "type": "object",
@@ -4735,18 +4738,51 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
   const bool hasPath = params.contains( path_key ) && params[path_key].is_string()
                        && !params[path_key].get<string>().empty();
 
+  // What happens to the assistant conversation when a new foreground is loaded: by default the
+  //  file's saved conversation (if any) replaces the current one, except for the MCP servers, which
+  //  keep the current conversation - a file from someone else may carry a made-up "conversation",
+  //  so the client must ask for it with "resume" (for files it exported itself).
+  const bool is_foreground = (specType == SpecUtils::SpectrumType::Foreground);
+  const string convo_key = find_case_insensitive_key( "conversation", params );
+  const bool convo_given = (params.contains( convo_key ) && params[convo_key].is_string());
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
+  string conversation_mode = "keep";
+#else
+  string conversation_mode = "resume";
+#endif
+  if( convo_given )
+    conversation_mode = params[convo_key].get<string>();
+  if( (conversation_mode != "keep") && (conversation_mode != "resume") && (conversation_mode != "new") )
+    throw std::runtime_error( "Invalid 'conversation' value '" + conversation_mode + "'; must be keep, resume, or new." );
+
   if( !hasPath )
   {
+    // Unloading the foreground leaves the conversation as it is, unless asked for a "new" one - how
+    //  an MCP client starts over (whether or not a foreground was loaded); the unloaded file keeps
+    //  its conversation in memory, as in the GUI.
+    const bool new_convo = (is_foreground && convo_given && (conversation_mode == "new"));
+    if( is_foreground && convo_given && (conversation_mode == "resume") )
+      throw std::runtime_error( "conversation \"resume\" needs the path of a file with a saved conversation." );
+
     // Unload the specified spectrum
     interspec->setSpectrum( nullptr, std::set<int>{}, specType, Wt::WFlags<InterSpec::SetSpectrumOptions>{} );
+
+    if( new_convo && interspec->currentLlmTool() )
+      interspec->currentLlmTool()->clearConversationHistory();
 
     json result;
     result["success"] = true;
     result["specType"] = specTypeStr;
     result["action"] = "unloaded";
     const string label = SpecUtils::to_lower_ascii_copy( specTypeStr );
-    result["summary"] = before[specType].meas ? ("Unloaded the " + label + " (" + before[specType].meas->filename() + ").")
-                                              : ("No " + label + " was loaded.");
+    string summary = before[specType].meas ? ("Unloaded the " + label + " (" + before[specType].meas->filename() + ").")
+                                           : ("No " + label + " was loaded.");
+    if( new_convo )
+    {
+      summary += " Started a new assistant conversation.";
+      result["conversation"] = "new";
+    }
+    result["summary"] = std::move( summary );
     json displayed;
     for( const SpecUtils::SpectrumType type : all_types )
       displayed[spec_type_label(type)] = displayed_state_json( interspec, type, displayed_state( interspec, type ),
@@ -4761,21 +4797,6 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
 
   if( !SpecUtils::is_file( path ) )
     throw std::runtime_error( "File not found: " + client_path );
-
-  // What happens to the assistant conversation when a new foreground is loaded: by default the
-  //  file's saved conversation (if any) replaces the current one, except for the MCP servers, which
-  //  keep the current conversation - a file from someone else may carry a made-up "conversation",
-  //  so the client must ask for it with "resume" (for files it exported itself).
-  const string convo_key = find_case_insensitive_key( "conversation", params );
-#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
-  string conversation_mode = "keep";
-#else
-  string conversation_mode = "resume";
-#endif
-  if( params.contains( convo_key ) && params[convo_key].is_string() )
-    conversation_mode = params[convo_key].get<string>();
-  if( (conversation_mode != "keep") && (conversation_mode != "resume") && (conversation_mode != "new") )
-    throw std::runtime_error( "Invalid 'conversation' value '" + conversation_mode + "'; must be keep, resume, or new." );
 
   // Optional detectors to sum, for a foreground.
   vector<string> requestedDetectors;
@@ -4948,10 +4969,19 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
     throw;
   }//try / catch
 
+  // Without an assistant open (the stdio server before its first prompt, or the desktop app with it
+  //  closed), its conversation is the one the foreground stores for the shown samples, which
+  //  InterSpec::createLlmTool() restores.
+  const auto stored_history_key = []( const DisplayedState &state ) -> set<int> {
+    return (state.meas && state.meas->passthrough()) ? set<int>{} : state.samples;
+  };
+
   LlmToolGui * const llm_tool = interspec->currentLlmTool();
-  const bool is_foreground = (specType == SpecUtils::SpectrumType::Foreground);
+  const DisplayedState &prev_fore = before[SpecUtils::SpectrumType::Foreground];
   const shared_ptr<vector<shared_ptr<LlmInteraction>>> prev_conversation
-         = (is_foreground && llm_tool && (conversation_mode == "keep")) ? llm_tool->getConversationHistory() : nullptr;
+         = (!is_foreground || (conversation_mode != "keep")) ? nullptr
+           : (llm_tool ? llm_tool->getConversationHistory()
+              : (prev_fore.meas ? prev_fore.meas->llmConversationHistory( stored_history_key( prev_fore ) ) : nullptr));
 
   if( requestedSamples.empty() )
   {
@@ -4988,7 +5018,16 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
                                           : make_shared<vector<shared_ptr<LlmInteraction>>>() );
     else if( conversation_mode == "new" )
       llm_tool->clearConversationHistory();
-  }//if( foreground was loaded )
+  }else if( is_foreground && !interspec->currentLlmTool() && (conversation_mode != "resume") )
+  {
+    // Without an assistant open, make the conversation it opens with the one asked for, rather than
+    //  the file's.
+    const DisplayedState shown = displayed_state( interspec, SpecUtils::SpectrumType::Foreground );
+    if( shown.meas && (conversation_mode == "keep") && prev_conversation && !prev_conversation->empty() )
+      shown.meas->setLlmConversationHistory( stored_history_key( shown ), prev_conversation );
+    else if( shown.meas )
+      shown.meas->removeLlmConversationHistory( stored_history_key( shown ) );
+  }//if( assistant open ) / else
 
   notice_guard.connection.disconnect();
 
@@ -5281,7 +5320,7 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
 #endif
     if( is_foreground )
     {
-      // Without an assistant open yet, the file's conversation is restored when one is.
+      // Without an assistant open yet, the conversation it will open with.
       const set<int> history_key = meas->passthrough() ? set<int>{} : now.samples;
       const shared_ptr<vector<shared_ptr<LlmInteraction>>> convo = llm_tool ? llm_tool->getConversationHistory()
                                                                  : meas->llmConversationHistory( history_key );

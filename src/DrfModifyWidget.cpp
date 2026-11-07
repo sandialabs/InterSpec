@@ -29,6 +29,7 @@
 #include <cctype>
 #include <memory>
 #include <string>
+#include <fstream>
 #include <numeric>
 #include <functional>
 #include <vector>
@@ -45,6 +46,7 @@
 #include <Wt/WLineEdit.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WMenuItem.h>
+#include <Wt/WFileUpload.h>
 #include <Wt/WGroupBox.h>
 #include <Wt/WTableCell.h>
 #include <Wt/WPushButton.h>
@@ -71,6 +73,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DrfModifyCalc.h"
+#include "InterSpec/DrfAppearance.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/EccUncertOptions.h"
@@ -191,6 +194,12 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_tabStack( nullptr ),
     m_name( nullptr ),
     m_description( nullptr ),
+    m_appearance( drf ? drf->appearance() : nullptr ),
+    m_appearanceIcon( nullptr ),
+    m_appearanceSummary( nullptr ),
+    m_removeIconBtn( nullptr ),
+    m_removeModelBtn( nullptr ),
+    m_appearanceError( nullptr ),
     m_generalChart( nullptr ),
     m_infoTable( nullptr ),
     m_infoValues{},
@@ -365,6 +374,37 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_description->setText( WString::fromUTF8( m_orig ? m_orig->description() : string() ) );
     m_description->changed().connect( this, &DrfModifyWidget::markEditedNoRegen );
     descLabel->setBuddy( m_description );
+
+    // The instrument's icon and exterior 3D model (see DrfAppearance): cosmetic, so like the name
+    //  they never make a Monte-Carlo response stale.
+    idGrid->addNew<WLabel>( WString::tr("dmw-appearance") );
+    WContainerWidget *look = idGrid->addNew<WContainerWidget>();
+    look->addStyleClass( "DrfModifyAppearance" );
+
+    m_appearanceIcon = look->addNew<WText>( "", TextFormat::UnsafeXHTML );  //see DrfAppearance::icon_html
+    m_appearanceSummary = look->addNew<WText>( "", TextFormat::Plain );
+    m_appearanceSummary->addStyleClass( "DrfModifyAppearanceSummary" );
+
+    WContainerWidget *lookBtns = look->addNew<WContainerWidget>();
+    lookBtns->addStyleClass( "DrfModifyAppearanceBtns" );
+    WPushButton *iconBtn = lookBtns->addNew<WPushButton>( WString::tr("dmw-appearance-upload-icon") );
+    iconBtn->addStyleClass( "LinkBtn" );
+    iconBtn->clicked().connect( this, [this](){ startAppearanceUpload( false ); } );
+    m_removeIconBtn = lookBtns->addNew<WPushButton>( WString::tr("dmw-appearance-remove-icon") );
+    m_removeIconBtn->addStyleClass( "LinkBtn" );
+    m_removeIconBtn->clicked().connect( this, [this](){ removeAppearancePart( false ); } );
+    WPushButton *modelBtn = lookBtns->addNew<WPushButton>( WString::tr("dmw-appearance-upload-model") );
+    modelBtn->addStyleClass( "LinkBtn" );
+    modelBtn->clicked().connect( this, [this](){ startAppearanceUpload( true ); } );
+    m_removeModelBtn = lookBtns->addNew<WPushButton>( WString::tr("dmw-appearance-remove-model") );
+    m_removeModelBtn->addStyleClass( "LinkBtn" );
+    m_removeModelBtn->clicked().connect( this, [this](){ removeAppearancePart( true ); } );
+
+    m_appearanceError = look->addNew<WText>( "", TextFormat::Plain );
+    m_appearanceError->addStyleClass( "DrfModifyAppearanceError" );
+    m_appearanceError->hide();
+
+    updateAppearanceDisplay();
 
     // What the detector carries and how it responds: a live chart of the efficiency + FWHM, and a
     //  summary of what it has (measured points, geometry, Monte-Carlo support, uncertainty, ...).
@@ -1245,6 +1285,7 @@ bool DrfModifyWidget::ToolState::operator==( const ToolState &rhs ) const
 {
   if( (drfHash != rhs.drfHash)
      || (name != rhs.name) || (description != rhs.description) || (tabIndex != rhs.tabIndex)
+     || ((!appearance) != (!rhs.appearance)) || (appearance && !(*appearance == *rhs.appearance))
      || (geometryModeled != rhs.geometryModeled)
      || (anchorRemoved != rhs.anchorRemoved)
      || (coefSigmas != rhs.coefSigmas)
@@ -1276,6 +1317,7 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
   state->generatedFromFingerprint = m_generatedFromFingerprint;
   state->name = m_name->text().toUTF8();
   state->description = m_description->text().toUTF8();
+  state->appearance = m_appearance;
   state->tabIndex = m_tabMenu->currentIndex();
   state->geometryModeled = m_geometryModeled;
   state->anchorRemoved = m_anchorRemoved;
@@ -1334,6 +1376,8 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
 
   m_name->setText( WString::fromUTF8(state->name) );
   m_description->setText( WString::fromUTF8(state->description) );
+  m_appearance = state->appearance;
+  updateAppearanceDisplay();
 
   if( m_modeToggle )
   {
@@ -1455,6 +1499,114 @@ void DrfModifyWidget::markEditedNoRegen()
   markGeneralStale();
   scheduleUndoRedoStep();
 }//void markEditedNoRegen()
+
+
+void DrfModifyWidget::startAppearanceUpload( const bool is_model )
+{
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr( is_model ? "dmw-appearance-model-title"
+                                                                   : "dmw-appearance-icon-title" ) );
+  WText *note = dialog->contents()->addNew<WText>( WString::tr( is_model ? "dmw-appearance-model-note"
+                                                                         : "dmw-appearance-icon-note" ) );
+  note->setInline( false );
+  note->addStyleClass( "DrfModifyAppearanceNote" );
+
+  // A WFileUpload is good for one file, so each upload gets a fresh dialog; it is deleted (later,
+  //  so not from under its own signal) once it is accepted or cancelled.
+  WFileUpload *upload = dialog->contents()->addNew<WFileUpload>();
+  upload->setInline( false );
+  upload->setFilters( is_model ? ".gltf,.glb,model/gltf+json,model/gltf-binary" : ".svg,image/svg+xml" );
+  upload->changed().connect( upload, &WFileUpload::upload );
+  upload->uploaded().connect( this, [this,dialog,upload,is_model](){
+    handleAppearanceUpload( upload->spoolFileName(), is_model );
+    dialog->accept();
+  } );
+  upload->fileTooLarge().connect( this, [this,dialog]( ::int64_t ){
+    m_appearanceError->setText( WString::tr("dmw-appearance-too-large") );
+    m_appearanceError->show();
+    dialog->accept();
+  } );
+
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+}//void startAppearanceUpload( const bool is_model )
+
+
+void DrfModifyWidget::handleAppearanceUpload( const std::string &spool_file, const bool is_model )
+{
+  try
+  {
+    ifstream input( spool_file.c_str(), ios::in | ios::binary );
+    if( !input )
+      throw runtime_error( WString::tr("dmw-appearance-read-error").toUTF8() );
+
+    const string data( (std::istreambuf_iterator<char>( input )), std::istreambuf_iterator<char>() );
+
+    auto look = m_appearance ? make_shared<DrfAppearance>( *m_appearance ) : make_shared<DrfAppearance>();
+    if( is_model )
+      look->model_gltf = DrfAppearance::validated_gltf( data );
+    else
+      look->icon_svg = DrfAppearance::validated_svg( data );
+
+    m_appearance = look;
+    m_appearanceError->hide();
+  }catch( std::exception &e )
+  {
+    m_appearanceError->setText( WString::tr("dmw-appearance-invalid").arg( WString::fromUTF8( e.what() ) ) );
+    m_appearanceError->show();
+    return;
+  }//try / catch
+
+  updateAppearanceDisplay();
+  markEditedNoRegen();
+}//void handleAppearanceUpload(...)
+
+
+void DrfModifyWidget::removeAppearancePart( const bool is_model )
+{
+  if( !m_appearance )
+    return;
+
+  auto look = make_shared<DrfAppearance>( *m_appearance );
+  if( is_model )
+    look->model_gltf.clear();
+  else
+    look->icon_svg.clear();
+
+  m_appearance = look->empty() ? nullptr : look;
+  m_appearanceError->hide();
+  updateAppearanceDisplay();
+  markEditedNoRegen();
+}//void removeAppearancePart( const bool is_model )
+
+
+void DrfModifyWidget::updateAppearanceDisplay()
+{
+  if( !m_appearanceIcon )
+    return;
+
+  const bool has_icon = (m_appearance && !m_appearance->icon_svg.empty());
+  const bool has_model = (m_appearance && !m_appearance->model_gltf.empty());
+
+  m_appearanceIcon->setText( WString::fromUTF8( has_icon ? m_appearance->icon_html( 32.0, 64.0 ) : string() ) );
+  m_appearanceIcon->setHidden( !has_icon );
+
+  WString summary = WString::tr( has_icon ? "dmw-appearance-no-model" : "dmw-appearance-none" );
+  array<double,6> bounds;
+  if( has_model && m_appearance->model_bounds_m( bounds ) )
+  {
+    char length[32], width[32], height[32];
+    snprintf( length, sizeof(length), "%.1f", 100.0*(bounds[5] - bounds[2]) );
+    snprintf( width, sizeof(width), "%.1f", 100.0*(bounds[3] - bounds[0]) );
+    snprintf( height, sizeof(height), "%.1f", 100.0*(bounds[4] - bounds[1]) );
+    summary = WString::tr("dmw-appearance-model-size").arg( length ).arg( width ).arg( height );
+  }else if( has_model )
+  {
+    summary = WString::tr("dmw-appearance-model");
+  }
+  m_appearanceSummary->setText( summary );
+
+  m_removeIconBtn->setHidden( !has_icon );
+  m_removeModelBtn->setHidden( !has_model );
+}//void updateAppearanceDisplay()
 
 
 void DrfModifyWidget::markGeneralStale()
@@ -1882,6 +2034,7 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   if( !name.empty() )
     working->setName( name );
   working->setDescription( m_description->text().toUTF8() );
+  working->setAppearance( m_appearance );
 
   // Anchor tab: apply whichever editor this DRF gets - which follows how it represents its
   //  efficiency, not the mode toggle, so there is no longer an editor the user could have typed

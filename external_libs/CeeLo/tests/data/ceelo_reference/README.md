@@ -36,6 +36,8 @@ FEP/total discrepancies and z-scores against the GEANT4 references.
 | `our_8_multi.csv`  | 8 — 3"×3" NaI, 0.5 mm Al, Marinelli (water) | `nai_3x3_al05mm_marinelli_water_multi.csv` |
 | `our_11_multi.csv` | 11 — 3"×3" NaI, 0.5 cm Fe shield, 10 cm | `nai_3x3_fe05cm_shield_10cm_multi.csv` |
 | `our_12_multi.csv` | 12 — 3"×3" NaI, SS304 box + cellulose | `nai_3x3_ss304box_cellulose_15cm_multi.csv` |
+| `our_20_multi.csv` | 20 — 3"×3" NaI, Pb-wall box + cellulose | `nai_3x3_pbbox_cellulose_15cm_multi.csv` |
+| `our_21_multi.csv` | 21 — 3"×3" NaI, W-wall box + cellulose | `nai_3x3_wbox_cellulose_15cm_multi.csv` |
 | `our_25_multi.csv` | 25 — GEM35-70 HPGe coax, sharp front edge, 5 cm | `hpge_gem35_coax_sharp_5cm_multi.csv` |
 | `our_26_multi.csv` | 26 — GEM35-70 HPGe coax, bulletized edge + round-tipped bore, 5 cm | `hpge_gem35_coax_bullet_5cm_multi.csv` |
 | `our_27_multi.csv` | 27 — GEM35-70 HPGe, bulletized, 2 cm + 0.5 cm Fe shell (0.75 keV window) | `hpge_gem35_bullet_fe05cm_2cm_multi.csv` |
@@ -55,6 +57,9 @@ the precision target is ~0.3%. From `build/examples/`:
 for c in 1 2 3 5 6 7 8 11 12 25 26; do
     ./benchmark_mc_configs --config $c --precision 0.003     # writes our_${c}_multi.csv (cwd)
 done
+for c in 20 21; do                                           # no default energy grid
+    ./benchmark_mc_configs --config $c --precision 0.003 --energies 662,2614
+done
 for c in 27 28; do                                           # scored at their G4 refs' window
     ./benchmark_mc_configs --config $c --precision 0.003 --fep-window 0.75
 done
@@ -67,6 +72,8 @@ python3 ../../profiling/compare_validation.py
   silent: on config 27 the 1.5 keV window reads +2.6 / +3.5 ± 0.4% more FEP at 60 keV and
   +1.5 / +2.2 ± 0.4% at 88 keV, and 60/88 keV are documented skips, so the gate would not
   notice.
+- Configs 20 and 21 have no default energy grid in `bench_configs.h`; their GEANT4
+  references are at 662 and 2614 keV only.
 - `--precision p` targets p on **both** FEP and total, and the run continues until both are
   met; FEP is the binding one. Pass only `target_fep_rel_precision` for a cheaper run.
 - Config 7 at 100 keV cannot reach 0.3% on FEP: it is `max_events`-limited at 200M events

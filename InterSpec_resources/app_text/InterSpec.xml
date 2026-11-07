@@ -606,8 +606,7 @@
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
   <message id="app-tt-det-disp">The currently selected detector.  Click to select a different detector, or modify this one.</message>
-  <message id="app-det-select-txt">click to select</message>
-  <message id="app-det-select-txt-mobile">tap to select</message>
+  <message id="app-det-none">No detector efficiency – select…</message>
   <message id="app-default-manual-det-name">User Defined Detector</message>
 
 

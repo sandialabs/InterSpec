@@ -1,7 +1,7 @@
 /* Shielding3DView.js - WebGL version */
 
-// `detector` is the DRF's geometry (see Shielding3DView::createDetectorJson), or null to draw a
-//  placeholder detector.
+// `detector` is the DRF's geometry and/or exterior model (see Shielding3DView::createDetectorJson;
+//  the model is read with GltfMini.js), or null to draw a placeholder detector.
 Shielding3DView = function(id, data, detector) {
   var container = document.getElementById(id);
   if (!container) return null;
@@ -545,7 +545,7 @@ Shielding3DView = function(id, data, detector) {
           gl.disable(gl.POLYGON_OFFSET_FILL);
       }
 
-      gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, gl.UNSIGNED_SHORT, 0);
+      gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, mesh.buffer.indexType || gl.UNSIGNED_SHORT, 0);
     }
 
     // --- Draw distance annotation overlay ---
@@ -576,31 +576,6 @@ Shielding3DView = function(id, data, detector) {
           };
         }
 
-        var srcPt = proj(kp.sourceCenter);
-        var shellPt = proj(kp.outerShellPoint);
-        var detPt = proj(kp.detFaceCenter);
-
-        // Draw dashed line from source to detector face
-        ctx.beginPath();
-        ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = 'rgba(255, 165, 0, 0.9)';
-        ctx.lineWidth = 2;
-        ctx.moveTo(detPt.x, detPt.y);
-        ctx.lineTo(srcPt.x, srcPt.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Draw marker dots
-        function drawDot(pt, color, radius) {
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = color;
-          ctx.fill();
-        }
-        drawDot(srcPt, 'red', 4);
-        drawDot(shellPt, 'orange', 4);
-        drawDot(detPt, '#4444ff', 4);
-
         // Format length for display
         function fmtLen(mm) {
           if (mm === 0) return "0.00 mm";
@@ -612,35 +587,105 @@ Shielding3DView = function(id, data, detector) {
           return m.toFixed(2) + " m";
         }
 
-        // Distance labels
-        var distToCenter = kp.detDistance;
-        var distToSurface = kp.detDistance - kp.outerShellZ;
+        function dashedLine(a, b, color) {
+          ctx.beginPath();
+          ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
 
-        // Midpoints for label placement
-        var midDet = { x: (detPt.x + shellPt.x)/2, y: (detPt.y + shellPt.y)/2 };
-        var midSrc = { x: (shellPt.x + srcPt.x)/2, y: (shellPt.y + srcPt.y)/2 };
+        function drawDot(pt, color, radius) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, radius, 0, 2 * Math.PI);
+          ctx.fillStyle = color;
+          ctx.fill();
+        }
 
-        // Compute perpendicular offset for text placement (above/below line)
-        var lineAngle = Math.atan2(detPt.y - srcPt.y, detPt.x - srcPt.x);
-        var perpX = -Math.sin(lineAngle);
-        var perpY = Math.cos(lineAngle);
-        var textOffset = 14;
+        // Unit normal to the screen segment a->b
+        function normal(a, b) {
+          var len = Math.sqrt((b.x - a.x)*(b.x - a.x) + (b.y - a.y)*(b.y - a.y)) || 1;
+          return { x: -(b.y - a.y)/len, y: (b.x - a.x)/len };
+        }
 
-        ctx.font = '11px sans-serif';
+        var L = kp.labels;
+        var srcPt = proj(kp.sourceCenter);
+        var shellPt = proj(kp.outerShellPoint);
+        var detPt = proj(kp.detFaceCenter);
+        var legColor = 'rgba(40, 90, 170, 0.9)', directColor = 'rgba(255, 165, 0, 0.9)';
+
+        // Every segment drawn: the path the user entered (only with an offset), then the direct
+        //  line from the detector face center to the source center.
+        var segs = kp.legs.map(function(leg) { return { a: proj(leg.a), b: proj(leg.b), color: legColor }; });
+        segs.push({ a: detPt, b: srcPt, color: directColor });
+        segs.forEach(function(s) { dashedLine(s.a, s.b, s.color); });
+        drawDot(srcPt, 'red', 4);
+        drawDot(shellPt, 'orange', 4);
+        drawDot(detPt, '#4444ff', 4);
+
+        // Text beside the middle of segment a-b, on the side n points to - or the other side, if
+        //  fewer of the drawn segments and labels already placed run into it there.  Its box is
+        //  moved out by its own half-extent along n, so a-b never runs through it, however it slopes.
+        var textGap = 8, textHeight = 11;
+        ctx.font = textHeight + 'px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // "To surface" label (detector face to outer shell)
-        if (distToSurface > 0.01) {
-          ctx.fillStyle = 'orange';
-          ctx.fillText("To surface: " + fmtLen(distToSurface),
-            midDet.x + perpX * textOffset, midDet.y + perpY * textOffset);
+        var placed = [];
+        function label(text, a, b, n, color) {
+          var w = ctx.measureText(text).width;
+          function place(n) {
+            var d = textGap + 0.5*(Math.abs(n.x)*w + Math.abs(n.y)*textHeight);
+            return { x: 0.5*(a.x + b.x) + n.x*d, y: 0.5*(a.y + b.y) + n.y*d, w: w };
+          }
+          function clutter(c) {
+            var crossed = segs.filter(function(s) {
+              var steps = Math.ceil(Math.sqrt((s.b.x - s.a.x)*(s.b.x - s.a.x) + (s.b.y - s.a.y)*(s.b.y - s.a.y)) / 3);
+              for (var k = 0; k <= steps; k++) {
+                var x = s.a.x + (k/steps)*(s.b.x - s.a.x), y = s.a.y + (k/steps)*(s.b.y - s.a.y);
+                if ((Math.abs(x - c.x) < 0.5*w + 2) && (Math.abs(y - c.y) < 0.5*textHeight + 2))
+                  return true;
+              }
+              return false;
+            });
+            var overlapped = placed.filter(function(p) {
+              return (Math.abs(p.x - c.x) < 0.5*(p.w + w) + 2) && (Math.abs(p.y - c.y) < textHeight + 2);
+            });
+            return crossed.length + overlapped.length;
+          }
+          var c = place(n), alt = place({ x: -n.x, y: -n.y });
+          if (clutter(alt) < clutter(c))
+            c = alt;
+          placed.push(c);
+          ctx.fillStyle = color;
+          ctx.fillText(text, c.x, c.y);
         }
 
-        // "To center" label (detector face to source center)
-        ctx.fillStyle = 'orange';
-        ctx.fillText("To center: " + fmtLen(distToCenter),
-          midSrc.x - perpX * textOffset, midSrc.y - perpY * textOffset);
+        // The direct line: "To surface" labels its stretch to where it enters the outer shell, and
+        //  "To center" the rest - on opposite sides of it, or both away from the offset path.
+        var perp = normal(srcPt, detPt), notPerp = { x: -perp.x, y: -perp.y };
+        var surfSide = perp, centerSide = notPerp;
+        if (kp.legs.length) {
+          // Each leg's label preferably on the side away from the direct line
+          var directMid = { x: 0.5*(detPt.x + srcPt.x), y: 0.5*(detPt.y + srcPt.y) };
+          var lean = 0;
+          for (var li = 0; li < kp.legs.length; li++) {
+            var a = segs[li].a, b = segs[li].b;
+            var n = normal(a, b);
+            if (n.x*(directMid.x - 0.5*(a.x + b.x)) + n.y*(directMid.y - 0.5*(a.y + b.y)) > 0)
+              n = { x: -n.x, y: -n.y };
+            label(kp.legs[li].label + " " + fmtLen(kp.legs[li].value), a, b, n, legColor);
+            lean += perp.x*(b.x - detPt.x) + perp.y*(b.y - detPt.y);
+          }
+          surfSide = centerSide = (lean > 0) ? notPerp : perp;
+        }
+
+        if (kp.toSurface > 0.01)
+          label(L.toSurface + " " + fmtLen(kp.toSurface), detPt, shellPt, surfSide, 'orange');
+        label(L.toCenter + " " + fmtLen(kp.toCenter), shellPt, srcPt, centerSide, 'orange');
       }
     }
 
@@ -693,14 +738,21 @@ Shielding3DView.prototype.setData = function(data, detector) {
     gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshData.normal), gl.STATIC_DRAW);
     
+    // 16-bit indices unless the mesh has too many vertices for them (a detailed detector model)
+    var use32 = (meshData.position.length / 3) > 65535;
+    if (use32 && !gl.getExtension('OES_element_index_uint'))
+      use32 = false;  // (every WebGL we support has it)
+
     var idxBuf = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(meshData.indices), gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, use32 ? new Uint32Array(meshData.indices)
+                                                 : new Uint16Array(meshData.indices), gl.STATIC_DRAW);
     
     return {
       position: posBuf,
       normal: normBuf,
       indices: idxBuf,
+      indexType: use32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
       numElements: meshData.indices.length
     };
   }
@@ -913,7 +965,21 @@ Shielding3DView.prototype.setData = function(data, detector) {
   var detHoverCenter, detHoverRadius, detFarZ, detTransverse;
 
   var det = this.detector;
-  if (det && det.regions && det.regions.length) {
+  var hasRegions = !!(det && det.regions && det.regions.length);
+
+  // The instrument's exterior model, if the DRF has one (see DrfAppearance)
+  var exterior = null;
+  if (det && det.exterior && (typeof GltfMini !== 'undefined')) {
+    try {
+      exterior = GltfMini.parse(det.exterior);
+    } catch (e) {
+      console.log('Shielding3DView: could not read the detector model: ' + e);
+    }
+    if (exterior && !exterior.length)
+      exterior = null;
+  }
+
+  if (hasRegions) {
     // The DRF's own geometry, to scale: the crystal face sits `endcapOffset` behind the detector face.
     var faceZ = detDistance + det.endcapOffset * CM;
     var boxDy = det.box ? (det.boxDy || 0) : 0;
@@ -951,9 +1017,9 @@ Shielding3DView.prototype.setData = function(data, detector) {
         twoSided: true
       });
     }
-  } else {
-    // No geometry recorded: a placeholder cylinder of the DRF's diameter (as long as it is wide),
-    //  with a cartoon instrument body behind it.
+  } else if (!exterior) {
+    // No geometry or model recorded: a placeholder cylinder of the DRF's diameter (as long as it is
+    //  wide), with a cartoon instrument body behind it.
     var detDiam = (data.detectorDiameter !== undefined) ? (data.detectorDiameter * MM) : (3.0 * INCH);
     var detRad = detDiam / 2.0;
     var detLen = detDiam;
@@ -991,6 +1057,57 @@ Shielding3DView.prototype.setData = function(data, detector) {
     detFarZ = detDistance + detLen + boxDim;
     detTransverse = Math.max(boxDim/2, handY + handH/2, detRad);
   }
+
+  if (exterior) {
+    // glTF metres, +Y up, looking along +Z, origin at the detector face.  The scene's detector looks
+    //  along -Z from its face at z = detDistance, so this is a 180 degree turn about Y:
+    //  (x, y, z) -> (offX - 1000x, offY + 1000y, detDistance - 1000z).
+    var METRE = 1000 * MM;
+    var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    var parts = exterior.map(function(part) {
+      var P = part.position, N = part.normal;
+      var pos = new Float32Array(P.length), nrm = new Float32Array(N.length);
+      for (var i = 0; i < P.length; i += 3) {
+        pos[i]   = offX - METRE * P[i];
+        pos[i+1] = offY + METRE * P[i+1];
+        pos[i+2] = detDistance - METRE * P[i+2];
+        nrm[i] = -N[i];  nrm[i+1] = N[i+1];  nrm[i+2] = -N[i+2];
+        for (var k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k], pos[i+k]);
+          hi[k] = Math.max(hi[k], pos[i+k]);
+        }
+      }
+      return { position: pos, normal: nrm, indices: part.indices, color: part.color };
+    });
+
+    // See-through when the DRF's crystal is drawn inside it, else as the model colours it.
+    var modelCenter = [0.5*(lo[0] + hi[0]), 0.5*(lo[1] + hi[1]), 0.5*(lo[2] + hi[2])];
+    for (var pi = 0; pi < parts.length; pi++) {
+      var c = parts[pi].color;
+      var alpha = hasRegions ? Math.min(c[3], 0.2) : c[3];
+      meshes.push({
+        buffer: createBufferInfo(gl, parts[pi]),
+        color: [c[0], c[1], c[2], alpha],
+        matrix: this.Mat4.create(),
+        center: modelCenter,
+        transparent: (alpha < 1.0),
+        twoSided: true
+      });
+    }
+
+    // Framing and hover cover the whole instrument (and any crystal standing outside it).
+    var modelTransverse = Math.sqrt(Math.pow(Math.max(hi[0] - offX, offX - lo[0]), 2)
+                                    + Math.pow(Math.max(hi[1] - offY, offY - lo[1]), 2));
+    var frontZ = Math.min(lo[2], detDistance), backZ = hi[2];
+    if (hasRegions) {
+      backZ = Math.max(backZ, detFarZ);
+      modelTransverse = Math.max(modelTransverse, detTransverse);
+    }
+    detFarZ = backZ;
+    detTransverse = modelTransverse;
+    detHoverCenter = [offX, offY, 0.5*(frontZ + backZ)];
+    detHoverRadius = 1.05 * Math.sqrt(0.25*(backZ - frontZ)*(backZ - frontZ) + modelTransverse*modelTransverse);
+  }//if (exterior)
 
   // 4. Shielding, drawn inner to outer.  Dimensions are thickness increments: a sphere's radius,
   //  a cylinder's radius and HALF-length, a box's HALF-width, -height and -depth.
@@ -1043,7 +1160,7 @@ Shielding3DView.prototype.setData = function(data, detector) {
     }
   }
 
-  // Store key 3D points for hover annotations
+  // The shielding's extent along the line of sight, for the camera framing below
   var outerShellZ = 0;
   if (data.geometry === "Spherical") {
     outerShellZ = currentRad;
@@ -1056,11 +1173,45 @@ Shielding3DView.prototype.setData = function(data, detector) {
     outerShellZ = currentHalfD;
   }
 
+  // Key points for the hover annotations.  The direct line runs from the detector face center to the
+  //  source center; the outer shell is convex and centered on the origin, so the line enters it at
+  //  face/g, with g the largest of the face point's coordinates over the shell's half-extents.
+  var face = [offX, offY, detDistance];
+  var toCenter = Math.sqrt(offX*offX + offY*offY + detDistance*detDistance);
+  function ratio(a, half) { return (a === 0) ? 0 : (Math.abs(a) / half); }  // (Infinity if no shell)
+  var g = 0;
+  if (data.geometry === "Spherical") {
+    g = ratio(toCenter, currentRad);
+  } else if (data.geometry === "CylinderEndOn") {
+    g = Math.max(ratio(Math.sqrt(offX*offX + offY*offY), currentCylRad), ratio(detDistance, currentCylHalfLen));
+  } else if (data.geometry === "CylinderSideOn") {
+    // SideOn cylinder is rotated 90 deg about X, so its axis is along Y
+    g = Math.max(ratio(Math.sqrt(offX*offX + detDistance*detDistance), currentCylRad), ratio(offY, currentCylHalfLen));
+  } else if (data.geometry === "Rectangular") {
+    g = Math.max(ratio(offX, currentHalfW), ratio(offY, currentHalfH), ratio(detDistance, currentHalfD));
+  }
+  var entry = (g > 0) ? [offX / g, offY / g, detDistance / g] : face;
+
+  // With an off-axis offset, also the path the user entered: straight out of the detector face to
+  //  the source's center plane, then at right angles by each offset to the source center.
+  var labels = data.labels || {};
+  var legs = [];
+  if (offX !== 0 || offY !== 0) {
+    legs.push({ a: face, b: [offX, offY, 0], label: labels.distance, value: detDistance });
+    if (offX !== 0)
+      legs.push({ a: [offX, offY, 0], b: [0, offY, 0], label: labels.offset0, value: offX });
+    if (offY !== 0)
+      legs.push({ a: [0, offY, 0], b: [0, 0, 0], label: labels.offset1, value: offY });
+  }
+
   this.keyPoints = {
     sourceCenter: [0, 0, 0],
-    detFaceCenter: [offX, offY, detDistance],
-    outerShellPoint: [0, 0, outerShellZ],
-    outerShellZ: outerShellZ,
+    detFaceCenter: face,
+    outerShellPoint: entry,
+    toSurface: toCenter * ((g > 0) ? (1 - 1/g) : 0),
+    toCenter: toCenter,
+    legs: legs,
+    labels: labels,
     detDistance: detDistance,
     detCenter: detHoverCenter,
     detBoundRadius: detHoverRadius,

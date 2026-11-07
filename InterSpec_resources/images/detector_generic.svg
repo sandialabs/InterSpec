@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generic radiation detector, side view with the face on the left: an endcap in front of a body
+     with the radiation trefoil cut out of it.  Black on transparent; DetectorDisplay uses it as a
+     CSS mask, so it is drawn in the text colour (see .DrfIconGeneric in InterSpec.css). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 16">
+  <path fill-rule="evenodd" d="M11,1H28A2,2 0 0 1 30,3V13A2,2 0 0 1 28,15H11A2,2 0 0 1 9,13V3A2,2 0 0 1 11,1Z
+     M20.12,7.22L22.2,3.62A5.4,5.4 0 0 0 16.8,3.62L18.88,7.22A1.25,1.25 0 0 1 20.12,7.22Z
+     M18.25,8.3L14.1,8.3A5.4,5.4 0 0 0 16.8,12.98L18.88,9.38A1.25,1.25 0 0 1 18.25,8.3Z
+     M20.12,9.38L22.2,12.98A5.4,5.4 0 0 0 24.9,8.3L20.75,8.3A1.25,1.25 0 0 1 20.12,9.38Z
+     M18.65,8.3A0.85,0.85 0 1 0 20.35,8.3A0.85,0.85 0 1 0 18.65,8.3Z"/>
+  <path d="M1.5,4.2H9.5V11.8H1.5A1.5,1.5 0 0 1 0,10.3V5.7A1.5,1.5 0 0 1 1.5,4.2Z"/>
+</svg>

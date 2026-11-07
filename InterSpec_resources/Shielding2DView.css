@@ -104,3 +104,10 @@
     stroke: var(--d3spec-text-color, black);
     stroke-width: 1px;
 }
+
+/* A DRF's icon is a black silhouette (see DrfAppearance); this tints it to the theme, light enough
+   that the crystal drawn over it stands out; the icon's own opacity carries its shading. */
+.Shielding2DView .detector-tint-flood {
+  flood-color: var(--d3spec-axis-color, #444);
+  flood-opacity: 0.55;
+}

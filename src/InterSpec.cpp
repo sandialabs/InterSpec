@@ -9673,7 +9673,7 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
 
     // Record it under Detector Select -> "Previous" too, the same as accepting from that dialog
     //  does; otherwise a detector finished here is gone the moment another one is chosen.
-    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user().id(), sql() );
+    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user().id(), sql(), true );
     detectorChanged().emit( new_drf );
 
     if( m_undo && m_undo->canAddUndoRedoNow() )

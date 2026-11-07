@@ -584,8 +584,6 @@
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
   <message id="app-tt-det-disp">Detektor yang saat ini dipilih. Klik untuk memilih detektor yang berbeda, atau memodifikasi yang ini.</message>
-  <message id="app-det-select-txt">klik untuk memilih</message>
-  <message id="app-det-select-txt-mobile">ketuk untuk memilih</message>
   <message id="app-default-manual-det-name">Detektor yang Ditentukan Pengguna</message>
 
 

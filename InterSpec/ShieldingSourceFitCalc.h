@@ -707,9 +707,25 @@ private:
 
     double chi2 = -1.0;
     int num_fcn_calls = 0;
+    /** Number of peaks fit, minus `numFitParameters` (clamped to zero). */
     unsigned int numDOF = 0;
+    /** Number of parameters varied in the fit. */
+    unsigned int numFitParameters = 0;
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
+
+    /** Parameter uncertainties from peak counting statistics alone - i.e., without any detector
+     efficiency uncertainty, even when `drf_uncert_method` included it in `paramErrors` - evaluated
+     at the final fit parameters.  Same layout as `paramErrors`; empty if not computed.
+     Used to break the activity uncertainties into their parts, for reporting.
+     */
+    std::vector<double> paramErrorsStatOnly;
+
+    /** Like `paramErrorsStatOnly`, but each uncertainty is with every other varied parameter held
+     fixed at its fit value (i.e., from just the diagonal of the Fisher information matrix).
+     */
+    std::vector<double> paramErrorsStatFixedOthers;
+
     std::vector<std::string> errormsgs;
 
     /** Non-fatal warnings about a completed fit, suitable for display to the user and inclusion in

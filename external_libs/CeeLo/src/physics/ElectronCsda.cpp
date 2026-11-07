@@ -23,8 +23,11 @@
  */
 
 #include "physics/ElectronCsda.h"
+#include "physics/BremsAngular.h"
 #include "physics/estar_stopping_data.h"
 #include "cross_sections/CrossSectionData.h"
+#include "cross_sections/electron_elastic_data.h"
+#include "cross_sections/electron_ionization_data.h"
 #include "geometry/Geometry.h"
 #include "geometry/SourceGeometry.h"
 
@@ -36,7 +39,10 @@
 #include <stdexcept>
 #include <random>
 #include <cstdlib>
+#include <deque>
 #include <string>
+#include <limits>
+#include <utility>
 
 namespace ceelo {
 
@@ -79,6 +85,58 @@ constexpr double kMeC2_keV = 510.9989461;   // Electron rest energy (keV)
 constexpr double kMeC2_MeV = 0.5109989461;  // Electron rest energy (MeV)
 constexpr double kPi   = 3.14159265358979323846;
 constexpr double kTwoPi = 2.0 * kPi;
+constexpr double kFineStructure = 7.2973525693e-3;
+constexpr double kBremsAvogadro = 6.02214076e23;
+constexpr double kMillibarn_cm2 = 1.0e-27;
+
+/// Exact capped Poisson draw optimized for the small optical depths used by
+/// condensed charged-particle steps. libc++'s general Poisson sampler has
+/// appreciable setup/rejection overhead when almost every draw is zero.
+int sample_capped_poisson(
+    double mean, int cap, std::mt19937_64& rng)
+{
+    if (!(mean > 0.0) || cap <= 0)
+        return 0;
+    if (mean >= 10.0) {
+        std::poisson_distribution<int> poisson(mean);
+        return std::min(poisson(rng), cap);
+    }
+
+    thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    const double target = uniform(rng);
+    double probability = std::exp(-mean);
+    double cumulative = probability;
+    int count = 0;
+    while (target > cumulative && count < cap) {
+        ++count;
+        probability *= mean / static_cast<double>(count);
+        cumulative += probability;
+    }
+    return count;
+}
+
+/// Positron/electron Seltzer-Berger differential-cross-section ratio used by
+/// G4LivermoreBremsstrahlungModel.  It tends to one at high energy/soft photon
+/// emission and suppresses hard positron bremsstrahlung.
+double positron_brems_correction(int Z, double electron_KE_keV,
+                                 double photon_energy_keV)
+{
+    if (!(electron_KE_keV > 0.0) || !(photon_energy_keV > 0.0)
+        || photon_energy_keV >= electron_KE_keV)
+        return 0.0;
+    const auto inverse_beta = [](double kinetic_keV) {
+        return (kinetic_keV + kMeC2_keV)
+            / std::sqrt(kinetic_keV
+                        * (kinetic_keV + 2.0 * kMeC2_keV));
+    };
+    const double exponent =
+        kTwoPi * kFineStructure * static_cast<double>(Z)
+        * (inverse_beta(electron_KE_keV)
+           - inverse_beta(electron_KE_keV - photon_energy_keV));
+    if (exponent < -12.0)
+        return 0.0;
+    return std::exp(exponent);
+}
 
 // ============================================================
 // Positron in-flight annihilation (Heitler).
@@ -112,6 +170,111 @@ double electron_number_density(const Material& mat) {
     return ne;
 }
 
+void build_perp_basis(const Eigen::Vector3d& d,
+                      Eigen::Vector3d& u,
+                      Eigen::Vector3d& v);
+
+/// Sample the kinetic-energy fraction carried by a Møller/Bhabha delta
+/// electron.  This is a unit-preserving port of
+/// G4MollerBhabhaModel::SampleSecondaries.
+double sample_delta_energy_keV(double primary_KE_keV,
+                               double minimum_delta_keV,
+                               bool primary_is_positron,
+                               std::mt19937_64& rng)
+{
+    const double maximum_delta_keV = primary_is_positron
+        ? primary_KE_keV : 0.5 * primary_KE_keV;
+    if (!(minimum_delta_keV < maximum_delta_keV))
+        return 0.0;
+
+    const double xmin = minimum_delta_keV / primary_KE_keV;
+    const double xmax = maximum_delta_keV / primary_KE_keV;
+    const double gamma = 1.0 + primary_KE_keV / kMeC2_keV;
+    const double gamma2 = gamma * gamma;
+    const double beta2 = 1.0 - 1.0 / gamma2;
+    thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
+
+    double x = 0.0;
+    if (!primary_is_positron) {
+        const double gg = (2.0 * gamma - 1.0) / gamma2;
+        const double ymax = 1.0 - xmax;
+        const double majorant =
+            1.0 - gg * xmax
+            + xmax * xmax
+                * (1.0 - gg
+                   + (1.0 - gg * ymax) / (ymax * ymax));
+        for (int attempt = 0; attempt < 1000; ++attempt) {
+            const double proposal = uniform(rng);
+            x = xmin * xmax
+                / (xmin * (1.0 - proposal)
+                   + xmax * proposal);
+            const double y = 1.0 - x;
+            const double rejection =
+                1.0 - gg * x
+                + x * x
+                    * (1.0 - gg + (1.0 - gg * y) / (y * y));
+            if (majorant * uniform(rng) <= rejection)
+                return x * primary_KE_keV;
+        }
+    } else {
+        const double y = 1.0 / (1.0 + gamma);
+        const double y2 = y * y;
+        const double y12 = 1.0 - 2.0 * y;
+        const double b1 = 2.0 - y2;
+        const double b2 = y12 * (3.0 + y2);
+        const double y122 = y12 * y12;
+        const double b4 = y122 * y12;
+        const double b3 = b4 + y122;
+        const double xmax2 = xmax * xmax;
+        const double majorant =
+            1.0
+            + (xmax2 * xmax2 * b4
+               - xmin * xmin * xmin * b3
+               + xmax2 * b2 - xmin * b1) * beta2;
+        for (int attempt = 0; attempt < 1000; ++attempt) {
+            const double proposal = uniform(rng);
+            x = xmin * xmax
+                / (xmin * (1.0 - proposal)
+                   + xmax * proposal);
+            const double x2 = x * x;
+            const double rejection =
+                1.0
+                + (x2 * x2 * b4 - x * x2 * b3
+                   + x2 * b2 - x * b1) * beta2;
+            if (majorant * uniform(rng) <= rejection)
+                return x * primary_KE_keV;
+        }
+    }
+    return 0.0;
+}
+
+Eigen::Vector3d sample_delta_direction(
+    const Eigen::Vector3d& primary_direction,
+    double primary_KE_keV,
+    double delta_KE_keV,
+    std::mt19937_64& rng)
+{
+    const double delta_momentum =
+        std::sqrt(delta_KE_keV
+                  * (delta_KE_keV + 2.0 * kMeC2_keV));
+    const double primary_momentum =
+        std::sqrt(primary_KE_keV
+                  * (primary_KE_keV + 2.0 * kMeC2_keV));
+    double cosine =
+        delta_KE_keV * (primary_KE_keV + 2.0 * kMeC2_keV)
+        / (delta_momentum * primary_momentum);
+    cosine = std::clamp(cosine, -1.0, 1.0);
+    const double sine =
+        std::sqrt(std::max(0.0, 1.0 - cosine * cosine));
+    thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    const double phi = kTwoPi * uniform(rng);
+    Eigen::Vector3d u, v;
+    build_perp_basis(primary_direction, u, v);
+    return (
+        cosine * primary_direction
+        + sine * (std::cos(phi) * u + std::sin(phi) * v)).normalized();
+}
+
 // ============================================================
 // Hoisted compound Seltzer-Berger chi for brems rejection sampling.
 //
@@ -126,9 +289,12 @@ double electron_number_density(const Material& mat) {
 // ============================================================
 class CompoundBremsChi {
 public:
-    CompoundBremsChi(const CrossSectionData& xs, const Material& mat, double KE_keV)
+    CompoundBremsChi(const CrossSectionData& xs, const Material& mat,
+                     double KE_keV, bool is_positron = false)
         : xs_(xs)
         , eb_(xs.sb_chi_energy_bracket(KE_keV))
+        , KE_keV_(KE_keV)
+        , is_positron_(is_positron)
     {
         const auto& comps = mat.composition();
         ncomp_ = comps.size();
@@ -136,7 +302,11 @@ public:
         for (size_t i = 0; i < ncomp_; ++i) {
             const int Z = electron_table_z(comps[i].Z);
             z_[i]     = Z;
-            w_rad_[i] = comps[i].mass_fraction * Z * (Z + 1.0)
+            // The tabulated chi carries the absolute per-atom normalization after
+            // multiplication by Z²/beta².  Number density per gram supplies
+            // mass_fraction/A; Z(Z+1)/A is a radiation-length approximation
+            // and gives the wrong material trend, especially at low Z.
+            w_rad_[i] = comps[i].mass_fraction * Z * Z
                         / ElectronCsda::atomic_weight(Z);
             w_sum_   += w_rad_[i];
         }
@@ -144,13 +314,52 @@ public:
 
     double operator()(double kappa) const {
         const auto kb = xs_.sb_chi_kappa_bracket(kappa);
-        double chi_val = 0.0;
-        for (size_t i = 0; i < ncomp_; ++i)
-            chi_val += w_rad_[i] * xs_.sb_chi_bracketed(z_[i], eb_, kb);
-        return (w_sum_ > 0.0) ? chi_val / w_sum_ : 1.0;
+        return evaluate(kappa, kb, /*apply_positron_correction=*/true);
+    }
+
+    double maximum(double kappa_min) const {
+        // The positron Elwert factor is <= 1, so the electron chi envelope is
+        // also a rigorous positron envelope. Avoid evaluating the expensive
+        // correction at every grid node.
+        double answer = evaluate(
+            kappa_min, xs_.sb_chi_kappa_bracket(kappa_min),
+            /*apply_positron_correction=*/false);
+        for (int i = 0; i < kSB_n_kappa; ++i) {
+            if (kSB_kappa[i] < kappa_min)
+                continue;
+            const CrossSectionData::SBChiKBracket kb =
+                i == kSB_n_kappa - 1
+                    ? CrossSectionData::SBChiKBracket{
+                          kSB_n_kappa - 2, 1.0}
+                    : CrossSectionData::SBChiKBracket{i, 0.0};
+            answer = std::max(
+                answer,
+                evaluate(
+                    kSB_kappa[i], kb,
+                    /*apply_positron_correction=*/false));
+        }
+        // Protect against a shallow interpolation maximum between grid nodes.
+        return 1.02 * answer;
     }
 
 private:
+    double evaluate(
+        double kappa,
+        const CrossSectionData::SBChiKBracket& kb,
+        bool apply_positron_correction) const
+    {
+        double chi_val = 0.0;
+        for (size_t i = 0; i < ncomp_; ++i) {
+            double value = xs_.sb_chi_bracketed(z_[i], eb_, kb);
+            if (is_positron_ && apply_positron_correction) {
+                value *= positron_brems_correction(
+                    z_[i], KE_keV_, kappa * KE_keV_);
+            }
+            chi_val += w_rad_[i] * value;
+        }
+        return (w_sum_ > 0.0) ? chi_val / w_sum_ : 1.0;
+    }
+
     static constexpr size_t kMaxComp = 32;
     const CrossSectionData& xs_;
     CrossSectionData::SBChiEBracket eb_;
@@ -158,6 +367,8 @@ private:
     std::array<double, kMaxComp> w_rad_{};
     size_t ncomp_ = 0;
     double w_sum_ = 0.0;
+    double KE_keV_ = 0.0;
+    bool is_positron_ = false;
 };
 
 // ============================================================
@@ -374,6 +585,179 @@ void build_perp_basis(const Eigen::Vector3d& d,
     v = d.cross(u);  // Already normalized since d and u are orthonormal
 }
 
+/// Mean forward displacement divided by true condensed-history path length
+/// for a Gaussian multiple-scattering step. Highland theta0 is the RMS of
+/// either projected angle. Treating angular diffusion as Brownian through the
+/// step gives <cos(theta(s))> = exp(-theta0² s/L), hence
+///   <Delta z>/L = (1 - exp(-theta0²))/theta0².
+///
+/// Advancing by the full true path along the entry direction makes thin source
+/// geometries leak electrons too early. The correction tends exactly to one
+/// for a vanishing step and remains positive for large angular diffusion.
+double highland_forward_displacement_fraction(double KE_keV,
+                                              double step_gcm2,
+                                              double X0_gcm2,
+                                              double cumulative_x_X0)
+{
+    if (!(KE_keV > 0.0) || !(step_gcm2 > 0.0)
+        || !(X0_gcm2 > 0.0))
+        return 1.0;
+    const double x_X0 = step_gcm2 / X0_gcm2;
+    if (!(x_X0 > 0.0))
+        return 1.0;
+    // beta*p*c = T(T+2m)/(T+m), not p*c = sqrt(T(T+2m)).
+    const double beta_pc =
+        KE_keV * (KE_keV + 2.0 * kMeC2_keV)
+        / (KE_keV + kMeC2_keV);
+    if (!(beta_pc > 1e-12))
+        return 1.0;
+    // Highland's logarithmic correction describes the accumulated slab, not
+    // each artificial condensed-history substep independently.  Reusing the
+    // per-substep x/X0 underestimates both angular diffusion and detour, with
+    // the largest bias for thin high-Z shields.
+    const double log_path =
+        std::max(cumulative_x_X0, x_X0);
+    const double highland_log = 1.0 + 0.038 * std::log(log_path);
+    if (!(highland_log > 0.0))
+        return 1.0;
+    const double theta0 =
+        (13600.0 / beta_pc) * std::sqrt(x_X0) * highland_log;
+    const double variance = theta0 * theta0;
+    if (variance < 1e-8)
+        return 1.0 - 0.5 * variance;
+    return std::clamp(-std::expm1(-variance) / variance, 0.05, 1.0);
+}
+
+// sample_brems_direction_2bs lives in physics/BremsAngular.{h,cpp} (hoisted
+// so the next-event estimator's angular EVALUATOR shares the same rejection
+// function as this sampler; RNG stream unchanged). The unqualified calls
+// below resolve to ceelo::sample_brems_direction_2bs from that header.
+
+/// Apply momentum recoil after a brems photon is emitted.
+void apply_brems_recoil(Eigen::Vector3d& electron_direction,
+                        double electron_kinetic_energy_keV,
+                        const Eigen::Vector3d& photon_direction,
+                        double photon_energy_keV)
+{
+    const double momentum = std::sqrt(std::max(
+        electron_kinetic_energy_keV
+            * (electron_kinetic_energy_keV + 2.0 * kMeC2_keV),
+        0.0));
+    const Eigen::Vector3d outgoing_momentum =
+        momentum * electron_direction
+        - photon_energy_keV * photon_direction;
+    if (outgoing_momentum.squaredNorm() > 1e-20)
+        electron_direction = outgoing_momentum.normalized();
+}
+
+/// One Seltzer-Berger emission conditional on an emission occurring.
+struct SampledBremsstrahlung {
+    double energy_keV = 0.0;
+    Eigen::Vector3d direction = Eigen::Vector3d::UnitZ();
+};
+
+SampledBremsstrahlung sample_single_bremsstrahlung(
+    const Material& mat,
+    Eigen::Vector3d& electron_direction,
+    double available_keV,
+    bool is_positron,
+    std::mt19937_64& rng)
+{
+    constexpr double kPhotonCut_keV = 10.0;
+    if (!(available_keV > kPhotonCut_keV))
+        return {};
+
+    thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    const auto& xs_data = CrossSectionData::instance();
+    const double kappa_min = kPhotonCut_keV / available_keV;
+    CompoundBremsChi compound_chi(
+        xs_data, mat, available_keV, is_positron);
+    double chi_max = compound_chi.maximum(kappa_min);
+    if (!(chi_max > 0.0))
+        chi_max = 1.0;
+
+    double photon_energy_keV = 0.0;
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        const double proposed_keV =
+            kPhotonCut_keV
+            * std::pow(
+                available_keV / kPhotonCut_keV, uniform(rng));
+        const double kappa = proposed_keV / available_keV;
+        if (uniform(rng) * chi_max < compound_chi(kappa)) {
+            photon_energy_keV =
+                std::min(proposed_keV, available_keV);
+            break;
+        }
+    }
+    if (!(photon_energy_keV > 0.0))
+        return {};
+
+    const Eigen::Vector3d photon_direction =
+        sample_brems_direction_2bs(
+            electron_direction, available_keV, photon_energy_keV,
+            ElectronCsda::effective_Z(mat), rng);
+    apply_brems_recoil(
+        electron_direction, available_keV,
+        photon_direction, photon_energy_keV);
+    return {photon_energy_keV, photon_direction};
+}
+
+/// Sample every discrete bremsstrahlung emission in one condensed-history
+/// step. A Bernoulli "one or zero" draw has expectation 1-exp(-lambda), which
+/// undercounts the physical Poisson mean lambda by approximately lambda/2.
+/// Sampling the multiplicity restores the exact tabulated macroscopic emission
+/// rate while retaining CeeLo's inexpensive fixed charged-particle substeps.
+template<typename PhotonSink>
+double sample_step_bremsstrahlung(
+    const ElectronCsda& csda,
+    const Material& mat,
+    Eigen::Vector3d& electron_direction,
+    double electron_kinetic_energy_keV,
+    double step_gcm2,
+    bool is_positron,
+    std::mt19937_64& rng,
+    PhotonSink&& photon_sink)
+{
+    constexpr double kPhotonCut_keV = 10.0;
+    if (!(electron_kinetic_energy_keV > kPhotonCut_keV)
+        || !(step_gcm2 > 0.0))
+        return 0.0;
+
+    const double macro_xs = csda.brems_emission_rate_per_gcm2(
+        mat, electron_kinetic_energy_keV, is_positron);
+    const double mean_multiplicity = macro_xs * step_gcm2;
+    if (!(mean_multiplicity > 0.0))
+        return 0.0;
+
+    // The ordinary source/detector substeps have lambda << 1.  This guard
+    // prevents pathological work if the routine is ever called with a
+    // grossly oversized step; energy conservation normally terminates first.
+    const int multiplicity =
+        sample_capped_poisson(mean_multiplicity, 64, rng);
+    if (multiplicity == 0)
+        return 0.0;
+
+    double total_brems_keV = 0.0;
+
+    for (int emission = 0; emission < multiplicity; ++emission) {
+        const double available_keV =
+            electron_kinetic_energy_keV - total_brems_keV;
+        if (!(available_keV > kPhotonCut_keV))
+            break;
+
+        const SampledBremsstrahlung photon =
+            sample_single_bremsstrahlung(
+                mat, electron_direction, available_keV, is_positron, rng);
+        if (!(photon.energy_keV > 0.0))
+            continue;
+
+        photon_sink(photon.direction, photon.energy_keV);
+        total_brems_keV += photon.energy_keV;
+    }
+
+    return total_brems_keV;
+}
+
 // Bohr energy-loss straggling constant: ξ_B = 4π r_e² (mₑc²)² N_A = 0.1569 MeV² cm²/g,
 // giving the Gaussian energy-loss variance σ² = ξ_B × (Z/A) × Δx × (1 - β²/2)   [MeV²].
 // NOTE: reserved — NOT currently used.  Energy loss in the condensed-history walk below is
@@ -541,7 +925,9 @@ ElectronCsda::ElectronCsda()
         }
     }
 
-    // Build per-element Seltzer-Berger brems normalization integrals.
+    // Build per-element electron Seltzer-Berger brems normalization integrals.
+    // The more expensive positron Elwert-corrected counterparts are initialized
+    // lazily, one element at a time, by ensure_positron_brems_integral().
     // For each element Z and grid energy E, integrate chi(kappa) and chi(kappa)/kappa
     // over kappa = [kBremsThreshold/E, 1] using the SAME 64-point log-spaced
     // trapezoid scheme used previously at runtime, so the compound result matches
@@ -556,6 +942,7 @@ ElectronCsda::ElectronCsda()
             if (E <= kBremsThreshold_keV) {
                 sb_Jchi_[Zm1][i]   = 0.0;
                 sb_Jchiok_[Zm1][i] = 0.0;
+                sb_Jchiok_pos_[Zm1][i] = 0.0;
                 continue;
             }
             double kappa_min = kBremsThreshold_keV / E;
@@ -575,8 +962,52 @@ ElectronCsda::ElectronCsda()
             }
             sb_Jchi_[Zm1][i]   = I_chi;
             sb_Jchiok_[Zm1][i] = I_chiok;
+            sb_Jchiok_pos_[Zm1][i] = 0.0;
         }
     }
+}
+
+void ElectronCsda::ensure_positron_brems_integral(int Z) const
+{
+    const std::size_t row = electron_row(Z);  // Z is already an electron-table Z
+    std::call_once(sb_Jchiok_pos_once_[row], [this, Z, row] {
+        constexpr double kBremsThreshold_keV = 10.0;
+        constexpr int N_int = 64;
+        const auto& xs_data = CrossSectionData::instance();
+        auto& table = sb_Jchiok_pos_[row];
+        for (int i = 0; i < kNGrid; ++i) {
+            const double E = energy_grid_keV_[i];
+            if (E <= kBremsThreshold_keV) {
+                table[i] = 0.0;
+                continue;
+            }
+            const double kappa_min = kBremsThreshold_keV / E;
+            const double log_kmin = std::log(kappa_min);
+            const double dlog = -log_kmin / N_int;
+            double previous_kappa = kappa_min;
+            double previous_value =
+                xs_data.sb_chi(Z, E, previous_kappa)
+                * positron_brems_correction(
+                    Z, E, previous_kappa * E);
+            double integral = 0.0;
+            for (int j = 1; j <= N_int; ++j) {
+                const double kappa =
+                    std::exp(log_kmin + j * dlog);
+                const double value =
+                    xs_data.sb_chi(Z, E, kappa)
+                    * positron_brems_correction(Z, E, kappa * E);
+                const double dk = kappa - previous_kappa;
+                integral +=
+                    0.5
+                    * (previous_value / previous_kappa
+                       + value / kappa)
+                    * dk;
+                previous_kappa = kappa;
+                previous_value = value;
+            }
+            table[i] = integral;
+        }
+    });
 }
 
 const ElectronCsda& ElectronCsda::instance()
@@ -589,32 +1020,6 @@ const ElectronCsda& ElectronCsda::instance()
 // ============================================================
 // Range interpolation
 // ============================================================
-
-double ElectronCsda::interpolate_range(int Z, double KE_keV) const
-{
-    const std::size_t Zm1 = electron_row(checked_electron_z(Z));
-
-    if (KE_keV <= kEMin_keV) return range_table_[Zm1][0];
-    if (KE_keV >= kEMax_keV) return range_table_[Zm1][kNGrid - 1];
-
-    // Binary search in log-energy space
-    double lE = std::log(KE_keV);
-    // Grid is uniformly spaced in log-E
-    double log_min = log_energy_grid_[0];
-    double log_step = log_energy_grid_[1] - log_energy_grid_[0];
-    double frac = (lE - log_min) / log_step;
-    int lo = static_cast<int>(frac);
-    if (lo < 0) lo = 0;
-    if (lo >= kNGrid - 1) lo = kNGrid - 2;
-    int hi = lo + 1;
-
-    double t = frac - lo;  // fractional position in [0,1]
-    // Linear interpolation in log-range
-    double r_lo = range_table_[Zm1][lo];
-    double r_hi = range_table_[Zm1][hi];
-    // Use linear interpolation in R (range is smooth and nearly linear over each step)
-    return r_lo + t * (r_hi - r_lo);
-}
 
 double ElectronCsda::interpolate_log_grid(const std::array<double, kNGrid>& tbl,
                                           double KE_keV) const
@@ -660,54 +1065,254 @@ double ElectronCsda::brems_pemit_corr(const Material& mat, double KE_keV) const
     return (mean_k_SB > 0.0) ? (mean_k_1k / mean_k_SB) : 1.0;
 }
 
-double ElectronCsda::range_gcm2(int Z, double KE_keV) const
+double ElectronCsda::brems_emission_rate_per_gcm2(
+    const Material& mat, double KE_keV, bool is_positron) const
 {
-    return interpolate_range(Z, KE_keV);
+    constexpr double kPhotonCut_keV = 10.0;
+    if (!(KE_keV > kPhotonCut_keV))
+        return 0.0;
+
+    // G4LivermoreBremsstrahlungModel:
+    //   sigma_atom = Z² millibarn / beta²
+    //              * integral chi(T,kappa) d(log kappa).
+    // Multiplication by N_A * mass_fraction/A converts the atomic cross
+    // section to the requested macroscopic cross section per g/cm².
+    const double total_energy = KE_keV + kMeC2_keV;
+    const double inverse_beta_squared =
+        total_energy * total_energy
+        / (KE_keV * (KE_keV + 2.0 * kMeC2_keV));
+    double rate = 0.0;
+    for (const auto& comp : mat.composition()) {
+        const int Z = electron_table_z(comp.Z);
+        const double A = atomic_weight(Z);
+        if (!(A > 0.0))
+            continue;
+        if (is_positron)
+            ensure_positron_brems_integral(Z);
+        const auto& integral_table =
+            is_positron ? sb_Jchiok_pos_[electron_row(Z)]
+                        : sb_Jchiok_[electron_row(Z)];
+        const double integral =
+            interpolate_log_grid(integral_table, KE_keV);
+        rate += comp.mass_fraction * kBremsAvogadro / A
+              * static_cast<double>(Z * Z) * kMillibarn_cm2
+              * inverse_beta_squared * integral;
+    }
+    return std::max(0.0, rate);
 }
+
+double ElectronCsda::delta_electron_rate_per_gcm2(
+    const Material& mat, double KE_keV, double minimum_delta_keV,
+    bool is_positron) const
+{
+    const double maximum_delta_keV =
+        is_positron ? KE_keV : 0.5 * KE_keV;
+    if (!(minimum_delta_keV > 0.0)
+        || !(minimum_delta_keV < maximum_delta_keV))
+        return 0.0;
+
+    const double xmin = minimum_delta_keV / KE_keV;
+    const double xmax = maximum_delta_keV / KE_keV;
+    const double tau = KE_keV / kMeC2_keV;
+    const double gamma = tau + 1.0;
+    const double gamma2 = gamma * gamma;
+    const double beta2 = tau * (tau + 2.0) / gamma2;
+    double reduced_cross_section = 0.0;
+
+    if (!is_positron) {
+        const double gg = (2.0 * gamma - 1.0) / gamma2;
+        reduced_cross_section =
+            ((xmax - xmin)
+                 * (1.0 - gg + 1.0 / (xmin * xmax)
+                    + 1.0
+                        / ((1.0 - xmin) * (1.0 - xmax)))
+             - gg
+                 * std::log(
+                     xmax * (1.0 - xmin)
+                     / (xmin * (1.0 - xmax))))
+            / beta2;
+    } else {
+        const double y = 1.0 / (1.0 + gamma);
+        const double y2 = y * y;
+        const double y12 = 1.0 - 2.0 * y;
+        const double b1 = 2.0 - y2;
+        const double b2 = y12 * (3.0 + y2);
+        const double y122 = y12 * y12;
+        const double b4 = y122 * y12;
+        const double b3 = b4 + y122;
+        reduced_cross_section =
+            (xmax - xmin)
+                * (1.0 / (beta2 * xmin * xmax) + b2
+                   - 0.5 * b3 * (xmin + xmax)
+                   + b4
+                       * (xmin * xmin + xmin * xmax + xmax * xmax)
+                       / 3.0)
+            - b1 * std::log(xmax / xmin);
+    }
+
+    // G4's twopi_mc2_rcl2 / T, in cm² per target electron.
+    constexpr double kClassicalElectronRadiusSq_cm2 =
+        7.9407876e-26;
+    const double cross_section_per_electron_cm2 =
+        reduced_cross_section
+        * kTwoPi * kMeC2_keV
+        * kClassicalElectronRadiusSq_cm2 / KE_keV;
+    double electrons_per_g = 0.0;
+    for (const auto& comp : mat.composition()) {
+        const int Ze = electron_table_z(comp.Z);
+        electrons_per_g +=
+            kBremsAvogadro * comp.mass_fraction * Ze / atomic_weight(Ze);
+    }
+    return std::max(
+        0.0, cross_section_per_electron_cm2 * electrons_per_g);
+}
+
+double ElectronCsda::range_gcm2(
+    int Z, double KE_keV, bool is_positron) const
+{
+    const std::size_t row = electron_row(checked_electron_z(Z));
+    return interpolate_log_grid(
+        is_positron ? range_table_pos_[row] : range_table_[row], KE_keV);
+}
+
+namespace {
+
+/// Marker for a table that depends on nothing beyond the material itself.
+struct NoExtra {
+    friend bool operator==(NoExtra, NoExtra) { return true; }
+};
+
+/// Per-thread memo of a per-(material, extra) table over the energy grid.
+///
+/// Keyed on Material::cache_key() -- a per-OBJECT identity minted by every
+/// constructor and assignment -- and NEVER on the Material address.  An address
+/// aliases across a destroyed-and-rebuilt Material: same address, same density,
+/// same first element gives a stale hit that silently serves a DIFFERENT
+/// material's table, and a partial composition signature (count, first element,
+/// density) narrows that window without closing it.  See Material::cache_key().
+///
+/// Route every new per-material grid table through here.  The keying rule then
+/// lives in one place instead of being re-derived -- correctly or not -- at each
+/// new cache, which is exactly how two of these caches were built wrong.
+///
+/// `extra` carries whatever else the table depends on (positron flag, delta-ray
+/// cut, ...) and is compared with operator==.  `compute` fills a table that is
+/// only inserted once it returns, so a throw leaves nothing cached (the
+/// hand-rolled versions inserted first and filled after, which would have cached
+/// a half-built table) and a table may still be built incrementally from its own
+/// earlier elements.  `compute` must not recurse into the SAME memo -- it would
+/// not find its own entry and would compute a duplicate.  Recursing into a
+/// DIFFERENT one is fine and is what the depth tables do.
+///
+/// Each call site instantiates its own cache (the closure type is part of the
+/// instantiation) -- one memo per table, which is the intent.
+///
+/// std::deque, not std::vector: these return a reference into the container and
+/// callers hold it across further calls, so growth must not invalidate.  The old
+/// hand-rolled caches papered over this with reserve(32) and a comment.
+template <class Table, class Extra, class Compute>
+const Table& material_grid_memo(const Material& mat, const Extra& extra,
+                                Compute&& compute)
+{
+    struct Entry {
+        uint64_t key;
+        Extra extra;
+        Table table;
+    };
+    // Worker threads are spawned per compute(), so the cache lifetime is
+    // naturally bounded and no locking is needed.
+    static thread_local std::deque<Entry> cache;
+
+    const uint64_t key = mat.cache_key();
+    for (auto& e : cache) {
+        if (e.key == key && e.extra == extra) return e.table;
+    }
+
+    Table table{};
+    compute(table);
+    cache.push_back(Entry{key, extra, std::move(table)});
+    return cache.back().table;
+}
+
+} // namespace
 
 const std::array<double, ElectronCsda::kNGrid>&
 ElectronCsda::compound_range_table(const Material& mat, bool is_positron) const
 {
-    // Per-thread cache of compound (Bragg-additive) range tables.  The set of
-    // materials in a run is tiny; worker threads are created per compute(), so a
-    // thread_local cache has the right lifetime with no locking.  Keyed on
-    // Material::cache_key(), which is unique per OBJECT and so cannot alias
-    // across a destroyed-and-rebuilt Material; this used to be the address plus
-    // a partial composition signature (count, first element, density), which
-    // narrowed the collision window without closing it.
-    struct Entry {
-        uint64_t key; bool positron;
-        std::array<double, kNGrid> R;
-    };
-    static thread_local std::vector<Entry> cache = [] {
-        std::vector<Entry> v; v.reserve(32); return v;   // reserve => stable refs
-    }();
+    return material_grid_memo<std::array<double, kNGrid>>(
+        mat, is_positron,
+        [&](std::array<double, kNGrid>& R) {
+            const auto& comp = mat.composition();
+            const auto& src_table = is_positron ? range_table_pos_ : range_table_;
 
-    const uint64_t key = mat.cache_key();
+            // Bragg additivity for ranges at each grid energy:
+            //   1/R_compound = Σᵢ wᵢ / Rᵢ.
+            for (int i = 0; i < kNGrid; ++i) {
+                double inv_range_sum = 0.0;
+                for (const auto& c : comp) {
+                    double Ri = src_table[electron_row(electron_table_z(c.Z))][i];
+                    if (Ri > 1e-30) inv_range_sum += c.mass_fraction / Ri;
+                }
+                R[i] = (inv_range_sum > 0.0) ? 1.0 / inv_range_sum : 1e30;
+            }
+        });
+}
 
-    for (auto& e : cache) {
-        if (e.key == key && e.positron == is_positron) {
-            return e.R;
-        }
-    }
+const std::array<double, ElectronCsda::kNGrid>&
+ElectronCsda::compound_brems_depth_table(
+    const Material& mat, bool is_positron) const
+{
+    return material_grid_memo<std::array<double, kNGrid>>(
+        mat, is_positron,
+        [&](std::array<double, kNGrid>& depth) {
+            const auto& ranges = compound_range_table(mat, is_positron);
+            double previous_rate =
+                brems_emission_rate_per_gcm2(
+                    mat, energy_grid_keV_[0], is_positron);
+            depth[0] = previous_rate * ranges[0];
+            for (int i = 1; i < kNGrid; ++i) {
+                const double rate =
+                    brems_emission_rate_per_gcm2(
+                        mat, energy_grid_keV_[i], is_positron);
+                const double delta_range =
+                    std::max(0.0, ranges[i] - ranges[i - 1]);
+                depth[i] =
+                    depth[i - 1]
+                    + 0.5 * (previous_rate + rate) * delta_range;
+                previous_rate = rate;
+            }
+        });
+}
 
-    cache.emplace_back();
-    Entry& e = cache.back();
-    e.key = key;
-    e.positron = is_positron;
-    const auto& comp = mat.composition();
-    const auto& src_table = is_positron ? range_table_pos_ : range_table_;
-
-    // Bragg additivity for ranges at each grid energy: 1/R_compound = Σᵢ wᵢ / Rᵢ.
-    for (int i = 0; i < kNGrid; ++i) {
-        double inv_range_sum = 0.0;
-        for (const auto& c : comp) {
-            double Ri = src_table[electron_row(electron_table_z(c.Z))][i];
-            if (Ri > 1e-30) inv_range_sum += c.mass_fraction / Ri;
-        }
-        e.R[i] = (inv_range_sum > 0.0) ? 1.0 / inv_range_sum : 1e30;
-    }
-    return e.R;
+const std::array<double, ElectronCsda::kNGrid>&
+ElectronCsda::compound_delta_depth_table(
+    const Material& mat,
+    double minimum_delta_keV,
+    bool is_positron) const
+{
+    // minimum_delta_keV is a genuine parameter of the table, not an identity
+    // proxy, so it stays in the key alongside the material.
+    return material_grid_memo<std::array<double, kNGrid>>(
+        mat, std::make_pair(minimum_delta_keV, is_positron),
+        [&](std::array<double, kNGrid>& depth) {
+            const auto& ranges = compound_range_table(mat, is_positron);
+            double previous_rate =
+                delta_electron_rate_per_gcm2(
+                    mat, energy_grid_keV_[0], minimum_delta_keV, is_positron);
+            depth[0] = previous_rate * ranges[0];
+            for (int i = 1; i < kNGrid; ++i) {
+                const double rate =
+                    delta_electron_rate_per_gcm2(
+                        mat, energy_grid_keV_[i],
+                        minimum_delta_keV, is_positron);
+                const double delta_range =
+                    std::max(0.0, ranges[i] - ranges[i - 1]);
+                depth[i] =
+                    depth[i - 1]
+                    + 0.5 * (previous_rate + rate) * delta_range;
+                previous_rate = rate;
+            }
+        });
 }
 
 double ElectronCsda::range_gcm2_material(const Material& mat, double KE_keV,
@@ -723,31 +1328,14 @@ double ElectronCsda::range_gcm2_material(const Material& mat, double KE_keV,
 const std::array<double, ElectronCsda::kNGrid>&
 ElectronCsda::compound_radcorr_table(const Material& mat) const
 {
-    // Per-thread cache of compound radiative-correction tables (deterministic in
-    // (material, KE)); same lifetime/key scheme as compound_range_table.
-    struct Entry {
-        uint64_t key;
-        std::array<double, kNGrid> C;
-    };
-    static thread_local std::vector<Entry> cache = [] {
-        std::vector<Entry> v; v.reserve(32); return v;
-    }();
-
-    const uint64_t key = mat.cache_key();
-
-    for (auto& e : cache) {
-        if (e.key == key) {
-            return e.C;
-        }
-    }
-
-    cache.emplace_back();
-    Entry& e = cache.back();
-    e.key = key;
-    for (int i = 0; i < kNGrid; ++i) {
-        e.C[i] = radiative_correction_compound(mat, energy_grid_keV_[i]);
-    }
-    return e.C;
+    // Deterministic in (material, KE), so the material alone keys it.
+    return material_grid_memo<std::array<double, kNGrid>>(
+        mat, NoExtra{},
+        [&](std::array<double, kNGrid>& C) {
+            for (int i = 0; i < kNGrid; ++i) {
+                C[i] = radiative_correction_compound(mat, energy_grid_keV_[i]);
+            }
+        });
 }
 
 double ElectronCsda::residual_energy_keV(const Material& mat,
@@ -1176,7 +1764,8 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
     // High energy (KE > 200 keV): Molière condensed-history walk.
     // Adaptive sub-steps (more at higher energy for finer brems sampling);
     // each step applies Highland multiple scattering and may emit a discrete
-    // bremsstrahlung photon with NIST-corrected S_rad.  Energy loss per step is
+    // bremsstrahlung photon at the absolute Seltzer-Berger rate.
+    // Energy loss per step is
     // the deterministic CSDA value — no stochastic energy-loss straggling is
     // applied yet (see the kBohrXi TODO above).
     // ----------------------------------------------------------------
@@ -1269,8 +1858,14 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
             }
         }
 
-        // Advance position
-        pos += dir * (step_gcm2 / density);
+        const Eigen::Vector3d step_start = pos;
+        const Eigen::Vector3d step_direction = dir;
+        const double step_cm = step_gcm2 / density;
+
+        // The charged particle follows the entry direction during this
+        // condensed-history step. Brems creation is sampled within this
+        // segment below; it must not be placed systematically at the far end.
+        pos += step_direction * step_cm;
 
         // Push across boundary so next trace_ray finds the next volume
         if (reach_boundary) {
@@ -1280,70 +1875,27 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
         // Radiation length for this material (needed for brems and scattering)
         double X0 = radiation_length_gcm2(mat);
 
-        // --- Bremsstrahlung emission (probabilistic, Seltzer-Berger) ---
-        //
-        // P_emit is derived from the 1/k envelope: N = (Δx/X0) × ln(KE/k_min) × rad_corr.
-        // With Seltzer-Berger rejection sampling, the accepted photons have lower mean
-        // energy <k>_SB < <k>_1/k.  To maintain the correct total radiative energy loss
-        // (S_rad × Δx), we scale P_emit by <k>_1/k / <k>_SB.  This increases the
-        // emission rate so that P_corrected × <k>_SB = P_old × <k>_1/k = S_rad × Δx.
-        //
+        // --- Bremsstrahlung emission (absolute Seltzer-Berger rate) ---
         double brems_keV = 0.0;
         if (X0 > 0.0 && !disable_brems && KE > kBremsThreshold_keV) {
-            double k_min = kBremsThreshold_keV;
-            double k_max = KE;
-            double kappa_min = k_min / KE;
-            const auto& xs_data = CrossSectionData::instance();
-
-            // Helper: radiation-weight-averaged compound chi at given kappa
-            // Hoisted compound SB chi (Z-independent energy bracket + per-element
-            // radiation weights precomputed once; bit-identical to the old lambda).
-            CompoundBremsChi compound_chi(xs_data, mat, KE);
-
-            // P_emit correction <k>_1/k / <k>_SB, from precomputed per-element
-            // Seltzer-Berger integral tables (replaces the former per-substep
-            // 64-point numerical integration that dominated runtime via sb_chi).
-            double P_emit_corr = brems_pemit_corr(mat, KE);
-
-            double rad_corr = interpolate_log_grid(compound_radcorr_table(mat), KE);
-            double P_emit = (step_gcm2 / X0)
-                          * std::log(KE / kBremsThreshold_keV)
-                          * rad_corr
-                          * P_emit_corr;
-            P_emit = std::min(P_emit, 1.0);
-
-            if (uniform(rng) < P_emit) {
-                // Rejection-sampling envelope ceiling: chi at the soft-photon limit
-                // (kappa_min).  Computed only on the rare steps that actually emit a
-                // photon, so it no longer contributes to the per-substep hot path.
-                double chi_max = compound_chi(kappa_min);
-                if (chi_max <= 0.0) chi_max = 1.0;
-
-                // Rejection sampling: propose from 1/k, accept with chi(κ)/chi_max
-                double E_brems = 0.0;
-                bool accepted = false;
-                for (int attempt = 0; attempt < 100; ++attempt) {
-                    double xi = uniform(rng);
-                    double k_proposed = k_min * std::pow(k_max / k_min, xi);
-                    double kappa = k_proposed / KE;
-                    double chi_val = compound_chi(kappa);
-
-                    if (uniform(rng) * chi_max < chi_val) {
-                        E_brems = std::min(k_proposed, KE);
-                        accepted = true;
-                        break;
-                    }
-                }
-                if (accepted) {
-                    // Emitted along the electron direction; an A/B with a
-                    // G4ModifiedTsai opening angle moved FEP by −0.12% ± 0.13
-                    // @2614 and +0.08% ± 0.14 @3000 (null) — the crystal is
-                    // large compared to the ~m_e/E cone, so the zero-angle
-                    // approximation is fine (studies/high_e_fep/FINDINGS.md).
-                    result.brems_photons.push_back({pos, dir, E_brems});
-                    brems_keV = E_brems;
-                }
-            }
+            // Emission point is sampled uniformly WITHIN the sub-step rather
+            // than pinned at its far end, and the photon direction comes from
+            // BremsAngular rather than being taken as the electron direction.
+            // The zero-opening-angle alternative measures null against a
+            // G4ModifiedTsai A/B (FEP -0.12% +- 0.13 @2614 keV, +0.08% +- 0.14
+            // @3000 keV) -- the crystal is large compared to the ~m_e/E cone --
+            // so this is a refinement, not a defect fix.
+            brems_keV = sample_step_bremsstrahlung(
+                *this, mat, dir, KE, step_gcm2, is_positron, rng,
+                [&](const Eigen::Vector3d& photon_direction,
+                    double photon_energy_keV) {
+                    const Eigen::Vector3d emission_position =
+                        step_start
+                        + step_direction * (uniform(rng) * step_cm);
+                    result.brems_photons.push_back(
+                        {emission_position, photon_direction,
+                         photon_energy_keV});
+                });
         }
 
         // CSDA collision loss (computed from current KE, which includes collision
@@ -1464,15 +2016,787 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
 }
 
 
+// ============================================================
+// Detailed electron transport (spectrum fidelity)
+// ============================================================
+//
+// A mixed (class II) elastic-scattering scheme in the PENELOPE mould, for every
+// electron energy (no 200 keV split):
+//   * Elastic scattering: per material, a Wentzel distribution
+//       p(mu') ∝ 1/(A + mu')²,  mu' = (1 - cos theta)/2,
+//     whose screening A and normalization reproduce the first two transport
+//     cross sections (sigma_1, sigma_2) of the EPICS2023 EEDL elastic data
+//     (electron_elastic_data.cpp) -- so the angular diffusion AND the
+//     large-angle tail that backscatters electrons out of a surface are both
+//     carried.  Collisions deflecting by more than mu'_c are sampled one by
+//     one ("hard"), with mean free path lambda_h = max(lambda_W,
+//     min(C1 lambda_1, C2 R)); the softer ones over each step become one
+//     Gaussian deflection applied at a uniformly sampled point of the step
+//     (the "random hinge"), with the soft first transport moment as variance.
+//   * Energy loss (class II as well): collisions transferring more than
+//     W_cc = 2 keV are sampled one by one from the Moller cross section, and
+//     each delta ray is walked like any electron, so the ones born near a
+//     surface can leave; the primary takes the binary-collision recoil. The
+//     soft remainder (the ESTAR CSDA loss less the hard collisions' mean) is
+//     drawn from PENELOPE's artificial distribution with the soft variance.
+//     This straggling is what puts the early, energetic backscatter where
+//     GEANT4 has it. Seltzer-Berger brems via sample_step_bremsstrahlung,
+//     in-flight annihilation for positrons.
+//   * Boundaries: a flight that reaches a region boundary stops there and a
+//     new step is sampled beyond it (memoryless hard events make this exact).
+//   * Fast path: an electron whose residual CSDA range is below
+//     Geometry::safety_distance() cannot leave its region, so it deposits its
+//     energy there at once (brems from the contained sampler).  Most
+//     electrons are born deep inside a crystal, so they never walk.
+// Positrons use the electron elastic moments (EEDL has none for positrons) and
+// the Moller collisions (Bhabha differs only in the hard tail).
+namespace {
+
+/// <mu'> and <mu'^2> of the normalized Wentzel distribution with screening A.
+struct WentzelMoments { double m1, m2; };
+WentzelMoments wentzel_moments(double A)
+{
+    const double L = std::log1p(1.0 / A);
+    const double K = A * (1.0 + A);
+    return {K * (L + A / (1.0 + A) - 1.0),
+            K * (1.0 - 2.0 * A * L + A / (1.0 + A))};
+}
+
+/// sigma_2 / sigma_1 of the Wentzel distribution: 3 as A -> 0, 1 as A -> inf.
+double wentzel_ratio21(double A)
+{
+    const WentzelMoments m = wentzel_moments(A);
+    return 3.0 * (1.0 - m.m2 / m.m1);
+}
+
+constexpr double kWentzelA_min = 1e-12;
+constexpr double kWentzelA_max = 1e3;
+
+/// The screening A whose Wentzel distribution has sigma_2/sigma_1 = R.
+double fit_wentzel_screening(double R)
+{
+    double lo = std::log(kWentzelA_min), hi = std::log(kWentzelA_max);
+    if (R >= wentzel_ratio21(kWentzelA_min)) return kWentzelA_min;
+    if (R <= wentzel_ratio21(kWentzelA_max)) return kWentzelA_max;
+    for (int it = 0; it < 80; ++it) {      // ratio decreases with A
+        const double mid = 0.5 * (lo + hi);
+        if (wentzel_ratio21(std::exp(mid)) > R) lo = mid; else hi = mid;
+    }
+    return std::exp(0.5 * (lo + hi));
+}
+
+/// Per-material elastic table on the EEDL energy grid: ln A and ln sigma_1
+/// (per g/cm²), both linear in ln E between nodes.
+struct ElasticTable {
+    std::array<double, eedl_elastic::kEnergyCount> ln_A{};
+    std::array<double, eedl_elastic::kEnergyCount> ln_G1{};
+    double ln_E0 = 0.0, d_lnE = 1.0;
+};
+
+const ElasticTable& compound_elastic_table(const Material& mat)
+{
+    return material_grid_memo<ElasticTable>(mat, 0, [&](ElasticTable& t) {
+        using namespace eedl_elastic;
+        constexpr double kNA = 6.02214076e23;
+        t.ln_E0 = std::log(kEnergy_keV[0]);
+        t.d_lnE = std::log(kEnergy_keV[1]) - t.ln_E0;
+        for (std::size_t k = 0; k < kEnergyCount; ++k) {
+            // Compound transport moments are additive.
+            double s1 = 0.0, s2 = 0.0;
+            for (const auto& c : mat.composition()) {
+                const int Ze = electron_table_z(c.Z);
+                const double atoms_per_g =
+                    kNA * c.mass_fraction / ElectronCsda::atomic_weight(Ze);
+                const double sig1 = 1e-24 * kSigma1_barn[Ze - 1][k];
+                s1 += atoms_per_g * sig1;
+                s2 += atoms_per_g * sig1 * kRatio21[Ze - 1][k];
+            }
+            t.ln_G1[k] = std::log(std::max(s1, 1e-300));
+            t.ln_A[k]  = std::log(fit_wentzel_screening(s1 > 0.0 ? s2 / s1 : 2.0));
+        }
+    });
+}
+
+/// Step parameters of the mixed scheme at kinetic energy KE.
+struct ElasticStep {
+    double lambda_h_g = 0.0;  ///< hard mean free path (g/cm²)
+    double A = 1.0;           ///< Wentzel screening
+    double P_hard = 1.0;      ///< fraction of collisions that are hard
+    double G1_soft = 0.0;     ///< soft first transport coefficient (1/(g/cm²))
+};
+
+ElasticStep elastic_step(const ElasticTable& t, double KE_keV, double range_g,
+                         double C1, double C2)
+{
+    const double x = (std::log(KE_keV) - t.ln_E0) / t.d_lnE;
+    const int n = static_cast<int>(eedl_elastic::kEnergyCount);
+    const int k = std::clamp(static_cast<int>(std::floor(x)), 0, n - 2);
+    const double f = std::clamp(x - k, 0.0, 1.0);
+    ElasticStep e;
+    e.A = std::exp(t.ln_A[k] + f * (t.ln_A[k + 1] - t.ln_A[k]));
+    const double G1 = std::exp(t.ln_G1[k] + f * (t.ln_G1[k + 1] - t.ln_G1[k]));
+    const double A = e.A;
+    const double sigma_W = G1 / (2.0 * wentzel_moments(A).m1);   // collisions per g/cm²
+    const double lambda_W = 1.0 / sigma_W;
+    e.lambda_h_g = std::max(lambda_W, std::min(C1 / G1, C2 * range_g));
+    e.P_hard = std::min(1.0, lambda_W / e.lambda_h_g);
+    const double mu_c = A * (1.0 - e.P_hard) / (A + e.P_hard);
+    // First transport moment of the hard part: 2 sigma_W int_{mu_c}^1 mu' p(mu').
+    const double G1_hard = 2.0 * sigma_W * A * (1.0 + A)
+        * (std::log((1.0 + A) / (A + mu_c)) + A / (1.0 + A) - A / (A + mu_c));
+    e.G1_soft = std::max(0.0, G1 - G1_hard);
+    return e;
+}
+
+/// Turn `dir` by polar angle with cosine `cos_theta` at a uniform azimuth.
+void deflect(Eigen::Vector3d& dir, double cos_theta, double phi)
+{
+    cos_theta = std::clamp(cos_theta, -1.0, 1.0);
+    const double sin_theta = std::sqrt(std::max(0.0, 1.0 - cos_theta * cos_theta));
+    Eigen::Vector3d u, v;
+    build_perp_basis(dir, u, v);
+    dir = (cos_theta * dir + sin_theta * (std::cos(phi) * u + std::sin(phi) * v))
+              .normalized();
+}
+
+double env_or(const char* name, double fallback)
+{
+    const char* text = std::getenv(name);
+    return text ? std::atof(text) : fallback;
+}
+
+/// Moller collisions transferring W in [W_cc, T/2] (free-electron, per electron
+/// of the medium): their count and summed transfer per g/cm², and a sampler.
+struct MollerHard {
+    double T = 0.0, W_cc = 0.0, k = 0.0;   // k = 2 pi r_e^2 m c^2 / beta^2 (keV cm²)
+    double n_per_g = 0.0;                   // hard collisions per g/cm²
+    double mean_W_per_g = 0.0;              // energy they carry per g/cm²
+    double soft_var_per_g = 0.0;            // variance of the soft (W < W_cc) loss per g/cm²
+};
+
+MollerHard moller_hard(double T, double W_cc, double electrons_per_g)
+{
+    constexpr double m = 510.998950;
+    constexpr double k0 = 2.549549e-22;   // 2 pi r_e^2 m c^2, keV cm²
+    MollerHard h;
+    h.T = T;
+    h.W_cc = W_cc;
+    const double beta2 = T * (T + 2.0 * m) / ((T + m) * (T + m));
+    h.k = k0 / beta2;
+    const double a = W_cc, b = 0.5 * T;
+    h.soft_var_per_g = electrons_per_g * h.k * W_cc;
+    if (b <= a) return h;
+    // Integrals of the Moller DCS from a to b = T/2 (count, then W-weighted).
+    const double Tm2 = (T + m) * (T + m);
+    const double c4 = (2.0 * T + m) * m / Tm2;
+    const double ln_ta = std::log((T - a) / a);   // ln((T-a)/a)
+    const double ln_hb = std::log(b / (T - a));    // ln(b/(T-a)) <= 0
+    const double n = 1.0 / a - 1.0 / (T - a) + (b - a) / Tm2 - c4 / T * ln_ta;
+    const double w = (ln_ta + ln_hb) + (2.0 - T / (T - a) + ln_hb)
+                   + 0.5 * (b * b - a * a) / Tm2 + c4 * ln_hb;
+    h.n_per_g = electrons_per_g * h.k * n;
+    h.mean_W_per_g = electrons_per_g * h.k * w;
+    return h;
+}
+
+/// A non-negative soft energy loss with the given mean and variance
+/// (PENELOPE's artificial distribution: truncated Gaussian, uniform, or a
+/// zero/uniform mixture, as the spread grows against the mean).
+double sample_soft_loss(double mean, double var, std::mt19937_64& rng)
+{
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    if (!(var > 0.0) || !(mean > 0.0)) return std::max(0.0, mean);
+    const double mean2 = mean * mean;
+    if (mean2 > 9.0 * var) {
+        std::normal_distribution<double> gauss(mean, std::sqrt(var));
+        for (;;) {
+            const double x = gauss(rng);
+            if (x > 0.0 && x < 2.0 * mean) return x;
+        }
+    }
+    if (mean2 > 3.0 * var) {
+        const double half = std::sqrt(3.0 * var);
+        return mean - half + 2.0 * half * uniform(rng);
+    }
+    // Zero with probability 1 - p, else uniform on (0, w0): mean p w0 / 2,
+    // second moment p w0^2 / 3.
+    const double w0 = 1.5 * (var + mean2) / mean;
+    const double p = 2.0 * mean / w0;
+    return uniform(rng) < p ? w0 * uniform(rng) : 0.0;
+}
+
+/// A transfer W from the restricted Moller distribution (1/W² proposal).
+double sample_moller_W(const MollerHard& h, std::mt19937_64& rng)
+{
+    constexpr double m = 510.998950;
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    const double T = h.T, a = h.W_cc, b = 0.5 * T;
+    const double Tm2 = (T + m) * (T + m);
+    const double c4 = (2.0 * T + m) * m / Tm2;
+    for (;;) {
+        const double W = 1.0 / (1.0 / a - uniform(rng) * (1.0 / a - 1.0 / b));
+        const double g = 1.0 + W * W / ((T - W) * (T - W)) + W * W / Tm2 - c4 * W / (T - W);
+        if (uniform(rng) * 2.25 <= g) return W;
+    }
+}
+
+/// Per-material electron-impact K-shell ionization table: each element's
+/// rate weight (atoms/g x 1e-24 cm²/barn x omega_K, so weight x sigma_K in
+/// barn is K x-rays per g/cm²) and its CSDA K x-ray yield from each energy
+/// of a log grid down to rest.
+struct ImpactTable {
+    static constexpr int kN = 96;
+    struct Element {
+        int Z = 0;
+        double weight = 0.0;
+        double threshold_keV = 0.0;  ///< EEDL's K-shell ionization threshold
+        const FluorescenceData* fl = nullptr;
+        std::array<double, kN> yield{};
+    };
+    std::vector<Element> elements;
+    double ln_E0 = 0.0, d_lnE = 1.0;
+};
+
+const ImpactTable& compound_impact_table(const Material& mat, const ElectronCsda& csda)
+{
+    return material_grid_memo<ImpactTable>(mat, 0, [&](ImpactTable& t) {
+        constexpr double kNA = 6.02214076e23;
+        constexpr double kEmin_keV = 1.0, kEmax_keV = 20000.0;
+        t.ln_E0 = std::log(kEmin_keV);
+        t.d_lnE = std::log(kEmax_keV / kEmin_keV) / (ImpactTable::kN - 1);
+        for (const auto& c : mat.composition()) {
+            if (c.Z < 1 || c.Z > static_cast<int>(eedl_ionization::kElementCount)) continue;
+            const FluorescenceData* fl = CrossSectionData::instance().fluorescence(c.Z);
+            if (!fl || fl->num_lines == 0 || !(fl->fluorescence_yield > 0.0f)) continue;
+            ImpactTable::Element e;
+            e.Z = c.Z;
+            e.threshold_keV = eedl_ionization::kKShell[c.Z - 1].energy_keV[0];
+            e.fl = fl;
+            e.weight = kNA * c.mass_fraction / ElectronCsda::atomic_weight(c.Z)
+                     * 1e-24 * fl->fluorescence_yield;
+            t.elements.push_back(e);
+        }
+        // Yield = integral of weight x sigma_K over the CSDA path, with
+        // dR = R(E_b) - R(E_a) from the material's range table: midpoint rule on
+        // eight linear sub-steps per grid interval, from rest upward.
+        constexpr int kSub = 8;
+        std::vector<double> acc(t.elements.size(), 0.0);
+        double E_prev = 0.0, R_prev = 0.0;
+        for (int k = 0; k < ImpactTable::kN; ++k) {
+            const double E_k = std::exp(t.ln_E0 + k * t.d_lnE);
+            double ea = E_prev, Ra = R_prev;
+            for (int j = 1; j <= kSub; ++j) {
+                const double eb = E_prev + (E_k - E_prev) * j / kSub;
+                const double Rb = csda.range_gcm2_material(mat, eb);
+                const double em = 0.5 * (ea + eb);
+                for (std::size_t i = 0; i < t.elements.size(); ++i)
+                    acc[i] += t.elements[i].weight
+                            * eedl_ionization::k_shell_sigma_barn(t.elements[i].Z, em)
+                            * std::max(0.0, Rb - Ra);
+                ea = eb;
+                Ra = Rb;
+            }
+            E_prev = E_k;
+            R_prev = Ra;
+            for (std::size_t i = 0; i < t.elements.size(); ++i)
+                t.elements[i].yield[k] = acc[i];
+        }
+    });
+}
+
+/// An isotropic direction for an impact-ionization x-ray.
+Eigen::Vector3d impact_xray_direction(std::mt19937_64& rng)
+{
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    const double c = 2.0 * uniform(rng) - 1.0;
+    const double s = std::sqrt(std::max(0.0, 1.0 - c * c));
+    const double phi = 6.283185307179586 * uniform(rng);
+    return {s * std::cos(phi), s * std::sin(phi), c};
+}
+
+/// A yield column interpolated linearly in ln E (linearly to zero below 1 keV).
+double impact_yield_at(const ImpactTable& t, const std::array<double, ImpactTable::kN>& y,
+                       double E_keV)
+{
+    if (!(E_keV > 0.0)) return 0.0;
+    const double x = (std::log(E_keV) - t.ln_E0) / t.d_lnE;
+    if (x <= 0.0) return y[0] * E_keV / std::exp(t.ln_E0);
+    if (x >= ImpactTable::kN - 1) return y[ImpactTable::kN - 1];
+    const int i = static_cast<int>(x);
+    const double f = x - i;
+    return y[i] + f * (y[i + 1] - y[i]);
+}
+
+/// An element's slowing-down yield, zero at and below its K threshold: the log
+/// grid would otherwise interpolate across the threshold and let an electron
+/// just below it ionize the shell.
+double element_impact_yield_at(const ImpactTable& t, const ImpactTable::Element& e,
+                               double E_keV)
+{
+    return E_keV > e.threshold_keV ? impact_yield_at(t, e.yield, E_keV) : 0.0;
+}
+
+}  // namespace
+
+double ElectronCsda::impact_xray_rate_per_gcm2(const Material& mat, double KE_keV) const
+{
+    const ImpactTable& t = compound_impact_table(mat, *this);
+    double rate = 0.0;
+    for (const auto& e : t.elements)
+        rate += e.weight * eedl_ionization::k_shell_sigma_barn(e.Z, KE_keV);
+    return rate;
+}
+
+double ElectronCsda::impact_xray_yield(const Material& mat, double KE_keV) const
+{
+    const ImpactTable& t = compound_impact_table(mat, *this);
+    double yield = 0.0;
+    for (const auto& e : t.elements) yield += element_impact_yield_at(t, e, KE_keV);
+    return yield;
+}
+
+void ElectronCsda::sample_impact_xrays(const Material& mat, double KE_keV, double mean,
+                                       bool slowing_down, std::mt19937_64& rng,
+                                       std::vector<ImpactXray>& out) const
+{
+    if (!(mean > 0.0)) return;
+    std::poisson_distribution<int> count(mean);
+    int n = count(rng);
+    if (n == 0) return;
+    const ImpactTable& t = compound_impact_table(mat, *this);
+    if (t.elements.empty()) return;
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    thread_local std::vector<double> share;
+    share.assign(t.elements.size(), 0.0);
+    double total = 0.0;
+    for (std::size_t i = 0; i < t.elements.size(); ++i) {
+        const auto& e = t.elements[i];
+        share[i] = slowing_down
+            ? element_impact_yield_at(t, e, KE_keV)
+            : e.weight * eedl_ionization::k_shell_sigma_barn(e.Z, KE_keV);
+        total += share[i];
+    }
+    if (!(total > 0.0)) return;
+    for (; n > 0; --n) {
+        double r = uniform(rng) * total;
+        std::size_t i = 0;
+        while (i + 1 < t.elements.size() && r >= share[i]) r -= share[i++];
+        const FluorescenceData& fl = *t.elements[i].fl;
+        const double xi = uniform(rng);
+        double cum = 0.0;
+        int chosen = 0;
+        for (int li = 0; li < fl.num_lines; ++li) {
+            cum += fl.line_probability[li];
+            if (xi <= cum) { chosen = li; break; }
+        }
+        out.push_back({t.elements[i].Z, static_cast<double>(fl.line_energy_keV[chosen]),
+                       fl.line_filling_subshell[chosen]});
+    }
+}
+
+double ElectronCsda::impact_ionization_max_keV()
+{
+    static const double emax =
+        env_or("CEELO_EWALK_EII_EMAX", std::numeric_limits<double>::infinity());
+    return emax;
+}
+
+ElectronDepositResult ElectronCsda::deposited_in_scoring_detailed(
+                                           const Eigen::Vector3d& position,
+                                           const Eigen::Vector3d& direction,
+                                           double KE_keV,
+                                           const Geometry& geometry,
+                                           std::mt19937_64& rng,
+                                           bool disable_brems,
+                                           bool is_positron,
+                                           double impact_max_keV) const
+{
+    ElectronDepositResult result;
+    result.stop_position = position;
+    if (KE_keV < 0.01) return result;
+
+    // Electron-impact K-shell ionization (impact_max_keV > 0): an ionization
+    // tags part of the energy the stopping power already removes, so its
+    // x-ray is emitted like a brems photon (BremsPhoton::impact_Z) without
+    // changing the particle's energy; one born in a scoring region is paid for
+    // out of the walk's scoring deposit at the end (`impact_debt`).
+    const bool impact = impact_max_keV > 0.0;
+    double impact_debt = 0.0;
+    thread_local std::vector<ImpactXray> impact_buf;
+    auto emit_impact_xrays = [&](const Eigen::Vector3d& from, const Eigen::Vector3d& along,
+                                 double length_cm, bool scoring) {
+        for (const ImpactXray& x : impact_buf) {
+            std::uniform_real_distribution<double> u(0.0, 1.0);
+            BremsPhoton photon{from + along * (u(rng) * length_cm),
+                               impact_xray_direction(rng), x.line_keV};
+            photon.impact_Z = static_cast<std::uint8_t>(x.Z);
+            photon.impact_filling_subshell = x.filling_subshell;
+            result.brems_photons.push_back(photon);
+            if (scoring) impact_debt += x.line_keV;
+        }
+        impact_buf.clear();
+    };
+
+    // Step controls (PENELOPE's C1, C2) and the absorption energy; the
+    // environment overrides exist for convergence A/B studies. Electron-beam
+    // spectra against GEANT4 are unchanged between 0.01, 0.05 and 0.1 (bands
+    // within ~2%); 0.2 starts to drift (full-energy +1-2%). 0.1 halves the
+    // steps of 0.05.
+    static const double kC1 = env_or("CEELO_EWALK_C1", 0.1);
+    static const double kC2 = env_or("CEELO_EWALK_C2", 0.1);
+    static const double kAbsorb_keV = env_or("CEELO_EWALK_EABS", 1.0);
+    static const bool kNoFastPath = std::getenv("CEELO_EWALK_NO_FASTPATH") != nullptr;
+    // Hard-collision threshold W_cc (keV); 0 turns the hard collisions off
+    // (CSDA loss, Bohr straggling above 500 keV, no delta rays). Electron-beam
+    // spectra against GEANT4 are the same at 1 and 2 keV; 2 is cheaper.
+    static const double kMollerWcc = env_or("CEELO_EWALK_WCC", 2.0);
+    constexpr double kTwoPi_ = 6.283185307179586;
+    constexpr double m_e = 510.998950;
+
+    thread_local std::vector<PathSegment> segments;
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+    std::normal_distribution<double> gauss(0.0, 1.0);
+
+    // Delta rays from hard collisions wait here; each is walked after the
+    // particle that made it, starting in the region it was born in.
+    struct Delta {
+        Eigen::Vector3d pos, dir;
+        double KE;
+        const Material* mat;
+        bool scoring;
+    };
+    thread_local std::vector<Delta> deltas;
+    deltas.clear();
+
+    Eigen::Vector3d pos = position;
+    Eigen::Vector3d dir = direction;
+    double KE = KE_keV;
+    bool positron = is_positron;   // the primary only; delta rays are electrons
+    bool primary = true;
+    bool annihilated = false;
+
+    // State of the current step: 0 = sample a new one, 1 = flying to the
+    // hinge, 2 = flying from the hinge to the step end.
+    int phase = 0;
+    double flight_left_g = 0.0, after_hinge_g = 0.0, soft_mean = 0.0;
+    bool step_hard = false;
+    ElasticStep step;
+    const Material* last_mat = nullptr;
+    const ElasticTable* elastic = nullptr;
+    double ZoverA = 0.0;
+    bool left_geometry = false;
+
+    // The region the particle is in, from the last ray trace. A trace is the
+    // walk's dominant cost, so it is redone only when the region is unknown
+    // (start, after a boundary or a gap) or the next flight might reach a
+    // boundary -- a flight shorter than the safety distance cannot.
+    bool need_region = true;
+    const Material* region_mat = nullptr;
+    bool region_scoring = false;
+    double d_bound_cm = 0.0;
+    bool d_bound_valid = false;
+    auto locate = [&]() -> const PathSegment* {
+        geometry.trace_ray(pos, dir, segments);
+        for (const auto& seg : segments)
+            if (seg.t_start < 1e-8 || (seg.t_end > 1e-8 && seg.t_start <= 1e-8))
+                return &seg;
+        return nullptr;
+    };
+
+    for (;;) {   // the primary, then its delta rays
+    for (int guard = 0; guard < 200000; ++guard) {
+        if (need_region) {
+            const PathSegment* cur = locate();
+            if (segments.empty()) { left_geometry = true; break; }
+            if (!cur) {
+                // A gap (bore, vacuum between layers): fly straight across it.
+                bool advanced = false;
+                for (const auto& seg : segments) {
+                    if (seg.t_start > 1e-8) {
+                        pos += dir * (seg.t_start + 1e-9);
+                        advanced = true;
+                        break;
+                    }
+                }
+                if (!advanced) { left_geometry = true; break; }
+                continue;
+            }
+            if (!cur->material) { left_geometry = true; break; }
+            region_mat = cur->material;
+            region_scoring = cur->is_scoring;
+            d_bound_cm = cur->t_end - std::max(0.0, cur->t_start);
+            d_bound_valid = true;
+            need_region = false;
+        }
+
+        const Material& mat = *region_mat;
+        const double rho = mat.density();
+        if (KE <= kAbsorb_keV || !(rho > 0.0)) {
+            if (region_scoring) result.deposited_scoring_keV += KE;
+            KE = 0.0;
+            break;
+        }
+        if (&mat != last_mat) {
+            ZoverA = 0.0;
+            for (const auto& c : mat.composition()) {
+                const int Ze = electron_table_z(c.Z);
+                ZoverA += c.mass_fraction * Ze / atomic_weight(Ze);
+            }
+            elastic = &compound_elastic_table(mat);
+            last_mat = &mat;
+        }
+        const double range_g = range_gcm2_material(mat, KE, positron);
+        double safety_cm = -1.0;   // computed on demand at this position
+
+        if (phase == 0) {
+            // Contained: cannot reach any boundary, so no walk is needed.
+            if (!positron && !kNoFastPath
+                && range_g / rho < (safety_cm = geometry.safety_distance(pos))) {
+                double brems_E = 0.0;
+                if (!disable_brems && KE > 10.0) {
+                    for (const auto& bp : sample_brems_in_material(mat, pos, dir, KE, rng)) {
+                        brems_E += bp.energy_keV;
+                        result.brems_photons.push_back(bp);
+                    }
+                }
+                if (region_scoring)
+                    result.deposited_scoring_keV += std::max(0.0, KE - brems_E);
+                if (impact) {
+                    const double ke = std::min(KE, impact_max_keV);
+                    impact_buf.clear();
+                    sample_impact_xrays(mat, ke, impact_xray_yield(mat, ke), true, rng, impact_buf);
+                    emit_impact_xrays(pos, dir, 0.0, region_scoring);
+                }
+                KE = 0.0;
+                break;
+            }
+            step = elastic_step(*elastic, KE, range_g, kC1, kC2);
+            const double s_hard = -std::log(1.0 - uniform(rng)) * step.lambda_h_g;
+            const double s_cap  = kC2 * range_g;
+            step_hard = s_hard < s_cap;
+            const double s = step_hard ? s_hard : s_cap;
+            const double tau = uniform(rng) * s;
+            soft_mean = -std::expm1(-step.G1_soft * s);   // <1 - cos theta> of the soft part
+            flight_left_g = tau;
+            after_hinge_g = s - tau;
+            phase = 1;
+        }
+
+        // Distance to the region boundary along this flight: from a trace,
+        // unless the flight provably stays inside.
+        if (!d_bound_valid) {
+            if (safety_cm < 0.0) safety_cm = geometry.safety_distance(pos);
+            if (flight_left_g / rho < safety_cm) {
+                d_bound_cm = std::numeric_limits<double>::infinity();
+            } else {
+                const PathSegment* cur = locate();
+                if (!cur || cur->material != region_mat || cur->is_scoring != region_scoring) {
+                    need_region = true;   // sitting on a boundary: re-locate
+                    continue;
+                }
+                d_bound_cm = cur->t_end - std::max(0.0, cur->t_start);
+            }
+        }
+        d_bound_valid = false;   // one flight's worth
+
+        // Fly along dir: to the next event, or to the boundary if nearer.
+        const double d_bound_g = d_bound_cm * rho;
+        const bool hit_boundary = d_bound_g < flight_left_g;
+        const double path_g = hit_boundary ? d_bound_g : flight_left_g;
+        const double path_cm = path_g / rho;
+        const Eigen::Vector3d flight_start = pos;
+        const Eigen::Vector3d flight_dir = dir;
+
+        if (positron && path_cm > 0.0) {
+            const double P_annih = electron_number_density(mat)
+                                 * positron_annih_xsec_per_electron(KE) * path_cm;
+            if (P_annih > 0.0 && uniform(rng) < std::min(P_annih, 1.0)) {
+                result.annihilated_in_flight    = true;
+                result.residual_KE_at_annih_keV = KE;
+                result.stop_position            = pos;
+                annihilated = true;
+                KE = 0.0;
+                break;
+            }
+        }
+
+        // Bremsstrahlung over the flight (at most the residual range).
+        const bool stops = path_g >= range_g;
+        const double loss_path_g = stops ? range_g : path_g;
+        double brems_keV = 0.0;
+        if (!disable_brems && KE > 10.0 && loss_path_g > 0.0) {
+            const double loss_path_cm = loss_path_g / rho;
+            brems_keV = sample_step_bremsstrahlung(
+                *this, mat, dir, KE, loss_path_g, positron, rng,
+                [&](const Eigen::Vector3d& photon_direction, double photon_energy_keV) {
+                    result.brems_photons.push_back(
+                        {flight_start + flight_dir * (uniform(rng) * loss_path_cm),
+                         photon_direction, photon_energy_keV});
+                });
+        }
+
+        // Impact ionization over the flight: the CSDA yield of the rest of the
+        // slowing-down if the particle stops in it, else the rate times the path.
+        if (impact && loss_path_g > 0.0) {
+            const double ke = std::min(KE, impact_max_keV);
+            double mean = 0.0;
+            if (stops) mean = impact_xray_yield(mat, ke);
+            else if (KE <= impact_max_keV) mean = impact_xray_rate_per_gcm2(mat, KE) * loss_path_g;
+            impact_buf.clear();
+            sample_impact_xrays(mat, ke, mean, stops, rng, impact_buf);
+            emit_impact_xrays(flight_start, flight_dir, loss_path_g / rho, region_scoring);
+        }
+
+        if (stops) {
+            if (region_scoring)
+                result.deposited_scoring_keV += std::max(0.0, KE - brems_keV);
+            KE = 0.0;
+            pos = flight_start + flight_dir * (range_g / rho);
+            break;
+        }
+
+        // Energy loss. With hard collisions on (W_cc > 0), those transferring
+        // more than W_cc are sampled one by one from the Moller cross section
+        // and their delta rays walked like any electron (so the ones born
+        // near a surface can leave); the soft remainder -- the CSDA loss less
+        // the hard collisions' mean -- is drawn with the soft variance from
+        // PENELOPE's artificial distribution. Otherwise: the CSDA mean,
+        // straggled above 500 keV (Bohr; capped at the mean loss, where the
+        // Gaussian form stops meaning anything).
+        double dE = KE - residual_energy_keV(mat, KE, path_g, positron);
+        double hard_keV = 0.0;
+        if (kMollerWcc > 0.0 && dE > 0.0) {
+            const MollerHard h = moller_hard(KE, kMollerWcc, 6.02214076e23 * ZoverA);
+            dE = sample_soft_loss(dE - h.mean_W_per_g * path_g, h.soft_var_per_g * path_g, rng);
+            if (h.n_per_g > 0.0) {
+                std::poisson_distribution<int> count(h.n_per_g * path_g);
+                for (int i = count(rng); i > 0; --i) {
+                    const double W = sample_moller_W(h, rng);
+                    if (dE + hard_keV + W > KE) break;
+                    hard_keV += W;
+                    const double phi = kTwoPi_ * uniform(rng);
+                    Eigen::Vector3d delta_dir = flight_dir;
+                    deflect(delta_dir,
+                            std::sqrt(W * (KE + 2.0 * m_e) / (KE * (W + 2.0 * m_e))), phi);
+                    deltas.push_back({flight_start + flight_dir * (uniform(rng) * path_cm),
+                                      delta_dir, W, region_mat, region_scoring});
+                    // The primary's recoil, applied at the flight end.
+                    deflect(dir, std::sqrt((KE - W) * (KE + 2.0 * m_e)
+                                           / (KE * (KE - W + 2.0 * m_e))),
+                            phi + 0.5 * kTwoPi_);
+                }
+            }
+        } else if (KE > 500.0 && dE > 0.0) {
+            const double beta2 = KE * (KE + 2.0 * m_e) / ((KE + m_e) * (KE + m_e));
+            const double sigma =
+                1000.0 * std::sqrt(kBohrXi_MeV2cm2g * ZoverA * path_g * (1.0 - 0.5 * beta2));
+            dE += std::min(sigma, dE) * gauss(rng);
+        }
+        dE = std::clamp(dE, 0.0, KE - hard_keV);
+        double deposit = dE;
+        if (brems_keV > KE - hard_keV - dE) deposit = std::max(0.0, KE - hard_keV - brems_keV);
+        if (region_scoring) result.deposited_scoring_keV += deposit;
+        KE = std::max(0.0, KE - hard_keV - deposit - brems_keV);
+        pos = flight_start + flight_dir * path_cm;
+
+        if (hit_boundary) {
+            pos += flight_dir * 1e-9;   // into the next region
+            phase = 0;
+            need_region = true;
+            continue;
+        }
+        if (phase == 1) {
+            // The hinge: the step's soft deflection, then on to its end.
+            if (soft_mean > 0.0) {
+                const double theta = std::sqrt(-2.0 * soft_mean * std::log(1.0 - uniform(rng)));
+                deflect(dir, std::cos(std::min(theta, 3.141592653589793)),
+                        kTwoPi_ * uniform(rng));
+            }
+            flight_left_g = after_hinge_g;
+            phase = 2;
+            continue;
+        }
+        // Step end: a hard elastic collision, unless the step was capped.
+        if (step_hard) {
+            const double A = step.A;
+            const double xi = (1.0 - step.P_hard) + step.P_hard * uniform(rng);
+            const double mu = A * xi / (1.0 + A - xi);
+            deflect(dir, 1.0 - 2.0 * mu, kTwoPi_ * uniform(rng));
+        }
+        phase = 0;
+    }
+
+    if (primary) {
+        if (!annihilated) result.stop_position = pos;
+        if (left_geometry && KE > 0.01) {
+            result.escaped = true;
+            result.exit_KE_keV = KE;
+            result.exit_direction = dir;
+        }
+    } else if (left_geometry) {
+        result.escaped_delta_keV += KE;
+    }
+    if (deltas.empty()) break;
+    const Delta d = deltas.back();
+    deltas.pop_back();
+    pos = d.pos;
+    dir = d.dir;
+    KE = d.KE;
+    positron = false;
+    primary = false;
+    phase = 0;
+    left_geometry = false;
+    need_region = false;
+    region_mat = d.mat;
+    region_scoring = d.scoring;
+    d_bound_valid = false;
+    }
+    if (impact_debt > 0.0) {
+        const double pay = std::min(impact_debt, result.deposited_scoring_keV);
+        result.deposited_scoring_keV -= pay;
+        result.unpaid_impact_keV = impact_debt - pay;
+    }
+    return result;
+}
+
+
 std::vector<BremsPhoton> ElectronCsda::sample_brems_in_material(
                                            const Material& mat,
                                            const Eigen::Vector3d& position,
                                            const Eigen::Vector3d& direction,
                                            double KE_keV,
-                                           std::mt19937_64& rng) const
+                                           std::mt19937_64& rng,
+                                           std::uint8_t charged_generation) const
 {
+    // Thin wrapper over the emission-recording core: same physics, same RNG
+    // draw sequence (position accumulation adds no draws), so this is
+    // bit-identical to a creation-point model -- every photon is
+    // collapsed back to the creation position, which is what the source-
+    // geometry callers assume (electron range << distance to detector).
+    const std::vector<BremsEmission> emissions =
+        sample_brems_emissions_in_material(
+            mat, position, direction, KE_keV, rng,
+            /*is_positron=*/false, charged_generation);
     std::vector<BremsPhoton> photons;
-    if (KE_keV <= kMoliereBremsThreshold_keV) return photons;
+    photons.reserve(emissions.size());
+    for (const BremsEmission& e : emissions)
+        photons.push_back(
+            {position, e.photon_dir, e.photon_keV, e.charged_generation});
+    return photons;
+}
+
+
+std::vector<BremsEmission> ElectronCsda::sample_brems_emissions_in_material(
+                                           const Material& mat,
+                                           const Eigen::Vector3d& position,
+                                           const Eigen::Vector3d& direction,
+                                           double KE_keV,
+                                           std::mt19937_64& rng,
+                                           bool is_positron,
+                                           std::uint8_t charged_generation) const
+{
+    std::vector<BremsEmission> photons;
+    if (KE_keV <= kSourceBremsFloor_keV) return photons;
 
     double X0 = radiation_length_gcm2(mat);
     if (X0 <= 0.0) return photons;
@@ -1480,98 +2804,229 @@ std::vector<BremsPhoton> ElectronCsda::sample_brems_in_material(
     constexpr double m_e = 511.0;  // electron rest mass (keV)
     constexpr double kBremsThreshold_keV = 10.0;  // minimum brems photon energy
 
-    // Same condensed-history stepping as deposited_in_scoring(), minus the
-    // geometry: the electron stops entirely inside `mat`, so each step is a
-    // fixed fraction of the remaining CSDA range.
-    int n_steps = std::max(20, std::min(60, static_cast<int>(KE_keV / 50.0)));
+    // A charged particle known to stop inside this homogeneous material has no
+    // boundary state to update.  Its brems and (for the primary generation)
+    // delta-electron interactions are independent non-homogeneous Poisson
+    // processes along CSDA depth.  Draw only their actual event locations
+    // instead of taking 20--60 mostly empty condensed-history steps.
+    //
+    // B(T) = integral[0,T] sigma_brems(T') dR(T')
+    // D(T) = integral[0,T] sigma_delta(T') dR(T')
+    //
+    // Exponential optical-flight clocks compete as T decreases. A brems
+    // energy jump skips the corresponding interval of both optical-depth
+    // curves, as it should: no charged-particle path was traversed there.
+    constexpr double kDeltaTransportFloor_keV = 50.0;
+    constexpr std::uint8_t kMaximumDeltaGeneration = 1;
+    const auto& brems_depth =
+        compound_brems_depth_table(mat, is_positron);
+    const auto& range_table =
+        compound_range_table(mat, is_positron);
+    const bool transport_deltas =
+        charged_generation < kMaximumDeltaGeneration;
+    const auto* delta_depth = transport_deltas
+        ? &compound_delta_depth_table(
+              mat, kDeltaTransportFloor_keV,
+              is_positron)
+        : nullptr;
+
+    auto energy_at_depth = [&](const auto& depth_table, double target) {
+        if (target <= depth_table.front())
+            return energy_grid_keV_.front();
+        if (target >= depth_table.back())
+            return energy_grid_keV_.back();
+        const auto upper =
+            std::upper_bound(
+                depth_table.begin(), depth_table.end(), target);
+        const int hi = static_cast<int>(upper - depth_table.begin());
+        const int lo = std::max(0, hi - 1);
+        const double span = depth_table[hi] - depth_table[lo];
+        const double fraction =
+            span > 0.0
+                ? (target - depth_table[lo]) / span
+                : 0.0;
+        return std::exp(
+            log_energy_grid_[lo]
+            + fraction
+                * (log_energy_grid_[hi] - log_energy_grid_[lo]));
+    };
 
     Eigen::Vector3d dir = direction;
+    Eigen::Vector3d pos = position;
+    const double density = mat.density();
     double KE = KE_keV;
-    int steps_remaining = n_steps;
+    std::exponential_distribution<double> optical_flight(1.0);
     std::normal_distribution<double> gauss(0.0, 1.0);
-    thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
-    const auto& xs_data = CrossSectionData::instance();
+    double brems_remaining = optical_flight(rng);
+    double delta_remaining =
+        transport_deltas ? optical_flight(rng) : 0.0;
 
-    while (steps_remaining > 0 && KE > kBremsThreshold_keV) {
-        double range_g   = range_gcm2_material(mat, KE);
-        double step_gcm2 = range_g / static_cast<double>(steps_remaining);
-        if (step_gcm2 <= 0.0) break;
+    // Actual multiplicities are small over the supported 12 MeV range. The
+    // cap is only a guard against corrupt tables or a future out-of-range use.
+    for (int event = 0;
+         event < 256 && KE > kBremsThreshold_keV;
+         ++event) {
+        const double starting_brems_depth =
+            interpolate_log_grid(brems_depth, KE);
+        const double target_brems_depth =
+            starting_brems_depth - brems_remaining;
+        const double brems_event_KE =
+            target_brems_depth > brems_depth.front()
+                ? std::min(
+                      KE,
+                      energy_at_depth(
+                          brems_depth, target_brems_depth))
+                : -1.0;
 
-        // --- Bremsstrahlung emission (identical to deposited_in_scoring) ---
-        double kappa_min = kBremsThreshold_keV / KE;
-
-        // Hoisted compound SB chi (Z-independent energy bracket + per-element
-        // radiation weights precomputed once; bit-identical to the old lambda).
-        CompoundBremsChi compound_chi(xs_data, mat, KE);
-
-        double P_emit_corr = brems_pemit_corr(mat, KE);
-        double rad_corr = interpolate_log_grid(compound_radcorr_table(mat), KE);
-        double P_emit = (step_gcm2 / X0)
-                      * std::log(KE / kBremsThreshold_keV)
-                      * rad_corr
-                      * P_emit_corr;
-        P_emit = std::min(P_emit, 1.0);
-
-        double brems_keV = 0.0;
-        if (uniform(rng) < P_emit) {
-            double chi_max = compound_chi(kappa_min);
-            if (chi_max <= 0.0) chi_max = 1.0;
-
-            for (int attempt = 0; attempt < 100; ++attempt) {
-                double xi = uniform(rng);
-                double k_proposed = kBremsThreshold_keV
-                    * std::pow(KE / kBremsThreshold_keV, xi);
-                double kappa = k_proposed / KE;
-                double chi_val = compound_chi(kappa);
-
-                if (uniform(rng) * chi_max < chi_val) {
-                    double E_brems = std::min(k_proposed, KE);
-                    // Creation-point approximation: report at the electron's
-                    // birth position with the current (Highland-evolved)
-                    // direction.
-                    photons.push_back({position, dir, E_brems});
-                    brems_keV = E_brems;
-                    break;
-                }
+        double starting_delta_depth = 0.0;
+        double delta_event_KE = -1.0;
+        if (transport_deltas) {
+            starting_delta_depth =
+                interpolate_log_grid(*delta_depth, KE);
+            const double target_delta_depth =
+                starting_delta_depth - delta_remaining;
+            if (target_delta_depth > delta_depth->front()) {
+                delta_event_KE =
+                    std::min(
+                        KE,
+                        energy_at_depth(
+                            *delta_depth, target_delta_depth));
             }
         }
 
-        // CSDA collision loss; conserve energy when a brems photon was emitted
-        // (same bookkeeping as deposited_in_scoring).
-        double KE_exit  = residual_energy_keV(mat, KE, step_gcm2);
-        double delta_KE = KE - KE_exit;
-        if (delta_KE < 0.0) delta_KE = 0.0;
-        double deposit = delta_KE;
-        if (brems_keV > 0.0 && brems_keV > KE - delta_KE) {
-            deposit = std::max(0.0, KE - brems_keV);
-        }
-        KE = std::max(0.0, KE - deposit - brems_keV);
-        if (KE <= 0.01) break;
+        const bool brems_event = brems_event_KE >= delta_event_KE;
+        const double interaction_KE =
+            brems_event ? brems_event_KE : delta_event_KE;
+        if (!(interaction_KE > kBremsThreshold_keV))
+            break;
 
-        // Highland-Molière scattering kick on the electron direction so that
-        // late-emitted photons get a realistic (diffused) direction.
-        double x_X0 = step_gcm2 / X0;
-        double bcp  = std::sqrt(KE * (KE + 2.0 * m_e));
-        if (bcp > 1e-6 && x_X0 > 0.0) {
-            double ln_x   = std::log(x_X0);
-            double theta0 = (13600.0 / bcp) * std::sqrt(x_X0)
-                            * (1.0 + 0.038 * ln_x);
-            if (theta0 > 1e-10) {
-                double dx    = gauss(rng) * theta0;
-                double dy    = gauss(rng) * theta0;
-                double theta = std::sqrt(dx * dx + dy * dy);
-                if (theta > 1e-10) {
-                    Eigen::Vector3d u, v;
-                    build_perp_basis(dir, u, v);
-                    Eigen::Vector3d dir_new =
-                        std::cos(theta) * dir
-                        + std::sin(theta) * (dx * u + dy * v) / theta;
-                    dir = dir_new.normalized();
+        const double path_gcm2 =
+            std::max(
+                0.0,
+                interpolate_log_grid(range_table, KE)
+                - interpolate_log_grid(range_table, interaction_KE));
+
+        // Direction only affects emitted photons for a contained track. Apply
+        // the same adaptive Highland diffusion as the old stepper, but only
+        // over path intervals preceding an interaction.
+        if (path_gcm2 > 0.0) {
+            const double starting_range =
+                interpolate_log_grid(range_table, KE);
+            const int full_track_steps =
+                std::max(
+                    20,
+                    std::min(60, static_cast<int>(KE / 50.0)));
+            const int scatter_intervals =
+                std::max(
+                    1,
+                    static_cast<int>(
+                        std::ceil(
+                            full_track_steps
+                            * path_gcm2
+                            / std::max(starting_range, 1e-30))));
+            const double interval_gcm2 =
+                path_gcm2 / scatter_intervals;
+            double interval_KE = KE;
+            for (int interval = 0;
+                 interval < scatter_intervals
+                     && interval_KE > interaction_KE;
+                 ++interval) {
+                // Advance along the CURRENT diffused direction, then apply
+                // the interval's scattering kick (move-then-scatter).
+                // Deterministic, so the RNG stream matches the creation-point
+                // wrapper draw for draw.
+                if (density > 0.0)
+                    pos += dir * (interval_gcm2 / density);
+                const double exit_KE =
+                    interval + 1 == scatter_intervals
+                        ? interaction_KE
+                        : residual_energy_keV(
+                              mat, interval_KE, interval_gcm2,
+                              is_positron);
+                const double bcp =
+                    std::sqrt(
+                        std::max(
+                            exit_KE * (exit_KE + 2.0 * m_e),
+                            0.0));
+                const double x_X0 = interval_gcm2 / X0;
+                if (bcp > 1e-6 && x_X0 > 0.0) {
+                    const double theta0 =
+                        (13600.0 / bcp) * std::sqrt(x_X0)
+                        * (1.0 + 0.038 * std::log(x_X0));
+                    if (theta0 > 1e-10) {
+                        const double dx = gauss(rng) * theta0;
+                        const double dy = gauss(rng) * theta0;
+                        const double theta = std::hypot(dx, dy);
+                        if (theta > 1e-10) {
+                            Eigen::Vector3d u, v;
+                            build_perp_basis(dir, u, v);
+                            dir = (
+                                std::cos(theta) * dir
+                                + std::sin(theta)
+                                    * (dx * u + dy * v) / theta)
+                                      .normalized();
+                        }
+                    }
                 }
+                interval_KE = exit_KE;
             }
         }
 
-        steps_remaining--;
+        // Both clocks consume only the charged path down to this interaction.
+        brems_remaining =
+            std::max(
+                0.0,
+                brems_remaining
+                - (starting_brems_depth
+                   - interpolate_log_grid(
+                       brems_depth, interaction_KE)));
+        if (transport_deltas) {
+            delta_remaining =
+                std::max(
+                    0.0,
+                    delta_remaining
+                    - (starting_delta_depth
+                       - interpolate_log_grid(
+                           *delta_depth, interaction_KE)));
+        }
+        KE = interaction_KE;
+
+        if (brems_event) {
+            // Capture the electron state BEFORE the emission:
+            // sample_single_bremsstrahlung deflects `dir` via the recoil,
+            // and the 2BS density the estimator evaluates is about the
+            // pre-emission direction.
+            const Eigen::Vector3d dir_at_emission = dir;
+            const SampledBremsstrahlung photon =
+                sample_single_bremsstrahlung(
+                    mat, dir, KE, is_positron, rng);
+            brems_remaining = optical_flight(rng);
+            if (!(photon.energy_keV > 0.0))
+                continue;
+            photons.push_back(
+                {pos, dir_at_emission, photon.direction, photon.energy_keV,
+                 KE, charged_generation});
+            KE = std::max(0.0, KE - photon.energy_keV);
+            continue;
+        }
+
+        const double delta_KE_keV =
+            sample_delta_energy_keV(
+                KE, kDeltaTransportFloor_keV,
+                is_positron, rng);
+        delta_remaining = optical_flight(rng);
+        if (!(delta_KE_keV > 0.0))
+            continue;
+        const Eigen::Vector3d delta_direction =
+            sample_delta_direction(
+                dir, KE, delta_KE_keV, rng);
+        // Knock-on deltas are electrons regardless of the primary's charge;
+        // they start from the primary's current along-walk position.
+        auto delta_photons = sample_brems_emissions_in_material(
+            mat, pos, delta_direction, delta_KE_keV,
+            rng, /*is_positron=*/false, charged_generation + 1);
+        for (auto& photon : delta_photons)
+            photons.push_back(std::move(photon));
     }
 
     return photons;
@@ -1584,9 +3039,12 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
                                            const Eigen::Vector3d& position,
                                            const Eigen::Vector3d& direction,
                                            double KE_keV,
-                                           std::mt19937_64& rng) const
+                                           std::mt19937_64& rng,
+                                           bool is_positron,
+                                           std::uint8_t charged_generation) const
 {
     ElectronSourceWalkResult result;
+    result.stop_position = position;
     if (KE_keV < 0.01) return result;
 
     constexpr double m_e = 511.0;  // electron rest mass (keV)
@@ -1669,21 +3127,18 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
     };
 
     // ----------------------------------------------------------------
-    // Very low energy (KE ≤ 50 keV): straight-line CSDA, no brems.
+    // Very low energy (KE ≤ 10 keV): straight-line CSDA, no brems.
     //
     // Unlike deposited_in_scoring (which switches to straight lines at
     // 200 keV — the path shape is irrelevant for deposits inside the
     // scoring crystal), the source-escape walk keeps Moliere direction
     // diffusion down to 50 keV: escape through the outer skin of a
-    // dense shield is dominated by detour and diffusion, and the
-    // straight-line model overestimated the sub-MeV escape channel
-    // ~4.5x vs GEANT4 (config 12 @ 662 keV, June 2026 — it produced a
-    // +1.8% total-efficiency excess). Below 50 keV escape no longer
-    // counts (set_source_electron_threshold default) and brems is
-    // negligible, so straight-line is safe there.
+    // dense shield is dominated by detour and diffusion. The former 50 keV
+    // floor also suppressed observable brems from low-energy radioactive
+    // conversion electrons, so the source walk now continues down to the
+    // 10 keV Seltzer-Berger/tally floor.
     // ----------------------------------------------------------------
-    constexpr double kSourceWalkStraightLineFloor_keV = 50.0;
-    if (KE <= kSourceWalkStraightLineFloor_keV) {
+    if (KE <= kSourceBremsFloor_keV) {
         source.trace_source_segments(pos, dir, KE, seg_buf);
         double dist = 0.0;
         const Material* exit_mat = &birth_material;  // exit-Z source for the gate
@@ -1695,9 +3150,17 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
                 continue;
             }
             double path_gcm2 = seg.length * seg.material->density();
-            double range_g = range_gcm2_material(*seg.material, KE);
-            if (path_gcm2 >= range_g) return result;  // stopped inside
-            KE = residual_energy_keV(*seg.material, KE, path_gcm2);
+            double range_g =
+                range_gcm2_material(*seg.material, KE, is_positron);
+            if (path_gcm2 >= range_g) {
+                result.traversed_gcm2 += range_g;
+                result.stop_position =
+                    pos + dir * (dist + range_g / seg.material->density());
+                return result;  // stopped inside
+            }
+            result.traversed_gcm2 += path_gcm2;
+            KE = residual_energy_keV(
+                *seg.material, KE, path_gcm2, is_positron);
             exit_mat = seg.material;
             dist += seg.length;
             if (KE < 1.0) return result;
@@ -1708,6 +3171,7 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
             result.exit_position = pos + dir * (dist + 1e-7);
             result.exit_direction = dir;
             result.exit_KE_keV = KE;
+            result.stop_position = result.exit_position;
         }
         return result;
     }
@@ -1719,9 +3183,19 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
     // ----------------------------------------------------------------
     int n_steps = std::max(20, std::min(60, static_cast<int>(KE / 50.0)));
     int steps_remaining = n_steps;
+
+    // Electron-impact K x-rays (SourceGeometry::set_source_impact_ionization),
+    // carried among the brems photons with BremsPhoton::impact_Z set.
+    const bool impact = source.source_impact_ionization_enabled();
+    const double impact_emax = impact_ionization_max_keV();
+    auto push_impact_xray = [&](const Eigen::Vector3d& at, const ImpactXray& x) {
+        BremsPhoton photon{at, impact_xray_direction(rng), x.line_keV, charged_generation};
+        photon.impact_Z = static_cast<std::uint8_t>(x.Z);
+        photon.impact_filling_subshell = x.filling_subshell;
+        result.brems_photons.push_back(photon);
+    };
     std::normal_distribution<double> gauss(0.0, 1.0);
     thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
-    const auto& xs_data = CrossSectionData::instance();
 
     // Material the particle is currently traversing — the EXIT-Z source for the
     // skin-escape gate when the trace empties (the boundary it reflects off).
@@ -1761,6 +3235,7 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
                 result.exit_position = pos;
                 result.exit_direction = dir;
                 result.exit_KE_keV = KE;
+                result.stop_position = pos;
             }
             return result;
         }
@@ -1769,7 +3244,8 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
         last_material = &mat;
         double density   = mat.density();
         double seg_gcm2  = seg_buf[0].length * density;
-        double range_g   = range_gcm2_material(mat, KE);
+        double range_g =
+            range_gcm2_material(mat, KE, is_positron);
 
         double planned_step_gcm2 = range_g / static_cast<double>(steps_remaining);
         double step_gcm2 = planned_step_gcm2;
@@ -1779,52 +3255,163 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
             reach_boundary = true;
         }
         if (step_gcm2 <= 0.0) { steps_remaining--; continue; }
+        result.traversed_gcm2 += step_gcm2;
 
-        pos += dir * (step_gcm2 / density);
-        if (reach_boundary) pos += dir * 1e-6;
+        if (is_positron) {
+            const double path_cm = step_gcm2 / density;
+            const double annihilation_probability =
+                electron_number_density(mat)
+                * positron_annih_xsec_per_electron(KE)
+                * path_cm;
+            if (annihilation_probability > 0.0
+                && uniform(rng)
+                    < std::min(annihilation_probability, 1.0)) {
+                result.annihilated_in_flight = true;
+                result.residual_KE_at_annih_keV = KE;
+                result.stop_position = pos;
+                return result;
+            }
+        }
 
         double X0 = radiation_length_gcm2(mat);
+        const Eigen::Vector3d step_start = pos;
+        const Eigen::Vector3d step_direction = dir;
+        const double step_cm = step_gcm2 / density;
+        const double cumulative_x_X0 =
+            sum_x_X0 + ((X0 > 0.0) ? step_gcm2 / X0 : 0.0);
+        const double displacement_fraction =
+            highland_forward_displacement_fraction(
+                KE, step_gcm2, X0, cumulative_x_X0);
+        const double displacement_cm =
+            step_cm * displacement_fraction;
+        pos += step_direction * displacement_cm;
+        // A condensed-history step is limited by true path. With scattering,
+        // its forward displacement is shorter than that path, so consuming a
+        // path numerically equal to the straight boundary distance does not
+        // imply that the particle crossed the boundary. Re-trace from the
+        // corrected endpoint instead.
+        if (reach_boundary
+            && displacement_cm >= step_cm * (1.0 - 1e-12)) {
+            pos += step_direction * 1e-6;
+        } else {
+            reach_boundary = false;
+        }
 
         // --- Bremsstrahlung emission (identical to deposited_in_scoring) ---
         double brems_keV = 0.0;
         if (X0 > 0.0 && KE > kBremsThreshold_keV) {
-            double kappa_min = kBremsThreshold_keV / KE;
+            brems_keV = sample_step_bremsstrahlung(
+                *this, mat, dir, KE, step_gcm2, is_positron, rng,
+                [&](const Eigen::Vector3d& photon_direction,
+                    double photon_energy_keV) {
+                        const Eigen::Vector3d emission_position =
+                            step_start
+                            + step_direction
+                                * (uniform(rng) * displacement_cm);
+                        result.brems_photons.push_back(
+                            {emission_position, photon_direction,
+                             photon_energy_keV, charged_generation});
+                });
+        }
 
-            // Hoisted compound SB chi (Z-independent energy bracket + per-element
-            // radiation weights precomputed once; bit-identical to the old lambda).
-            CompoundBremsChi compound_chi(xs_data, mat, KE);
+        // Electron-impact K x-rays over the step (rate x path), born along it.
+        if (impact && KE <= impact_emax) {
+            std::vector<ImpactXray> xrays;
+            sample_impact_xrays(mat, KE, impact_xray_rate_per_gcm2(mat, KE) * step_gcm2,
+                                false, rng, xrays);
+            for (const ImpactXray& x : xrays)
+                push_impact_xray(step_start + step_direction * (uniform(rng) * displacement_cm), x);
+        }
 
-            double P_emit_corr = brems_pemit_corr(mat, KE);
-            double rad_corr = interpolate_log_grid(compound_radcorr_table(mat), KE);
-            double P_emit = (step_gcm2 / X0)
-                          * std::log(KE / kBremsThreshold_keV)
-                          * rad_corr
-                          * P_emit_corr;
-            P_emit = std::min(P_emit, 1.0);
+        // Explicit energetic Møller/Bhabha delta electrons.  The collision
+        // stopping power already removes their energy from the requested
+        // primary, but treating that loss as entirely local omits brems from
+        // the secondary charged-particle track.  Sampling deltas above 50 keV
+        // captures the HPGe-visible part without following the numerous
+        // sub-threshold ionization electrons.  One secondary generation is
+        // sufficient here; lower generations contribute below the present
+        // statistical/HPGe resolution target.
+        constexpr double kDeltaTransportFloor_keV = 50.0;
+        constexpr std::uint8_t kMaximumDeltaGeneration = 1;
+        const double maximum_delta_keV =
+            is_positron ? KE : 0.5 * KE;
+        if (charged_generation < kMaximumDeltaGeneration
+            && maximum_delta_keV > kDeltaTransportFloor_keV) {
+            const double delta_mean =
+                delta_electron_rate_per_gcm2(
+                    mat, KE, kDeltaTransportFloor_keV, is_positron)
+                * step_gcm2;
+            if (delta_mean > 0.0) {
+                const int count =
+                    sample_capped_poisson(delta_mean, 32, rng);
+                for (int delta_index = 0;
+                     delta_index < count; ++delta_index) {
+                    const double delta_KE_keV =
+                        sample_delta_energy_keV(
+                            KE, kDeltaTransportFloor_keV,
+                            is_positron, rng);
+                    if (!(delta_KE_keV > 0.0))
+                        continue;
+                    const Eigen::Vector3d delta_position =
+                        step_start
+                        + step_direction
+                            * (uniform(rng) * displacement_cm);
+                    const Eigen::Vector3d delta_direction =
+                        sample_delta_direction(
+                            step_direction, KE, delta_KE_keV, rng);
 
-            if (uniform(rng) < P_emit) {
-                double chi_max = compound_chi(kappa_min);
-                if (chi_max <= 0.0) chi_max = 1.0;
-
-                for (int attempt = 0; attempt < 100; ++attempt) {
-                    double xi = uniform(rng);
-                    double k_proposed = kBremsThreshold_keV
-                        * std::pow(KE / kBremsThreshold_keV, xi);
-                    double kappa = k_proposed / KE;
-                    double chi_val = compound_chi(kappa);
-
-                    if (uniform(rng) * chi_max < chi_val) {
-                        double E_brems = std::min(k_proposed, KE);
-                        result.brems_photons.push_back({pos, dir, E_brems});
-                        brems_keV = E_brems;
-                        break;
+                    // A knock-on whose full CSDA path is shorter than its
+                    // clearance to the nearest material boundary cannot escape
+                    // or enter another material. Avoid 20--60 geometry traces
+                    // for that common case and use the same bulk SB sampler.
+                    // Surface-reachable knock-ons retain the full geometry walk
+                    // and its spatially resolved brems origins.
+                    const double delta_range_cm =
+                        mat.density() > 0.0
+                            ? range_gcm2_material(
+                                  mat, delta_KE_keV, /*is_positron=*/false)
+                                / mat.density()
+                            : 0.0;
+                    const double material_clearance_cm =
+                        source.min_distance_within_material(
+                            delta_position, mat);
+                    // Require another full range of clearance beyond strict
+                    // charged-particle containment. Near-surface deltas cannot
+                    // themselves escape, but resolving their brems creation
+                    // positions still matters because those photons can.
+                    constexpr double kBulkClearanceRanges = 2.0;
+                    if (delta_range_cm > 0.0
+                        && kBulkClearanceRanges * delta_range_cm
+                            < material_clearance_cm) {
+                        auto delta_photons = sample_brems_in_material(
+                            mat, delta_position, delta_direction,
+                            delta_KE_keV, rng, charged_generation + 1);
+                        for (auto& photon : delta_photons)
+                            result.brems_photons.push_back(std::move(photon));
+                        if (impact) {
+                            const double ke = std::min(delta_KE_keV, impact_emax);
+                            std::vector<ImpactXray> xrays;
+                            sample_impact_xrays(mat, ke, impact_xray_yield(mat, ke), true,
+                                                rng, xrays);
+                            for (const ImpactXray& x : xrays)
+                                push_impact_xray(delta_position, x);
+                        }
+                    } else {
+                        ElectronSourceWalkResult delta_walk =
+                            walk_in_source_geometry(
+                                source, mat, delta_position, delta_direction,
+                                delta_KE_keV, rng, false,
+                                charged_generation + 1);
+                        for (auto& photon : delta_walk.brems_photons)
+                            result.brems_photons.push_back(std::move(photon));
                     }
                 }
             }
         }
 
         // CSDA collision loss; conserve energy with the emitted brems photon.
-        double KE_exit  = residual_energy_keV(mat, KE, step_gcm2);
+        double KE_exit =
+            residual_energy_keV(mat, KE, step_gcm2, is_positron);
         double delta_KE = KE - KE_exit;
         if (delta_KE < 0.0) delta_KE = 0.0;
         // Phase D1: per-step Gaussian energy-loss straggling (Bohr variance
@@ -1856,7 +3443,8 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
         if (X0 > 0.0) {
             double x_X0 = step_gcm2 / X0;
             sum_x_X0 += x_X0;
-            double bcp  = std::sqrt(KE * (KE + 2.0 * m_e));
+            double bcp =
+                KE * (KE + 2.0 * m_e) / (KE + m_e);
 
             // Phase D3 hard-scatter mean for this step (also feeds the Gaussian
             // variance subtraction below, so compute it first).
@@ -1881,7 +3469,9 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
                     // Highland; for TAILS, full-path log (B2) and subtract the hard
                     // tail's projected variance hard_mean·<θ²>/2 so core+tail match
                     // the Highland variance (no over-diffusion → no spurious box escape).
-                    double ln_x = std::log((principled && !dbg_no_b2) ? sum_x_X0 : x_X0);
+                    double ln_x = std::log(
+                        (principled && !dbg_no_b2)
+                            ? sum_x_X0 : x_X0);
                     theta0 = (13600.0 / bcp) * std::sqrt(x_X0) * (1.0 + 0.038 * ln_x);
                     if (principled && !dbg_no_tails && hard_mean > 0.0 && theta0 > 0.0) {
                         double var_hard = 0.5 * hard_mean * kHardThetaSq;
@@ -1930,6 +3520,7 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
         steps_remaining--;
     }
 
+    result.stop_position = pos;
     return result;  // stopped inside the source geometry
 }
 

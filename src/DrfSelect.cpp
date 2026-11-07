@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <array>
 #include <regex>
 #include <chrono>
 #include <memory>
@@ -42,7 +43,6 @@
 #include <Wt/WText.h>
 #include <Wt/WBreak.h>
 #include <Wt/WLabel.h>
-#include <Wt/WImage.h>
 #include <Wt/WTable.h>
 #include <Wt/WSignal.h>
 #include <Wt/WServer.h>
@@ -86,6 +86,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/DrfAppearance.h"
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ColorTheme.h"
@@ -2105,6 +2106,8 @@ void GadrasDirectory::detectorSelected( const int index )
 DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
                                   SpectraFileModel *fileModel )
   : WContainerWidget(),
+    m_genericIcon( nullptr ),
+    m_drfIcon( nullptr ),
     m_text( nullptr ),
     m_interspec( specViewer ),
     m_fileModel( fileModel )
@@ -2115,24 +2118,24 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
 
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
-  addNew<WImage>( "InterSpec_resources/images/detector_small_white.png" );
-  addNew<WLabel>( WString::tr("detector-label") );
-  const bool isMobile = (m_interspec && m_interspec->isMobile());
+  // The icon says "detector", so there is no "Detector:" label on screen - only for screen readers.
+  setAttributeValue( "role", "button" );
 
-  WString txt = WString("<span class=\"FainterTxt\" style=\"font-weight:100;\">&lt;{1}&gt;</span>")
-                .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
+  m_genericIcon = addNew<WContainerWidget>();
+  m_genericIcon->setInline( true );
+  m_genericIcon->addStyleClass( "DrfIcon DrfIconGeneric" );
+  m_drfIcon = addNew<WText>( "", Wt::TextFormat::UnsafeXHTML );  //see DrfAppearance::icon_html
+  m_drfIcon->addStyleClass( "DrfIconHolder" );
+  m_drfIcon->hide();
 
-  m_text = addNew<WText>( txt, Wt::TextFormat::XHTML );
+  m_text = addNew<WText>( "", Wt::TextFormat::Plain );  //the DRF's name is user text
   m_text->addStyleClass( "DetName" );
 
   std::shared_ptr<DetectorPeakResponse> detector;
   auto meas = specViewer->measurment(SpecUtils::SpectrumType::Foreground);
   if( meas )
     detector = meas->detector();
-  m_currentDetector = detector;
-
-  if( detector && detector->isValid() )
-    m_text->setText( detector->name() );
+  setDetector( detector );
 
   specViewer->detectorChanged().connect( this, &DetectorDisplay::setDetector );
   specViewer->detectorModified().connect( this, &DetectorDisplay::setDetector );
@@ -2161,17 +2164,22 @@ std::shared_ptr<const DetectorPeakResponse> DetectorDisplay::detector() const
 void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 {
   m_currentDetector = det;
+  const bool have_det = (det && det->isValid());
 
-  if( det && det->isValid() )
-  {
-    m_text->setText( det->name() );
-  }else
-  {
-    const bool isMobile = (m_interspec && m_interspec->isMobile());
-    WString txt = WString("<span class=\"FainterTxt\" style=\"font-weight:100;\">&lt;{1}&gt;</span>")
-                  .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
-    m_text->setText( txt );
-  }
+  const shared_ptr<const DrfAppearance> look = have_det ? det->appearance() : nullptr;
+  const string icon_html = look ? look->icon_html( 16.0, 36.0 ) : string();
+  m_drfIcon->setText( WString::fromUTF8( icon_html ) );
+  m_drfIcon->setHidden( icon_html.empty() );
+  m_genericIcon->setHidden( !icon_html.empty() );
+
+  const WString name = have_det ? WString::fromUTF8( det->name() ) : WString::tr("app-det-none");
+  m_text->setText( name );
+  m_text->toggleStyleClass( "DetNone", !have_det );
+
+  WString aria_label = WString::tr("detector-label");
+  aria_label += " ";
+  aria_label += name;
+  setAttributeValue( "aria-label", aria_label );
 }//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 
@@ -3604,6 +3612,7 @@ void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf 
   //  closed.  Having to press Accept a second time - with the built-in detector list visibly
   //  de-selected, since the modified detector is no longer that entry - read as the edit being lost.
   setDetector( drf );
+  updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql, true );  //so a removed icon stays removed
   acceptAndFinish();
 }//void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
 
@@ -3710,6 +3719,32 @@ void DrfSelect::updateDrfContentSummary()
                          : has_grid ? "ds-chip-tt-total-eff-grid"
                                     : "ds-chip-tt-total-eff-mc" ),
             has_tot_eff );
+
+  // The instrument's picture, if it carries one (most DRFs do not, so there is no "absent" chip).
+  const shared_ptr<const DrfAppearance> look = det->appearance();
+  if( look )
+  {
+    WString label = WString::tr("ds-chip-appearance-icon");
+    array<double,6> bounds;
+    if( look->model_bounds_m( bounds ) )
+    {
+      char length[32], width[32], height[32];
+      snprintf( length, sizeof(length), "%.1f", 100.0*(bounds[5] - bounds[2]) );
+      snprintf( width, sizeof(width), "%.1f", 100.0*(bounds[3] - bounds[0]) );
+      snprintf( height, sizeof(height), "%.1f", 100.0*(bounds[4] - bounds[1]) );
+      label = WString::tr("ds-chip-appearance-model").arg( length ).arg( width ).arg( height );
+    }else if( look->icon_svg.empty() )
+    {
+      label = WString::tr("ds-chip-appearance-model-only");
+    }
+
+    // The icon markup is built from numbers and base64 only (see DrfAppearance::icon_html), and the
+    //  label is our own text, so this is safe as UnsafeXHTML - which the icon's data URI needs.
+    WText *chip = m_drfContentChips->addNew<WText>( WString::fromUTF8( look->icon_html( 12.0, 24.0 ) + " " )
+                                                    + label, TextFormat::UnsafeXHTML );
+    chip->addStyleClass( "DrfChip DrfAppearanceChip" );
+    HelpSystem::attachToolTipOn( chip, WString::tr("ds-chip-tt-appearance"), true );
+  }//if( look )
 
   //Raw measured points (provenance / grounding input)
   const shared_ptr<const MeasuredDrfPoints> points = det->measuredPoints();
@@ -4626,7 +4661,8 @@ void DrfSelect::gadrasDetectorSelectCallback()
 
 void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
                                                 long long db_user_id,
-                                                std::shared_ptr<DataBaseUtils::DbSession> sql )
+                                                std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                                const bool appearance_is_authoritative )
 {
   if( !drf || !sql )
     return;
@@ -4648,6 +4684,12 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
       //  (see `DetectorPeakResponse::drfExtraToXmlString`) dont have them - so give them them now.
       if( !(*iter)->peakFitDetPrefs() && drf->peakFitDetPrefs() )
         (*iter).modify()->setPeakFitDetPrefs( drf->peakFitDetPrefs() );
+
+      // Nor the appearance, which the user may have just attached, changed, or removed.
+      const shared_ptr<const DrfAppearance> row_look = (*iter)->appearance(), new_look = drf->appearance();
+      const bool same_look = (!row_look && !new_look) || (row_look && new_look && (*row_look == *new_look));
+      if( !same_look && (new_look || appearance_is_authoritative) )
+        (*iter).modify()->setAppearance( new_look );
 
       (*iter).modify()->updateLastUsedTimeToNow();
       ++nupdated;

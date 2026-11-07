@@ -2183,11 +2183,13 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
 
   if( (selectedMethod() == Method::ImportedGrid) && m_gridResponse )
   {
-    // Only the total efficiency is wanted - the grid is the FEP.  The profile still matters: the
-    //  General / Contact near-field scan is what measures the total close in (Far-field leaves it
-    //  carried inward by geometry alone - 1-4% off at grazing angles a few cm out).  The scans stop
-    //  on the total's precision - a 5x5 cm HPGe took 10 minutes instead of about an hour on 4
-    //  threads; only the on-axis backbone, which the grounding to the grid reads, stops on the FEP.
+    // Only the total is wanted - the grid is the FEP - and attachTotalEfficiency takes it as the
+    //  Monte Carlo's total/FEP ratio.  The profile still matters: the General / Contact near-field
+    //  scan is what measures that ratio close in (Far-field leaves it carried inward by geometry
+    //  alone - 1-4% off at grazing angles a few cm out).  The scans stop on the total's precision -
+    //  a 5x5 cm HPGe took 10 minutes instead of about an hour on 4 threads - although the ratio's
+    //  noise follows the FEP's (the FEP counts are a subset of the total's): on the mock pair that
+    //  cost ~0.1% RMS, which is not worth the hour.  Only the on-axis backbone stops on the FEP.
     //  Cover the grid's own energy range, not the default.
     opts.scans_stop_on_total = true;
     const ceelo::ResponseProvenance &prov = m_gridResponse->provenance;

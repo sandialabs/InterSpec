@@ -983,6 +983,13 @@ add_test( NAME TDetectorEfficiency
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_DrfAppearance test_DrfAppearance.cpp )
+target_link_libraries( test_DrfAppearance PRIVATE InterSpecLib )
+add_test( NAME TDrfAppearance
+  COMMAND $<TARGET_FILE:test_DrfAppearance> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_ZipArchive test_ZipArchive.cpp )
 target_link_libraries( test_ZipArchive PRIVATE InterSpecLib )
 add_test( NAME TZipArchive

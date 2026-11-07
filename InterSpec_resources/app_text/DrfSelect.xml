@@ -142,6 +142,10 @@
   <message id="ds-chip-tt-total-eff-curve">Total-efficiency curve (probability of depositing any energy; input for cascade-summing corrections).</message>
   <message id="ds-chip-tt-total-eff-mc">Total efficiency (probability of depositing any energy; input for cascade-summing corrections), supplied by this detector's Monte-Carlo response rather than by a separate curve.</message>
   <message id="ds-chip-tt-total-eff-grid">Total efficiency (probability of depositing any energy; input for cascade-summing corrections): the imported grid's full-energy-peak efficiency times the total-to-peak ratio of a Monte Carlo of this detector's geometry.</message>
+  <message id="ds-chip-appearance-icon">Icon</message>
+  <message id="ds-chip-appearance-model">3D model, {1} &#215; {2} &#215; {3} cm</message>
+  <message id="ds-chip-appearance-model-only">3D model</message>
+  <message id="ds-chip-tt-appearance">A picture of the instrument this DRF is for, carried with it: shown on the detector button, and in the shielding diagram (length &#215; width &#215; height, for the 3D model).  Attach or remove it on the General tab of Modify Detector Response.</message>
   <message id="ds-chip-points">Measured points</message>
   <message id="ds-chip-tt-points">The raw per-peak efficiency measurements this DRF was made from (kept for provenance, and to anchor a Monte-Carlo characterization).</message>
   <message id="ds-chip-mc">MC response</message>

@@ -143,7 +143,7 @@ on phones - provides conversation-level actions (the last four are not available
 <tr><th style="border: 1px solid black;"><b>Help</b></th>
     <td style="border: 1px solid black;">Open this help page.</td></tr>
 <tr><th style="border: 1px solid black;"><b><nobr>Show Debug Options</nobr></b></th>
-    <td style="border: 1px solid black;">Show the details useful when developing the assistant: each tool call's raw parameters and results, invocation IDs, menus on each panel to view the JSON sent to and from the LLM (and to ask a sub-agent a follow-up question), and the two menu items below.  Remembered for next time.</td></tr>
+    <td style="border: 1px solid black;">Show the details useful when developing the assistant: each tool call's parameters in full and its raw result, menus on each panel to view the JSON sent to and from the LLM (and to ask a sub-agent a follow-up question), and the two menu items below.  Remembered for next time.</td></tr>
 <tr><th style="border: 1px solid black;"><b><nobr>Export Conversation as JSON</nobr></b></th>
     <td style="border: 1px solid black;">(With debug options shown.)  Save the full conversation (your messages, the assistant's replies, and the tool calls it made) to a JSON file.</td></tr>
 <tr><th style="border: 1px solid black;"><b><nobr>Reset LLM Config</nobr></b></th>

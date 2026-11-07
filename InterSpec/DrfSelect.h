@@ -109,6 +109,10 @@ protected:
   static const char * const sm_noDetectorTxt;
   static const char * const sm_noDetectorTxtMbl;
 
+  /** The generic detector icon (images/detector_generic.svg, as a mask in the text colour), shown
+   unless the DRF has its own (#m_drfIcon). */
+  Wt::WContainerWidget *m_genericIcon;
+  Wt::WText *m_drfIcon;
   Wt::WText *m_text;
 
   InterSpec *m_interspec;
@@ -173,10 +177,15 @@ public:
       matching the passed in DRF, and updates the last used time for all of
       them (should only find at most one).  If the DRF does not exist in the DB
       then it is added to is.
+
+      The appearance (icon / 3D model) is not in the hash, so a matching row is given the DRF's
+      appearance if it differs; one is only ever removed from a row when `appearance_is_authoritative`
+      is true (the user just edited the DRF), since a DRF without one may simply be an older copy.
    */
   static void updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
                                            long long db_user_id,
-                                           std::shared_ptr<DataBaseUtils::DbSession> sql );
+                                           std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                           const bool appearance_is_authoritative = false );
   
   /** Checks the database to see if the measurement serial number or measurement
       model cooresponds to a user preference in the database for  a DRF to use.

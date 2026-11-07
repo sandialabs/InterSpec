@@ -1,0 +1,141 @@
+{
+  "electron_brems": {
+    "yield_grid": [
+      8,
+      10,
+      26
+    ],
+    "yield_lambda": 1e-05,
+    "shape_rank": 8,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 0.001
+  },
+  "positron_brems": {
+    "yield_grid": [
+      8,
+      10,
+      26
+    ],
+    "yield_lambda": 1e-05,
+    "shape_rank": 8,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 0.001
+  },
+  "positron_containment": {
+    "yield_grid": [
+      12,
+      8,
+      26
+    ],
+    "yield_lambda": 1e-06
+  },
+  "positron_511_atom": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  },
+  "positron_annihilation_continuum": {
+    "yield_grid": [
+      8,
+      6,
+      20
+    ],
+    "yield_lambda": 1e-05,
+    "shape_rank": 4,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 0.001
+  },
+  "positron_annihilation_in_flight_direct": {
+    "yield_grid": [
+      8,
+      8,
+      26
+    ],
+    "yield_lambda": 1e-05,
+    "shape_rank": 8,
+    "weight_grid": [
+      8,
+      6,
+      10
+    ],
+    "weight_lambda": 0.001
+  },
+  "positron_annihilation_in_flight_continuum": {
+    "yield_grid": [
+      8,
+      8,
+      26
+    ],
+    "yield_lambda": 1e-05,
+    "shape_rank": 8,
+    "weight_grid": [
+      10,
+      6,
+      12
+    ],
+    "weight_lambda": 0.001
+  },
+  "electron_fluorescence_k_alpha": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  },
+  "electron_fluorescence_k_beta": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  },
+  "electron_fluorescence_l": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  },
+  "positron_fluorescence_k_alpha": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  },
+  "positron_fluorescence_k_beta": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  },
+  "positron_fluorescence_l": {
+    "yield_grid": [
+      8,
+      8,
+      20
+    ],
+    "yield_lambda": 1e-05
+  }
+}

@@ -146,8 +146,9 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
   m_fitArealDensity->setChecked( true );
 
   // Optional "Bias AD" checkbox (RelActCalcAuto physical-model fits only; hidden by default).  Placed on the
-  //  group box itself (after the stacked widget) so it sits on its own row at the bottom, floated right
-  //  (see RelEffShieldWidget.css); enabled only while the areal density is being fit.
+  //  group box itself, so it is shown in both the material and generic frames; RelEffShieldWidget.css positions it
+  //  in the empty space to the left of the material/generic switch, so it doesnt take up its own row (the RelActAuto
+  //  curve options have a fixed height).  Enabled only while the areal density is being fit.
   m_biasArealDensity = addNew<Wt::WCheckBox>( WString::tr("resw-bias-ad") );
   m_biasArealDensity->addStyleClass( "RelEffShieldBiasAD" );
   m_biasArealDensity->setToolTip( WString::tr("resw-bias-ad-tt") );

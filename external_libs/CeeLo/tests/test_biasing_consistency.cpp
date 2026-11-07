@@ -685,10 +685,10 @@ BOOST_AUTO_TEST_CASE(absorbed_primary_electron_channel_662) {
     // Absorbed-primary escaped-electron channel: the primary Compton
     // recoil electron escapes the source toward the crystal, then the
     // degraded photon is absorbed in the source geometry with no surviving
-    // secondary photon. Before June 2026 an early-out dropped these events
-    // entirely. Assert the channel is populated, carries no FEP (electron
-    // KE < E0 by construction), and that analog and two-stream agree on
-    // its contribution within 5 sigma.
+    // secondary photon; an early-out on the absorbed photon would drop these
+    // events entirely. Assert the channel is populated, carries no FEP
+    // (electron KE < E0 by construction), and that analog and two-stream
+    // agree on its contribution within 5 sigma.
     Material nai = make_NaI();
     Material water = make_Water();
     Material pe = make_Polyethylene();
@@ -701,7 +701,12 @@ BOOST_AUTO_TEST_CASE(absorbed_primary_electron_channel_662) {
     calc.enable_source_electron_transport(true);
 
     const double e = 662.0;
-    const uint64_t n = 1500000;
+    // The channel is rare: 2-4 events per million histories in either mode.
+    // 8M histories put the expected count near 20, so an empty channel
+    // (Poisson probability ~2e-9) means it is broken, not unlucky. Fewer
+    // histories made this test fail at random: compute() is not
+    // bit-reproducible run to run (threads pull batches dynamically).
+    const uint64_t n = 8000000;
 
     BiasingConfig analog;
     calc.set_biasing(analog);
@@ -715,6 +720,8 @@ BOOST_AUTO_TEST_CASE(absorbed_primary_electron_channel_662) {
 
     const auto& da = res_a.src_diag;
     const auto& dt = res_t.src_diag;
+    BOOST_TEST_MESSAGE("e-only events: analog " << da.n_e_only
+                       << ", two-stream " << dt.n_e_only);
     BOOST_CHECK_GT(da.n_e_only, 0u);
     BOOST_CHECK_GT(dt.n_e_only, 0u);
     // No FEP from this channel here: a single recoil carries < 478 keV,

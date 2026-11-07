@@ -58,18 +58,11 @@ RelEffPlot = function (elem,options) {
     .tickFormat( x => `${x.toFixed(0)}` )
     .ticks(5);
 
+  const self = this;
   this.yAxis = d3.svg
     .axis()
     .scale(this.yScale)
-    .tickFormat( function(x){
-      if( x == 0 )
-        return "0";
-      if( x <= 1.0 )
-        return x.toFixed(2);
-      if( x <= 10.0 )
-        return x.toFixed(1);
-      return x.toFixed(0);
-    } )
+    .tickFormat( function(x){ return self.yTickLabel(x); } )
     .orient("left")
     .ticks(5);
 
@@ -135,14 +128,51 @@ RelEffPlot = function (elem,options) {
 
   // Initialize mouse interaction variables for zoom
   this.leftMouseDown = null;
+  this.zoomAxis = null;  // 'x' or 'y' while a drag-zoom is in progress
   this.zooming = false;
 }//RelEffPlot constructor
 
 
+/* The y-axis tick label for value `x`.  Uses fixed notation with just enough decimals to tell adjacent ticks
+   apart, unless compact scientific notation (written like the spectrum chart, e.g. "4e-5", "1e+4") makes the
+   widest label on the axis shorter - the whole axis uses the same notation.  (We dont use d3's
+   scale.tickFormat(), as it adds thousands separators.)
+ */
+RelEffPlot.prototype.yTickLabel = function( x ) {
+  if( x == 0 )
+    return "0";
+
+  // d3 tick steps are 1, 2, or 5 x 10^n; the +0.01 guards against log10(1000) = 2.9999...
+  const ticks = this.yScale.ticks( 5 );
+  const step = (ticks.length > 1) ? Math.abs( ticks[1] - ticks[0] ) : Math.abs( x );
+  if( !(step > 0) || !isFinite(step) )
+    return x.toFixed( 2 );
+  const stepExp = Math.floor( Math.log10(step) + 0.01 );
+
+  const fixed = function( v ){
+    return (v == 0) ? "0" : v.toFixed( Math.min( 12, Math.max( 0, -stepExp ) ) );
+  };
+
+  // Mantissa digits down to the decade of the tick step
+  const sci = function( v ){
+    if( v == 0 )
+      return "0";
+    const ndec = Math.floor( Math.log10( Math.abs(v) ) + 1.0E-9 ) - stepExp;
+    return v.toExponential( Math.min( 12, Math.max( 0, ndec ) ) );
+  };
+
+  const widest = function( fmt ){
+    return d3.max( ticks, function(t){ return fmt(t).length; } );
+  };
+
+  return (widest(sci) < widest(fixed)) ? sci(x) : fixed(x);
+};//RelEffPlot.prototype.yTickLabel
+
+
 RelEffPlot.prototype.setupMouseInteractions = function() {
   const self = this;
-  
-  // Add mouse interaction rect to the chart area - will be positioned later in setRelEffData
+
+  // Add mouse interaction rect to the chart area - will be positioned later in layoutAndDraw
   this.mouseCapture = this.chartArea.append("rect")
     .attr("class", "mouse-capture")
     .style("fill", "none")
@@ -161,6 +191,10 @@ RelEffPlot.prototype.setupMouseInteractions = function() {
       const mouse = d3.mouse(this);
       self.leftMouseDown = mouse;
       self.zoomStartX = self.xScale.invert(mouse[0]);
+
+      // Like the spectrum chart, Cmd-drag zooms the y-axis; Alt-drag does too, as Windows/Linux have no
+      //  usable Cmd key.  Captured once, so changing modifier keys mid-drag has no effect.
+      self.zoomAxis = (d3.event.metaKey || d3.event.altKey) ? 'y' : 'x';
       d3.event.preventDefault();
 
       // Add document listeners for mouse move and up
@@ -173,55 +207,117 @@ RelEffPlot.prototype.setupMouseInteractions = function() {
         // Could add tooltip functionality here in the future
       }
     });
+
+  // On the whole SVG, so wheeling over a data point (which sits above the capture rect) works too
+  this.svg.on("wheel.releffzoom", function() { self.handleWheel(); });
 };//RelEffPlot.prototype.setupMouseInteractions
+
+
+/* Like the spectrum chart, the mouse wheel zooms the x-axis about the energy under the mouse (wheel down
+   zooms out), and a sideways scroll pans; the view stays within the data's energy range. */
+RelEffPlot.prototype.handleWheel = function() {
+  const e = d3.event;
+
+  // Modifier keys are left for other uses, as in the spectrum chart (ctrl is a trackpad pinch, so is used)
+  if( e.altKey || e.shiftKey || e.metaKey || this.leftMouseDown || !this.datasets )
+    return;
+
+  // Outside the plot area (axes, titles), leave the wheel to scroll the page
+  const m = d3.mouse( this.chartArea.node() );
+  const width = this.xScale.range()[1], height = this.yScale.range()[0];
+  if( !(width > 0) || (m[0] < 0) || (m[0] > width) || (m[1] < 0) || (m[1] > height) )
+    return;
+  e.preventDefault();
+
+  // Line or page based deltas (e.g., Firefox with a mouse wheel) to pixels
+  const pxPerUnit = (e.deltaMode === 1) ? 16 : ((e.deltaMode === 2) ? height : 1);
+  const dx = pxPerUnit * e.deltaX, dy = pxPerUnit * e.deltaY;
+
+  const full = this.fullXDomain();
+  const fullRange = full[1] - full[0];
+  const domain = this.xScale.domain();
+  const range = domain[1] - domain[0];
+
+  // Pinch deltas are much smaller than wheel deltas, so zoom faster for them
+  const zoomRate = e.ctrlKey ? 0.01 : 0.002;
+  const newRange = Math.max( Math.min( 1, fullRange ), Math.min( fullRange, range * Math.exp( zoomRate * dy ) ) );
+
+  // Keep the mouse over the same energy, then pan by the sideways scroll distance
+  let lower = this.xScale.invert( m[0] ) - (m[0] / width) * newRange + (dx / width) * newRange;
+  lower = Math.max( full[0], Math.min( lower, full[1] - newRange ) );
+
+  if( (Math.abs(lower - domain[0]) > 1.0E-9*range) || (Math.abs(newRange - range) > 1.0E-9*range) )
+    this.setXAxisRange( lower, lower + newRange );
+};//RelEffPlot.prototype.handleWheel
+
+
+/* The mouse position (chart-area coordinates) during a drag-zoom; for a y-zoom it is clamped to the plot
+   area, so dragging past the top or bottom zooms to that edge. */
+RelEffPlot.prototype.dragMousePos = function() {
+  const mouse = d3.mouse(this.mouseCapture.node());
+  if( this.zoomAxis === 'y' )
+    mouse[1] = Math.max( 0, Math.min( mouse[1], this.yScale.range()[0] ) );
+  return mouse;
+};//RelEffPlot.prototype.dragMousePos
+
+
+/* What releasing a drag-zoom from `start` to `current` would do: null if the drag is too short to act on,
+   otherwise `{zoomIn, mult}`.  Drag right (x) or down (y) zooms in; drag left (x) zooms all the way out,
+   while drag up (y) widens the y-range `mult` times (Infinity meaning all the way out), with the factor
+   picked by drag distance like the spectrum chart (but in fixed pixels, as this chart is often short). */
+RelEffPlot.prototype.dragZoomAction = function( start, current ) {
+  if( this.zoomAxis === 'y' ){
+    const dy = current[1] - start[1];
+    if( Math.abs(dy) <= 10 )
+      return null;
+    if( dy > 0 )
+      return { zoomIn: true, mult: 1 };
+    return { zoomIn: false, mult: ((-dy < 20) ? 2 : ((-dy < 35) ? 4 : Infinity)) };
+  }
+
+  const dx = current[0] - start[0];
+  return (Math.abs(dx) <= 5) ? null : { zoomIn: (dx > 0), mult: Infinity };
+};//RelEffPlot.prototype.dragZoomAction
 
 
 RelEffPlot.prototype.handleMouseMove = function() {
   if (!this.leftMouseDown) return;
-  
-  const currentMouse = d3.mouse(this.mouseCapture.node());
-  const startX = this.leftMouseDown[0];
-  const currentX = currentMouse[0];
-  
-  // Determine if zooming in (left to right) or out (right to left)
-  const zoomingIn = currentX > startX;
-  
-  // Update zoom box visual indicator
-  this.updateZoomBox(startX, currentX, zoomingIn);
+
+  this.updateZoomBox( this.leftMouseDown, this.dragMousePos() );
 };//RelEffPlot.prototype.handleMouseMove
 
 
 RelEffPlot.prototype.handleMouseUp = function() {
   if (!this.leftMouseDown) return;
-  
-  const currentMouse = d3.mouse(this.mouseCapture.node());
-  const startX = this.leftMouseDown[0];
-  const currentX = currentMouse[0];
-  
+
+  const start = this.leftMouseDown;
+  const current = this.dragMousePos();
+  const action = this.dragZoomAction( start, current );
+
   // Remove zoom box and text
-  this.chartArea.select(".zoom-box").remove();
-  this.chartArea.select(".zoom-text").remove();
-  
-  const startEnergy = this.xScale.invert(startX);
-  const endEnergy = this.xScale.invert(currentX);
-  
-  // Determine if zooming in or out
-  const zoomingIn = currentX > startX;
-  
-  if (Math.abs(currentX - startX) > 5) { // Minimum drag distance
-    if (zoomingIn) {
-      // Zoom in to the selected range
-      this.setXAxisRange(Math.min(startEnergy, endEnergy), Math.max(startEnergy, endEnergy));
-    } else {
-      // Zoom out
+  this.chartArea.selectAll(".zoom-box, .zoom-text").remove();
+
+  if( action && (this.zoomAxis === 'y') ){
+    if( action.zoomIn ){
+      const startY = this.yScale.invert( start[1] ), endY = this.yScale.invert( current[1] );
+      this.setYAxisRange( Math.min(startY, endY), Math.max(startY, endY) );
+    }else{
+      this.zoomOutY( action.mult );
+    }
+  }else if( action ){
+    if( action.zoomIn ){
+      const startEnergy = this.xScale.invert( start[0] ), endEnergy = this.xScale.invert( current[0] );
+      this.setXAxisRange( Math.min(startEnergy, endEnergy), Math.max(startEnergy, endEnergy) );
+    }else{
       this.zoomOut();
     }
   }
-  
+
   // Clean up
   this.leftMouseDown = null;
   this.zoomStartX = null;
-  
+  this.zoomAxis = null;
+
   // Remove document listeners
   d3.select(document)
     .on("mousemove.releffzoom", null)
@@ -229,93 +325,118 @@ RelEffPlot.prototype.handleMouseUp = function() {
 };//RelEffPlot.prototype.handleMouseUp
 
 
-RelEffPlot.prototype.updateZoomBox = function(startX, currentX, zoomingIn) {
-  const minX = Math.min(startX, currentX);
-  const width = Math.abs(currentX - startX);
-  
+/* Draws the band showing the range a drag-zoom will zoom to: vertical for an x-zoom, horizontal for a y-zoom. */
+RelEffPlot.prototype.updateZoomBox = function( start, current ) {
+  const chartAreaWidth = Math.max( 0, this.xScale.range()[1] );
+  const chartAreaHeight = Math.max( 0, this.yScale.range()[0] ); // Get the height from y scale range
+  const action = this.dragZoomAction( start, current );
+  const isY = (this.zoomAxis === 'y');
+
   let zoomBox = this.chartArea.select(".zoom-box");
   let zoomText = this.chartArea.select(".zoom-text");
-  
+
   if (zoomBox.empty()) {
     zoomBox = this.chartArea.append("rect")
       .attr("class", "zoom-box")
       .style("stroke-width", 1);
-      
+
     zoomText = this.chartArea.append("text")
       .attr("class", "zoom-text chartLineText")
       .style("text-anchor", "middle")
       .style("dominant-baseline", "middle")
       .style("pointer-events", "none");
   }
-  
+
+  const x = isY ? 0 : Math.min( start[0], current[0] );
+  const y = isY ? Math.min( start[1], current[1] ) : 0;
+  const width = isY ? chartAreaWidth : Math.abs( current[0] - start[0] );
+  const height = isY ? Math.abs( current[1] - start[1] ) : chartAreaHeight;
+
   // Apply appropriate CSS class and text
-  if (zoomingIn) {
-    zoomBox.attr("class", "zoom-box leftbuttonzoombox");
-    zoomText.text("Zoom In");
-  } else {
-    zoomBox.attr("class", "zoom-box leftbuttonzoomoutboxy");
-    zoomText.text("Zoom Out");
-  }
-  
-  const chartAreaHeight = Math.max( 0, this.yScale.range()[0] ); // Get the height from y scale range
+  const zoomingIn = isY ? (current[1] > start[1]) : (current[0] > start[0]);
+  zoomBox.attr("class", "zoom-box " + (zoomingIn ? "leftbuttonzoombox" : "leftbuttonzoomoutboxy"));
+
+  let label = zoomingIn ? "Zoom In" : "Zoom Out";
+  if( isY && action && !action.zoomIn )
+    label += isFinite(action.mult) ? (" x" + action.mult) : " full";
 
   zoomBox
-    .attr("x", minX)
-    .attr("y", 0)
+    .attr("x", x)
+    .attr("y", y)
     .attr("width", width)
-    .attr("height", chartAreaHeight);
-    
-  // Position text in center of zoom box
+    .attr("height", height);
+
+  // Position text in center of zoom box; hide it if the box is too small (or wont do anything)
   zoomText
-    .attr("x", minX + width / 2)
-    .attr("y", chartAreaHeight / 2)
-    .style("visibility", width > 50 ? "visible" : "hidden"); // Hide text if box too small
+    .text( label )
+    .attr("x", x + width / 2)
+    .attr("y", y + height / 2)
+    .style("visibility", (isY ? !!action : (width > 50)) ? "visible" : "hidden");
 };//RelEffPlot.prototype.updateZoomBox
 
 
+/* Sets the energy range, re-fitting the y-axis to what is visible within it. */
 RelEffPlot.prototype.setXAxisRange = function(minEnergy, maxEnergy) {
-  // Update x scale domain
   this.xScale.domain([minEnergy, maxEnergy]);
-  
-  // Update x axis
+  this.yScale.domain( this.autoYDomain( this.xScale.domain() ) );
+
   this.chartArea.selectAll('.xAxis').call(this.xAxis);
-  
-  // Update y axis range based on visible data
-  this.updateYAxisRange();
-  
-  // Redraw the data with new ranges
-  if (this.datasets) {
-    this.redrawData();
-  }
+  this.chartArea.selectAll('.yAxis').call(this.yAxis);
+
+  this.relayoutOrRedraw();
 };//RelEffPlot.prototype.setXAxisRange
+
+
+RelEffPlot.prototype.setYAxisRange = function( minY, maxY ) {
+  this.yScale.domain( [minY, maxY] );
+  this.chartArea.selectAll('.yAxis').call(this.yAxis);
+
+  this.relayoutOrRedraw();
+};//RelEffPlot.prototype.setYAxisRange
 
 
 RelEffPlot.prototype.zoomOut = function() {
   // Zoom out to show the full data extent
-  if (!this.datasets || this.datasets.length === 0) {
-    // Default range if no data
-    this.setXAxisRange(0, 3000);
+  const xDomain = this.fullXDomain();
+  this.setXAxisRange( xDomain[0], xDomain[1] );
+};//RelEffPlot.prototype.zoomOut
+
+
+/* Widens the y-range `mult` times about its center, staying within the automatic y-range for the
+   visible energies; a `mult` of Infinity zooms all the way out to that range. */
+RelEffPlot.prototype.zoomOutY = function( mult ) {
+  const full = this.autoYDomain( this.xScale.domain() );
+  const domain = this.yScale.domain();
+  const span = mult * (domain[1] - domain[0]);
+
+  if( !isFinite(span) || (span >= (full[1] - full[0])) ){
+    this.setYAxisRange( full[0], full[1] );
     return;
   }
-  
-  // Find min/max energy across all datasets
+
+  // Expand about the center, then shift back inside the full range if we went past either end
+  let lower = 0.5*(domain[0] + domain[1]) - 0.5*span;
+  lower = Math.max( full[0], Math.min( lower, full[1] - span ) );
+  this.setYAxisRange( lower, lower + span );
+};//RelEffPlot.prototype.zoomOutY
+
+
+/* The energy range that shows every data point, with some padding. */
+RelEffPlot.prototype.fullXDomain = function() {
   let min_x = Number.MAX_VALUE;
-  let max_x = Number.MIN_VALUE;
-  
-  this.datasets.forEach(function(dataset) {
+  let max_x = -Number.MAX_VALUE;
+
+  (this.datasets || []).forEach(function(dataset) {
     if (dataset.data_vals && dataset.data_vals.length > 0) {
-      const data_min = d3.min(dataset.data_vals, function(d) { return d.energy; });
-      const data_max = d3.max(dataset.data_vals, function(d) { return d.energy; });
-      min_x = Math.min(min_x, data_min);
-      max_x = Math.max(max_x, data_max);
+      min_x = Math.min(min_x, d3.min(dataset.data_vals, function(d) { return d.energy; }));
+      max_x = Math.max(max_x, d3.max(dataset.data_vals, function(d) { return d.energy; }));
     }
   });
-  
+
   // Handle edge case of no data
   if (min_x === Number.MAX_VALUE) min_x = 0;
-  if (max_x === Number.MIN_VALUE) max_x = 3000;
-  
-  // Apply the same padding logic as in setRelEffData
+  if (max_x === -Number.MAX_VALUE) max_x = 3000;
+
   const initial_x_range = max_x - min_x;
   let lower_padding = 0.025 * initial_x_range;
   if (Math.abs(initial_x_range) < 1.0) {
@@ -323,69 +444,67 @@ RelEffPlot.prototype.zoomOut = function() {
   } else if (((min_x - lower_padding) < 50.0) || (lower_padding > 0.2 * min_x)) {
     lower_padding = 0.2 * min_x;
   }
-  
-  min_x -= lower_padding;
-  max_x += 0.025 * initial_x_range;
-  
-  this.setXAxisRange(min_x, max_x);
-};//RelEffPlot.prototype.zoomOut
+
+  return [min_x - lower_padding, max_x + 0.025 * initial_x_range];
+};//RelEffPlot.prototype.fullXDomain
 
 
-RelEffPlot.prototype.updateYAxisRange = function() {
-  if (!this.datasets || this.datasets.length === 0) return;
-  
-  const xDomain = this.xScale.domain();
+/* The y-range that shows every data point, and the fit curves with their uncertainty bands, within the
+   energy range `xDomain`, with some padding. */
+RelEffPlot.prototype.autoYDomain = function( xDomain ) {
   let min_y = Number.MAX_VALUE;
-  let max_y = Number.MIN_VALUE;
-  let hasVisibleData = false;
-  
-  // Find min/max y values for visible x range across all datasets
-  this.datasets.forEach(function(dataset) {
-    if (dataset.data_vals && dataset.data_vals.length > 0) {
-      const visibleData = dataset.data_vals.filter(function(d) {
-        return d.energy >= xDomain[0] && d.energy <= xDomain[1];
-      });
-      
-      if (visibleData.length > 0) {
-        hasVisibleData = true;
-        const data_min_y = d3.min(visibleData, function(d) { return d.eff; });
-        const data_max_y = d3.max(visibleData, function(d) { return d.eff; });
-        min_y = Math.min(min_y, data_min_y);
-        max_y = Math.max(max_y, data_max_y);
-      }
+  let max_y = -Number.MAX_VALUE;
+  const addY = function( y ){
+    if( isFinite(y) ){
+      min_y = Math.min( min_y, y );
+      max_y = Math.max( max_y, y );
     }
-    
-    // Also check fit equation points if they exist
-    if (dataset.fit_eqn && dataset.fit_eqn_points) {
-      const visibleFitData = dataset.fit_eqn_points.filter(function(d) {
-        return d.energy >= xDomain[0] && d.energy <= xDomain[1];
-      });
-      
-      if (visibleFitData.length > 0) {
-        hasVisibleData = true;
-        visibleFitData.forEach(function(d) {
-          min_y = Math.min(min_y, d.eff - (d.eff_uncert ? d.eff_uncert : 0));
-          max_y = Math.max(max_y, d.eff + (d.eff_uncert ? d.eff_uncert : 0));
-        });
+  };
+
+  // Sample the curves at the same density they are drawn with
+  const num_eqn_points = Math.max( 1, Math.floor( Math.abs(this.xScale.range()[1] - this.xScale.range()[0]) / 4 ) );
+
+  (this.datasets || []).forEach(function(dataset) {
+    (dataset.data_vals || []).forEach(function(d) {
+      if( (d.energy >= xDomain[0]) && (d.energy <= xDomain[1]) )
+        addY( d.eff );
+    });
+
+    if( dataset.fit_eqn ){
+      for( let i = 0; i <= num_eqn_points; ++i ){
+        const ene = xDomain[0] + i * (xDomain[1] - xDomain[0]) / num_eqn_points;
+        const eff = dataset.fit_eqn(ene);
+        const eff_uncert = dataset.fit_uncert_fcn ? dataset.fit_uncert_fcn(ene) : null;
+        addY( eff - (eff_uncert ? eff_uncert : 0) );
+        addY( eff + (eff_uncert ? eff_uncert : 0) );
       }
     }
   });
-  
+
   // Handle edge case of no visible data
-  if (!hasVisibleData || min_y === Number.MAX_VALUE) {
+  if (min_y > max_y) {
     min_y = 0;
     max_y = 1;
   }
-  
-  // Apply padding
-  const initial_y_range = max_y - min_y;
-  min_y -= 0.1 * initial_y_range;
-  max_y += 0.2 * initial_y_range;
-  
-  // Update y scale and axis
-  this.yScale.domain([min_y, max_y]);
-  this.chartArea.selectAll('.yAxis').call(this.yAxis);
-};//RelEffPlot.prototype.updateYAxisRange
+
+  const initial_y_range = (max_y > min_y) ? (max_y - min_y) : ((max_y !== 0) ? Math.abs(max_y) : 1);
+  return [min_y - 0.1 * initial_y_range, max_y + 0.2 * initial_y_range];
+};//RelEffPlot.prototype.autoYDomain
+
+
+/* After an axis range changes, the y tick labels may be a different width than the left gutter was laid out
+   for (e.g., "0.04" -> "0.0012", which would get clipped), so redo the layout, keeping the zoom, if so. */
+RelEffPlot.prototype.relayoutOrRedraw = function() {
+  if( !this.datasets )
+    return;
+
+  const yAxisNode = this.chartArea.select('.yAxis').node();
+  const ytickw = yAxisNode ? yAxisNode.getBBox().width : 0;
+  if( Math.abs( ytickw - this.layoutYTickWidth ) > 1 )
+    this.layoutAndDraw( true );
+  else
+    this.redrawData();
+};//RelEffPlot.prototype.relayoutOrRedraw
 
 
 RelEffPlot.prototype.redrawData = function() {
@@ -427,7 +546,7 @@ RelEffPlot.prototype.redrawData = function() {
   //  hit-test order), and with pointer-events disabled on the line - otherwise the 2px curve
   //  stroke sits on top of the zoom-capture rect and the circles, silently eating the mousedown
   //  that starts a drag-zoom and the mouseover that shows a point's tooltip (this regressed in a
-  //  merge once already; keep this consistent with the identical code in setRelEffData).
+  //  merge once already; this is now the only place the curves are drawn).
   this.datasets.forEach(function(dataset, index) {
     if (dataset.fit_eqn && dataset.fit_eqn_points && dataset.fit_eqn_points.length > 0) {
       // Create path for fit line
@@ -565,8 +684,6 @@ RelEffPlot.prototype.setYAxisTitle = function( title, dontCallResize ){
  
  */
 RelEffPlot.prototype.setRelEffData = function (datasets) {
-  const self = this;
-
   // If not an array of dataset objects, convert to array format for backward compatibility
   if (!Array.isArray(datasets) || datasets.length === 0 || 
       (datasets.length > 0 && (!datasets[0].hasOwnProperty('data_vals') && !datasets[0].hasOwnProperty('fit_eqn')))) {
@@ -593,6 +710,18 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   
   // For backward compatibility
   this.chi2Txt = this.chi2TxtArray.length > 0 ? this.chi2TxtArray[0] : null;
+
+  this.layoutAndDraw( false );
+};//RelEffPlot.prototype.setRelEffData
+
+
+/** Lays out the axes, titles, and plot area for the chart's current size and axis ranges, and (re)creates
+ everything drawn in it.  If `keepZoom` is true the current axis ranges are kept, otherwise the chart is
+ zoomed all the way out.
+ */
+RelEffPlot.prototype.layoutAndDraw = function( keepZoom ) {
+  const self = this;
+  const datasets = this.datasets;
 
   const parentWidth = this.chart.clientWidth;
   const parentHeight = this.chart.clientHeight;
@@ -677,95 +806,15 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   let chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw );
   let chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad );
 
-  const num_eqn_points = Math.max( 1, Math.floor( chartAreaWidth / 4 ) );
-
-  // Find min/max values across all datasets
-  let min_x = Number.MAX_VALUE;
-  let max_x = Number.MIN_VALUE;
-  let min_y = Number.MAX_VALUE;
-  let max_y = Number.MIN_VALUE;
-  
-  // We'll collect all fit equation points here
-  let all_fit_eqn_points = [];
-
-  // Process all datasets to find limits and collect fit data
-  datasets.forEach(function(dataset, datasetIndex) {
-    const data_vals = dataset.data_vals;
-    const fit_eqn = dataset.fit_eqn;
-    const fit_uncert_fcn = dataset.fit_uncert_fcn;
-    
-    if (data_vals && data_vals.length > 0) {
-      min_x = Math.min(min_x, d3.min(data_vals, function (d) { return d.energy; }));
-      max_x = Math.max(max_x, d3.max(data_vals, function (d) { return d.energy; }));
-      min_y = Math.min(min_y, d3.min(data_vals, function (d) { return d.eff; }));
-      max_y = Math.max(max_y, d3.max(data_vals, function (d) { return d.eff; }));
-    }
-    
-    // Prepare fit equation points if available
-    if (fit_eqn) {
-      let fit_eqn_points = [];
-      
-      // We'll compute these later when we have the final min/max x values
-      dataset.fit_eqn_points = []; // Store to use later
-      all_fit_eqn_points.push({
-        fit_eqn: fit_eqn,
-        fit_uncert_fcn: fit_uncert_fcn,
-        dataset_index: datasetIndex, // TRUE dataset index - this array skips datasets without a
-                                     //  fit_eqn, so the forEach position must not be used for
-                                     //  colors/classes (curve 1 used to get curve 0's color)
-        points: dataset.fit_eqn_points // Reference to array we'll fill later
-      });
-    }
-  });
-  
-  // Handle edge case of no data
-  if (min_x === Number.MAX_VALUE) min_x = 0;
-  if (max_x === Number.MIN_VALUE) max_x = 3000;
-  if (min_y === Number.MAX_VALUE) min_y = 0;
-  if (max_y === Number.MIN_VALUE) max_y = 1;
-
-  // Compute padding for axes
-  const initial_x_range = max_x - min_x;
-    
-  let lower_padding = 0.025 * initial_x_range;
-  if (Math.abs(initial_x_range) < 1.0) {
-    lower_padding = 1.0;
-  } else if (((min_x - lower_padding) < 50.0) || (lower_padding > 0.2 * min_x)) {
-    lower_padding = 0.2 * min_x;
-  }
-    
-  min_x -= lower_padding;
-  max_x += 0.025 * initial_x_range;
-
-  const initial_y_range = max_y - min_y;
-  min_y -= 0.1 * initial_y_range;
-  max_y += 0.2 * initial_y_range;
-
-  // Now compute all fit equation points using final min/max x values
-  all_fit_eqn_points.forEach(function(fit_data) {
-    for (let i = 0; i < num_eqn_points; ++i) {
-      const ene = min_x + i * (max_x - min_x) / num_eqn_points;
-      const eff = fit_data.fit_eqn(ene);
-      const eff_uncert = fit_data.fit_uncert_fcn ? fit_data.fit_uncert_fcn(ene) : null;
-      
-      fit_data.points.push({ 
-        energy: ene, 
-        eff: eff, 
-        eff_uncert: eff_uncert 
-      });
-      
-      // Update min/max y based on fit equations
-      min_y = Math.min(min_y, eff - (eff_uncert ? eff_uncert : 0));
-      max_y = Math.max(max_y, eff + (eff_uncert ? eff_uncert : 0));
-    }
-  });
-
-  // Put initial estimate of areas into d3, so we can then get final sizes of axis and titles
+  // Pick the axis ranges before measuring the tick labels, so the gutter fits the labels actually shown
+  //  (autoYDomain samples the curves at a density set by the plot width, so set the ranges first).
   this.xScale.range([0, chartAreaWidth]);
   this.yScale.range([chartAreaHeight, 0]);
-  
-  this.xScale.domain([min_x, max_x]);
-  this.yScale.domain([min_y, max_y]);
+
+  if( !keepZoom ){
+    this.xScale.domain( this.fullXDomain() );
+    this.yScale.domain( this.autoYDomain( this.xScale.domain() ) );
+  }
 
   this.chartArea.selectAll('.xAxis')
     .call(this.xAxis);
@@ -781,7 +830,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
           
   yticks = this.chartArea.selectAll('.yAxis');
   ytickw = yticks.empty() ? 7 : d3.max(yticks[0], function(t){ return d3.select(t).node().getBBox().width; });
-          
+  this.layoutYTickWidth = ytickw;  // see relayoutOrRedraw
+
   // Clamp to non-negative - the container may not yet be laid out, and SVG attrs reject negative values.
   chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw );
   chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad );
@@ -816,40 +866,6 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     .attr("width", chartAreaWidth)
     .attr("height", chartAreaHeight);
     
-  // Remove existing paths and create a group for each dataset
-  this.plotGroup.selectAll("path.line").remove();
-  this.plotGroup.selectAll("path.RelEffPlotErrorBounds").remove();
-  
-  // For each dataset with fit equation, create the fit line and uncertainty bounds
-  all_fit_eqn_points.forEach(function(fit_data) {
-    const index = fit_data.dataset_index;  //NOT the forEach position - see dataset_index above
-    // Create path for fit line
-    const valueline = d3.svg.line()
-      .x(function(d) { return self.xScale(d.energy); })
-      .y(function(d) { return self.yScale(d.eff); });
-      
-    const path = self.plotGroup.append("path")
-      .attr("class", "line dataset-" + index)
-      .attr("d", valueline(fit_data.points))
-      .style("stroke", self.getDatasetColor(index))
-      .style("pointer-events", "none");
-      
-    // Create path for uncertainty bounds if available
-    if (fit_data.fit_uncert_fcn) {
-      const area = d3.svg.area()
-        .x(function(d) { return self.xScale(d.energy); })
-        .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - d.eff_uncert) : null; })  /* band is +-1 sigma, matching the data error bars */
-        .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + d.eff_uncert) : null; });
-        
-      const path_uncert = self.plotGroup.append("path")
-        .attr("class", "RelEffPlotErrorBounds dataset-" + index)
-        .attr("d", area(fit_data.points))
-        .style("fill", self.getDatasetColor(index, 0.1))
-        .style("stroke", "none")
-        .style("pointer-events", "none");
-    }
-  });
-
   // For some reason the circles position arent being updated on resize, so we'll just remove them first
   //  With later versions of D3 there is a .merge() function that is maybe relevant
   this.plotGroup.selectAll("circle").remove();
@@ -1144,9 +1160,6 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       });
   });
   
-  // Auto-zoom out to show the full data extent when data is set
-  this.zoomOut();
-
   // Position the mouse capture rectangle to cover the chart area
   if (this.mouseCapture) {
     this.mouseCapture
@@ -1155,7 +1168,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   }
 
   this.updateOmittedPointsInfo();
-};//RelEffPlot.prototype.setRelEffData
+
+  // Draws the fit curves (and uncertainty bands) for the current x-range
+  this.redrawData();
+};//RelEffPlot.prototype.layoutAndDraw
 
 
 /* Shows a small info icon in the lower-left of the chart whenever some data points were intentionally left
@@ -1366,7 +1382,7 @@ RelEffPlot.prototype.handleResize = function () {
     this.setRelEffData(this.data_vals, this.fit_eqn, chi2_txt, this.fit_uncert_fcn);
   }
   
-  // Note: the mouse-capture rect is sized at the end of setRelEffData (which both branches above
+  // Note: the mouse-capture rect is sized at the end of layoutAndDraw (which both branches above
   //  call) using the real plot-area size - axis tick/title space and the chi2-line padding
   //  subtracted.  A margins-only re-size here used to override that with a rect ~40px wider/taller
   //  than (and offset from) the plot area, so the capture geometry differed depending on whether

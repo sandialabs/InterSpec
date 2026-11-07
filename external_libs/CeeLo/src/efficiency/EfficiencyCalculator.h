@@ -46,6 +46,7 @@
 #include <vector>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <functional>
 #include <chrono>
 #include <utility>
@@ -420,10 +421,22 @@ struct CascadeResult {
 };
 
 /// How to handle air attenuation in the gap between source and detector.
+///
+/// The two analytic modes differ only in whether Rayleigh scattering counts as
+/// removal. For an OPEN geometry, coherent scatter is compensated (the photons
+/// Rayleigh-scattered out of the line are replaced by others scattered in from
+/// the surrounding air), so removing it would double-count the loss — on the
+/// air benchmark an apparent 9% "attenuation gap" at 59 keV / 50 m is exactly
+/// the Rayleigh mu/rho, a cone-biasing artifact rather than real attenuation.
+/// For a genuinely COLLIMATED path
+/// (a narrow-beam / shielded-aperture measurement, where the compensating
+/// in-scatter is blocked), Rayleigh IS removal and the collimated mode applies.
 enum class AirAttenuation : uint8_t {
     None,                ///< No air attenuation (default, current behavior)
-    AnalyticNoScatter    ///< exp(-mu_no_rayleigh * air_distance) per event;
-                         ///< excludes Rayleigh (isotropic cancellation argument)
+    AnalyticNoScatter,   ///< exp(-mu_no_rayleigh * air_distance) per event;
+                         ///< excludes Rayleigh (open-geometry compensation)
+    AnalyticCollimated   ///< exp(-mu_total * air_distance) per event; Rayleigh
+                         ///< counts as removal (collimated / narrow-beam paths)
 };
 
 /// Configuration for position-based importance sampling in extended sources.
@@ -830,12 +843,29 @@ public:
     /// TransportConfig::enable_compton_fluorescence). Off by default.
     void enable_compton_fluorescence(bool on) { transport_config_.enable_compton_fluorescence = on; }
 
-    /// Spectrum-fidelity physics: detector-side refinements that shape the
-    /// deposited spectrum but move FEP and total efficiency by well under the
-    /// ~1% goal. Off by default; turn it on when the pulse-height spectrum's
-    /// shape matters: Compton K-vacancy fluorescence.
+    /// Detector-side electron walk (see TransportConfig::electron_transport).
+    void set_electron_transport(ElectronTransport t) { transport_config_.electron_transport = t; }
+
+    /// Electron-impact ionization K x-rays: in the detector's Detailed walk
+    /// (TransportConfig::enable_impact_ionization) and from electrons in source
+    /// material and shields (SourceGeometry::set_source_impact_ionization).
+    void enable_impact_ionization(bool on) {
+        transport_config_.enable_impact_ionization = on;
+        source_geometry_.set_source_impact_ionization(on);
+    }
+
+    /// Spectrum-fidelity physics: refinements that shape the deposited spectrum
+    /// but move FEP and total efficiency by well under the ~1% goal, at some
+    /// cost in speed. Off by default; full-spectrum work turns it on: Compton
+    /// vacancy fluorescence in the detector, the Detailed electron walk,
+    /// electron-impact ionization x-rays, and Doppler-sampled Compton
+    /// collisions in source material and shields (whose K and L vacancies then
+    /// relax like the detector's).
     void enable_spectrum_fidelity(bool on) {
         enable_compton_fluorescence(on);
+        set_electron_transport(on ? ElectronTransport::Detailed : ElectronTransport::Fast);
+        enable_impact_ionization(on);
+        source_geometry_.set_compton_doppler_enabled(on);
     }
     void enable_electron_csda(bool on) { transport_config_.enable_electron_csda = on; }
     void enable_cone_sampling(bool on) { use_cone_sampling_ = on; }
@@ -877,7 +907,18 @@ public:
     /// (on by default; see SourceGeometry::set_source_fluorescence). Full
     /// mode only: FEP-only runs never transport source secondaries.
     void set_source_fluorescence(bool on) { source_geometry_.set_source_fluorescence(on); }
+    /// Track pair-production positrons in source material/shielding to their
+    /// stop or escape (on by default; see SourceGeometry).
+    void set_source_positron_transport(bool on) {
+        source_geometry_.set_source_positron_transport(on);
+    }
     void set_air_attenuation(AirAttenuation mode) { air_attenuation_ = mode; }
+
+    /// Override the air the gap is filled with (composition + density).
+    /// Defaults to dry sea-level air (make_Air(), 0.001205 g/cm^3). Use this
+    /// for altitude, humidity, or a non-air fill gas. Has no effect unless an
+    /// analytic air-attenuation mode is selected.
+    void set_air_material(const Material& air) { air_material_override_ = air; }
 
     // --- Event Biasing (variance reduction) ---
 
@@ -1079,9 +1120,14 @@ public:
     /// Export the detector geometry as a GDML file for GEANT4 validation.
     /// The active crystal volume is named "active_crystal".
     /// @param vacuum_world  If true, world volume uses vacuum instead of air.
+    /// @param min_world_half_xy_cm  If > 0, force the world box transverse
+    ///        half-size (cm) — air-scatter studies need a wide air region.
+    /// @param min_world_half_z_cm  If > 0, force the world box half-length in z.
     /// @see tools/geant4_validation/ for the matching GEANT4 harness.
     void export_geant4_gdml(const std::string& filename,
-                             bool vacuum_world = false) const;
+                             bool vacuum_world = false,
+                             double min_world_half_xy_cm = 0.0,
+                             double min_world_half_z_cm = 0.0) const;
 
     /// Export a GEANT4 GPS macro file for a point-source simulation.
     /// Uses the currently configured source position (center for extended sources).
@@ -1164,6 +1210,8 @@ private:
     bool fep_only_mode_ = false;
     bool source_electron_transport_ = false;
     AirAttenuation air_attenuation_ = AirAttenuation::None;
+    /// Unset => dry sea-level air (make_Air()).
+    std::optional<Material> air_material_override_;
 
     // Event biasing (variance reduction)
     BiasingConfig biasing_;

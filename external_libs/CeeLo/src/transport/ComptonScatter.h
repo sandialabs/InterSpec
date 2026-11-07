@@ -101,6 +101,18 @@ double doppler_scattered_energy(double energy_keV, double cos_theta, double t);
 /// Maximum t allowed by kinematics for subshell binding energy U_keV
 /// (the t for which E' = E - U at the given angle).
 double doppler_t_max(double energy_keV, double cos_theta, double U_keV);
+
+/// Probability that the Doppler-broadened scattered photon energy lies in
+/// [lower_keV, upper_keV) at a fixed Compton angle. This is the deterministic
+/// counterpart of finish_compton_at_angle(): it uses the same eligible-shell
+/// occupancy weights, truncated analytic Compton profiles, binding-energy
+/// cap, and free-line fallback. It is intended for binned response kernels.
+double doppler_energy_bin_probability(
+    double energy_keV,
+    double cos_theta,
+    int Z,
+    double lower_keV,
+    double upper_keV);
 ///@}
 
 /// Sample only the Compton scattering cosine from KN x S(x,Z)/Z (the same

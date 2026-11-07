@@ -122,17 +122,50 @@
   margin-left: 12px;
 }
 
-.ShieldingSelect .DimEditRow
+/* Geometry dimensions: one grid per geometry, so all rows share the label, input, and "Fit"
+   columns.  The Fit column keeps its width while any row's checkbox is shown (ShieldingSourceDisplay
+   hides ones that can't be fit). */
+.ShieldingSelect .DimGrid
 {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 5px;
+  column-gap: 5px;
 }
 
-.ShieldingSelect .DimEditRow input[type="text"]
+/* Pin labels to the first column, so a hidden Fit checkbox doesn't pull the next label up into its cell */
+.ShieldingSelect .DimGrid .DimLabel
 {
-  flex: 1;
+  grid-column: 1;
+}
+
+.ShieldingSelect .DimGrid > input[type="text"]
+{
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Outside the fit tool there is only the thickness row, which the material summary shares; when
+   the row is too narrow to keep a usable thickness input, the summary wraps below, right aligned. */
+.ShieldingSelect .DimWrapRow
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 5px;
+}
+
+.ShieldingSelect .DimWrapRow > input[type="text"]
+{
+  flex: 1 1 3.5em;
+  min-width: 3.5em;
+}
+
+.ShieldingSelect .DimWrapRow > .MaterialSummary
+{
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 
@@ -145,20 +178,6 @@
 {
   white-space: nowrap;
   vertical-align: middle;
-}
-
-/* Outside the Act/Shielding fit tool the summary shares the thickness row, where it has always
-   had a fixed, right-aligned box.  In the fit tool it gets a layout cell of its own, and is left
-   to size itself, as the plain text it replaced did.
- */
-.ShieldingSelect .MaterialSummary:not(.MaterialSummaryFit)
-{
-  display: inline-block;
-  box-sizing: border-box;
-  overflow-x: hidden;
-  width: 95px;
-  text-align: right;
-  margin-right: 3px;
 }
 
 /* Dark themes force borders onto every input with !important (see themes/dark/dark.css), so this

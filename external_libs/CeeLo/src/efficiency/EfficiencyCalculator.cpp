@@ -1324,12 +1324,19 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
 
     double energy_MeV = energy_keV * 1e-3;
 
-    // Pre-compute air attenuation coefficient (excluding Rayleigh) once per thread.
-    double mu_air_no_rs = 0.0;
-    if (air_attenuation_ == AirAttenuation::AnalyticNoScatter) {
-        static const Material air_mat = make_Air();
+    // Pre-compute the air removal coefficient once per thread. AnalyticNoScatter
+    // drops Rayleigh (open geometry: out-scatter is compensated by in-scatter);
+    // AnalyticCollimated keeps it (a collimated path blocks the compensating
+    // in-scatter, so coherent scatter is genuine removal).
+    double mu_air_removal = 0.0;
+    if (air_attenuation_ != AirAttenuation::None) {
+        static const Material default_air = make_Air();
+        const Material& air_mat =
+            air_material_override_ ? *air_material_override_ : default_air;
         MacroscopicXS air_xs = air_mat.macroscopic_xs(energy_MeV);
-        mu_air_no_rs = air_xs.mu_pe + air_xs.mu_cs + air_xs.mu_pp;
+        mu_air_removal = air_xs.mu_pe + air_xs.mu_cs + air_xs.mu_pp;
+        if (air_attenuation_ == AirAttenuation::AnalyticCollimated)
+            mu_air_removal += air_xs.mu_rs;
     }
 
     // Pre-compute forced-first-interaction transport config (variance
@@ -1507,13 +1514,13 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 }
                 if (!first_seg) continue;
 
-                if (mu_air_no_rs > 0.0) {
+                if (mu_air_removal > 0.0) {
                     // Air gap = distance to detector entry minus the path
                     // inside the source geometry along this ray.
                     double air_dist =
                         std::max(first_seg->t_start, 0.0) - src_path_cm;
                     if (air_dist > 0.0)
-                        w *= std::exp(-mu_air_no_rs * air_dist);
+                        w *= std::exp(-mu_air_removal * air_dist);
                 }
 
                 Eigen::Vector3d entry_point =
@@ -1778,9 +1785,9 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 Eigen::Vector3d entry_point = pos +
                     dir * std::max(first_seg->t_start, 0.0);
 
-                if (mu_air_no_rs > 0.0 && !air_applied) {
+                if (mu_air_removal > 0.0 && !air_applied) {
                     double air_dist = std::max(first_seg->t_start, 0.0);
-                    src_air_w *= std::exp(-mu_air_no_rs * air_dist);
+                    src_air_w *= std::exp(-mu_air_removal * air_dist);
                     air_applied = true;
                 }
 
@@ -2145,15 +2152,15 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             }
 
             // Air attenuation: distance from source exit to detector entry
-            if (mu_air_no_rs > 0.0) {
+            if (mu_air_removal > 0.0) {
                 Eigen::Vector3d det_entry = src_pos + direction * std::max(first_seg->t_start, 0.0);
                 double air_dist = (det_entry - src_result.exit_position).norm();
-                total_weight *= std::exp(-mu_air_no_rs * air_dist);
+                total_weight *= std::exp(-mu_air_removal * air_dist);
             }
-        } else if (mu_air_no_rs > 0.0) {
+        } else if (mu_air_removal > 0.0) {
             // No source effects: air gap = distance from source to detector entry
             double air_dist = std::max(first_seg->t_start, 0.0);
-            total_weight *= std::exp(-mu_air_no_rs * air_dist);
+            total_weight *= std::exp(-mu_air_removal * air_dist);
         }
 
         Eigen::Vector3d entry_point = src_pos + direction * std::max(first_seg->t_start, 0.0);
@@ -2248,21 +2255,29 @@ inline bool cascade_corr_link(const DecayCascade& dc, std::size_t a, std::size_t
     return false;
 }
 
-/// Sample the x-ray emitted when a vacancy in shell `f` is filled: returns the
-/// line energy (keV), or 0 for an Auger transition (no x-ray). Works for both
-/// FluorescenceData (K) and LSubshellFluor (one L subshell) -- same member layout.
-template <class FD>
-inline double sample_vacancy_xray(const FD* f,
-                                  std::uniform_real_distribution<double>& u,
-                                  std::mt19937_64& rng) {
-    if (!f || f->num_lines == 0) return 0.0;
-    if (u(rng) >= f->fluorescence_yield) return 0.0;  // Auger, no x-ray
+/// K-vacancy x-ray: the line energy (0 for an Auger transition) and, for a line
+/// filled from the L shell (K-alpha), the L subshell (0..2) the filling electron
+/// left, -1 otherwise. Draws the yield, then for an x-ray the line.
+struct KVacancyXray {
+    double line_keV = 0.0;
+    int l_subshell = -1;
+};
+inline KVacancyXray sample_k_vacancy_xray(const FluorescenceData* f,
+                                          std::uniform_real_distribution<double>& u,
+                                          std::mt19937_64& rng) {
+    KVacancyXray out;
+    if (!f || f->num_lines == 0) return out;
+    if (u(rng) >= f->fluorescence_yield) return out;  // Auger, no x-ray
     double xi = u(rng), cum = 0.0;
+    int chosen = 0;
     for (int li = 0; li < f->num_lines; ++li) {
         cum += f->line_probability[li];
-        if (xi <= cum) return f->line_energy_keV[li];
+        if (xi <= cum) { chosen = li; break; }
     }
-    return f->line_energy_keV[0];
+    out.line_keV = f->line_energy_keV[chosen];
+    const uint8_t filling = f->line_filling_subshell[chosen];
+    if (filling >= kEadlL1 && filling <= kEadlL3) out.l_subshell = filling - kEadlL1;
+    return out;
 }
 
 /// P(member m emitted | member pi emitted) within one decay branch, from the
@@ -3403,7 +3418,8 @@ double EfficiencyCalculator::emit_vacancy_xray_deposit(
     };
 
     if (is_L) return emit_l(l_subshell);
-    const double ex = sample_vacancy_xray(fl, u, rng);
+    const KVacancyXray kx = sample_k_vacancy_xray(fl, u, rng);
+    const double ex = kx.line_keV;
     if (ex <= 0.0)  // K-Auger: deposit the K binding locally (was dropped).
         return ic_electrons && fl
             ? emit_ic_electron(fl->k_edge_keV, 0.0, ic_electrons,
@@ -3411,7 +3427,7 @@ double EfficiencyCalculator::emit_vacancy_xray_deposit(
             : 0.0;
     double D = transport_cascade_member(
         vertex, sample_isotropic_dir(u, rng), ex, seg_buffer, rng);
-    if (fl && ex < 0.93 * fl->k_edge_keV) D += emit_l(-1);  // Kalpha -> L vacancy
+    if (kx.l_subshell >= 0) D += emit_l(kx.l_subshell);  // Kalpha -> L vacancy
     return D;
 }
 
@@ -4078,7 +4094,7 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
         const LevelScheme& ls = dc.level_scheme;
         int n_kvac = 0;
         int n_lvac[3] = {0, 0, 0};  // resolved IC vacancies per subshell L1/L2/L3
-        int n_lvac_unres = 0;       // EC / Kalpha-induced (subshell by occupancy)
+        int n_lvac_unres = 0;       // EC-induced (subshell by occupancy)
         // K/L binding energies of the daughter atom, for the IC-electron KE
         // (E_IC = E_transition - E_binding(shell)). Only l3_edge is tabulated;
         // it stands in for L1/L2 (a few keV high, negligible vs the peak window).
@@ -4307,7 +4323,8 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
             const LFluorescenceData* flL =
                 CrossSectionData::instance().l_fluorescence(ls.daughter_Z);
             for (int v = 0; v < n_kvac; ++v) {
-                const double ex = sample_vacancy_xray(fl, uniform, rng);
+                const KVacancyXray kx = sample_k_vacancy_xray(fl, uniform, rng);
+                const double ex = kx.line_keV;
                 if (ex <= 0.0) {
                     // Auger: the K binding energy is carried off by Auger
                     // electrons (previously dropped). Deposit it as a local-ish
@@ -4317,7 +4334,7 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
                 }
                 D += transport_cascade_member(
                     vertex, sample_isotropic_dir(uniform, rng), ex, seg_buffer, rng);
-                if (fl && ex < 0.93 * fl->k_edge_keV) ++n_lvac_unres;  // Kalpha -> L vacancy
+                if (kx.l_subshell >= 0) ++n_lvac[kx.l_subshell];  // Kalpha -> L vacancy
             }
             for (int s = 0; s < 3; ++s)
                 for (int v = 0; v < n_lvac[s]; ++v) D += emit_l_xray(flL, s);
@@ -4416,15 +4433,16 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
                     D += emit_l_xray(flL, l_subshell);
                     return;
                 }
-                const double ex = sample_vacancy_xray(fl, uniform, rng);
+                const KVacancyXray kx = sample_k_vacancy_xray(fl, uniform, rng);
+                const double ex = kx.line_keV;
                 if (ex <= 0.0) {
                     D += ic_e(k_bind, 0.0);
                     return;
                 }
                 D += transport_cascade_member(
                     vertex, sample_isotropic_dir(uniform, rng), ex, seg_buffer, rng);
-                if (fl && ex < 0.93 * fl->k_edge_keV)
-                    D += emit_l_xray(flL, -1);
+                if (kx.l_subshell >= 0)
+                    D += emit_l_xray(flL, kx.l_subshell);
             };
 
             // EC is part of the global weak categorical law, never an
@@ -4478,16 +4496,17 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
                     D += emit_l_xray(flL, kv.l_subshell);
                     continue;
                 }
-                const double ex = sample_vacancy_xray(fl, uniform, rng);
+                const KVacancyXray kx = sample_k_vacancy_xray(fl, uniform, rng);
+                const double ex = kx.line_keV;
                 if (ex <= 0.0) {  // K-Auger: deposit the K binding locally.
                     D += ic_e(k_bind, 0.0);
                     continue;
                 }
                 D += transport_cascade_member(
                     vertex, sample_isotropic_dir(uniform, rng), ex, seg_buffer, rng);
-                // K x-ray from L (Kalpha) leaves an L vacancy -> L x-ray.
-                if (fl && ex < 0.93 * fl->k_edge_keV)
-                    D += emit_l_xray(flL, -1);
+                // K x-ray from L (Kalpha) leaves a vacancy in that L subshell.
+                if (kx.l_subshell >= 0)
+                    D += emit_l_xray(flL, kx.l_subshell);
             }
         }
       }  // end else (member-realization + independent vacancy model)
@@ -5469,9 +5488,12 @@ CascadeCorrectionResult EfficiencyCalculator::cascade_correction(
 // --- GEANT4 Export ---
 
 void EfficiencyCalculator::export_geant4_gdml(const std::string& filename,
-                                               bool vacuum_world) const {
+                                               bool vacuum_world,
+                                               double min_world_half_xy_cm,
+                                               double min_world_half_z_cm) const {
     const SourceGeometry* sg = source_geometry_.has_source_effects() ? &source_geometry_ : nullptr;
-    write_gdml(geometry_, filename, sg, vacuum_world);
+    write_gdml(geometry_, filename, sg, vacuum_world,
+               min_world_half_xy_cm, min_world_half_z_cm);
 }
 
 void EfficiencyCalculator::export_geant4_macro(const std::string& filename,

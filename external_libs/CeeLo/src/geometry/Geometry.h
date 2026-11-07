@@ -293,6 +293,15 @@ public:
                    const Eigen::Vector3d& direction,
                    std::vector<PathSegment>& segments) const;
 
+    /// A lower bound on the distance from `p` to the nearest boundary between
+    /// any two regions (active crystal, dead layer, bore, each attenuator
+    /// shell, outside): the distance to the nearest of the surfaces those
+    /// boundaries lie on, each extended to infinity (z planes, cylinders about
+    /// the axis or box planes, the bore's tip sphere, the bullet fillet tori).
+    /// A charged particle whose straight-line reach is below it cannot leave
+    /// the region it is in. Conservative by construction, never exact.
+    double safety_distance(const Eigen::Vector3d& p) const;
+
     /// Quick test: does the ray hit the outermost boundary of the geometry?
     /// Useful for cone-sampling checks.
     bool ray_hits_outer_boundary(const Eigen::Vector3d& origin,
@@ -308,7 +317,9 @@ public:
     /// loses real paths. Do not "correct" it: it is a bound, not a dimension.
     double outer_bounding_radius() const;
 
-    /// Get the full axial extent [z_min, z_max] of the outermost shell.
+    /// Get the full axial extent [z_min, z_max] of the outermost shell, as a
+    /// bound: it encloses the shells exactly as trace_ray() stacks them (each
+    /// front on the previous shell's), and the front dead layer.
     std::pair<double, double> outer_z_extent() const;
 
     // Accessors

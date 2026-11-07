@@ -345,6 +345,7 @@ set(sources
     src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
     src/DetectorEffG2kPar.cpp
+    src/DrfAppearance.cpp
     src/DrfImport.cpp
     src/AngleOutxImport.cpp
     src/GadrasDetectorDat.cpp
@@ -502,6 +503,7 @@ set(headers
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/DetectorEffG2kPar.h
+    InterSpec/DrfAppearance.h
     InterSpec/DrfImport.h
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
@@ -926,6 +928,7 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.css
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/GltfMini.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.css
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.css

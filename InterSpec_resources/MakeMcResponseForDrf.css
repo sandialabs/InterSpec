@@ -194,6 +194,11 @@
 .DrfModifyFieldGrid > label { justify-self: end; }
 .DrfModifyFieldGrid > input,
 .DrfModifyFieldGrid > textarea { width: 100%; box-sizing: border-box; }
+/* The instrument's icon and 3D model (DrfAppearance), in the same grid. */
+.DrfModifyAppearance { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.DrfModifyAppearanceBtns { display: flex; flex-wrap: wrap; gap: 0px 10px; }
+.DrfModifyAppearanceError { flex-basis: 100%; color: var(--interspec-error-color); }
+.DrfModifyAppearanceNote { margin-bottom: 8px; max-width: 480px; }
 /* General tab: the live efficiency/FWHM chart and the summary of what the detector carries. */
 .DrfModifyWidget .DrfModifyGeneralChart { width: 100%; height: 220px; margin-top: 4px; }
 .DrfModifyInfoTable { margin-top: 8px; font-size: smaller; }

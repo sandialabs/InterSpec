@@ -92,22 +92,42 @@ extern const float kSB_kappa[];          ///< k/T fraction values, ascending [kS
 extern const float kSB_log_E_keV[];      ///< log10(electron KE / keV), ascending [kSB_n_energy]
 extern const float kSB_chi_scale[kMaxElectronTableZ]; ///< Per-element uint16 decode scales
 
+/// EPICS2023 EADL subshell designators are sequential: 1 K, 2-4 L1-L3, 5-9 M1-M5,
+/// 10-16 N1-N7, 17 and up O, P, ...
+enum EadlSubshell : uint8_t {
+    kEadlK = 1, kEadlL1 = 2, kEadlL2 = 3, kEadlL3 = 4, kEadlM1 = 5
+};
+
+/// K x-ray family: K-alpha lines are filled from the L shell, K-beta from M and beyond.
+enum class KLineFamily : uint8_t { Alpha = 0, Beta = 1 };
+
+inline KLineFamily k_line_family(uint8_t filling_subshell) {
+    return filling_subshell < kEadlM1 ? KLineFamily::Alpha : KLineFamily::Beta;
+}
+
 /// Fluorescence line data for a single element.
 /// Only K-shell fluorescence is tracked (L-shell and higher are deposited locally).
 struct FluorescenceData {
     float k_edge_keV;           ///< K-shell binding energy (keV)
     float fluorescence_yield;   ///< omega_K: probability of X-ray vs. Auger
 
-    // Radiative transition probabilities and energies (Kalpha1, Kalpha2, Kbeta)
-    // Normalized so probabilities sum to 1 among the radiative transitions.
+    // Radiative transitions, sorted by decreasing probability. Probabilities are
+    // normalized to sum to 1 among the radiative transitions. Energies are EADL
+    // binding-energy differences, k_edge_keV - E_b(filling subshell).
     uint8_t num_lines;
     const float* line_energy_keV;     ///< Transition energies (keV), num_lines entries
     const float* line_probability;    ///< Relative probabilities, num_lines entries
+    /// EADL subshell (EadlSubshell numbering) whose electron fills the K vacancy,
+    /// num_lines entries: gives the line family and the vacancy left behind.
+    const uint8_t* line_filling_subshell;
 };
 
 /// Radiative data for one L subshell (L1, L2 or L3).
 struct LSubshellFluor {
-    float fluorescence_yield;   ///< omega_Li: probability of an x-ray vs. Auger
+    float edge_keV;             ///< subshell binding energy (keV)
+    /// Probability that a vacancy here radiates one of the retained (>= 10 keV)
+    /// lines; Coster-Kronig transfer and Auger / sub-cut lines share the rest.
+    float fluorescence_yield;
     uint8_t num_lines;
     const float* line_energy_keV;  ///< L line energies (keV), num_lines entries
     const float* line_probability; ///< relative probabilities, num_lines entries
@@ -130,7 +150,19 @@ struct LFluorescenceData {
     /// deexcitation cascade. Values come directly from EPICS2023 EADL.
     float coster_kronig[3];
     LSubshellFluor sub[3];      ///< L1, L2, L3
+    /// L1/L2/L3 shares of the photoelectric cross section, for elements whose L
+    /// lines clear the cut (Z <= 98): num_pe_share_nodes nodes of
+    /// {E keV, f_L1, f_L2, f_L3}, ascending in E, each L and K edge duplicated
+    /// (below, above); linear in log E between nodes, 10 keV - 20 MeV.
+    uint8_t num_pe_share_nodes;
+    const float* pe_share;
 };
+
+/// The L1/L2/L3 shares of the photoelectric cross section at `energy_keV`
+/// (absolute fractions of the total; zero below each edge), from the
+/// element's tabulated nodes. False when the element has no share table.
+bool l_photoelectric_shares(const LFluorescenceData& fl, double energy_keV,
+                            double shares[3]);
 
 /// Per-element support data that is not part of the compact photon tables.
 /// Photon cross sections and angular factors are queried through CrossSectionData.
@@ -185,6 +217,13 @@ public:
         double sigma_total() const { return sigma_pe + sigma_cs + sigma_rs + sigma_pp; }
     };
     PartialCrossSections all_cross_sections(int Z, double energy_MeV) const;
+
+    /// Atomic form factor F(x,Z) for coherent (Rayleigh) scattering, with x the
+    /// momentum transfer in inverse angstroms.  The Rayleigh angular
+    /// distribution is dSigma/dOmega ~ (1 + mu^2) F(x,Z)^2.  sample_rayleigh_x()
+    /// draws from that distribution; this EVALUATES it, which the next-event
+    /// estimator needs in order to score a fixed scattering angle.
+    double form_factor_F(int Z, double x) const;
 
     /// Evaluate the incoherent scattering function S(x, Z).
     /// x = momentum transfer parameter in inverse angstroms.
@@ -243,6 +282,9 @@ private:
                                        const PhotonRayleighValues& values,
                                        double log_x);
 
+    // Log-log interpolation helper for the form factor F(x,Z).
+    static double interpolate_angular_log_log(const PhotonAngularCurve& curve,
+                                             double log_x);
     // Linear interpolation helper for scattering functions (not log-log in y).
     static double interpolate_log_lin(const PhotonAngularCurve& curve, double log_x);
 

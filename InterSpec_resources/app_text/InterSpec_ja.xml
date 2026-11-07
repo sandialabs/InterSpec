@@ -564,8 +564,6 @@
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
   <message id="app-tt-det-disp">現在選択されている検出器。クリックして異なる検出器を選択するか、これを変更します。</message>
-  <message id="app-det-select-txt">クリックして選択</message>
-  <message id="app-det-select-txt-mobile">タップして選択</message>
   <message id="app-default-manual-det-name">ユーザー定義検出器</message>
 
 

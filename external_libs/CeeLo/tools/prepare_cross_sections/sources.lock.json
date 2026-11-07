@@ -29,7 +29,7 @@
       "terms": "Openly distributed by the IAEA Nuclear Data Services EPICS project; retain source and evaluation citations.",
       "terms_url": "https://www-nds.iaea.org/epics/",
       "citation": "EPICS2023 EPDL; D.E. Cullen et al., UCRL-50400 Vol. 6 Rev. 5 and EPICS2023 release materials.",
-      "reactions": ["MF=23 MT=502 Rayleigh", "MF=23 MT=504 Compton", "MF=23 MT=516 total pair production", "MF=23 MT=522 total photoelectric", "MF=23 MT=534 K-shell photoelectric"],
+      "reactions": ["MF=23 MT=502 Rayleigh", "MF=23 MT=504 Compton", "MF=23 MT=516 total pair production", "MF=23 MT=522 total photoelectric", "MF=23 MT=534 K-shell photoelectric", "MF=23 MT=535 L1-subshell photoelectric", "MF=23 MT=536 L2-subshell photoelectric", "MF=23 MT=537 L3-subshell photoelectric"],
       "transformation": "Use elements Z=1-98 and incident energies from 10 keV through 20 MeV. Retain endpoints, process thresholds, and explicit lower-flank/upper-edge pairs at duplicated absorption edges. Treat all other native EPDL nodes as mandatory validation probes rather than mandatory retained coefficients; also test 16 logarithmic positions per retained interval and adaptively insert the worst failing point. Rayleigh total cross sections use one jointly refined float32 log-energy grid for each group of four adjacent elements; every element in a group must independently pass the unchanged pointwise and integrated gates. Other photon-process coordinates are uint16 indices into one bit-exact deduplicated float32 log-coordinate pool. Encode every log-value with per-curve affine uint16 packing; compact descriptors store integer offsets rather than pointers. No decoded or contiguous raw photon-grid compatibility views are retained. The generator validates the decoded runtime representation to 0.1% pointwise and 0.05% integrated error (0.05% pointwise for pair production). The incoherent scattering-function tables retain x>=0.01 inverse angstrom and use flat offset-addressed float32 coordinate arrays and packed values. Form-factor curves are adaptively reconstructed and validated inside the generator but are not emitted as runtime lookup tables. Generate each element's 256-node normalized Rayleigh sampling CDF offline from that validated form-factor curve and store it as uint16 on one shared float32 x grid. Gate angular behavior against EPDL down to x=1e-7 at 0.25% CDF and 0.002 mean-cosine error, uint16 CDF quantization at 8e-6 absolute error, and the complete sampling representation at 0.25% against dense integration."
     },
     "eadl2023": {
@@ -42,10 +42,10 @@
       "terms_url": "https://www-nds.iaea.org/epics/",
       "citation": "EPICS2023 EADL; S.T. Perkins et al., UCRL-50400 Vol. 30.",
       "reactions": ["MF=28 MT=533 atomic relaxation"],
-      "transformation": "Retain K, L1, L2, and L3 relaxation data through Z=99 so radioactive-decay daughters are covered beyond the Z=98 photon-table limit. Store radiative yields, line energies and normalized line probabilities in variable-length per-subshell arrays rather than fixed 24-line slots; retain Coster-Kronig L-vacancy transfer probabilities. L photons below the 10 keV transport cut are omitted and their probability is not reassigned to retained lines."
+      "transformation": "Retain K, L1, L2, and L3 relaxation data through Z=99 so radioactive-decay daughters are covered beyond the Z=98 photon-table limit. Store radiative yields, line energies and normalized line probabilities in variable-length per-subshell arrays rather than fixed 24-line slots; retain Coster-Kronig L-vacancy transfer probabilities. Line energies are the section's own subshell binding-energy differences, E_b(vacancy) - E_b(filling subshell), not its tabulated transition energies; each K line also stores its filling subshell (EADL designator) as uint8, and each L subshell its binding energy. For elements with retained L lines (Z=69-98), tabulate the L1/L2/L3 shares of the photoelectric cross section (EPDL MF=23 MT=535-537 over MT=522) as float32 on a 24-node log grid from 10 keV to 20 MeV plus a duplicated (below, above) node pair at every L and K edge, adaptively refined until linear-in-log-E interpolation reproduces the share at every native MT=522 node and interval midpoint to 0.003 absolute. L photons below the 10 keV transport cut are omitted and their probability is not reassigned to retained lines."
     },
     "eedl2023": {
-      "description": "EPICS2023 Evaluated Electron Data Library (independent bremsstrahlung validation only)",
+      "description": "EPICS2023 Evaluated Electron Data Library",
       "version": "EPICS2023",
       "url": "https://www-nds.iaea.org/epics/ENDF2023/EEDL2023.ALL",
       "filename": "EEDL2023.ALL",
@@ -53,7 +53,14 @@
       "terms": "Openly distributed by the IAEA Nuclear Data Services EPICS project; retain source and evaluation citations.",
       "terms_url": "https://www-nds.iaea.org/epics/",
       "citation": "EPICS2023 EEDL; S.T. Perkins, D.E. Cullen and S.M. Seltzer, UCRL-50400 Vol. 31.",
-      "reactions": ["MF=23 MT=527", "MF=26 MT=527"]
+      "reactions": [
+        "MF=23 MT=525 large-angle elastic",
+        "MF=26 MT=525 large-angle elastic angular distributions",
+        "MF=23 MT=527 bremsstrahlung",
+        "MF=23 MT=534 K-subshell electroionization",
+        "MF=26 MT=527 bremsstrahlung"
+      ],
+      "transformation": "Bremsstrahlung (MT=527) is an independent validation reference only; production bremsstrahlung is NIST EPQ Seltzer-Berger. Elastic (MT=525): for Z=1-92 on a 36-node log grid from 1 keV to 20 MeV, integrate each tabulated angular distribution to the first and second transport cross sections (sigma_1, sigma_2/sigma_1) and store them as float32; across EEDL's 256 keV-10 MeV tabulation gap interpolate each moment as its ratio to screened Rutherford. The detailed electron walk fits a Wentzel distribution to these two moments. K-subshell electroionization (MT=534): for Z=1-92 keep the native nodes from threshold through the first node at or above 20 MeV as float32, interpolated linear-linear as EEDL declares, gated against EEDL's own interpolation to 1e-4 relative on 16 probes per interval."
     },
     "nist_star": {
       "description": "NIST STAR downloadable source package containing ESTAR",
