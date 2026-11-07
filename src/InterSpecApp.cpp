@@ -434,6 +434,11 @@ void InterSpecApp::setupDomEnvironment()
     let code = 0;
     if( e.ctrlKey || e.metaKey )
     {
+      // A held key auto-repeating is not a shortcut (except undo/redo), so holding S and then pressing
+      //  Ctrl, to Ctrl-drag a peak fit in the secondary spectrum, will not Store
+      if( e.repeat && (e.key !== 'z') && (e.key !== 'Z') )
+        return;
+
       switch( e.key ){
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
         case 'h': // Help dialog

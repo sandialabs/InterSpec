@@ -1455,7 +1455,10 @@ public:
   void startBackgroundPeakRecoveryIfReady();
   
   
-  void excludePeaksFromRange( double x0, double x1 );
+  /** Erases the peaks of the foreground, background, or secondary spectrum within [x0,x1] (Shift-drag on
+   the chart), trimming and refitting ROIs the range only partly covers.
+   */
+  void excludePeaksFromRange( double x0, double x1, const SpecUtils::SpectrumType type );
 
   /** When a multi-detector foreground is displayed, runs a quick gain-match analysis; if
    matching the detectors would meaningfully improve their consistency, shows a toast

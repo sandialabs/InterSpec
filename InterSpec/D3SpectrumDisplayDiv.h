@@ -90,7 +90,8 @@ public:
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &rightClicked();
   Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/,Wt::WFlags<Wt::KeyboardModifier>> &doubleLeftClick();
-  Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
+  /** Shift-drag to erase peaks; the spectrum is the background or secondary when the user held B or S. */
+  Wt::Signal<double/*keV start*/,double/*keV end*/,SpecUtils::SpectrumType> &shiftKeyDragged();
   
   /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
    is being dragged, as well as when the mouse is finally let up.
@@ -110,6 +111,8 @@ public:
   /** When a ROI is being created by holding the ctrl-key and dragging, this signal is emitted as
    as the user drags, and when the user lets up.
    
+   The spectrum to fit peaks in is the background or secondary when the user held B or S.
+
    Note that by default #performDragCreateRoiWork is not hooked up to the signal, which you want
    to do for the primary spectrum display in InterSpec
    
@@ -120,7 +123,8 @@ public:
              int    /*num peaks to force*/,
              bool /*isFinalRange*/,
              double /*window_xpx*/,
-             double /*window_ypx*/> &dragCreateRoiUpdate();
+             double /*window_ypx*/,
+             SpecUtils::SpectrumType> &dragCreateRoiUpdate();
   
   /** Signal emitted when the background or secondary scale-factor is changed. */
   Wt::Signal<double/*new SF*/, double/*old SF*/, SpecUtils::SpectrumType> &yAxisScaled();
@@ -152,7 +156,8 @@ public:
    */
   void performDragCreateRoiWork( double lower_energy, double upper_energy,
                                 int npeaks, bool isfinal,
-                                double window_xpx, double window_ypx );
+                                double window_xpx, double window_ypx,
+                                SpecUtils::SpectrumType spec_type );
   
   
   
@@ -675,7 +680,7 @@ protected:
   // JSignals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
   //  where x is in energy, and y is in counts.
-  std::unique_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
+  std::unique_ptr<Wt::JSignal<double, double, std::string /*spectrum type*/> > m_shiftKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
   /** The rel-line name std::string below is the ReferenceLine (including for dynamic ref lines) cooresponding to what the mouse is over at click time.
@@ -696,7 +701,7 @@ protected:
    */
   std::unique_ptr<Wt::JSignal<double,double,double,double,bool> > m_xRangeChangedJS;
   std::unique_ptr<Wt::JSignal<double,double,double,double,std::string,bool> > m_existingRoiEdgeDragJS;
-  std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_dragCreateRoiJS;
+  std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double,std::string /*spectrum type*/> > m_dragCreateRoiJS;
   std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
   std::unique_ptr<Wt::JSignal<> > m_legendClosedJS;
@@ -758,7 +763,7 @@ protected:
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
   Wt::Signal<double/*xlow*/,double/*xhigh*/,double/*old low*/,double/*old high*/,bool /*user interaction*/> m_xRangeChanged;
-  Wt::Signal<double,double> m_shiftKeyDragg;
+  Wt::Signal<double,double,SpecUtils::SpectrumType> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_leftClick;
@@ -777,7 +782,8 @@ protected:
              int /*force n peaks*/,
              bool /*isFinalRange*/,
              double /*window_xpx*/,
-             double /*window_ypx*/> m_dragCreateRoi;
+             double /*window_ypx*/,
+             SpecUtils::SpectrumType> m_dragCreateRoi;
   
   Wt::Signal<double /*new SF*/, double /*prev SF*/,SpecUtils::SpectrumType> m_yAxisScaled;
   
@@ -787,7 +793,7 @@ protected:
   
   
   // Signal Callbacks
-  void chartShiftKeyDragCallback( double x0, double x1 );
+  void chartShiftKeyDragCallback( double x0, double x1, const std::string &spectrum_type );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
   void chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
@@ -802,7 +808,8 @@ protected:
   
   void dragCreateRoiCallback( double lower_energy, double upper_energy,
                                 int npeaks, bool isfinal,
-                                double window_xpx, double window_ypx );
+                                double window_xpx, double window_ypx,
+                                SpecUtils::SpectrumType spec_type );
   
   void yAxisScaled( const double scale, const std::string &spectrum );
   
@@ -904,6 +911,9 @@ protected:
    user hits escape to cancel the operation, no call will be made, so this variable wont be cleared.
    */
   std::vector<std::shared_ptr<const PeakDef>> m_last_being_added_peaks;
+
+  /** The spectrum `m_last_being_added_peaks` were fit in. */
+  SpecUtils::SpectrumType m_last_being_added_type;
 
   /** The "Peaks To Keep In ROI:" menu put up by `dragCreateRoiCallback()`, so the next one can drop
    it.  Its normal teardown is its own `aboutToHide()`, but that signal does not always fire (see the

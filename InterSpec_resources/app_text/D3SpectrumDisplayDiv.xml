@@ -30,6 +30,8 @@
   <message id="d3sdd-singleEscape">Single Escape</message>
   <message id="d3sdd-doubleEscape">Double Escape</message>
   <message id="d3sdd-eraseInRange">Will Erase Peaks In Range</message>
+  <message id="d3sdd-eraseBackgroundInRange">Will Erase Background Peaks In Range</message>
+  <message id="d3sdd-eraseSecondaryInRange">Will Erase Secondary Peaks In Range</message>
   <message id="d3sdd-zoomInY">Zoom-In on Y-axis</message>
   <message id="d3sdd-zoomOutY">Zoom-out on Y-axis</message>
   <message id="d3sdd-touchDefineRoi">Move 2 fingers to right to define ROI</message>

@@ -1214,8 +1214,8 @@ InterSpec::InterSpec()
     handleLeftClick( a1, a2, a3, a4, a5 );
   } );
   
-  m_spectrum->shiftKeyDragged().connect( this, [this]( const double a1, const double a2 ){
-    excludePeaksFromRange( a1, a2 );
+  m_spectrum->shiftKeyDragged().connect( this, [this]( const double a1, const double a2, const SpecUtils::SpectrumType a3 ){
+    excludePeaksFromRange( a1, a2, a3 );
   } );
   m_spectrum->doubleLeftClick().connect( this, [this]( const double a1, const double /*a2*/,
                                                 const std::string &a3,
@@ -14439,7 +14439,7 @@ void InterSpec::startBackgroundPeakRecoveryIfReady()
 }//void startBackgroundPeakRecoveryIfReady()
 
 
-void InterSpec::excludePeaksFromRange( double x0, double x1 )
+void InterSpec::excludePeaksFromRange( double x0, double x1, const SpecUtils::SpectrumType type )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
@@ -14449,14 +14449,22 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   if( x0 > x1 )
     swap( x0, x1 );
   
-  vector<PeakDef> all_peaks = m_peakModel->peakVec();
+  // The foreground's peaks, or the background's or secondary's (the user held B or S)
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = m_peakModel->peaks( type );
+  if( !orig_peaks )
+    return;
+
+  vector<PeakDef> all_peaks;
+  for( const shared_ptr<const PeakDef> &p : *orig_peaks )
+    all_peaks.push_back( *p );
 //  vector<PeakDef> peaks_in_range = peaksInRange( x0, x1, 4.0, all_peaks );
   vector<PeakDef> peaks_in_range = peaksTouchingRange( x0, x1, all_peaks );
   
   if( peaks_in_range.empty() )
     return;
   
-  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
+  const bool forForeground = (type == SpecUtils::SpectrumType::Foreground);
+  std::shared_ptr<const SpecUtils::Measurement> data = forForeground ? m_spectrum->data() : displayedHistogram( type );
   if( !data )
     return;
   
@@ -14519,19 +14527,24 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   }//for( PeakDef peak : peaks_in_range )
   
   
-  std::shared_ptr<const DetectorPeakResponse> detector
-                                          = measurment(SpecUtils::SpectrumType::Foreground)->detector();
+  // Prefer the foreground's DRF/prefs, falling back to those of the spectrum being erased from
+  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const SpecMeas> eraseMeas = forForeground ? fgMeas : measurment( type );
+  std::shared_ptr<const DetectorPeakResponse> detector = fgMeas ? fgMeas->detector() : nullptr;
+  if( !detector && eraseMeas )
+    detector = eraseMeas->detector();
   map<std::shared_ptr<const PeakContinuum>,PeakShrdVec > peaksinroi;
   for( PeakDef peak : peaks_to_keep )
     peaksinroi[peak.continuum()].push_back( std::make_shared<PeakDef>(peak) );
   
-  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<const PeakFitDetPrefs> erasePrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+  if( !erasePrefs && eraseMeas )
+    erasePrefs = eraseMeas->peakFitDetPrefs();
   if( !erasePrefs && detector )
     erasePrefs = detector->peakFitDetPrefs();
   assert( erasePrefs );
   const PeakFitUtils::CoarseResolutionType eraseDetType
-    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fgMeas );
+    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, eraseMeas );
 
   map<std::shared_ptr<const PeakContinuum>, PeakShrdVec >::const_iterator iter;
   for( iter = peaksinroi.begin(); iter != peaksinroi.end(); ++iter )
@@ -14580,8 +14593,17 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   }//for( loop over peaksinroi elements )
   
   
-  m_peakModel->setPeaks( all_peaks );
-}//void excludePeaksFromRange( const double x0, const double x1 )
+  if( forForeground )
+  {
+    m_peakModel->setPeaks( all_peaks );
+  }else
+  {
+    deque<shared_ptr<const PeakDef>> newpeaks;
+    for( const PeakDef &p : all_peaks )
+      newpeaks.push_back( make_shared<const PeakDef>( p ) );
+    m_peakModel->setPeaks( newpeaks, type );
+  }
+}//void excludePeaksFromRange(...)
 
 
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
