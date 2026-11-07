@@ -1320,11 +1320,49 @@ BOOST_AUTO_TEST_CASE(certificate_invariant_content_hash) {
 
 namespace {
 
+// Side & back coverage on a response's eta_fep: back columns (cos theta -1 and -0.5) prepended.
+void add_back_eta_columns(EtaTable& t) {
+    const size_t nc = t.cos_thetas.size();
+    std::vector<double> ln_eta, frac_sigma;
+    for (size_t e = 0; e < t.energies_keV.size(); ++e) {
+        for (const double v : {-0.4, -0.2}) {
+            ln_eta.push_back(t.ln_eta[e * nc] + v);
+            frac_sigma.push_back(0.02);
+        }
+        for (size_t c = 0; c < nc; ++c) {
+            ln_eta.push_back(t.ln_eta[e * nc + c]);
+            frac_sigma.push_back(t.frac_sigma[e * nc + c]);
+        }
+    }
+    t.cos_thetas.insert(t.cos_thetas.begin(), {-1.0, -0.5});
+    t.ln_eta = ln_eta;
+    t.frac_sigma = frac_sigma;
+}
+
+// A small 2 x 2 x 3 side & back near-field table (anchor row at 30 cm) on a covered response.
+void add_back_near_field_table(DetectorResponse& r) {
+    NearFieldModel& bn = r.back_near_field;
+    bn.energies_keV = {60.0, 662.0};
+    bn.cos_thetas = {-1.0, -0.5};
+    bn.dists_cm = {4.0, 6.0, 30.0};
+    bn.ln_n.assign(2 * 2 * 3, 0.0);
+    for (size_t i = 0; i < bn.ln_n.size(); ++i)
+        if ((i % 3) != 2)
+            bn.ln_n[i] = 0.05 - 0.004 * double(i);   // arbitrary; the anchor row stays 0
+    bn.frac_sigma.assign(bn.ln_n.size(), 0.01);
+    bn.break_cos_thetas = {-1.0, -0.5};
+    bn.break_d_cm.assign(4, 30.0);
+    r.provenance.back_body_depth_cm = 15.0;
+    bn.finalize();
+}
+
 // Every optional part of the stored response populated at once (bullet, rounded bore, dead
 // layer, endcap reference, eta_tot table + its near field, scatter-in recapture, model transfer,
-// grounding with points, near field), so content_hash_tracks_every_serialized_field sees them all.
+// grounding with points, near field, side & back columns and near field), so
+// content_hash_tracks_every_serialized_field sees them all.
 std::shared_ptr<DetectorResponse> make_kitchen_sink_response() {
     auto r = make_synthetic_nai(0.5, /*with_grounding=*/true);
+    add_back_eta_columns(r->eta_fep);
     GeometryDescriptor& gd = r->descriptor;
     gd.bullet_radius_cm = 0.4;
     gd.bore = BoreHoleConfig{0.5, 4.0, true};
@@ -1351,6 +1389,8 @@ std::shared_ptr<DetectorResponse> make_kitchen_sink_response() {
     r->finalize();
     add_near_field_table(*r);
     r->tot_eff.near_field = r->near_field;
+    add_back_near_field_table(*r);
+    r->tot_eff.back_near_field = r->back_near_field;
     r->tot_eff.finalize();
     return r;
 }
@@ -2024,4 +2064,65 @@ BOOST_AUTO_TEST_CASE(behind_face_plane_policy) {
     const SigmaTransferModel m;
     BOOST_CHECK_CLOSE(m.components(20.0, -0.5, 662.0).offaxis, m.components(20.0, 0.0, 662.0).offaxis, 1e-9);
     BOOST_CHECK_CLOSE(m.components(20.0, -1.0, 662.0).offaxis, m.components(20.0, 0.0, 662.0).offaxis, 1e-9);
+}
+
+
+// Side & back near-field tables: stored only when present (with the body depth they assume), read
+//  back identically, applied behind the face plane outside the body and within their anchor row, and
+//  refused where they cannot be meant.
+BOOST_AUTO_TEST_CASE(back_near_field_round_trip_and_policy) {
+    const std::shared_ptr<DetectorResponse> r = make_kitchen_sink_response();
+    const std::string xml = r->to_xml_string();
+    BOOST_CHECK(xml.find("backBodyDepthCm=") != std::string::npos);
+    const size_t first = xml.find("<BackNearField");
+    BOOST_REQUIRE(first != std::string::npos);
+    BOOST_CHECK(xml.find("<BackNearField", first + 1) > xml.find("<TotalEfficiency"));
+
+    const std::shared_ptr<DetectorResponse> copy = DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK_EQUAL(copy->to_xml_string(), xml);
+    BOOST_CHECK_EQUAL(copy->content_hash(), r->content_hash());
+    BOOST_CHECK_EQUAL(copy->provenance.back_body_depth_cm, 15.0);
+    BOOST_CHECK(copy->back_near_field.ln_n == r->back_near_field.ln_n);
+    BOOST_CHECK(copy->tot_eff.back_near_field.ln_n == r->tot_eff.back_near_field.ln_n);
+
+    // Without the tables: no trace in the XML, and the hash of a response that never had them.
+    const std::shared_ptr<DetectorResponse> bare = DetectorResponse::from_xml_string(xml);
+    bare->back_near_field = NearFieldModel{};
+    bare->tot_eff.back_near_field = NearFieldModel{};
+    bare->provenance.back_body_depth_cm = 0.0;
+    bare->finalize();
+    const std::string bare_xml = bare->to_xml_string();
+    BOOST_CHECK(bare_xml.find("BackNearField") == std::string::npos);
+    BOOST_CHECK(bare_xml.find("backBodyDepthCm") == std::string::npos);
+    BOOST_CHECK_EQUAL(DetectorResponse::from_xml_string(bare_xml)->content_hash(), bare->content_hash());
+    BOOST_CHECK_NE(bare->content_hash(), r->content_hash());
+
+    // Directly behind, past the 15 cm body and inside the 30 cm anchor: the table applies (no
+    //  unmodeled flag, a different value); inside the body it does not (what `bare` gives).
+    const Eigen::Vector3d behind_body(0.0, 0.0, 15.0 + 2.5);   // d_back = a + 2.5 = 6.31 cm
+    const EffResult with = r->eps_fep_at(662.0, behind_body), without = bare->eps_fep_at(662.0, behind_body);
+    BOOST_CHECK(with.flag != ResponseFlag::NearFieldUnmodeled);
+    BOOST_CHECK_NE(with.value, without.value);
+    BOOST_CHECK_NE(r->eps_total_at(662.0, behind_body).value, bare->eps_total_at(662.0, behind_body).value);
+    const Eigen::Vector3d in_body(0.0, 0.0, 10.0);
+    BOOST_CHECK_EQUAL(r->eps_fep_at(662.0, in_body).value, bare->eps_fep_at(662.0, in_body).value);
+    BOOST_CHECK_EQUAL(r->eps_fep_at(662.0, in_body).sigma, bare->eps_fep_at(662.0, in_body).sigma);
+    BOOST_CHECK_EQUAL(r->eps_total_at(662.0, in_body).value, bare->eps_total_at(662.0, in_body).value);
+    // Past the anchor row, and in front of the face plane, nothing changes either.
+    for (const Eigen::Vector3d& p : {Eigen::Vector3d(0.0, 0.0, 60.0), Eigen::Vector3d(0.0, 3.0, -8.0)}) {
+        BOOST_CHECK_EQUAL(r->eps_fep_at(662.0, p).value, bare->eps_fep_at(662.0, p).value);
+        BOOST_CHECK_EQUAL(r->eps_total_at(662.0, p).value, bare->eps_total_at(662.0, p).value);
+    }
+
+    // A back table needs side & back eta columns, and lives behind the face plane.
+    {
+        const std::shared_ptr<DetectorResponse> uncovered = make_synthetic_nai();
+        uncovered->back_near_field = r->back_near_field;
+        BOOST_CHECK_THROW(uncovered->finalize(), std::runtime_error);
+    }
+    {
+        const std::shared_ptr<DetectorResponse> front = DetectorResponse::from_xml_string(xml);
+        front->back_near_field.cos_thetas = {-0.5, 0.5};
+        BOOST_CHECK_THROW(front->finalize(), std::runtime_error);
+    }
 }

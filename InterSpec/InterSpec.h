@@ -494,21 +494,32 @@ public:
   Wt::Dbo::ptr<UserFileInDb> measurementFromDb( const SpecUtils::SpectrumType type,
                                                const bool update );
   
-  //saveStateToDb( entry ): saves the application state to the pointer passed
-  //  in.  Note that pointer passed in must be a valid pointer associated with
-  //  this m_user.  If `entry->stateType` is specified for as end of session,
-  //  or `entry->snapshotTagParent` is non-null, then things will be copied
-  //  to unique entries in the database.
-  //  May throw exception.  std::runtime_error exceptions will contain
-  //  messages that are reasonably okay to send to users.
+  /** Saves the application state to the pointer passed in, which must be a valid pointer associated with
+   this m_user.  If `entry` has not been added to the database yet (i.e., a new state), it is added once
+   the spectra have been successfully serialized.
+   
+   The spectrum files are written to database entries owned by `entry`: if `entry` is a top-level
+   user-saved state (i.e., "Store"), its existing file entries are updated in place, and any of its
+   `kUserStateAutoSavedWork` states are removed; otherwise (tags, auto-saved work, end-of-session states)
+   new file entries are created.  Entries belonging to other states are never written to.
+   
+   Must not be called while a database transaction is active.
+   May throw exception; if so, all database changes this call made are discarded (a new `entry` is not
+   added).  std::runtime_error exceptions will contain messages that are reasonably okay to send to users.
+   */
   void saveStateToDb( Wt::Dbo::ptr<UserState> entry );
   
-  //loadStateFromDb( entry ): sets the applications state to that in 'entry'
+  /** Sets the applications state to that in 'entry'.
+   
+   Does not modify the database (other than auto-saving the current work, see #saveStateAtForegroundChange).
+   Afterwards, the app is connected to the top-level user-saved state `entry` is (or is a child of), so
+   "Store" will update it; end-of-session states without a parent leave the app unconnected.
+   */
   void loadStateFromDb( Wt::Dbo::ptr<UserState> entry );
 
   
-  /** Called from the "Store As..." menu item.
-   If state is already saved in the DB, updates it.
+  /** Called from the "Store" menu item.
+   Updates the user-saved state in the DB the app is connected to (regardless of which samples are displayed).
    This function should only be called when we are already connected to a state in the DB,
    but if not, will then call `stateSaveAs()` (but again, this shouldn't happen).
    */
@@ -524,13 +535,16 @@ public:
   
   /** Saves the Act/Shield and Rel Eff tool states to the in-memory `SpecMeas` objects, then updates
    the database with either the current app state, or the current SpecMeas object, depending if we are
-   connected to a app-state or not.
-   If connected to an app state, will create, or replace the states `kUserStateAutoSavedWork` state in DB.
+   connected to a user-saved app-state or not.
+   If connected to an app state, and the foreground has unsaved changes, will create a new
+   `kUserStateAutoSavedWork` state in DB, and then remove any previous ones (except `keepStateId`).
    
    @param doAsync If true, saving to the database will be performed asynchronously. If false, will do all work
    during the call.
+   @param keepStateId The id of a `kUserStateAutoSavedWork` state that must not be removed (i.e., the
+   state that is about to be loaded).
    */
-  void saveStateAtForegroundChange( const bool doAsync );
+  void saveStateAtForegroundChange( const bool doAsync, const long long int keepStateId = -1 );
   
   /** Removes all previous `kEndOfSessionTemp` sessions for the user from the database, and then
    if the "AutoSaveSpectraToDb" preference is true, will create the new `kEndOfSessionTemp` state
@@ -1441,7 +1455,10 @@ public:
   void startBackgroundPeakRecoveryIfReady();
   
   
-  void excludePeaksFromRange( double x0, double x1 );
+  /** Erases the peaks of the foreground, background, or secondary spectrum within [x0,x1] (Shift-drag on
+   the chart), trimming and refitting ROIs the range only partly covers.
+   */
+  void excludePeaksFromRange( double x0, double x1, const SpecUtils::SpectrumType type );
 
   /** When a multi-detector foreground is displayed, runs a quick gain-match analysis; if
    matching the detectors would meaningfully improve their consistency, shows a toast
@@ -1576,7 +1593,7 @@ public:
 #endif
   
 #if( USE_DB_TO_STORE_SPECTRA )
-  /** Returns the database index of the current UserState.
+  /** Returns the database index of the UserState the foreground file is connected to (see #SpecMeas::dbStateId).
    If the app state is not based off of one saved to the database, will return -1
    (e.g., user has not loaded current app state form database, and has not
    selected "Store As...").
@@ -1588,6 +1605,14 @@ public:
    disables the tagging or saving over current state in the database.
    */
   void resetCurrentAppStateDbId();
+  
+  /** Loads the most recent `UserState::kUserStateAutoSavedWork` state of the user-saved state with the
+   given database id (i.e., unsaved work from a previous session), if one exists.
+   
+   Called when the user clicks the link in the notification posted after loading a user-saved state
+   that has auto-saved work.
+   */
+  void loadNewestAutoSavedWork( const long long int stateId );
 #endif
   
 protected:
@@ -1595,6 +1620,21 @@ protected:
 #if( USE_DB_TO_STORE_SPECTRA )
   /** Enables or disables menu items related to saving state. */
   void updateSaveWorkspaceMenu();
+  
+  /** Returns the connected state (see #currentAppStateDbId), if it exists, and is a top-level
+   user-saved state of this user; otherwise returns a null pointer.
+   */
+  Wt::Dbo::ptr<UserState> connectedUserState();
+  
+  /** Returns the most recent `UserState::kUserStateAutoSavedWork` child of the state with id `stateId`,
+   or a null pointer if there isnt one.
+   */
+  Wt::Dbo::ptr<UserState> newestAutoSavedWork( const long long int stateId );
+  
+  /** If the user-saved `state` has auto-saved work (which is always newer than the state itself),
+   posts a notification letting the user know, with a link to load it.
+   */
+  void notifyOfAutoSavedWork( const Wt::Dbo::ptr<UserState> &state );
 #endif
   
   

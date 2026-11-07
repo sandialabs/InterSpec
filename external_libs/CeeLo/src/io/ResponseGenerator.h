@@ -69,7 +69,8 @@ class EfficiencyCalculator;
 
 /// Per-MC-node cost/outcome record (generation accounting; one per run_node).
 struct NodeStat {
-    uint32_t stage = 0;        ///< scan family: 1 backbone, 2 angular, 3 near
+    uint32_t stage = 0;        ///< scan family: 1 backbone, 2 angular, 3 near, 4 side & back,
+                               ///< 5 side & back near field
     double energy_keV = 0.0;
     double cos_theta = 1.0;    ///< of the source position vs detector axis
     double d_cm = 0.0;         ///< source distance from the origin
@@ -171,7 +172,7 @@ struct GenerationOptions {
     /// Optional per-node target FEP precision as f(stage, E_keV). Null (default)
     /// uses the scalar node_fep_precision everywhere -- the exact historical
     /// path. Set explicitly to override, or leave null and pick a
-    /// precision_profile. Consulted ONLY for generation nodes (stages 1-3);
+    /// precision_profile. Consulted ONLY for generation nodes (stages 1-5);
     /// probe/certificate banks always run at their own uniform precision.
     std::function<double(uint32_t stage, double E_keV)> node_precision;
     uint64_t max_events_per_node = 20000000;
@@ -234,6 +235,25 @@ struct GenerationOptions {
     using BackCoverage = ceelo::BackCoverage;
     BackCoverage back_coverage = BackCoverage::None;
     double back_precision_scale = 2.0;
+
+    /// With side & back coverage and a near-field profile (General / Contact), also measure the
+    /// side & back near-field tables (DetectorResponse::back_near_field and its total twin):
+    /// stage 5, the back-coverage angles (plus the crystal's back rim, when no angle is within 4
+    /// degrees of it) x clearances past the detector's outside (General
+    /// 0.05-2 a, Contact 0.05-3.3 a), each node at `back_precision_scale` with the general cone,
+    /// its own node ids so every other node is unchanged.  A node the evaluator would refuse anyway
+    /// (direct transmission below model_sigma::shadow_refuse_s) runs no MC.  False leaves the
+    /// response exactly as before the tables existed; a host using only part of the response (an
+    /// imported grid taking only the total-to-peak ratio at its own nodes) turns it off.
+    bool back_near_field = true;
+
+    /// Depth (cm, behind the crystal face) of the detector body the side & back near-field nodes
+    /// assume: their clearance is measured from the outer envelope with its back face moved this
+    /// far back (when the description stops short of it), so no node is spent where a real
+    /// detector keeps its cryostat, PMT or electronics.  A source may still be placed there; it is
+    /// left to the kernel, as without the tables.  0 (default): the housing as described.  Dropped
+    /// (recorded as 0) when one of the detector's own far-field back nodes falls inside it.
+    double back_body_depth_cm = 0.0;
 
     /// EFFTRAN transfer mode: MC ONLY the on-axis energy backbone (stage 1) and
     /// let the geometry kernel K carry all angular/distance transfer -- the
@@ -352,9 +372,16 @@ public:
                                        ///< shape energy (0 for FarField / transfer)
         bool transfer_anchors = false; ///< stage 2 nodes are transfer-mode angle anchors
         int n_back_cos_theta = 0;      ///< side & back incidence angles per shape energy (stage 4)
+        int n_back_near_positions = 0; ///< side & back near-field (angle x clearance) positions
+                                       ///< per shape energy (stage 5)
+        double back_body_depth_cm = 0.0;  ///< the assumed body the stage-5 nodes keep clear of
+                                          ///< (0: as described; see GenerationOptions)
         int n_backbone() const { return static_cast<int>(backbone_energies_keV.size()); }
         int n_back() const {
             return static_cast<int>(shape_energies_keV.size()) * n_back_cos_theta * n_phi;
+        }
+        int n_back_near() const {
+            return static_cast<int>(shape_energies_keV.size()) * n_back_near_positions;
         }
         int n_angular() const {
             return static_cast<int>(shape_energies_keV.size()) * n_cos_theta * n_phi;
@@ -362,7 +389,9 @@ public:
         int n_near() const {
             return static_cast<int>(shape_energies_keV.size()) * n_near_positions;
         }
-        int total() const { return n_backbone() + n_angular() + n_near() + n_back(); }
+        int total() const {
+            return n_backbone() + n_angular() + n_near() + n_back() + n_back_near();
+        }
     };
     /// NOTE: the fixed-grid path only. `closed_loop` generation refines data-driven, so its node
     /// count is not known upfront and its per-phase NodeProgress counts restart; plan_nodes()

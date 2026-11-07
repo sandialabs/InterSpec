@@ -88,6 +88,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/MakeDrf.h"
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
@@ -119,7 +120,6 @@
 #include "InterSpec/EnergyCalGainMatch.h"
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
@@ -1214,8 +1214,8 @@ InterSpec::InterSpec()
     handleLeftClick( a1, a2, a3, a4, a5 );
   } );
   
-  m_spectrum->shiftKeyDragged().connect( this, [this]( const double a1, const double a2 ){
-    excludePeaksFromRange( a1, a2 );
+  m_spectrum->shiftKeyDragged().connect( this, [this]( const double a1, const double a2, const SpecUtils::SpectrumType a3 ){
+    excludePeaksFromRange( a1, a2, a3 );
   } );
   m_spectrum->doubleLeftClick().connect( this, [this]( const double a1, const double /*a2*/,
                                                 const std::string &a3,
@@ -1678,10 +1678,10 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
   const bool showHorizontalGridLines = m_spectrum->horizontalLinesShowing();
   const bool legendEnabled = m_spectrum->legendIsEnabled();
   const bool compactXAxis = m_spectrum->isAxisCompacted();
-  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel );
-  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel );
-  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel );
-  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies );
+  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakUserLabel );
+  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel );
+  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel );
+  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies );
   const bool showEscapePeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
   const bool showComptonPeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
   const bool showComptonEdgeMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
@@ -3675,166 +3675,185 @@ void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_pt
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
+namespace
+{
+  /** After a failed database transaction, undoes the in-memory changes to `obj`, so they wont be
+   written by a later flush: `Wt::Dbo` rollbacks leave objects added (but not yet flushed) in the
+   session to be added later, and re-queue already persisted, modified, objects to be saved again.
+   */
+  template<class T>
+  void discardFailedDbChanges( Wt::Dbo::ptr<T> &obj )
+  {
+    if( !obj )
+      return;
+    
+    try
+    {
+      if( obj.isTransient() )
+        obj.remove();  //For an object not in the database, this just drops it from the session
+      else
+        obj.reread();  //Discards any changes, so it will be re-read from the database
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "discardFailedDbChanges: caught: " << e.what();
+    }
+  }//discardFailedDbChanges(...)
+}//namespace
+
+
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
   if( !entry || (entry->user != m_user) || !m_user.session() )
     throw runtime_error( "Invalid input to saveStateToDb()" );
 
+  // Only an explicitly stored, top-level, state has its spectrum files updated in place; tags,
+  //  auto-saved work, and end-of-session states always get their own new copies of the files.
+  //  A state never writes to a file row that belongs to another state.
+  const bool isHead = ((entry->stateType == UserState::kUserSaved) && !entry->snapshotTagParent);
+  
+  // The file rows written to; if saving fails, we will discard our changes to these (and `entry`)
+  vector<Dbo::ptr<UserFileInDb>> touchedRows;
+  vector<Dbo::ptr<UserFileInDbData>> touchedData;
+  
+  // The file rows this state used before, but no longer does; removed after the state is committed.
+  vector<long long int> unusedRowIds;
+  
+  const auto discardChanges = [&](){
+    discardFailedDbChanges( entry );
+    for( Dbo::ptr<UserFileInDb> &row : touchedRows )
+      discardFailedDbChanges( row );
+    for( Dbo::ptr<UserFileInDbData> &data : touchedData )
+      discardFailedDbChanges( data );
+  };//discardChanges
+  
   try
   {
     syncAllToolStateToForegroundSpecMeas();
 
+    const std::shared_ptr<const SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
+    const std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
+    const std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
+    
+    // Serialize the spectra before changing anything in the database, as this is what is most likely
+    //  to fail (e.g., a file too large to store); `Wt::Dbo` doesnt cleanly undo changes to already
+    //  persisted objects when a transaction is rolled back.
+    const auto serialize = []( const std::shared_ptr<const SpecMeas> &meas ) -> std::unique_ptr<UserFileInDbData> {
+      if( !meas )
+        return nullptr;
+      std::unique_ptr<UserFileInDbData> data = std::make_unique<UserFileInDbData>();
+      data->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat ); //throws if file too large
+      return data;
+    };//serialize lambda
+    
+    std::unique_ptr<UserFileInDbData> foreData = serialize( foreground );
+    std::unique_ptr<UserFileInDbData> secondData = (second != foreground) ? serialize( second ) : nullptr;
+    std::unique_ptr<UserFileInDbData> backData = ((background != foreground) && (background != second))
+                                                 ? serialize( background ) : nullptr;
+    
     DataBaseUtils::DbTransaction transaction( *m_sql );
+    Wt::Dbo::Session &session = *m_sql->session();
+    
+    // A new state (i.e., from "Store As...", "Tag...", or auto-saving) is only added to the database
+    //  now, after the spectra were successfully serialized.
+    if( !entry.session() )
+      entry = session.add( entry );
+    
     entry.modify()->serializeTime = WDateTime::currentDateTime();
     
     if( !entry->creationTime.isValid() )
       entry.modify()->creationTime = entry->serializeTime;
     
-    const bool deepCopy = ((entry->stateType != UserState::kUserSaved) || !!entry->snapshotTagParent);
+    session.flush(); //Make sure `entry` has been assigned an id
     
-    std::shared_ptr<const SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
-    std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
-    std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
+    const string sessionId = wApp ? wApp->sessionId() : string();
+    set<long long int> claimedIds; //The file rows written for this state
     
-    const bool updateInDb = false; //We will update the file, or make a copy ourselves
-    Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, updateInDb );
-    if( foreground != second )
-      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, updateInDb );
-    if( (background != foreground) && (background != second) )
-      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, updateInDb );
-  
-    //JIC, make sure indices have all been assigned to everything.
-    m_sql->session()->flush();
+    // Returns this states previous file row, `prevId`, if it may be updated in place.
+    const auto ownedRow = [&]( const long long int prevId ) -> Dbo::ptr<UserFileInDb> {
+      if( !isHead || (prevId < 0) || claimedIds.count(prevId) )
+        return Dbo::ptr<UserFileInDb>();
+      
+      const Dbo::ptr<UserFileInDb> row = session.find<UserFileInDb>().where( "id = ?" ).bind( prevId ).resultValue();
+      if( !row || (row->user != m_user) )
+        return Dbo::ptr<UserFileInDb>();
+      
+      // Due to historical bugs, a row may be shared with another state; if so, we'll make a new row
+      if( UserFileInDb::numStatesUsingFile( session, prevId, entry.id() ) > 0 )
+        return Dbo::ptr<UserFileInDb>();
+      
+      return row;
+    };//ownedRow lambda
     
-    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile,
-                      shared_ptr<const SpecMeas> &file, const SpecUtils::SpectrumType type ){
-      if( !file )
-        return;
-      
-      if( !dbfile )
+    // Writes `meas` (already serialized into `serialized`) to either this states previous row (if allowed),
+    //  or a new row
+    const auto writeSpectrum = [&]( const long long int prevId,
+                                    const std::shared_ptr<const SpecMeas> &meas,
+                                    std::unique_ptr<UserFileInDbData> &serialized ) -> Dbo::ptr<UserFileInDb> {
+      assert( meas && serialized );
+      Dbo::ptr<UserFileInDb> row = ownedRow( prevId );
+      Dbo::ptr<UserFileInDbData> data;
+      if( row )
       {
-        // We seem to get here if we recently uploaded the foreground file, so it hasnt been saved
-        //  to the database yet.
-        Wt::Dbo::ptr<UserFileInDb> answer;
-        
-        SpectraFileModel *fileModel = m_fileManager->model();
-        assert( measurment(type) == file );
-        
-        //InterSpec::loadStateFromDb(Dbo::ptr<UserState>) has already called `m_fileManager->removeAllFiles()`
-        const WModelIndex index = fileModel->index( file );
-        assert( index.isValid() );
-        
-        if( !index.isValid() )
-          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
-                      + " spectrum file to the database - unable to find in SpectraFileModel!?!" );
-          
-        shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( index.row() );
-        assert( header );
-        if( !header )
-          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
-               + " spectrum file to the database - no associated header in SpectraFileModel!?!." );
-        
-        try
-        {
-          header->saveToDatabase( file );
-        }catch( std::exception &e )
-        {
-          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
-          + " spectrum file to the database - call to write to db failed: " + string(e.what()) );
-        }
-        
-        dbfile = header->dbEntry();
-        assert( dbfile );
-        if( !dbfile )
-          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
-              + " spectrum file to the database - unexpectedly missing reference in db!?!." );
-      }else if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
-      {
-        // We dont need to make a copy of the file if it was not part of a save state, but now its
-        //  becoming part of one
-        dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
-        m_sql->session()->flush();
-      }
-      
-      dbfile.modify()->isPartOfSaveState = true;
-      
-      Dbo::ptr<UserFileInDbData> filedata;
-      for( auto iter = dbfile->filedata.begin(); iter != dbfile->filedata.end(); ++iter )
-      {
-        assert( !filedata );
-        if( filedata )
-          (*iter).remove();
-        else
-          filedata = *iter;
-      }
-      
-      //assert( filedata );
-      if( !filedata )
-      {
-        // We may get here if we've removed a state (i.e., a `UserState::kEndOfSessionTemp`) from
-        //  the database, but the pointer is still in memory.
-        // In Wt4, Dbo::ptr::reset() takes unique_ptr; set fileInfo after adding to session
-        filedata.reset( std::make_unique<UserFileInDbData>() );
-        filedata.modify()->fileInfo = dbfile;
-        m_sql->session()->add( filedata );
-      }
-      
-      // This next line will throw an exception if the file is too large to store in database
-      filedata.modify()->setFileData( file, UserFileInDbData::SerializedFileFormat::k2012N42 );
-    };//create_copy_or_update_in_db lambda
-    
-    create_copy_or_update_in_db( dbforeground, foreground, SpecUtils::SpectrumType::Foreground );
-    if( !dbforeground && foreground )
-      throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
-  
-    if( second )
-    {
-      if( second == foreground )
-      {
-        dbsecond = dbforeground;
+        // There should be exactly one `UserFileInDbData` per `UserFileInDb` (its id is the file row)
+        if( !row->filedata.empty() )
+          data = row->filedata.front();
       }else
       {
-        create_copy_or_update_in_db( dbsecond, second, SpecUtils::SpectrumType::SecondForeground );
-        if( !dbsecond )
-          throw runtime_error( "Error saving second foreground to the database" );
+        row = session.add( std::make_unique<UserFileInDb>() );
       }
-    }//if( second )
+      touchedRows.push_back( row );
+      
+      row.modify()->setInfoForSaveState( *meas, m_user, sessionId );
+      
+      if( data )
+      {
+        UserFileInDbData *dataobj = data.modify();
+        dataobj->gzipCompressed = serialized->gzipCompressed;
+        dataobj->fileFormat = serialized->fileFormat;
+        dataobj->fileData = std::move( serialized->fileData );
+      }else
+      {
+        serialized->fileInfo = row;
+        data = session.add( std::move(serialized) );
+      }
+      touchedData.push_back( data );
+      
+      session.flush(); //So `row.id()` is valid
+      claimedIds.insert( row.id() );
+      
+      return row;
+    };//writeSpectrum lambda
+    
+    Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
+    if( foreground )
+      dbforeground = writeSpectrum( entry->foregroundId, foreground, foreData );
+    
+    if( second )
+      dbsecond = (second == foreground) ? dbforeground : writeSpectrum( entry->secondForegroundId, second, secondData );
     
     if( background )
     {
       if( background == foreground )
-      {
         dbbackground = dbforeground;
-      }else if( background == second )
-      {
+      else if( background == second )
         dbbackground = dbsecond;
-      }else
-      {
-        create_copy_or_update_in_db( dbbackground, background, SpecUtils::SpectrumType::Background );
-        if( !dbbackground )
-          throw runtime_error( "Error saving background to the database" );
-      }
+      else
+        dbbackground = writeSpectrum( entry->backgroundId, background, backData );
     }//if( background )
     
-    //We need to make sure dbforeground, dbbackground, dbsecond will have been
-    //  written to the database, so there id()'s will be not -1.
-    m_sql->session()->flush();
+    const int prevFileIds[3] = { entry->foregroundId, entry->backgroundId, entry->secondForegroundId };
     
-    entry.modify()->foregroundId = static_cast<int>( dbforeground.id() );
-    entry.modify()->backgroundId = static_cast<int>( dbbackground.id() );
-    entry.modify()->secondForegroundId = static_cast<int>( dbsecond.id() );
+    entry.modify()->foregroundId = dbforeground ? static_cast<int>( dbforeground.id() ) : -1;
+    entry.modify()->backgroundId = dbbackground ? static_cast<int>( dbbackground.id() ) : -1;
+    entry.modify()->secondForegroundId = dbsecond ? static_cast<int>( dbsecond.id() ) : -1;
     
-    // If using is clicking save - remove any `kUserStateAutoSavedWork` states, as
-    //  they would now be behind the state the user is saving
-    if( entry->stateType == UserState::kUserSaved )
+    // File rows this state used to own, but no longer uses, will be removed once this state is committed
+    for( const int oldId : prevFileIds )
     {
-      Dbo::collection<Dbo::ptr<UserState>> eosEntries = entry->snapshotTags.find()
-        .where( "StateType = ?" )
-        .bind(int(UserState::UserStateType::kUserStateAutoSavedWork));
-      for( auto iter = eosEntries.begin(); iter != eosEntries.end(); ++iter )
-        iter->remove();
-    }//if( remove `kUserStateAutoSavedWork` states )
+      if( (oldId >= 0) && !claimedIds.count(oldId)
+         && (std::find( begin(unusedRowIds), end(unusedRowIds), oldId ) == end(unusedRowIds)) )
+        unusedRowIds.push_back( oldId );
+    }//for( const int oldId : prevFileIds )
     
     
     {
@@ -4034,12 +4053,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         entry.modify()->disabledNotifications |= (0x1<<level);
     }
     
+    // A bit for each label showing, at the `PeakLabelType` value
     entry.modify()->showingPeakLabels = 0x0;
-    for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-         label < SpectrumChart::kNumPeakLabels;
-         label = SpectrumChart::PeakLabels(label+1) )
+    for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
     {
-      if( m_spectrum->showingPeakLabel( label ) )
+      if( m_spectrum->showingPeakLabel( PeakLabelType(label) ) )
         entry.modify()->showingPeakLabels |= (0x1<<label);
     }
 
@@ -4138,14 +4156,68 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
   }catch( FileToLargeForDbException &e )
   {
     cerr << "Caught: " << e.what() << endl;
+    discardChanges();
     throw;
   }catch( std::exception &e )
   {
     cerr << "saveStateToDb(...) caught: " << e.what() << endl;
+    discardChanges();
     string errmsg = e.what();
     errmsg = Wt::Utils::htmlEncode( errmsg, WFlags<Wt::Utils::HtmlEncodingFlag>{} );
     throw runtime_error( WString::tr("err-save-sate-to-db").arg(errmsg).toUTF8() );
   }//try / catch
+  
+  // Now that the state is committed, remove the file rows it no longer uses and, if the user explicitly
+  //  stored the state, its `kUserStateAutoSavedWork` states, as they would now be behind the state the
+  //  user is saving.  This is done separately so a failure here only leaves unneeded entries in the
+  //  database (`UserState::removeFromDatabase` will not remove rows used by another state).
+  if( !unusedRowIds.empty() || isHead )
+  {
+    try
+    {
+      DataBaseUtils::DbTransaction transaction( *m_sql );
+      Wt::Dbo::Session &session = *m_sql->session();
+      
+      for( const long long int oldId : unusedRowIds )
+      {
+        if( UserFileInDb::numStatesUsingFile( session, oldId ) > 0 )
+          continue;
+        
+        Dbo::ptr<UserFileInDb> old = session.find<UserFileInDb>().where( "id = ?" ).bind( oldId ).resultValue();
+        if( old && old->isPartOfSaveState && (old->user == m_user) )
+          old.remove();
+      }//for( const long long int oldId : unusedRowIds )
+      
+      if( isHead )
+      {
+        vector<Dbo::ptr<UserState>> autoSaved;
+        Dbo::collection<Dbo::ptr<UserState>> autoSavedQuery = session.find<UserState>()
+          .where( "SnapshotTagParent_id = ? AND StateType = ?" )
+          .bind( entry.id() )
+          .bind( int(UserState::UserStateType::kUserStateAutoSavedWork) );
+        std::copy( autoSavedQuery.begin(), autoSavedQuery.end(), std::back_inserter(autoSaved) );
+        
+        for( const Dbo::ptr<UserState> &autoSavedState : autoSaved )
+          UserState::removeFromDatabase( autoSavedState, *m_sql );
+      }//if( isHead )
+      
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "saveStateToDb(): error cleaning up after saving state: " << e.what();
+    }//try / catch
+  }//if( !unusedRowIds.empty() || isHead )
+  
+  // The user has explicitly saved their work, so the files no longer have un-saved changes
+  //  (this keeps a redundant `kUserStateAutoSavedWork` state from being created later).
+  if( isHead )
+  {
+    for( const std::shared_ptr<SpecMeas> &meas : { m_dataMeasurement, m_backgroundMeasurement, m_secondDataMeasurement } )
+    {
+      if( meas )
+        meas->reset_modified();
+    }
+  }//if( isHead )
 }//void saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 
 
@@ -4160,12 +4232,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
-    // Store current state to the database (if applicable)
-    saveStateAtForegroundChange( false );
+    // Store current work to the database (if applicable).  We pass in `entry`, so if it is the
+    //  `kUserStateAutoSavedWork` state of the currently connected state, it wont get removed.
+    saveStateAtForegroundChange( false, entry.id() );
     
     // Disconnect ourselves from the state
     if( m_dataMeasurement )
-      m_dataMeasurement->clearAllDbStateId();
+      m_dataMeasurement->setDbStateId( -1 );
     
     // Reset the state of the app (mostly/essentually)
     closeShieldingSourceFit();
@@ -4202,30 +4275,35 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 
     DataBaseUtils::DbTransaction transaction( *m_sql );
     
-    Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
-    while( parent && parent->snapshotTagParent )
-      parent = parent->snapshotTagParent;
+    // The state "Store" will update: the top-level user-saved state this entry is, or is a child of
+    //  (a tag, auto-saved work, or end-of-session state).  An end-of-session state that wasnt
+    //  connected to a user-saved state leaves us unconnected.
+    Wt::Dbo::ptr<UserState> linkState = entry;
+    while( linkState && linkState->snapshotTagParent )
+      linkState = linkState->snapshotTagParent;
+    if( linkState && ((linkState->stateType != UserState::kUserSaved) || (linkState->user != m_user)) )
+      linkState.reset();
+    
+    const auto findFile = [this]( const int id ) -> Dbo::ptr<UserFileInDb> {
+      if( id < 0 )
+        return Dbo::ptr<UserFileInDb>();
+      return m_sql->session()->find<UserFileInDb>().where( "id = ?" ).bind( id ).resultValue();
+    };//findFile lambda
     
     Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-    if( entry->foregroundId >= 0 )
-      dbforeground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                      .bind( entry->foregroundId );
-    if( entry->backgroundId >= 0
-        && entry->backgroundId != entry->foregroundId )
-      dbbackground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                      .bind( entry->backgroundId );
-    else if( entry->backgroundId == entry->foregroundId )
+    dbforeground = findFile( entry->foregroundId );
+    
+    if( (entry->backgroundId >= 0) && (entry->backgroundId == entry->foregroundId) )
       dbbackground = dbforeground;
-      
-    if( entry->secondForegroundId >= 0
-        && entry->secondForegroundId != entry->foregroundId
-        && entry->secondForegroundId != entry->backgroundId )
-      dbsecond = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                  .bind( entry->secondForegroundId );
-    else if( entry->secondForegroundId == entry->foregroundId )
+    else
+      dbbackground = findFile( entry->backgroundId );
+    
+    if( (entry->secondForegroundId >= 0) && (entry->secondForegroundId == entry->foregroundId) )
       dbsecond = dbforeground;
-    else if( entry->secondForegroundId == entry->backgroundId )
+    else if( (entry->secondForegroundId >= 0) && (entry->secondForegroundId == entry->backgroundId) )
       dbsecond = dbbackground;
+    else
+      dbsecond = findFile( entry->secondForegroundId );
 
     if( entry->foregroundId >= 0
         && (!dbforeground || !dbforeground->filedata.size()) )
@@ -4237,168 +4315,43 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         && (!dbsecond || !dbsecond->filedata.size()) )
       throw runtime_error( "Unable to locate second foreground in database" );
     
-    
-    
-    //Now start reloading the state
+    // Load the spectra from this states own database entries.  The file headers will refer to these
+    //  entries, but `SpectraFileHeader` never writes to (or deletes) entries owned by a state, and
+    //  "Store" writes to the linked states own entries, so nothing here modifies the database.
     std::shared_ptr<SpecMeas> foreground, second, background;
-    std::shared_ptr<SpecMeas> snapforeground, snapsecond, snapbackground;
-    std::shared_ptr<SpectraFileHeader> foregroundheader, backgroundheader,
-                                          secondheader;
+    std::shared_ptr<SpectraFileHeader> header;
     
+    if( dbforeground )
+      m_fileManager->setDbEntry( dbforeground, header, foreground, false );
     
-    if( parent )
+    if( dbbackground )
     {
-      //If we are loading a snapshot, we actually want to associate the
-      //  foreground/second/background entries in the database with the parent
-      //  entries, but actually load the snapshots.  This is so when the user
-      //  saves changes, the parents saved state receives the changes, and the
-      //  snapshot doesnt get changed.
-      //All of this is really ugly and horrible, and should be improved!
-      
-      if( dbforeground && dbforeground->filedata.size() )
-        snapforeground = (*dbforeground->filedata.begin())->decodeSpectrum();
+      if( dbbackground == dbforeground )
+        background = foreground;
+      else
+        m_fileManager->setDbEntry( dbbackground, header, background, false );
+    }//if( dbbackground )
     
-      if( dbsecond && dbsecond->filedata.size() && dbsecond != dbforeground )
-        snapsecond = (*dbsecond->filedata.begin())->decodeSpectrum();
-      else if( dbsecond == dbforeground )
-        snapsecond = snapforeground;
+    if( dbsecond )
+    {
+      if( dbsecond == dbforeground )
+        second = foreground;
+      else if( dbsecond == dbbackground )
+        second = background;
+      else
+        m_fileManager->setDbEntry( dbsecond, header, second, false );
+    }//if( dbsecond )
     
-      if( dbbackground && dbbackground->filedata.size()
-          && dbbackground != dbforeground
-          && dbbackground != dbsecond  )
-        snapbackground = (*dbbackground->filedata.begin())->decodeSpectrum();
-      else if( dbbackground == dbforeground )
-        snapbackground = snapforeground;
-      else if( dbbackground == dbsecond )
-        snapbackground = snapsecond;
-      
-      
-      if( parent->foregroundId >= 0 )
-        dbforeground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                        .bind( parent->foregroundId );
-      if( parent->backgroundId >= 0
-          && parent->backgroundId != parent->foregroundId )
-      {
-        dbbackground = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                        .bind( parent->backgroundId );
-      }else if( parent->backgroundId == parent->foregroundId )
-      {
-        dbbackground = dbforeground;
-      }else if( parent->backgroundId < 0 && entry->backgroundId >= 0 )
-      {
-        parent.modify()->backgroundId = entry->backgroundId;
-      }else
-      {
-        dbbackground.reset();
-      }
-      
-      if( parent->secondForegroundId >= 0
-         && parent->secondForegroundId != parent->foregroundId
-         && parent->secondForegroundId != parent->backgroundId )
-      {
-        dbsecond = m_sql->session()->find<UserFileInDb>().where( "id = ?" )
-                                    .bind( parent->secondForegroundId );
-      }else if( parent->secondForegroundId < 0
-                && entry->secondForegroundId >= 0 )
-      {
-        parent.modify()->secondForegroundId = entry->secondForegroundId;
-      }else if( parent->secondForegroundId == parent->foregroundId )
-      {
-        dbsecond = dbforeground;
-      }else if( parent->secondForegroundId == parent->backgroundId )
-      {
-        dbsecond = dbbackground;
-      }else
-      {
-        dbsecond.reset();
-      }
-    }//if( parent )
-    
-    auto csvToInts = []( const string &str ) -> set<int> {
-      set<int> samples;
-      stringstream strm( str );
-      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-                std::inserter( samples, end(samples) ) );
-      return samples;
+    const auto csvToInts = []( const string &str ) -> set<int> {
+      vector<int> values;
+      SpecUtils::split_to_ints( str.c_str(), str.size(), values );
+      return set<int>( begin(values), end(values) );
     }; //csvToInts lambda
     
     const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
     const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
     const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
     const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
-    
-    
-    if( dbforeground )
-      m_fileManager->setDbEntry( dbforeground, foregroundheader, foreground, 0);
-    
-    if( !parent || snapbackground )
-    {
-      if( dbbackground && dbbackground != dbforeground )
-        m_fileManager->setDbEntry( dbbackground, backgroundheader, background, 0);
-      else if( dbbackground == dbforeground )
-        background = foreground;
-    }//if( !parent || snapbackground )
-    
-    if( !parent || snapsecond )
-    {
-      if( dbsecond && dbsecond != dbforeground && dbsecond != dbbackground )
-        m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
-      else if( dbsecond == dbforeground )
-        second = foreground;
-      else if( dbsecond == dbbackground )
-        second = background;
-    }//if( !parent || snapsecond )
-    
-    if( parent )
-    {
-      // `background` and `second` may be the same objects as the parent foreground/background
-      //  (when they are the same file); we'll re-point them below to the snapshot copies.
-      const shared_ptr<SpecMeas> parentForeground = foreground;
-      const shared_ptr<SpecMeas> parentBackground = background;
-
-      if( foregroundheader && snapforeground )
-      {
-        foregroundheader->setMeasurmentInfo( snapforeground );
-        foreground = snapforeground;
-      }
-      
-      if( snapbackground != snapforeground )
-      {
-        if( backgroundheader && snapbackground )
-        {
-          backgroundheader->setMeasurmentInfo( snapbackground );
-          background = snapbackground;
-        }else if( snapbackground && dbbackground )
-        {
-          dbbackground = UserFileInDb::makeDeepCopyOfFileInDatabase( dbbackground, *m_sql, true );
-          m_fileManager->setDbEntry( dbbackground, backgroundheader, background, 0);
-        }
-      }//if( snapbackground != snapforeground )
-      
-      
-      if( (snapsecond != snapforeground) && (snapsecond != snapbackground) )
-      {
-        if( secondheader && snapsecond )
-        {
-          secondheader->setMeasurmentInfo( snapsecond );
-          second = snapsecond;
-        }else if( snapsecond && dbsecond )
-        {
-          dbsecond = UserFileInDb::makeDeepCopyOfFileInDatabase( dbsecond, *m_sql, true );
-          m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
-        }
-      }
-
-      // A background/secondary that was the same file as the foreground (or secondary as the
-      //  background) still points at the parent copy, whose header now holds the snapshot copy;
-      //  left alone it would display the parent's data, and not be in the file manager.
-      if( parentForeground && (background == parentForeground) )
-        background = foreground;
-      if( parentForeground && (second == parentForeground) )
-        second = foreground;
-      else if( parentBackground && (second == parentBackground) )
-        second = background;
-    }//if( parent )
     
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -4500,7 +4453,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( foreground )
     {
       const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
-      const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
+      const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kHorizontalGridLines);
       m_spectrum->showVerticalLines( vertGridLines );
       m_spectrum->showHorizontalLines( horizontalGridLines );
       m_timeSeries->showVerticalLines( vertGridLines );
@@ -4515,7 +4468,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( foreground )
     
-//  SpectrumSubtractMode backgroundSubMode;
+    setBackgroundSub( m_backgroundMeasurement && (entry->backgroundSubMode == UserState::kBackgorundSubtract) );
     
     if( (entry->shownDisplayFeatures & UserState::kShowingShieldSourceFit) )
     {
@@ -4846,12 +4799,10 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
-    for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-        label < SpectrumChart::kNumPeakLabels;
-        label = SpectrumChart::PeakLabels(label+1) )
+    for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
     {
       const bool showing = (entry->showingPeakLabels & (0x1<<label));
-      m_spectrum->setShowPeakLabel( label, showing );
+      m_spectrum->setShowPeakLabel( PeakLabelType(label), showing );
     }//for( loop over peak labels )
 
     // We wont change user preferences if this state was an end of session state.
@@ -4971,15 +4922,18 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     
     transaction.commit();
     
-    const long long int db_index = parent ? parent.id() : entry.id();
-    if( m_dataMeasurement && !m_displayedSamples.empty() )
-      m_dataMeasurement->setDbStateId( db_index, m_displayedSamples );
+    if( m_dataMeasurement )
+      m_dataMeasurement->setDbStateId( linkState ? linkState.id() : -1 );
     
     updateSaveWorkspaceMenu();
+    
+    // If this is a user-saved state, with more recent auto-saved work, let the user know.
+    if( linkState && (linkState == entry) )
+      notifyOfAutoSavedWork( entry );
   }catch( std::exception &e )
   {
     if( m_dataMeasurement )
-      m_dataMeasurement->setDbStateId( -1, m_displayedSamples );
+      m_dataMeasurement->setDbStateId( -1 );
     
     updateSaveWorkspaceMenu();
     cerr << "\n\n\n\nloadStateFromDb(...) caught: " << e.what() << endl;
@@ -4988,67 +4942,131 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 }//void loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 
 
-//Whenever `m_dataMeasurement->dbStateId(db_index, m_displayedSamples)` changes value,
-//  we need to update the menu!
+//Whenever `m_dataMeasurement->dbStateId()` changes value, or the foreground changes, we need to
+//  update the menu!
 void InterSpec::updateSaveWorkspaceMenu()
 {
   m_saveStateAs->setDisabled( !m_dataMeasurement );
   
-  //check if Save menu needs to be updated
-  
-  
-  const long long int db_index = (m_dataMeasurement && !m_displayedSamples.empty())
-                                    ? m_dataMeasurement->dbStateId(m_displayedSamples)
-                                    : static_cast<long long int>(-1);
-  
-  if( db_index >= 0 )
+  bool connected = false;
+  try
   {
-    try
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      Dbo::ptr<UserState> state = m_sql->session()
-                                       ->find<UserState>( "where id = ?" )
-                                       .bind( db_index );
-      transaction.commit();
-      
-      if( state && (state->stateType==UserState::kUserStateAutoSavedWork
-                    || state->stateType==UserState::kUserSaved) )
-      {
-        m_saveState->setDisabled(false);
-        m_createTag->setDisabled(false);
-      } //UserState exists
-      else
-      { //no UserState
-        m_saveState->setDisabled(true);
-        m_createTag->setDisabled(true);
-      } //no UserState
-      return;
-    }catch( std::exception &e )
-    {
-      cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
-    }//try / catch
-  }
-
-  m_saveState->setDisabled(true);
-  m_createTag->setDisabled(true);
+    connected = !!connectedUserState();
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "updateSaveWorkspaceMenu() caught: " << e.what();
+  }//try / catch
+  
+  m_saveState->setDisabled( !connected );
+  m_createTag->setDisabled( !connected );
 }//void updateSaveWorkspaceMenu()
 
 
 long long int InterSpec::currentAppStateDbId()
 {
-  if( !m_dataMeasurement || m_displayedSamples.empty() )
-    return -1;
-  
-  return m_dataMeasurement->dbStateId(m_displayedSamples);
+  return m_dataMeasurement ? m_dataMeasurement->dbStateId() : static_cast<long long int>(-1);
 }//int currentAppStateDbId()
 
 
 void InterSpec::resetCurrentAppStateDbId()
 {
   if( m_dataMeasurement )
-    m_dataMeasurement->setDbStateId( -1, m_displayedSamples );
+    m_dataMeasurement->setDbStateId( -1 );
   updateSaveWorkspaceMenu();
 }//void resetCurrentAppStateDbId()
+
+
+Wt::Dbo::ptr<UserState> InterSpec::connectedUserState()
+{
+  const long long int db_index = currentAppStateDbId();
+  if( db_index < 0 )
+    return Dbo::ptr<UserState>();
+  
+  DataBaseUtils::DbTransaction transaction( *m_sql );
+  Dbo::ptr<UserState> state = m_sql->session()->find<UserState>()
+                                  .where( "id = ?" ).bind( db_index ).resultValue();
+  transaction.commit();
+  
+  if( !state
+     || (state->stateType != UserState::kUserSaved)
+     || state->snapshotTagParent
+     || (state->user != m_user) )
+  {
+    return Dbo::ptr<UserState>();
+  }
+  
+  return state;
+}//Wt::Dbo::ptr<UserState> connectedUserState()
+
+
+Wt::Dbo::ptr<UserState> InterSpec::newestAutoSavedWork( const long long int stateId )
+{
+  if( stateId < 0 )
+    return Dbo::ptr<UserState>();
+  
+  DataBaseUtils::DbTransaction transaction( *m_sql );
+  Dbo::ptr<UserState> answer = m_sql->session()->find<UserState>()
+    .where( "SnapshotTagParent_id = ? AND StateType = ? AND InterSpecUser_id = ?" )
+    .bind( stateId )
+    .bind( int(UserState::kUserStateAutoSavedWork) )
+    .bind( m_user.id() )
+    .orderBy( "id desc" )
+    .limit( 1 )
+    .resultValue();
+  transaction.commit();
+  
+  return answer;
+}//Wt::Dbo::ptr<UserState> newestAutoSavedWork( const long long int stateId )
+
+
+void InterSpec::notifyOfAutoSavedWork( const Wt::Dbo::ptr<UserState> &state )
+{
+  try
+  {
+    const Dbo::ptr<UserState> autoSaved = state ? newestAutoSavedWork( state.id() ) : Dbo::ptr<UserState>();
+    if( !autoSaved )
+      return;
+    
+    const int secondsOffset = wApp ? 60*static_cast<int>( wApp->environment().timeZoneOffset().count() ) : 0;
+    const WString when = autoSaved->serializeTime.addSecs( secondsOffset ).toString( DATE_TIME_FORMAT_STR );
+    
+    // Note: the state id is looked up again when the user clicks the link, so we dont hold onto it here.
+    const WString msg = WString(
+      "{1}"
+      "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'loadAutoSavedState-{2}');"
+      "try{this.parentElement.parentElement.remove();}catch(e){} return false;\" class=\"clearsession\">"
+        "<span class=\"clearsessiontxt\">{3}</span>"
+      "</div>" )
+      .arg( WString::tr("db-newer-auto-saved-work").arg( when ) )
+      .arg( std::to_string( state.id() ) )
+      .arg( WString::tr("db-load-auto-saved-work") );
+    
+    m_warnings->addMessageUnsafe( msg, WarningWidget::WarningMsgInfo, 20000 );
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "notifyOfAutoSavedWork() caught: " << e.what();
+  }//try / catch
+}//void notifyOfAutoSavedWork( const Wt::Dbo::ptr<UserState> &state )
+
+
+void InterSpec::loadNewestAutoSavedWork( const long long int stateId )
+{
+  try
+  {
+    const Dbo::ptr<UserState> autoSaved = newestAutoSavedWork( stateId );
+    if( !autoSaved )
+    {
+      passMessage( WString::tr("db-no-auto-saved-work"), WarningWidget::WarningMsgMedium );
+      return;
+    }
+    
+    loadStateFromDb( autoSaved );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("db-err-loading-auto-saved-work"), WarningWidget::WarningMsgHigh );
+    Wt::log("error") << "loadNewestAutoSavedWork() caught: " << e.what();
+  }//try / catch
+}//void loadNewestAutoSavedWork( const long long int stateId )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
@@ -5788,38 +5806,37 @@ void InterSpec::finishStoreStateInDb( const WString &name,
   
   Dbo::ptr<UserState> answer;
   
-  UserState *state = new UserState();
-  state->user = m_user;
-  state->stateType = UserState::kUserSaved;
-  state->creationTime = WDateTime::currentDateTime();
-  state->name = name;
-  state->description = desc;
-  
-  {//Begin interaction with database
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    if( parent )
-    {
-      //Making sure we get the main parent
-      while( parent->snapshotTagParent )
-        parent = parent->snapshotTagParent;
-      state->snapshotTagParent = parent;
-    }//parent
-    
-    answer = m_user.session()->add( std::unique_ptr<UserState>(state) );
-    transaction.commit();
-  }//End interaction with database
-  
   try
   {
+    {//Making sure we get the main parent
+      DataBaseUtils::DbTransaction transaction( *m_sql );
+      while( parent && parent->snapshotTagParent )
+        parent = parent->snapshotTagParent;
+      transaction.commit();
+    }
+    
+    std::unique_ptr<UserState> state = std::make_unique<UserState>();
+    state->user = m_user;
+    state->stateType = UserState::kUserSaved;
+    state->creationTime = WDateTime::currentDateTime();
+    state->name = name;
+    state->description = desc;
+    state->snapshotTagParent = parent;
+    
+    // `saveStateToDb` adds the state to the database only once everything has been successfully
+    //  serialized, and if saving fails, the state isnt left in the database.
+    answer = Dbo::ptr<UserState>( std::move(state) );
     saveStateToDb( answer );
   }catch( FileToLargeForDbException &e )
   {
     passMessage( e.message(), WarningWidget::WarningMsgHigh );
+    return;
   }catch( std::exception &e )
   {
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
+    return;
   }
-   
+  
 #if( PERFORM_DEVELOPER_CHECKS )
   {// Begin check if we are leaving any orphaned spectra that were part of a user state
     DataBaseUtils::DbTransaction transaction( *m_sql );
@@ -5864,9 +5881,9 @@ void InterSpec::finishStoreStateInDb( const WString &name,
     passMessage( msg.arg(name), WarningWidget::WarningMsgSave );
   }
   
-  const long long int db_index = parent ? parent.id() : answer.id();
+  // Connect to the new state; for a new tag, we stay connected to its parent state
   if( m_dataMeasurement )
-    m_dataMeasurement->setDbStateId( db_index, m_displayedSamples );
+    m_dataMeasurement->setDbStateId( parent ? parent.id() : answer.id() );
   updateSaveWorkspaceMenu();
 }//void finishStoreStateInDb()
 
@@ -6307,45 +6324,32 @@ void InterSpec::startStoreTestState()
 void InterSpec::stateSave()
 {
   Dbo::ptr<UserState> state;
-  const long long int current_state_index = currentAppStateDbId();
-  if( current_state_index >= 0 )
+  try
   {
-    try
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      state = m_sql->session()->find<UserState>( "where id = ?" )
-        .bind( current_state_index );
-      
-      // find ultimate parent state
-      while( state && state->snapshotTagParent )
-        state = state->snapshotTagParent;
+    state = connectedUserState();
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::stateSave() caught: " << e.what();
+  }//try / catch
   
-      if( state && (state->stateType != UserState::kUserSaved) )
-        state.modify()->stateType = UserState::kUserSaved;
-      
-      transaction.commit();
-    }catch( std::exception &e )
-    {
-      assert( 0 );
-    }//try / catch
-  }//if( current_state_index >= 0 )
-    
-  
-  if( state )
+  if( !state )
   {
-    try
-    {
-      saveStateToDb( state );
-    }catch( FileToLargeForDbException &e )
-    {
-      passMessage( e.message(), WarningWidget::WarningMsgHigh );
-    }catch( std::exception &e )
-    {
-      passMessage( e.what(), WarningWidget::WarningMsgHigh );
-    }
-  }else //No currentStateID, so just save as new state
-  {
+    // We shouldnt get here, as the "Store" menu item should be disabled, but jic
+    resetCurrentAppStateDbId();
     stateSaveAs();
+    return;
+  }//if( !state )
+  
+  try
+  {
+    saveStateToDb( state );
+    passMessage( WString::tr("db-updated-state").arg( state->name ), WarningWidget::WarningMsgSave );
+  }catch( FileToLargeForDbException &e )
+  {
+    passMessage( e.message(), WarningWidget::WarningMsgHigh );
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
   }
 }//void stateSave()
 
@@ -6474,25 +6478,15 @@ void InterSpec::stateSaveTag()
 void InterSpec::stateSaveTagFinish( WLineEdit *nameedit, AuxWindow *window )
 {
   Dbo::ptr<UserState> state;
-    
-  const long long int current_state_index = currentAppStateDbId();
-  
-  if( current_state_index >= 0 )
+  try
   {
-    try
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      state = m_sql->session()->find<UserState>( "where id = ?" )
-                               .bind( current_state_index );
-      transaction.commit();
-    }catch( std::exception &e )
-    {
-      Wt::log("error") << "startStoreStateInDb() caught: " << e.what();
-    }//try / catch
-  }//if( current_state_index >= 0 )
+    state = connectedUserState();
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "stateSaveTagFinish() caught: " << e.what();
+  }//try / catch
     
   //Save Snapshot/environment
-  assert( state ); // Should always be able to get the state
   if( state )
   {
     WString name = nameedit ? nameedit->text() : WString();
@@ -6513,29 +6507,8 @@ void InterSpec::stateSaveAsFinish( WLineEdit *nameedit,
                                       WTextArea *descriptionarea,
                                       AuxWindow *window )
 {
-  // If the files in the DB are currently part of a saved-state, we need to duplicate
-  //  them, otherwise `finishStoreStateInDb` will just assume they are part of the measurement
-  //  and overwrite them - so in this case we'll just disconnect
-  //  Note that in this case `finishStoreStateInDb(...)` --> `saveStateToDb(...)` will
-  //  create a new entry in the database.
-  SpectraFileModel *filemodel = m_fileManager->model();
-  for( int i = 0; i < 3; i++ )
-  {
-    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
-    auto m = measurment( type );
-    if( !m )
-      continue;
-    
-    shared_ptr<SpectraFileHeader> hdr = filemodel->fileHeader( m );
-    assert( hdr );
-    if( !hdr )
-      continue;
-    
-    Wt::Dbo::ptr<UserFileInDb> dbmeas = hdr->dbEntry();
-    
-    if( dbmeas && (dbmeas->isPartOfSaveState || dbmeas->snapshotParent) )
-      hdr->clearDbEntry();
-  }//for( int i = 0; i < 3; i++ )
+  // Note: `finishStoreStateInDb(...)` --> `saveStateToDb(...)` will create new database entries for
+  //  the spectrum files of the new state - it never writes to entries of other states.
   
   //Save Snapshot
   const WString name = nameedit->text();
@@ -6548,7 +6521,7 @@ void InterSpec::stateSaveAsFinish( WLineEdit *nameedit,
 }//stateSaveAsFinish()
 
 
-void InterSpec::saveStateAtForegroundChange( const bool doAsync )
+void InterSpec::saveStateAtForegroundChange( const bool doAsync, const long long int keepStateId )
 {
   const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   if( !saveState || !m_dataMeasurement )
@@ -6569,35 +6542,44 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
   const auto now = chrono::system_clock::now() + offset;
   WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
-  DataBaseUtils::DbTransaction transaction( *m_sql );
-  
   try
   {
-    const long long int current_state_index = currentAppStateDbId();
-    Wt::Dbo::ptr<UserState> parentState;
-    if( current_state_index >= 0 )
-    {
-      parentState = m_sql->session()->find<UserState>( "where id = ?" )
-            .bind( current_state_index );
-    }
+    const Wt::Dbo::ptr<UserState> parentState = connectedUserState();
     
-    // If we are connected to a state in the database, we'll save a `kUserStateAutoSavedWork` state,
-    //  otherwise, we'll save just the files to the database
+    // If we are connected to a user-saved state in the database, we'll save a
+    //  `kUserStateAutoSavedWork` state, otherwise, we'll save just the files to the database
     if( parentState )
     {
-      // Remove previous `kUserStateAutoSavedWork` states for this user-saved state - we will make a new one
-      Dbo::collection<Dbo::ptr<UserState>> prevEosStates
-        = parentState->snapshotTags.find()
-        .where( "StateType = ?" )
-        .bind( int(UserState::UserStateType::kUserStateAutoSavedWork) );
+      // Make sure tool states that only exist in the GUI (Act/Shield fit, Rel. Eff.) are in the
+      //  `SpecMeas`, so changes to them count as unsaved work.  These only mark the file as modified if
+      //  something actually changed.  (LLM history is synced when saving, but as its sync always marks
+      //  the file as modified, it isnt done here.)
+      saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+      saveRelActManualStateToForegroundSpecMeas();
+      saveRelActAutoStateToForegroundSpecMeas();
+#endif
       
-      for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
-        UserState::removeFromDatabase( *iter, *m_sql );
-      
-      // We will only save a state if the foreground file has been modified
-      if( m_dataMeasurement && m_dataMeasurement->modified() )
+      // We will only save a state if the foreground file has been modified since it was stored, or last
+      //  auto-saved; we wont remove any previous auto-saved work, until we have saved newer work.
+      if( m_dataMeasurement->modified() )
       {
-        UserState *state = new UserState();
+        vector<Dbo::ptr<UserState>> prevAutoSaved;
+        {//begin interaction with database
+          DataBaseUtils::DbTransaction transaction( *m_sql );
+          Dbo::collection<Dbo::ptr<UserState>> prevAutoSavedQuery = m_sql->session()->find<UserState>()
+            .where( "SnapshotTagParent_id = ? AND StateType = ?" )
+            .bind( parentState.id() )
+            .bind( int(UserState::UserStateType::kUserStateAutoSavedWork) );
+          for( auto iter = prevAutoSavedQuery.begin(); iter != prevAutoSavedQuery.end(); ++iter )
+          {
+            if( iter->id() != keepStateId )
+              prevAutoSaved.push_back( *iter );
+          }
+          transaction.commit();
+        }//end interaction with database
+        
+        std::unique_ptr<UserState> state = std::make_unique<UserState>();
         state->user = m_user;
         state->stateType = UserState::kUserStateAutoSavedWork;
         state->creationTime = WDateTime::currentDateTime();
@@ -6605,10 +6587,32 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
         state->description = desc;
         state->snapshotTagParent = parentState;
         
-        Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( std::unique_ptr<UserState>(state) );
-
+        // Added to the database by `saveStateToDb`, only if saving succeeds (otherwise throws)
+        Wt::Dbo::ptr<UserState> dbstate( std::move(state) );
         saveStateToDb( dbstate );
-
+        
+        // The current work is now saved in the database (as the auto-saved work of the connected
+        //  state), so mark the files as unmodified, so we wont save the same work again (e.g., when the
+        //  files are removed from memory, or at the end of the session).
+        for( const std::shared_ptr<SpecMeas> &meas : { m_dataMeasurement, m_backgroundMeasurement, m_secondDataMeasurement } )
+        {
+          if( meas )
+            meas->reset_modified();
+        }
+        
+        // Now that newer work is saved, remove the previous auto-saved work; a failure here just
+        //  leaves the older work in the database.
+        try
+        {
+          DataBaseUtils::DbTransaction transaction( *m_sql );
+          for( const Dbo::ptr<UserState> &prev : prevAutoSaved )
+            UserState::removeFromDatabase( prev, *m_sql );
+          transaction.commit();
+        }catch( std::exception &e )
+        {
+          Wt::log("error") << "saveStateAtForegroundChange(): error removing previous auto-saved work: " << e.what();
+        }
+        
         Wt::log("debug") << "saveStateAtForegroundChange(): Saved kUserStateAutoSavedWork"
         " state to database";
       }else
@@ -6680,18 +6684,15 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
       
       Wt::log("debug") << "saveStateAtForegroundChange(): Instead kUserStateAutoSavedWork state,"
       " saved spectrum files to database since not in a user save-state.";
-    }//if( current_state_index >= 0 ) / else
-    
-    transaction.commit();
+    }//if( parentState ) / else
   }catch( FileToLargeForDbException &e )
   {
-    // Expected problem - dont give an error message - but I dont think we ever end up here
+    // Expected problem (e.g., a file too large to store) - dont give an error message
+    //  (`saveStateToDb` has already discarded its changes)
     Wt::log("info") << "InterSpec::saveStateAtForegroundChange() Not saving state: " << e.what();
-    transaction.rollback();
   }catch( std::exception &e )
   {
     Wt::log("error") << "InterSpec::saveStateAtForegroundChange() error: " << e.what();
-    transaction.rollback();
   }
 }//void saveStateAtForegroundChange()
 
@@ -6738,18 +6739,10 @@ void InterSpec::saveStateForEndOfSession()
   
   try
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    // Check if we are connected with a user-saved database state
+    const Wt::Dbo::ptr<UserState> parentState = connectedUserState();
     
-    // Check if we are connected with a database state
-    const long long int current_state_index = currentAppStateDbId();
-    Wt::Dbo::ptr<UserState> parentState;
-    if( current_state_index >= 0 )
-    {
-      parentState = m_sql->session()->find<UserState>( "where id = ?" )
-            .bind( current_state_index );
-    }
-    
-    UserState *state = new UserState();
+    std::unique_ptr<UserState> state = std::make_unique<UserState>();
     state->user = m_user;
     state->stateType = UserState::kEndOfSessionTemp;
     state->creationTime = WDateTime::currentDateTime();
@@ -6757,11 +6750,9 @@ void InterSpec::saveStateForEndOfSession()
     state->description = desc;
     state->snapshotTagParent = parentState;
     
-    Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( std::unique_ptr<UserState>(state) );
-
+    // Added to the database by `saveStateToDb`, only if saving succeeds (otherwise throws)
+    Wt::Dbo::ptr<UserState> dbstate( std::move(state) );
     saveStateToDb( dbstate );
-
-    transaction.commit();
 
     Wt::log("debug") << "Saved end of session app state to database";
   }catch( std::exception &e )
@@ -8638,7 +8629,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
                                                         "InterSpec_resources/images/tag.svg" );
   
   // Make a lamda to do work of connecting signals, and undo/redo
-  auto setupLabelCbCallbacks = [this]( const SpectrumChart::PeakLabels label, WCheckBox *cb ){
+  auto setupLabelCbCallbacks = [this]( const PeakLabelType label, WCheckBox *cb ){
     
     cb->checked().connect( this, [this, label](){ m_spectrum->setShowPeakLabel( label, true ); } );
     cb->unChecked().connect( this, [this, label](){ m_spectrum->setShowPeakLabel( label, false ); } );
@@ -8674,18 +8665,18 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   //  reads the initial state from - setChecked() afterwards emits nothing for it to notice.
   cb->setChecked(true);
   PopupDivMenuItem *item = menu->addWidget( cb );
-  m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
+  m_spectrum->setShowPeakLabel( PeakLabelType::ShowPeakUserLabel, true );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakUserLabel, cb );
   
   cb = new WCheckBox( WString::tr("app-mi-view-lbl-peak-en") );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakEnergyLabel, cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakEnergyLabel, cb );
   
   cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-nm") );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideLabel, cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakNuclideLabel, cb );
   
   WCheckBox *nuc_energy_cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-en") );
   nuc_energy_cb->setChecked(false);
@@ -8703,7 +8694,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
     nuc_energy_cb->disable();
     syncNativeMenuCheckBox( nuc_energy_cb );
   } );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideEnergies, nuc_energy_cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakNuclideEnergies, nuc_energy_cb );
 }//void addPeakLabelMenu( Wt::WContainerWidget *menuDiv )
 
 
@@ -9037,6 +9028,14 @@ Wt::Dbo::ptr<UserFileInDb> InterSpec::measurementFromDb( const SpecUtils::Spectr
     return answer;
   
   answer = header->dbEntry();
+  
+  // The entry may have been deleted from the database (e.g., the state it was part of was removed)
+  if( answer && answer.isTransient() )
+  {
+    header->clearDbEntry();
+    answer.reset();
+  }
+  
   if( answer && !meas->modified() )
     return answer;
     
@@ -13547,8 +13546,12 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   if( SpecUtils::icontains(url, "RADDATA://")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
+#if( USE_QR_CODES )
     m_fileManager->handleSpectrumUrl( std::move(url) );
     return;
+#else
+    throw runtime_error( "This build of InterSpec does not support spectra encoded in URLs." );
+#endif
   }
   
   string host, path, query_str, frag;
@@ -14462,7 +14465,7 @@ void InterSpec::startBackgroundPeakRecoveryIfReady()
 }//void startBackgroundPeakRecoveryIfReady()
 
 
-void InterSpec::excludePeaksFromRange( double x0, double x1 )
+void InterSpec::excludePeaksFromRange( double x0, double x1, const SpecUtils::SpectrumType type )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
@@ -14472,14 +14475,22 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   if( x0 > x1 )
     swap( x0, x1 );
   
-  vector<PeakDef> all_peaks = m_peakModel->peakVec();
+  // The foreground's peaks, or the background's or secondary's (the user held B or S)
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = m_peakModel->peaks( type );
+  if( !orig_peaks )
+    return;
+
+  vector<PeakDef> all_peaks;
+  for( const shared_ptr<const PeakDef> &p : *orig_peaks )
+    all_peaks.push_back( *p );
 //  vector<PeakDef> peaks_in_range = peaksInRange( x0, x1, 4.0, all_peaks );
   vector<PeakDef> peaks_in_range = peaksTouchingRange( x0, x1, all_peaks );
   
   if( peaks_in_range.empty() )
     return;
   
-  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
+  const bool forForeground = (type == SpecUtils::SpectrumType::Foreground);
+  std::shared_ptr<const SpecUtils::Measurement> data = forForeground ? m_spectrum->data() : displayedHistogram( type );
   if( !data )
     return;
   
@@ -14542,19 +14553,24 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   }//for( PeakDef peak : peaks_in_range )
   
   
-  std::shared_ptr<const DetectorPeakResponse> detector
-                                          = measurment(SpecUtils::SpectrumType::Foreground)->detector();
+  // Prefer the foreground's DRF/prefs, falling back to those of the spectrum being erased from
+  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const SpecMeas> eraseMeas = forForeground ? fgMeas : measurment( type );
+  std::shared_ptr<const DetectorPeakResponse> detector = fgMeas ? fgMeas->detector() : nullptr;
+  if( !detector && eraseMeas )
+    detector = eraseMeas->detector();
   map<std::shared_ptr<const PeakContinuum>,PeakShrdVec > peaksinroi;
   for( PeakDef peak : peaks_to_keep )
     peaksinroi[peak.continuum()].push_back( std::make_shared<PeakDef>(peak) );
   
-  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<const PeakFitDetPrefs> erasePrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+  if( !erasePrefs && eraseMeas )
+    erasePrefs = eraseMeas->peakFitDetPrefs();
   if( !erasePrefs && detector )
     erasePrefs = detector->peakFitDetPrefs();
   assert( erasePrefs );
   const PeakFitUtils::CoarseResolutionType eraseDetType
-    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fgMeas );
+    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, eraseMeas );
 
   map<std::shared_ptr<const PeakContinuum>, PeakShrdVec >::const_iterator iter;
   for( iter = peaksinroi.begin(); iter != peaksinroi.end(); ++iter )
@@ -14603,8 +14619,17 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   }//for( loop over peaksinroi elements )
   
   
-  m_peakModel->setPeaks( all_peaks );
-}//void excludePeaksFromRange( const double x0, const double x1 )
+  if( forForeground )
+  {
+    m_peakModel->setPeaks( all_peaks );
+  }else
+  {
+    deque<shared_ptr<const PeakDef>> newpeaks;
+    for( const PeakDef &p : all_peaks )
+      newpeaks.push_back( make_shared<const PeakDef>( p ) );
+    m_peakModel->setPeaks( newpeaks, type );
+  }
+}//void excludePeaksFromRange(...)
 
 
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const

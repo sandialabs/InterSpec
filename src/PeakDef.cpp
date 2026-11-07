@@ -3423,6 +3423,36 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     answer << "," << q << "roiCounts" << q << ":" << sum;
   }//if( foreground )
   
+  // Step and External continua are sent as the counts of each channel, so the JS can draw them
+  //  exactly as they are defined.
+  const auto write_channel_counts = [&](){
+    vector<float> energies;
+    vector<double> counts;
+    if( !PeakDef::continuum_channel_counts( peaks, foreground, energies, counts ) )
+      return;
+    
+    // When the JSON of the spectrum chart is defined, D3SpectrumExport.cpp/write_spectrum_data_js(...)
+    //  will send the energy calibration as coefficients sometimes, and lower channel energies other
+    //  times.  If coefficients are sent, then the JS computes channel bounds using doubles.
+    //  And somewhat surprisingly, rounding causes visual artifacts of the continuum when
+    //  the 'continuumEnergies' and 'continuumCounts' arrays are used, which are only accurate
+    //  to float levels.  So we will increase accuracy of the 'answer' stream here, which appears
+    //  to be enough to avoid these artifacts.
+    answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
+    
+    // The lower energy of each channel, and then the upper energy of the last one, so the JS
+    //  knows the extent of every channel in 'continuumCounts' (which has one less entry).
+    answer << "," << q << "continuumEnergies" << q << ":[";
+    for( size_t i = 0; i < energies.size(); ++i )
+      answer << (i ? "," : "") << energies[i];
+    answer << "]," << q << "continuumCounts" << q << ":[";
+    for( size_t i = 0; i < counts.size(); ++i )
+      answer << (i ? "," : "") << counts[i];
+    answer << "]";
+    
+    answer << std::setprecision(9);
+  };//write_channel_counts lambda
+  
   
   switch( continuum->type() )
   {
@@ -3464,152 +3494,16 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         answer << (i ? "," : "") << (continuum->fitForParameter()[i] ? "true" : "false");
       answer << "]";
       
-      if( PeakContinuum::is_step_continuum( continuum->type() )
-         && foreground && foreground->num_gamma_channels() )
-      {
-        const size_t nchannel = foreground->num_gamma_channels();
-        
-        //We'll put in the coefficients, but also the values to make things easy in JS
-        size_t firstbin = foreground->find_gamma_channel( continuum->lowerEnergy() );
-        size_t lastbin = foreground->find_gamma_channel( continuum->upperEnergy() );
-        
-        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
-        
-        assert( firstbin <= lastbin );
-        assert( lastbin <= (nchannel - 1) );
-        
-        // When the JSON of the spectrum chart is defined, D3SpectrumExport.cpp/write_spectrum_data_js(...)
-        //  will send the energy calibration as coefficients sometimes, and lower channel energies other
-        //  times.  If coefficients are sent, then the JS computes channel bounds using doubles.
-        //  And somewhat surprisingly, rounding causes visual artifacts of the continuum when
-        //  the 'continuumEnergies' and 'continuumCounts' arrays are used, which are only accurate
-        //  to float levels.  So we will increase accuracy of the 'answer' stream here, which appears
-        //  to be enough to avoid these artifacts, but also commented out is how we could compute
-        //  to double precision to match what happens in the JS.
-        const auto oldprecision = answer.precision();  //probably 6 always
-        answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
-        
-        // The lower energy of each channel, and then the upper energy of the last one, so the JS
-        //  knows the extent of every channel in 'continuumCounts' (which has one less entry).
-        answer << "," << q << "continuumEnergies" << q << ":[";
-        for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
-        answer << "," << foreground->gamma_channel_upper(lastbin);
-        answer << "]," << q << "continuumCounts" << q << ":[";
-        
-        /*
-         //Implementation to compute energies to double precision - doesnt appear to be necessary.
-        const SpecUtils::EnergyCalType caltype = foreground->energy_calibration_model();
-        if(  (caltype == SpecUtils::EnergyCalType::Polynomial
-             || caltype == SpecUtils::EnergyCalType::FullRangeFraction
-             || caltype == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
-           && foreground->deviation_pairs().empty() )
-        {
-          const size_t nchannel = foreground->num_gamma_channels();
-          const vector<float> &coefs = foreground->calibration_coeffs();
-          const vector<pair<float,float>> &dev_pairs = foreground->deviation_pairs();
-         
-          answer << "," << q << "continuumEnergies" << q << ":[";
-          for (size_t i = firstbin; i <= lastbin; ++i)
-          {
-            double energy;
-            if( caltype == SpecUtils::EnergyCalType::FullRangeFraction )
-              energy = SpecUtils::fullrangefraction_energy( i, coefs, nchannel, dev_pairs );
-            else
-              energy = SpecUtils::polynomial_energy( i, coefs, dev_pairs );
-            answer << ((i!=firstbin) ? "," : "") << energy;
-          }
-          answer << "]," << q << "continuumCounts" << q << ":[";
-        }else
-        {
-          answer << "," << q << "continuumEnergies" << q << ":[";
-          for (size_t i = firstbin; i <= lastbin; ++i)
-            answer << ((i!=firstbin) ? "," : "") << foreground->gamma_channel_lower(i);
-          answer << "]," << q << "continuumCounts" << q << ":[";
-        }
-         */
-        
-        //Slow implementation pre 20251105
-        //for (size_t i = firstbin; i <= lastbin; ++i)
-        //{
-        //  const float lower_x = foreground->gamma_channel_lower( i );
-        //  const float upper_x = foreground->gamma_channel_upper( i );
-        //  const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
-        //  answer << ((i!=firstbin) ? "," : "") << cont_counts;
-        //}
-        
-        {// Begin write continuum counts for each channel
-          const shared_ptr<const vector<float>> &channel_energies_ptr = foreground->channel_energies();
-          assert( channel_energies_ptr && (lastbin < channel_energies_ptr->size()) && (firstbin <= lastbin) );
-          const size_t num_roi_channels = (lastbin > firstbin) ? (1 + lastbin - firstbin) : size_t(1);
-          assert( num_roi_channels > 0 );
-
-          const float * const energies = &(channel_energies_ptr->at(firstbin));
-          vector<double> continuum_counts( nchannel, 0.0 );
-
-          continuum->offset_integral( energies, &(continuum_counts[0]), num_roi_channels, foreground, peaks );
-
-          for( size_t i = 0; i < num_roi_channels; ++i )
-          {
-            answer << (i ? "," : "") << continuum_counts[i];
-#if( PERFORM_DEVELOPER_CHECKS )
-            {
-              // The batch and single-channel implementations must agree for every continuum type,
-              //  including the peak-CDF step ones - they share `cdf_step_anchor_energies(...)`, so
-              //  a divergence here means one of them drifted.
-              const size_t channel = i + firstbin;
-              const float lower_x = foreground->gamma_channel_lower( channel );
-              const float upper_x = foreground->gamma_channel_upper( channel );
-              const double cont_counts_test = continuum->offset_integral( lower_x, upper_x, foreground, peaks );
-              assert( fabs(continuum_counts[i] - cont_counts_test) < std::max( 0.0001*std::max( fabs(continuum_counts[i]), fabs(cont_counts_test) ), 1.0E-6) );
-            }
-#endif
-          }
-        }// End write continuum counts for each channel
-        
-        answer << "]";
-        
-        answer << std::setprecision(9);
-      }//if( continuum->type() == FlatStep/LinearStep/BiLinearStep )
+      if( PeakContinuum::is_step_continuum( continuum->type() ) )
+        write_channel_counts();
       
       break;
     }//polynomial continuum
       
     case PeakContinuum::External:
     {
-      if( continuum->externalContinuum()
-          && continuum->externalContinuum()->num_gamma_channels() )
-      {
-        std::shared_ptr<const Measurement> hist = continuum->externalContinuum();
-        size_t firstbin = hist->find_gamma_channel(continuum->lowerEnergy());
-        size_t lastbin = hist->find_gamma_channel(continuum->upperEnergy());
-        
-        const size_t nchannel = hist->num_gamma_channels();
-        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
-        assert( (firstbin <= lastbin) && (lastbin <= (nchannel - 1)) );
-        
-        //see comments above in FlatStep section
-        const auto oldprecision = answer.precision();
-        answer << std::setprecision(std::numeric_limits<float>::digits10 + 1);
-
-        // As for the step continua above: each channel's lower energy, then the last one's upper.
-        answer << "," << q << "continuumEnergies" << q << ":[";
-        for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_lower(i);
-        answer << "," << hist->gamma_channel_upper(lastbin);
-        answer << "]," << q << "continuumCounts" << q << ":[";
-        for (size_t i = firstbin; i <= lastbin; ++i)
-          answer << ((i!=firstbin) ? "," : "") << hist->gamma_channel_content(i);
-        answer << "]";
-        
-        answer << std::setprecision(9);
-      }
+      write_channel_counts();
+      break;
     }//case PeakContinuum::External:
   }//switch( continuum->type() )
 
@@ -3822,172 +3716,11 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     
     if( (p.type() == PeakDef::GaussianDefined) && (p.skewType() != PeakDef::NoSkew) )
     {
-      double hidden_frac = 1.0E-6; //
-      
-      try
-      {
-        pair<double,double> vis_limits;
-        
-        switch( p.skewType() )
-        {
-          case NumSkewType:
-            assert( 0 );
-            //throw runtime_error( "PeakDef coverage limits: NumSkewType is not a valid skew type" );
-            // Fall through to NoSkew for non-debug builds
-
-          case NoSkew:
-            vis_limits.first = p.mean() - 5.0*p.sigma();
-            vis_limits.second = p.mean() + 5.0*p.sigma();
-            break;
-            
-          case Bortel:
-            vis_limits = PeakDists::bortel_coverage_limits( p.mean(), p.sigma(),
-                                                           p.coefficient(CoefficientType::SkewPar0),
-                                                           hidden_frac );
-            break;
-            
-          case GaussExp:
-            vis_limits = PeakDists::gauss_exp_coverage_limits( p.mean(), p.sigma(),
-                                                              p.coefficient(CoefficientType::SkewPar0),
-                                                              hidden_frac );
-            break;
-          case CrystalBall:
-            try
-            {
-              vis_limits = PeakDists::crystal_ball_coverage_limits( p.mean(), p.sigma(),
-                                                                 p.coefficient(CoefficientType::SkewPar0),
-                                                                 p.coefficient(CoefficientType::SkewPar1),
-                                                                 hidden_frac );
-            }catch( std::exception & )
-            {
-              // CB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - in this case we'll use the entire ROI.
-              vis_limits.first = p.lowerX();
-              vis_limits.second = p.upperX();
-            }
-            break;
-          case ExpGaussExp:
-            vis_limits = PeakDists::exp_gauss_exp_coverage_limits( p.mean(), p.sigma(),
-                                                                  p.coefficient(CoefficientType::SkewPar0),
-                                                                  p.coefficient(CoefficientType::SkewPar1),
-                                                                  hidden_frac );
-            break;
-          case DoubleSidedCrystalBall:
-            // For largely skewed peaks, going out t 1E-6 is unreasonable, so we could limit
-            //  this to 1E-3, to improve chances of success.
-            //if( p.coefficient(CoefficientType::SkewPar1) < 5.0
-            //   || p.coefficient(CoefficientType::SkewPar3) < 5.0)
-            //  hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
-            
-            try
-            {
-              const double mean = p.mean();
-              const double sigma = p.sigma();
-              const double left_skew = p.coefficient(CoefficientType::SkewPar0);
-              const double left_n = p.coefficient(CoefficientType::SkewPar1);
-              const double right_skew = p.coefficient(CoefficientType::SkewPar2);
-              const double right_n = p.coefficient(CoefficientType::SkewPar3);
-              
-              vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma,
-                                              left_skew, left_n, right_skew, right_n, hidden_frac );
-            }catch( std::exception & )
-            {
-              // DSCB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - in this case we'll use the entire ROI.  This throw is the
-              //  expected, cheap signal for a heavy tail (a power-law `n` near its 1.05 bound), not
-              //  a numerical accident - see `PeakDists::sk_max_coverage_limit_nsigma`.
-              vis_limits.first = p.lowerX();
-              vis_limits.second = p.upperX();
-            }//try / catch
-            break; //case DoubleSidedCrystalBall:
-            
-            
-          case VoigtPlusBortel:
-            try
-            {
-              const double mean = p.mean();
-              const double sigma = p.sigma();
-              const double gamma_lor = p.coefficient(CoefficientType::SkewPar0);
-              const double R = p.coefficient(CoefficientType::SkewPar1);
-              const double tau = p.coefficient(CoefficientType::SkewPar2);
-
-              vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
-                                                                 R, tau, hidden_frac );
-            }catch( std::exception & )
-            {
-              // Voigt plus Bortel dist can have really long tail, causing the coverage limits to fail,
-              //  because of unreasonable values - in this case we'll use the entire ROI.
-              vis_limits.first = p.lowerX();
-              vis_limits.second = p.upperX();
-            }//try / catch
-            break; //case VoigtPlusBortel:
-
-          case GaussPlusBortel:
-            try
-            {
-              const double mean = p.mean();
-              const double sigma = p.sigma();
-              const double R = p.coefficient(CoefficientType::SkewPar0);
-              const double tau = p.coefficient(CoefficientType::SkewPar1);
-
-              vis_limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, hidden_frac );
-            }catch( std::exception & )
-            {
-              vis_limits.first = p.lowerX();
-              vis_limits.second = p.upperX();
-            }//try / catch
-            break; //case GaussPlusBortel:
-
-          case DoubleBortel:
-            try
-            {
-              const double mean = p.mean();
-              const double sigma = p.sigma();
-              const double tau1 = p.coefficient(CoefficientType::SkewPar0);
-              const double tau2_delta = p.coefficient(CoefficientType::SkewPar1);
-              const double eta = p.coefficient(CoefficientType::SkewPar2);
-
-              vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, hidden_frac );
-            }catch( std::exception & )
-            {
-              vis_limits.first = p.lowerX();
-              vis_limits.second = p.upperX();
-            }//try / catch
-            break; //case DoubleBortel:
-
-          case GadrasGeneric:
-          case GadrasCZT:
-            try
-            {
-              const PeakDists::GadrasMaterial mat = (p.skewType() == GadrasCZT)
-                                    ? PeakDists::GadrasMaterial::CZT_CdTe
-                                    : PeakDists::GadrasMaterial::Generic;
-              double skew[6];
-              for( int i = 0; i < 6; ++i )
-                skew[i] = p.coefficient( CoefficientType(CoefficientType::SkewPar0 + i) );
-
-              vis_limits = PeakDists::gadras_coverage_limits( p.mean(), p.sigma(), skew, mat, hidden_frac );
-            }catch( std::exception & )
-            {
-              vis_limits.first = p.lowerX();
-              vis_limits.second = p.upperX();
-            }//try / catch
-            break; //case GadrasGeneric, GadrasCZT:
-        }//switch( p.skewType() )
-        
-        answer << q << "visRange" << q << ":[" << vis_limits.first << "," << vis_limits.second << "],";
-      }catch( std::exception &e )
-      {
-        cerr << "Failed to get limits for peak type " << PeakDef::to_string(p.skewType())
-            << ": " << e.what() << endl
-            << "\tFor peak with skew=[" << p.coefficient(CoefficientType::SkewPar0)
-            << ", " << p.coefficient(CoefficientType::SkewPar1)
-            << ", " << p.coefficient(CoefficientType::SkewPar2)
-            << ", " << p.coefficient(CoefficientType::SkewPar3)
-            << "], mean=" << p.mean() << ", and sigma=" << p.sigma()
-            << " with prob=" << hidden_frac << endl;
-      }//try / catch
-    }//if( we should give a hint to the JS about range to draw skewed peaks )
+      // A hint to the JS about the range to draw skewed peaks over
+      const optional<pair<double,double>> vis_limits = p.visRange();
+      if( vis_limits )
+        answer << q << "visRange" << q << ":[" << vis_limits->first << "," << vis_limits->second << "],";
+    }//if( a skewed peak )
     
     
     
@@ -4113,7 +3846,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         answer << srcTypeJSON( p.sourceGammaType() );
       }else if( p.sourceGammaType() == AnnihilationGamma )
       {
-        answer << "," << q << "energy" << q << ":511.006";
+        answer << "," << q << "energy" << q << ":510.9989";
         answer << srcTypeJSON( p.sourceGammaType() );
       }//if( m_transition )
 
@@ -5545,6 +5278,240 @@ void PeakDef::gauss_integral( const float *energies, double *channels, const siz
                                        m_coefficients + PeakDef::SkewPar0,
                                        nchannel, energies, channels );
 }//void gauss_integral( const float * const energies, double *channels, const size_t nchannel )
+
+
+std::optional<std::pair<double,double>> PeakDef::visRange() const
+{
+  const PeakDef &p = *this;
+  const double hidden_frac = 1.0E-6;
+  
+  try
+  {
+    pair<double,double> vis_limits;
+    
+    switch( p.skewType() )
+    {
+      case NumSkewType:
+        assert( 0 );
+        //throw runtime_error( "PeakDef coverage limits: NumSkewType is not a valid skew type" );
+        // Fall through to NoSkew for non-debug builds
+
+      case NoSkew:
+        vis_limits.first = p.mean() - 5.0*p.sigma();
+        vis_limits.second = p.mean() + 5.0*p.sigma();
+        break;
+        
+      case Bortel:
+        vis_limits = PeakDists::bortel_coverage_limits( p.mean(), p.sigma(),
+                                                       p.coefficient(CoefficientType::SkewPar0),
+                                                       hidden_frac );
+        break;
+        
+      case GaussExp:
+        vis_limits = PeakDists::gauss_exp_coverage_limits( p.mean(), p.sigma(),
+                                                          p.coefficient(CoefficientType::SkewPar0),
+                                                          hidden_frac );
+        break;
+      case CrystalBall:
+        try
+        {
+          vis_limits = PeakDists::crystal_ball_coverage_limits( p.mean(), p.sigma(),
+                                                             p.coefficient(CoefficientType::SkewPar0),
+                                                             p.coefficient(CoefficientType::SkewPar1),
+                                                             hidden_frac );
+        }catch( std::exception & )
+        {
+          // CB dist can have really long tail, causing the coverage limits to fail, because
+          //  of unreasonable values - in this case we'll use the entire ROI.
+          vis_limits.first = p.lowerX();
+          vis_limits.second = p.upperX();
+        }
+        break;
+      case ExpGaussExp:
+        vis_limits = PeakDists::exp_gauss_exp_coverage_limits( p.mean(), p.sigma(),
+                                                              p.coefficient(CoefficientType::SkewPar0),
+                                                              p.coefficient(CoefficientType::SkewPar1),
+                                                              hidden_frac );
+        break;
+      case DoubleSidedCrystalBall:
+        // For largely skewed peaks, going out t 1E-6 is unreasonable, so we could limit
+        //  this to 1E-3, to improve chances of success.
+        //if( p.coefficient(CoefficientType::SkewPar1) < 5.0
+        //   || p.coefficient(CoefficientType::SkewPar3) < 5.0)
+        //  hidden_frac = 1.0E-3; //DSCB doesnt behave well for power-law peaks...
+        
+        try
+        {
+          const double mean = p.mean();
+          const double sigma = p.sigma();
+          const double left_skew = p.coefficient(CoefficientType::SkewPar0);
+          const double left_n = p.coefficient(CoefficientType::SkewPar1);
+          const double right_skew = p.coefficient(CoefficientType::SkewPar2);
+          const double right_n = p.coefficient(CoefficientType::SkewPar3);
+          
+          vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma,
+                                          left_skew, left_n, right_skew, right_n, hidden_frac );
+        }catch( std::exception & )
+        {
+          // DSCB dist can have really long tail, causing the coverage limits to fail, because
+          //  of unreasonable values - in this case we'll use the entire ROI.  This throw is the
+          //  expected, cheap signal for a heavy tail (a power-law `n` near its 1.05 bound), not
+          //  a numerical accident - see `PeakDists::sk_max_coverage_limit_nsigma`.
+          vis_limits.first = p.lowerX();
+          vis_limits.second = p.upperX();
+        }//try / catch
+        break; //case DoubleSidedCrystalBall:
+        
+        
+      case VoigtPlusBortel:
+        try
+        {
+          const double mean = p.mean();
+          const double sigma = p.sigma();
+          const double gamma_lor = p.coefficient(CoefficientType::SkewPar0);
+          const double R = p.coefficient(CoefficientType::SkewPar1);
+          const double tau = p.coefficient(CoefficientType::SkewPar2);
+
+          vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                             R, tau, hidden_frac );
+        }catch( std::exception & )
+        {
+          // Voigt plus Bortel dist can have really long tail, causing the coverage limits to fail,
+          //  because of unreasonable values - in this case we'll use the entire ROI.
+          vis_limits.first = p.lowerX();
+          vis_limits.second = p.upperX();
+        }//try / catch
+        break; //case VoigtPlusBortel:
+
+      case GaussPlusBortel:
+        try
+        {
+          const double mean = p.mean();
+          const double sigma = p.sigma();
+          const double R = p.coefficient(CoefficientType::SkewPar0);
+          const double tau = p.coefficient(CoefficientType::SkewPar1);
+
+          vis_limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, hidden_frac );
+        }catch( std::exception & )
+        {
+          vis_limits.first = p.lowerX();
+          vis_limits.second = p.upperX();
+        }//try / catch
+        break; //case GaussPlusBortel:
+
+      case DoubleBortel:
+        try
+        {
+          const double mean = p.mean();
+          const double sigma = p.sigma();
+          const double tau1 = p.coefficient(CoefficientType::SkewPar0);
+          const double tau2_delta = p.coefficient(CoefficientType::SkewPar1);
+          const double eta = p.coefficient(CoefficientType::SkewPar2);
+
+          vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, hidden_frac );
+        }catch( std::exception & )
+        {
+          vis_limits.first = p.lowerX();
+          vis_limits.second = p.upperX();
+        }//try / catch
+        break; //case DoubleBortel:
+
+      case GadrasGeneric:
+      case GadrasCZT:
+        try
+        {
+          const PeakDists::GadrasMaterial mat = (p.skewType() == GadrasCZT)
+                                ? PeakDists::GadrasMaterial::CZT_CdTe
+                                : PeakDists::GadrasMaterial::Generic;
+          double skew[6];
+          for( int i = 0; i < 6; ++i )
+            skew[i] = p.coefficient( CoefficientType(CoefficientType::SkewPar0 + i) );
+
+          vis_limits = PeakDists::gadras_coverage_limits( p.mean(), p.sigma(), skew, mat, hidden_frac );
+        }catch( std::exception & )
+        {
+          vis_limits.first = p.lowerX();
+          vis_limits.second = p.upperX();
+        }//try / catch
+        break; //case GadrasGeneric, GadrasCZT:
+    }//switch( p.skewType() )
+    
+    return vis_limits;
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to get limits for peak type " << PeakDef::to_string(p.skewType())
+        << ": " << e.what() << endl
+        << "\tFor peak with skew=[" << p.coefficient(CoefficientType::SkewPar0)
+        << ", " << p.coefficient(CoefficientType::SkewPar1)
+        << ", " << p.coefficient(CoefficientType::SkewPar2)
+        << ", " << p.coefficient(CoefficientType::SkewPar3)
+        << "], mean=" << p.mean() << ", and sigma=" << p.sigma()
+        << " with prob=" << hidden_frac << endl;
+  }//try / catch
+  
+  return std::nullopt;
+}//std::optional<std::pair<double,double>> visRange() const
+
+
+bool PeakDef::continuum_channel_counts( const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                        std::vector<float> &energies,
+                                        std::vector<double> &counts )
+{
+  energies.clear();
+  counts.clear();
+
+  const shared_ptr<const PeakContinuum> continuum = roi_peaks.empty() ? nullptr : roi_peaks.front()->continuum();
+  if( !continuum )
+    return false;
+
+  // Step continua are defined on the channels of the data, and External ones by their own histogram
+  const bool is_step = PeakContinuum::is_step_continuum( continuum->type() );
+  const bool is_external = (continuum->type() == PeakContinuum::External);
+  const shared_ptr<const SpecUtils::Measurement> hist = is_step ? data
+                                        : (is_external ? continuum->externalContinuum() : nullptr);
+  const shared_ptr<const vector<float>> channel_energies = hist ? hist->channel_energies() : nullptr;
+  const size_t nchannel = hist ? hist->num_gamma_channels() : size_t(0);
+  if( !nchannel || !channel_energies || (channel_energies->size() < nchannel) )
+    return false;
+
+  // The ROI's channels, plus two more on each side
+  size_t firstbin = hist->find_gamma_channel( continuum->lowerEnergy() );
+  size_t lastbin = hist->find_gamma_channel( continuum->upperEnergy() );
+  firstbin = (firstbin >= 2) ? (firstbin - 2) : size_t(0);
+  lastbin = std::min( lastbin + 2, nchannel - 1 );
+  assert( firstbin <= lastbin );
+
+  const size_t nroi = 1 + lastbin - firstbin;
+  energies.resize( nroi + 1 );
+  for( size_t i = 0; i < nroi; ++i )
+    energies[i] = hist->gamma_channel_lower( firstbin + i );
+  energies[nroi] = hist->gamma_channel_upper( lastbin );
+
+  counts.resize( nroi, 0.0 );
+  if( is_external )
+  {
+    for( size_t i = 0; i < nroi; ++i )
+      counts[i] = hist->gamma_channel_content( firstbin + i );
+    return true;
+  }//if( is_external )
+
+  // The batch integral needs the energies to point into the data's own energy array.
+  continuum->offset_integral( &(channel_energies->at(firstbin)), counts.data(), nroi, data, roi_peaks );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t i = 0; i < nroi; ++i )
+  {
+    // The batch and single-channel implementations must agree for every continuum type,
+    //  including the peak-CDF step ones - they share `cdf_step_anchor_energies(...)`, so
+    //  a divergence here means one of them drifted.
+    const double single = continuum->offset_integral( energies[i], energies[i+1], data, roi_peaks );
+    assert( fabs(counts[i] - single) < std::max( 0.0001*std::max( fabs(counts[i]), fabs(single) ), 1.0E-6) );
+  }
+#endif
+
+  return true;
+}//bool continuum_channel_counts(...)
 
 
 

@@ -314,13 +314,18 @@ but menu items will be disabled if no background or secondary spectrum is loaded
       <b>Double-click</b>: Fits a peak in the foreground spectrum at the clicked location.
     </li>
     <li>
-      <b>Alt + Double-click</b>: Fits a peak in the background spectrum at the clicked location.
+      <b>Alt + Double-click</b> or <b>hold 'b' + Double-click</b>: Fits a peak in the <u>b</u>ackground spectrum at the clicked location.
     </li>
     <li>
-      <b>Shift + Double-click</b>: Fits a peak in the secondary spectrum at the clicked location.
+      <b>Shift + Double-click</b> or <b>hold 's' + Double-click</b>: Fits a peak in the <u>s</u>econdary spectrum at the clicked location.
+    </li>
+    <li>
+      <b>Ctrl + Left-drag</b>: Fits peaks in the dragged energy range, then lets you choose how many peaks to keep.
+      Hold 'b' or 's' to fit them in the background or secondary spectrum; press it before Ctrl, or during the drag.
     </li>
     <li>
       <b>Shift + Left-drag</b>: Delete peaks mode - removes peaks in the dragged energy range.
+      Hold 'b' or 's' to remove background or secondary peaks instead.
     </li>
     <li>
       <b>Alt + Shift + Left-drag</b>: Count gammas mode - counts gamma rays in the dragged energy range.

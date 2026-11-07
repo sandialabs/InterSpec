@@ -120,15 +120,14 @@ void SpectrumDataModel::setDataHistogram( std::shared_ptr<const Measurement> his
     dataChanged().emit( backStart, backEnd );
   }
   
-  float newSecondSF = m_dataLiveTime/m_backgroundLiveTime;
+  float newSecondSF = m_dataLiveTime/m_secondDataLiveTime;
   if( IsInf(newSecondSF) || IsNan(newSecondSF) )
     newSecondSF = 1.0f;
   if( !!m_secondData && fabs(m_secondSF-newSecondSF)>0.0001 )
   {
     m_secondSF = newSecondSF;
-    m_secondSF = m_dataLiveTime/m_secondDataLiveTime;
-    WModelIndex secondStart = index( 0, BACKGROUND_COLUMN );
-    WModelIndex secondEnd   = index( rowCount() - 1, BACKGROUND_COLUMN );
+    WModelIndex secondStart = index( 0, SECOND_DATA_COLUMN );
+    WModelIndex secondEnd   = index( rowCount() - 1, SECOND_DATA_COLUMN );
     dataChanged().emit( secondStart, secondEnd );
   }
   
@@ -317,8 +316,8 @@ void SpectrumDataModel::setSecondDataScaleFactor( const float sf )
   if( !!m_secondData && m_secondSF!=sf )
   {
     m_secondSF = sf;
-    WModelIndex secondStart = index( 0, BACKGROUND_COLUMN );
-    WModelIndex secondEnd   = index( rowCount() - 1, BACKGROUND_COLUMN );
+    WModelIndex secondStart = index( 0, SECOND_DATA_COLUMN );
+    WModelIndex secondEnd   = index( rowCount() - 1, SECOND_DATA_COLUMN );
     dataChanged().emit( secondStart, secondEnd );
   }else
   {
@@ -474,7 +473,7 @@ int SpectrumDataModel::findRow( const double x ) const
 
 // { TODO this function can probably be made more efficient }
 void SpectrumDataModel::yRangeInXRange( const double xMin, const double xMax,
-                            double &yMin, double &yMax ) const
+                            double &yMin, double &yMax, double *minNonZero ) const
 {
   const int lowRow  = findRow( xMin );
   const int highRow = findRow( xMax );
@@ -482,6 +481,8 @@ void SpectrumDataModel::yRangeInXRange( const double xMin, const double xMax,
 
   yMax = -numeric_limits<double>::max();
   yMin =  numeric_limits<double>::max();
+  if( minNonZero )
+    *minNonZero = 0.0;
 
   for( int column = 1; column < columns; ++column )
   {
@@ -498,6 +499,8 @@ void SpectrumDataModel::yRangeInXRange( const double xMin, const double xMax,
         const double val = Wt::cpp17::any_cast<double>( data( index( row, column ), Wt::ItemDataRole::Display ) );
         yMax = max( yMax, val );
         yMin = min( yMin, val );
+        if( minNonZero && (val > 0.0) && ((*minNonZero <= 0.0) || (val < *minNonZero)) )
+          *minNonZero = val;
       } catch(...) { }
     } // for( looping over the rows )
   } // for( looping over the columns )
@@ -719,11 +722,8 @@ Wt::cpp17::any SpectrumDataModel::data( const WModelIndex &index, Wt::ItemDataRo
 
 WModelIndex SpectrumDataModel::index( int row, int column, const WModelIndex & ) const
 {
-  std::shared_ptr<const Measurement> xHist = histUsedForXAxis();
-
-  const int numRows    = xHist ? static_cast<int>(xHist->num_gamma_channels()) : -1;
-
-  // Check to see if it's within bounds for the bins
+  // Check to see if it's within bounds for the (possibly rebinned) rows
+  const int numRows = rowCount();
   if( ( row < 0 ) || ( row >= numRows ) )
     return WModelIndex();
 

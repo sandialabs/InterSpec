@@ -2,25 +2,6 @@
 
 
 WT_DECLARE_WT_MEMBER
-(DrawnLegendTextMetric, Wt::JavaScriptFunction, "DrawnLegendTextMetric",
-function(id)
-{
-  try {
-    var el = this.getElement('c'+id);
-    var cntxt = el.getContext("2d");
-    cntxt.font = '12pt normal';
-//    var m = cntxt.measureText("Foreground (2.6e+06 counts)");
-    var m = cntxt.measureText("Real Time 99999.9 s");
-    Wt.emit(id, {name: 'LegendTextMetric'}, m.width);
-  }catch(e){
-    if(console && console.log )
-    console.log("Failed in DrawnLegendTextMetric for '" + id + "': " +e);
-  }
-}
-);
-
-
-WT_DECLARE_WT_MEMBER
 (CanvasToPngDownload, Wt::JavaScriptFunction, "CanvasToPngDownload",
 function(elid,filename)
 {

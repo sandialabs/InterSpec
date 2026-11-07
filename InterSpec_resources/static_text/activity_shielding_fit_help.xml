@@ -65,7 +65,11 @@ negative, putting the source beside the detector (off-axis) or behind it (on the
 as long as the source and its shielding stay clear of the detector itself.  How accurately such a response describes sources beside and behind the detector depends
 on how it was characterized: a Monte-Carlo response made with the &quot;Side &amp; back&quot;
 option (on by default) is characterized there, other responses are extrapolated with a larger uncertainty, and
-the housing behind the crystal is only modeled as well as it is described.  A flat-disk
+the housing behind the crystal is only modeled as well as it is described.  With the General or
+Extra near detail profile, that Monte Carlo also measures the near field: close beside the detector
+down to its housing, and directly behind it from 15 cm behind the crystal face, where a real
+detector's cryostat, photomultiplier or electronics usually end.  A source placed closer than that
+directly behind is still allowed, with a larger uncertainty.  A flat-disk
 (face-on) efficiency only describes sources in front of the detector face.
 
 <h2>Geometry</h2>

@@ -23,7 +23,6 @@
 
 #include "InterSpec_config.h"
 
-#include <map>
 #include <set>
 #include <cmath>
 #include <mutex>
@@ -67,62 +66,14 @@ namespace
   SpectrumChartImage::RasterRenderer ns_raster_renderer;
 
 
-  /** A `SpectrumChart` that paints peaks given to it directly, so it works without a `PeakModel`
-   (which needs an InterSpec session), and at any size.
+  /** A `SpectrumChart` for images; it works without a `PeakModel` (which needs an InterSpec
+   session; see `SpectrumChart::setPeaks(...)`), and at any size.
    */
   class StandaloneSpectrumChart : public SpectrumChart
   {
   public:
-    StandaloneSpectrumChart()
-      : SpectrumChart(),
-        m_directPeaks( nullptr )
-    {
-    }
-
-    void setDirectPeaks( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks )
-    {
-      m_directPeaks = peaks;
-    }
-
     // The base class refuses to render below 50 px, which is too restrictive for thumbnails.
     bool isLargeEnough( Wt::WPainter & ) const override { return true; }
-
-    void paintPeaks( Wt::WPainter &painter ) const override
-    {
-      if( !m_directPeaks || m_directPeaks->empty() )
-        return;
-
-      const double minx = axis( Chart::Axis::X ).minimum();
-      const double maxx = axis( Chart::Axis::X ).maximum();
-
-      std::vector<std::shared_ptr<const PeakDef>> nongauspeaks;
-
-      // Gaussian peaks are grouped by the continuum (ROI) they share.
-      std::map<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>> continuum_groups;
-      for( const std::shared_ptr<const PeakDef> &peak : *m_directPeaks )
-      {
-        if( !peak || (peak->lowerX() > maxx) || (peak->upperX() < minx) )
-          continue;
-
-        if( !peak->gausPeak() )
-          nongauspeaks.push_back( peak );
-        else if( peak->continuum() )
-          continuum_groups[peak->continuum().get()].push_back( peak );
-      }
-
-      for( auto &entry : continuum_groups )
-      {
-        std::vector<std::shared_ptr<const PeakDef>> &group = entry.second;
-        std::sort( begin(group), end(group), &PeakDef::lessThanByMeanShrdPtr );
-        paintGausPeaks( group, painter );
-      }
-
-      for( const std::shared_ptr<const PeakDef> &peak : nongauspeaks )
-        paintNonGausPeak( *peak, painter );
-    }//paintPeaks(...)
-
-  private:
-    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> m_directPeaks;
   };//class StandaloneSpectrumChart
 
 
@@ -171,6 +122,8 @@ namespace
     WFont label_font = chart.axis( Chart::Axis::Y1 ).labelFont();
     label_font.setSize( WLength( large ? ns_large_render_font_size : ns_compact_render_font_size ) );
 
+    // (setCompactAxis(...) adjusts the bottom padding, so is called before setting the padding)
+    chart.setCompactAxis( !large );
     chart.setPlotAreaPadding( 0, Wt::Side::Top );
     if( large )
     {
@@ -180,14 +133,12 @@ namespace
       if( has_title )
         chart.setPlotAreaPadding( ns_large_render_font_size + 4, Wt::Side::Top );
       chart.axis( Chart::Axis::X ).setTitle( x_title );
-      chart.setCompactAxis( false );
     }else
     {
       chart.setPlotAreaPadding( 5, Wt::Side::Left );
       chart.setPlotAreaPadding( 20, Wt::Side::Bottom );
       chart.setPlotAreaPadding( 5, Wt::Side::Right );
       chart.axis( Chart::Axis::X ).setTitle( compact_x_title );
-      chart.setCompactAxis( true );
     }
 
     // Room for labels of four or five digits.
@@ -222,10 +173,8 @@ bool paintSpectrum( Wt::WPaintDevice &device, const SpectrumOptions &options )
   StandaloneSpectrumChart chart;
   chart.setModel( model );
 
-  // Peaks are drawn on their fitted continuum, which is not background-subtracted (the D3 chart
-  //  subtracts it; this chart can not), so they are left off a background-subtracted chart.
-  const bool subtracting = (options.background && options.background_subtract);
-  chart.setDirectPeaks( subtracting ? nullptr : options.peaks );
+  // (on a background-subtracted chart, the peaks are drawn with the background subtracted too)
+  chart.setPeaks( options.peaks );
 
   model->setDataHistogram( meas );
   if( options.background )
@@ -268,6 +217,10 @@ bool paintSpectrum( Wt::WPaintDevice &device, const SpectrumOptions &options )
     set_axis_layout( chart, width, "Energy (keV)", "(keV)", has_title, false );
     if( has_title )
       chart.setTitle( WString::fromUTF8( options.title ) );
+
+    // A legend (spectrum titles, counts, times, ...), as the D3 chart shows, when there is room.
+    if( large )
+      chart.enableLegend();
   }//if( thumbnail ) / else
 
   // Reference lines; the first is the "current" one, the others persisted.
@@ -293,21 +246,19 @@ bool paintSpectrum( Wt::WPaintDevice &device, const SpectrumOptions &options )
   chart.setXAxisRange( lowx, upperx );
 
 
-  // Combine channels so there are about two per pixel.
-  const size_t displayed_nbin = meas->find_gamma_channel( static_cast<float>( upperx ) )
-                                - meas->find_gamma_channel( static_cast<float>( lowx ) );
+  // Combine channels so each is at least as wide as the spectrum line, as the D3 chart does.
   const int plot_width = std::max( 1, static_cast<int>( width ) - chart.plotAreaPadding( Side::Left )
                                       - chart.plotAreaPadding( Side::Right ) );
-  const float bins_per_pixel = float( displayed_nbin ) / float( plot_width );
-  const int factor = std::max( static_cast<int>( std::ceil( bins_per_pixel / 2 ) ), 1 );
+  const int factor = SpectrumChart::displayRebinFactor( meas, lowx, upperx, plot_width,
+                                                        options.thumbnail ? 0.5 : 1.0 );
   model->setRebinFactor( factor );
 
   chart.setYAxisScale( options.log_y ? Wt::Chart::AxisScale::Log : Wt::Chart::AxisScale::Linear );
   chart.setAutoYAxisRange();
 
   if( !options.thumbnail && large )
-    chart.axis( Chart::Axis::Y1 ).setTitle( (factor == 1) ? std::string( "Counts Per Channel" )
-                                            : ("Counts Per " + std::to_string( factor ) + " Channels") );
+    chart.axis( Chart::Axis::Y1 ).setTitle( (factor == 1) ? std::string( "Counts" )
+                                            : ("Counts per " + std::to_string( factor ) + " Channels") );
 
   WPainter p( &device );
   chart.paint( p );

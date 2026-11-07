@@ -481,7 +481,12 @@
   <!-- Messages for saving/updating/deleting from internal state DB -->
   <message id="db-new-tag">Created new tag '{1}' under snapshot '{2}'.</message>
   <message id="db-new-snapshot">Created new snapshot '{1}'.</message>
+  <message id="db-updated-state">Stored current work to '{1}'.</message>
   <message id="db-error-no-name">You must specify a name</message>
+  <message id="db-newer-auto-saved-work">This state has more recent unsaved work, auto-saved {1}.</message>
+  <message id="db-load-auto-saved-work">Load auto-saved work</message>
+  <message id="db-no-auto-saved-work">The auto-saved work is no longer available.</message>
+  <message id="db-err-loading-auto-saved-work">Failed to load the auto-saved work.</message>
   <message id="db-name-empty-txt">(Name to store under)</message>
   <message id="db-dec-empty-txt">(Optional description)</message>
   <message id="db-dec-export-msg">

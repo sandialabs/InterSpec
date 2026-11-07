@@ -23,56 +23,43 @@
 
 #include "InterSpec_config.h"
 
-#include <set>
 #include <map>
+#include <set>
+#include <cmath>
+#include <regex>
+#include <tuple>
+#include <limits>
 #include <string>
+#include <cstring>
+#include <optional>
 #include <algorithm>
+#include <functional>
 
-#include <Wt/WAny.h>
 #include <boost/functional/hash.hpp>
 
+#include <Wt/WAny.h>
 #include <Wt/WFont.h>
-#include <Wt/Utils.h>
-#include <Wt/WText.h>
-#include <Wt/WBreak.h>
-#include <Wt/WLineF.h>
-#include <Wt/WPoint.h>
 #include <Wt/WRectF.h>
-#include <Wt/WEvent.h>
 #include <Wt/WLength.h>
 #include <Wt/WPainter.h>
-#include <Wt/WIconPair.h>
-#include <Wt/WPopupMenu.h>
-#include <Wt/WPushButton.h>
-#include <Wt/WCircleArea.h>
-#include <Wt/WApplication.h>
-#include <Wt/WPainterPath.h>
 #include <Wt/Chart/WAxis.h>
-#include <Wt/WRadioButton.h>
-#include <Wt/WButtonGroup.h>
+#include <Wt/WApplication.h>
 #include <Wt/WPaintDevice.h>
-#include <Wt/WFontMetrics.h>
+#include <Wt/WPainterPath.h>
 #include <Wt/Chart/WDataSeries.h>
 #include <Wt/Chart/WCartesianChart.h>
-#if( WT_VERSION >= 0x3030600 )
 #include <Wt/Chart/WStandardChartProxyModel.h>
-#endif
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 
-typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
-#include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
-#include "InterSpec/SpecMeas.h"
-#include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
-#include "SpecUtils/StringAlgo.h"
-#include "InterSpec/InterSpecApp.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/SpectrumChart.h"
-#include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
+#include "InterSpec/SpectrumDataModel.h"
 
 #include "src/js_inline/SpectrumChart.js"
 
@@ -84,8 +71,18 @@ using SpecUtils::Measurement;
 namespace
 {
   const WColor ns_defaultTimeHighlightColors[3] = { {255,255,0,155}, {0,255,255,75}, {0,128,0,75} };
-  const WColor ns_default_peakFillColor( 0, 51, 255, 155 );
+  const WColor ns_default_peakFillColor( 0, 51, 255 );
   const WColor ns_default_occupiedTimeColor( 128, 128, 128, 75 );
+
+  // Appearance constants of SpectrumChartD3.js (and its CSS)
+  const int ns_major_tick_length = 7;
+  const int ns_minor_tick_length = 4;
+  const double ns_peak_fill_opacity = 0.6;
+  const double ns_ref_line_top_pad = 30.0;
+  const WColor ns_major_grid_color( 179, 179, 179 );
+  const WColor ns_minor_grid_color( 230, 230, 230 );
+  const WColor ns_legend_fill_color( 245, 245, 245, 128 );
+  const WColor ns_legend_stroke_color( 185, 185, 185, 204 );
   
 struct MyTickLabel
 {
@@ -99,125 +96,244 @@ struct MyTickLabel
   : u(v), tickLength(length), label(l)
   { }
 };//struct MyTickLabel
-  
+
+
+double estimated_text_width( const size_t nchars, const double font_px );
+
+
+/** Returns if an axis' labels have been hidden, by setting a blank label format (e.g., " "). */
+bool labels_hidden( const Chart::WAxis &axis )
+{
+  return SpecUtils::trim_copy( axis.labelFormat().toUTF8() ).empty();
+}
+
+
+/** JavaScript's `Number.toPrecision(precision)`; e.g., (1500,3) gives "1.50e+3", and (0.05,3) gives "0.0500". */
+std::string js_to_precision( const double v, const int precision )
+{
+  if( IsNan(v) || IsInf(v) )
+    return IsNan(v) ? "NaN" : ((v > 0) ? "Infinity" : "-Infinity");
+
+  char buffer[64] = { '\0' };
+  if( v == 0.0 )
+  {
+    snprintf( buffer, sizeof(buffer), "%.*f", std::max(precision - 1, 0), 0.0 );
+    return buffer;
+  }
+
+  // The exponent, after rounding to `precision` significant digits
+  snprintf( buffer, sizeof(buffer), "%.*e", std::max(precision - 1, 0), v );
+  const char * const epos = strchr( buffer, 'e' );
+  const int exponent = epos ? atoi( epos + 1 ) : 0;
+
+  if( epos && ((exponent < -6) || (exponent >= precision)) )
+    return string( buffer, static_cast<size_t>(epos - buffer) ) + "e" + ((exponent < 0) ? "-" : "+") + std::to_string( std::abs(exponent) );
+
+  snprintf( buffer, sizeof(buffer), "%.*f", std::max( precision - 1 - exponent, 0 ), v );
+  return buffer;
+}//std::string js_to_precision( const double v, const int precision )
+
+
+/** Formats a y-axis number as SpectrumChartD3.js's `formatYNumber` does; e.g., 1000 gives "1e+3",
+ 1500 gives "1.5e+3", 0.5 gives "0.5", and 500 gives "500".
+ */
+std::string format_y_number( const double v )
+{
+  if( (v >= 1000.0) || (v < 0.1) )
+  {
+    static const std::regex zeros_before_e( "\\.0+e" ), trailing_zeros( "\\.0+$" ), zeros_e( "0+e" );
+
+    string t = js_to_precision( v, 3 );
+    t = std::regex_replace( t, zeros_before_e, "e" );
+    t = std::regex_replace( t, trailing_zeros, "" );
+    if( t.find('.') != string::npos )
+      t = std::regex_replace( t, zeros_e, "e" );
+    return t;
+  }//if( v >= 1000.0 || v < 0.1 )
+
+  char buffer[64] = { '\0' };
+  const int ndecimal = std::max( 0, 2 - static_cast<int>( std::floor( std::log10(v) ) ) );
+  snprintf( buffer, sizeof(buffer), "%.*f", ndecimal, v );
+  string t = buffer;
+  if( t.find('.') != string::npos )
+  {
+    while( !t.empty() && (t.back() == '0') )
+      t.pop_back();
+  }
+  if( !t.empty() && (t.back() == '.') )
+    t.pop_back();
+  return t;
+}//format_y_number(...)
+
+
+/** Formats a rate to about `ndig` significant digits, as SpectrumChartD3.js's legend does. */
+std::string legend_rate_str( const double val, const int ndig )
+{
+  char buffer[64] = { '\0' };
+  const double powTen = std::floor( std::log10( std::fabs(val) ) );
+
+  if( (val == std::floor(val)) || IsNan(powTen) || IsInf(powTen) )
+    snprintf( buffer, sizeof(buffer), "%.0f", val );
+  else if( (powTen < -4) || (powTen > ndig) )
+  {
+    // As JavaScript's `toExponential(ndig)`; e.g., "6.096e-6", not "6.096e-06"
+    static const std::regex exponent_zeros( "e([+-])0+([0-9])" );
+    snprintf( buffer, sizeof(buffer), "%.*e", ndig, val );
+    return std::regex_replace( string(buffer), exponent_zeros, "e$1$2" );
+  }
+  else if( powTen < 3 )
+    snprintf( buffer, sizeof(buffer), "%.*f", static_cast<int>( ndig - powTen ), val );
+  else
+    snprintf( buffer, sizeof(buffer), "%.0f", val );
+
+  return buffer;
+}//std::string legend_rate_str( const double val, const int ndig )
+
+
+/** The number of decimals d3's `scale.tickFormat(20, "f")` uses for an axis spanning `span`, which is
+ how SpectrumChartD3.js formats x-axis labels.
+ */
+int d3_tick_precision( const double span )
+{
+  if( !(span > 0.0) || IsInf(span) )
+    return 0;
+
+  const double m = 20.0;
+  double step = std::pow( 10.0, std::floor( std::log10( span / m ) ) );
+  const double err = m / span * step;
+  if( err <= 0.15 )
+    step *= 10.0;
+  else if( err <= 0.35 )
+    step *= 5.0;
+  else if( err <= 0.75 )
+    step *= 2.0;
+
+  const double p = -std::floor( std::log10( step ) + 0.01 );
+  return (IsNan(p) || IsInf(p)) ? 0 : static_cast<int>( std::clamp( p, 0.0, 20.0 ) );
+}//int d3_tick_precision( const double span )
+
+
+/** "Nice" linear ticks from `rmin` to `rmax`, about `nlabel` of them labeled; a port of
+ `_linearTicks` in SpectrumChartD3.js.  `format(value, interval)` gives the label of a major tick,
+ where `interval` is the spacing of major ticks.
+ */
+void linear_ticks( const double rmin, const double rmax, const double nlabel, const int max_iter,
+                   const std::function<WString(double,double)> &format,
+                   std::vector<MyTickLabel> &ticks )
+{
+  const double EPSILON = 1.0E-3;
+  const double range = rmax - rmin;
+  const double n = std::pow( 10.0, std::floor( std::log10( range/nlabel ) ) );
+  const double msd = range / (n * nlabel);
+
+  if( IsNan(n) || IsInf(n) || !(nlabel > 0.0) || (n <= 0.0) || IsNan(msd) )
+    return;
+
+  int subdashes = 0;
+  double interval = 0.0;
+  if( msd < 1.5 )
+  {
+    subdashes = 2;
+    interval = 0.5*n;
+  }else if( msd < 3.3 )
+  {
+    subdashes = 5;
+    interval = 0.5*n;
+  }else if( msd < 7 )
+  {
+    subdashes = 5;
+    interval = n;
+  }else
+  {
+    subdashes = 10;
+    interval = n;
+  }
+
+  const double biginterval = subdashes * interval;
+  double start = biginterval * std::floor( (rmin + 1.0E-15) / biginterval );
+  if( start < (rmin - EPSILON*interval) )
+    start += biginterval;
+
+  for( int i = -static_cast<int>( std::floor( std::floor(start - rmin) / interval ) ); ; ++i )
+  {
+    if( i > max_iter )  //JIC
+      break;
+
+    const double v = start + interval * i;
+    if( (v - rmax) > EPSILON * interval )
+      break;
+
+    const bool major = ((i % subdashes) == 0);
+    const WString label = (major && (i >= 0)) ? format( v, biginterval ) : WString();
+    ticks.push_back( MyTickLabel( v, major ? MyTickLabel::Long : MyTickLabel::Short, label ) );
+  }//for( intervals to draw ticks for )
+}//void linear_ticks(...)
+
+
 void getXAxisLabelTicks( const SpectrumChart *chart,
                          const Chart::WAxis& axis,
                          std::vector<MyTickLabel>& ticks )
 {
-  //This function equivalentish to WAxis::getLabelTicks(...) but makes it so
-  //  the x axis labels (hopefully) always line up nicely where we want them
-  //  e.g. kinda like multiple of 5, 10, 25, 50, 100, etc.
-  static double EPSILON = 1E-3;
-    
-  //  int rc = 0;
-  //  if (axis.chart()->model())
-  //    rc = axis.chart()->model()->rowCount();
-    
+  // The ticks fall on "nice" values (multiples of 5, 10, 25, 50, 100, etc.), with labels formatted
+  //  like SpectrumChartD3.js does - but always with enough decimals to tell labels apart.
   if( axis.scale() != Chart::AxisScale::Linear )
     throw runtime_error( "getXAxisLabelTicks called for wrong type of graphs");
-    
+
   const double rendermin = axis.minimum();
   const double rendermax = axis.maximum();
-    
+
   const double minxpx = chart->mapToDevice(rendermin,0).x();
   const double maxxpx = chart->mapToDevice(rendermax,0).x();
   const double widthpx = maxxpx - minxpx;
-  const int nlabel = static_cast<int>( widthpx / chart->xAxisMinimumLabelSpacing() );
-    
-  const double range = rendermax - rendermin;
-  double renderInterval;// = range / 10.0;
-  const double n = std::pow(10, std::floor(std::log10(range/nlabel)));
-  const double msd = range / nlabel / n;
-    
-    
-  if( IsNan(n) || IsInf(n) || nlabel<=0 || n<=0.0 )  //JIC
+
+  const bool hide_labels = labels_hidden( axis );
+  const int d3_precision = d3_tick_precision( rendermax - rendermin );
+
+  const auto format = [=]( const double value, const double interval ) -> WString {
+    if( hide_labels )
+      return WString();
+
+    int ndecimal = 0;
+    while( (ndecimal < 6)
+           && (std::fabs( interval*std::pow(10.0,ndecimal) - std::round(interval*std::pow(10.0,ndecimal)) ) > 1.0E-6) )
+      ++ndecimal;
+
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.*f", std::max( ndecimal, d3_precision ), value );
+    if( std::string(buffer).find_first_not_of( "-0." ) == string::npos )
+      return WString::fromUTF8( "0" );  //Avoid "-0"
+    return WString::fromUTF8( buffer );
+  };//format
+
+  // Labels are at least `xAxisMinimumLabelSpacing()` apart, and further if they are wide enough
+  //  to otherwise run into each other (as SpectrumChartD3.js allows more room for more digits).
+  const double font_px = axis.labelFont().sizeLength( 12 ).toPixels();
+  double nlabel = std::floor( widthpx / chart->xAxisMinimumLabelSpacing() );
+  for( int iteration = 0; iteration < 5; ++iteration )
   {
     ticks.clear();
-    return;
-  }
-    
-  int subdashes = 0;
-    
-  if (msd < 1.5)
-  {
-    subdashes = 2;
-    renderInterval = 0.5*n;
-  }else if (msd < 3.3)
-  {
-    subdashes = 5;
-    renderInterval = 0.5*n;
-  }else if (msd < 7)
-  {
-    subdashes = 5;
-    renderInterval = n;
-  }else
-  {
-    subdashes = 10;
-    renderInterval = n;
-  }
-  
-  
-  //Should set axis label format here based on range and number of labels.
-  //Right now it is based on only range (see setXAxisRange(...)), and in
-  //  situations where there is only one digit after the deicmal place, multiple
-  //  labels in a row can be exactly the same.
-  
-  const double biginterval = subdashes * renderInterval;
-  double startEnergy = biginterval * std::floor((rendermin + std::numeric_limits<double>::epsilon()) / biginterval);
-    
-  if( startEnergy < (rendermin-EPSILON*renderInterval) )
-    startEnergy += biginterval;
-    
-  for( int i = -int(floor(startEnergy-rendermin)/renderInterval); ; ++i)
-  {
-    if( i > 5000 )  //JIC
-      break;
-      
-    double v = startEnergy + renderInterval * i;
-      
-    if( (v - rendermax) > EPSILON * renderInterval )
-      break;
-      
-    WString t;
-    
-    if( i>=0 && ((i % subdashes) == 0) )
+    linear_ticks( rendermin, rendermax, nlabel, 5000, format, ticks );
+
+    size_t max_chars = 0;
+    double label_spacing_px = widthpx;
+    std::optional<double> prev_label_px;
+    for( const MyTickLabel &tick : ticks )
     {
-      if( renderInterval < 1.0 )
-      {
-        //If x-range is more than 10, but we have more than 10 labels, then labelFormat flag is
-        //  "%.0f", meaining no decimals, but we need decimals or else multiple ticks will have same
-        //  label - so here we will .
-        //  The intervals should almost always be something like 0.1, 0.2, etc, but because I didnt
-        //  go through the logic totally yet to make sure, I'll leave in a default catchall that
-        //  will print to four places, and then just remove trailing zeros.
-        const char *fmtflag = "%.4f";
-        bool removetrail = false;
-        if( renderInterval == 0.1 || renderInterval == 0.2 || renderInterval == 0.5 )
-          fmtflag = "%.1f";
-        else if( renderInterval == 0.25 )
-          fmtflag = "%.2f";
-        else
-          removetrail = true;
-        
-        char buffer[32] = { '\0' };
-        int nchar = snprintf( buffer, sizeof(buffer), fmtflag, v);
-        
-        //Remove trailing zeros
-        if( removetrail && (--nchar > 0) && (nchar < static_cast<int>(sizeof(buffer))) )
-        {
-          while( (nchar > 0) && ((buffer[nchar] == '0') || (buffer[nchar] == '.')) )
-            buffer[nchar--] = '\0';
-        }
-        
-        t = buffer;
-      }else
-      {
-        t = axis.label(v);
-      }
-    }//If( a major tick )
-    
-    ticks.push_back(MyTickLabel(v, i % subdashes == 0 ? MyTickLabel::Long : MyTickLabel::Short, t));
-  }//for( intervals to draw ticks for )
+      if( tick.label.empty() )
+        continue;
+      max_chars = std::max( max_chars, tick.label.value().size() );
+      const double px = chart->mapToDevice( tick.u, 0 ).x();
+      if( prev_label_px )
+        label_spacing_px = std::min( label_spacing_px, px - *prev_label_px );
+      prev_label_px = px;
+    }//for( const MyTickLabel &tick : ticks )
+
+    const double needed_px = estimated_text_width( max_chars, font_px ) + font_px;
+    if( (max_chars == 0) || (label_spacing_px >= needed_px) || (nlabel <= 1.0) )
+      break;
+
+    nlabel = std::max( 1.0, std::floor( nlabel * label_spacing_px / needed_px ) );
+  }//for( iterations to get labels spaced far enough apart )
 }//getXAxisLabelTicks(...)
   
   
@@ -225,329 +341,267 @@ void getYAxisLabelTicks( const SpectrumChart *chart,
                          const Chart::WAxis& axis,
                          std::vector<MyTickLabel> &ticks )
 {
-  //This function equivalentish to WAxis::getLabelTicks(...) but makes it so
-  //  the y axis labels (hopefully) always line up nicely where we want them
-  //  e.g. kinda like multiple of 5, 10, 25, 50, 100, etc.
+  // A port of SpectrumChartD3.js's `yticks()`: ticks fall on "nice" values, and on a log axis, at
+  //  each decade, with minor ticks at 2 through 9 times the decade, when there is room.
   const double EPSILON = 1.0E-3;
-    
+
   const double renderymin = axis.minimum();
   const double renderymax = axis.maximum();
   const double minypx = chart->mapToDevice(0.0,renderymax,axis.id()).y();
   const double maxypx = chart->mapToDevice(0.0,renderymin,axis.id()).y();
   const double heightpx = maxypx - minypx;
-  
-  //note that maxypx actually cooresponds to the smalles y-values
-  const double range = renderymax - renderymin;
-    
+
+  const bool hide_labels = labels_hidden( axis );
+  const auto label = [hide_labels]( const double v ) -> WString {
+    return hide_labels ? WString() : WString::fromUTF8( format_y_number( v ) );
+  };
+
   switch( axis.scale() )
   {
     case Chart::AxisScale::Discrete: case Chart::AxisScale::Date: case Chart::AxisScale::DateTime:
-    {
-      throw runtime_error( "getYAxisLabelTicks() for SpectrumChart can only"
-                          " handle linear and log scales");
-      break;
-    }//case: unsupported scale type
-        
+      throw runtime_error( "getYAxisLabelTicks() for SpectrumChart can only handle linear and log scales");
+
     case Chart::AxisScale::Linear:
     {
-      //px_per_div: pixels between major and/or minor labels.
-      const int px_per_div = 50;
-        
-      //nlabel: approx number of major + minor labels we would like to have.
-      const int nlabel = heightpx / px_per_div;
-        
-      //renderInterval: Inverse of how many large labels to place between powers
-      //  of 10 (1 is none, 0.5 is is one).
-      double renderInterval;
-        
-      //n: approx how many labels will be used
-      const double n = std::pow(10, std::floor(std::log10(range/nlabel)));
-        
-      //msd: approx how many sub dashes we would expect there to have to be
-      //     to satisfy the spacing of labels we want with the given range.
-      const double msd = range / nlabel / n;
-        
-        
-      if( IsNan(n) || IsInf(n) || nlabel<=0 || n<=0.0 )  //JIC
-      {
-        ticks.clear();
-        return;
-      }
-        
-      int subdashes = 0;
-        
-      if( msd < 1.5 )
-      {
-        subdashes = 2;
-        renderInterval = 0.5*n;
-      }else if (msd < 3.3)
-      {
-        subdashes = 5;
-        renderInterval = 0.5*n;
-      }else if (msd < 7)
-      {
-        subdashes = 5;
-        renderInterval = n;
-      }else
-      {
-        subdashes = 10;
-        renderInterval = n;
-      }
-        
-      const double biginterval = subdashes * renderInterval;
-      double starty = biginterval * std::floor((renderymin + std::numeric_limits<double>::epsilon()) / biginterval);
-        
-      if( starty < (renderymin-EPSILON*renderInterval) )
-        starty += biginterval;
-        
-      for( int i = -int(floor(starty-renderymin)/renderInterval); ; ++i)
-      {
-        if( i > 500 )  //JIC
-          break;
-          
-        const double v = starty + renderInterval * i;
-          
-        if( (v - renderymax) > EPSILON * renderInterval )
-          break;
-          
-        WString t;
-        if( i>=0 && ((i % subdashes) == 0) )
-          t = axis.label(v);
-        MyTickLabel::TickLength len = ((i % subdashes) == 0) ? MyTickLabel::Long : MyTickLabel::Short;
-          
-        ticks.push_back( MyTickLabel(v, len, t));
-      }//for( intervals to draw ticks for )
-        
+      linear_ticks( renderymin, renderymax, heightpx / 50.0, 500,
+                    [&label]( const double v, const double ){ return label( v ); }, ticks );
       break;
     }//case Chart::AxisScale::Linear:
-        
+
     case Chart::AxisScale::Log:
     {
+      const int yMinPrefPow = -1;  // i.e., floor( log10(logYAxisMin=0.1) )
+
       //Get the power of 10 just below or equal to rendermin.
-      int minpower = (renderymin > 0.0) ? (int)floor( log10(renderymin) ) : -1;
-        
+      int minpower = (renderymin > 0.0) ? static_cast<int>( std::floor( log10(renderymin) ) ) : yMinPrefPow;
+
       //Get the power of 10 just above or equal to renderymax.  If renderymax
       //  is less than or equal to 0, set power to be 0.
-      int maxpower = (renderymax > 0.0) ? (int)ceil( log10(renderymax) ): 0;
-        
+      int maxpower = (renderymax > 0.0) ? static_cast<int>( std::ceil( log10(renderymax) ) ) : 0;
+
       //Adjust minpower and maxpower
       if( maxpower == minpower )
       {
         //Happens when renderymin==renderymax which is a power of 10
         ++maxpower;
         --minpower;
-      }else if( maxpower > 2 && minpower < -1)
+      }else if( (maxpower > 2) && (minpower < yMinPrefPow) )
       {
         //We had a tiny value (possibly a fraction of a count), as well as a
         //  large value (>1000).
-        minpower = -1;
-      }else if( maxpower >= 0 && minpower < -1 && (maxpower-minpower) > 6 )
+        minpower = yMinPrefPow;
+      }else if( (maxpower >= 0) && (minpower < yMinPrefPow) && ((maxpower - minpower) > 6) )
       {
         //we had a tiny power (1.0E-5), as well as one between 1 and 999,
         //  so we will only show the most significant decades
         minpower = maxpower - 5;
       }//if( minpower == maxpower ) / else / else
-        
-        
+
       //numdecades: number of decades the data covers, including the decade
       //  above and below the data.
       const int numdecades = maxpower - minpower + 1;
-        
+
       //minpxdecade: minimum number of pixels we need per decade.
-      const int minpxdecade = 25;
-        
-      //labeldelta: the number of decades between successive labeled large ticks
+      const double minpxdecade = 25.0;
+
+      //labeldelta: the number of decades between successive labeled large ticks;
       //  each decade will have a large tick regardless
       int labeldelta = 1;
-        
+
       //nticksperdecade: number of small+large ticks per decade
       int nticksperdecade = 10;
-        
-        
-      if( (heightpx / minpxdecade) < numdecades )
+
+      if( std::floor( heightpx / minpxdecade ) < numdecades )
       {
-        labeldelta = numdecades / (heightpx / minpxdecade);
+        labeldelta = static_cast<int>( std::round( numdecades / (heightpx / minpxdecade) ) );
+        labeldelta = std::max( labeldelta, 1 );
         nticksperdecade = 1;
-//        if( labeldelta < 3 )
-//          nticksperdecade = 10;
-//        else if( labeldelta < 4 )
-//          nticksperdecade = 5;
-//        else
-//          nticksperdecade = 3;
-      }//if( (heightpx / minpxdecade) < numdecades )
-        
-        
-      int nticks = 0;
+      }
+
       int nmajorticks = 0;
-        
+
       for( int decade = minpower; decade <= maxpower; ++decade )
       {
-        const double startcounts = std::pow( 10.0, decade);
+        const double startcounts = std::pow( 10.0, decade );
         const double deltacounts = 10.0 * startcounts / nticksperdecade;
         const double eps = deltacounts * EPSILON;
-          
-        if( (startcounts - renderymin) > -eps && (startcounts - renderymax) < eps )
+
+        if( ((startcounts - renderymin) > -eps) && ((startcounts - renderymax) < eps) )
         {
-          const WString t = ((decade%labeldelta)==0) ? axis.label(startcounts)
-          : WString("");
-          ++nticks;
           ++nmajorticks;
-          ticks.push_back( MyTickLabel(startcounts, MyTickLabel::Long, t));
-        }//if( startcounts >= renderymin && startcounts <= renderymax )
-          
-          
-        for( int i = 1; i < (nticksperdecade-1); ++i )
+          const WString t = ((decade % labeldelta) == 0) ? label( startcounts ) : WString();
+          ticks.push_back( MyTickLabel( startcounts, MyTickLabel::Long, t ) );
+        }
+
+        for( int i = 1; i < (nticksperdecade - 1); ++i )
         {
           const double y = startcounts + i*deltacounts;
-          const WString t = axis.label(y);
-            
-          if( (y - renderymin) > -eps && (y - renderymax) < eps )
-          {
-            ++nticks;
-            ticks.push_back( MyTickLabel(y, MyTickLabel::Short, t));
-          }
-        }//for( int i = 1; i < nticksperdecade; ++i )
+          if( ((y - renderymin) > -eps) && ((y - renderymax) < eps) )
+            ticks.push_back( MyTickLabel( y, MyTickLabel::Short ) );
+        }
       }//for( int decade = minpower; decade <= maxpower; ++decade )
-        
-      //If we have a decent number of (sub) labels, the user can orient
-      //  themselves okay, so well get rid of the minor labels.
-      if( (nticks > 8 || (heightpx/nticks) < 25 || nmajorticks > 1) && nmajorticks > 0 )
+
+      // Only decades are labeled; if none are in range, we'll label the first and last ticks.
+      if( (nmajorticks < 1) && !ticks.empty() )
       {
-        for( size_t i = 0; i < ticks.size(); ++i )
-          if( ticks[i].tickLength == MyTickLabel::Short )
-            ticks[i].label = "";
+        ticks.front().label = label( ticks.front().u );
+        ticks.back().label = label( ticks.back().u );
       }
-        
+
       if( ticks.empty() )
       {
-        cerr << "Forcing a single axis point in" << endl;
-        const double y = 0.5*(renderymin+renderymax);
-        const WString t = axis.label(y);
-        ticks.push_back( MyTickLabel(y, MyTickLabel::Long, t));
+        const double y = 0.5*(renderymin + renderymax);
+        ticks.push_back( MyTickLabel( y, MyTickLabel::Long, label( y ) ) );
       }
+
+      break;
     }//case Chart::AxisScale::Log:
   }//switch( axis.scale() )
-    
 }//getYAxisLabelTicks(...)
-  
-  
-/** Places all peaks that share a ROI into contiguous order, where the contigous
-   peaks are sorted by the mean of their first peak, and within the ROI the
-   peaks are sorted as well.
- */
-void prepare_gaus_peaks_for_iterating( std::vector< PeakModel::PeakShrdPtr > &gauspeaks )
-{
-  if( gauspeaks.size() < 2 )
-    return;
-  
-  std::sort( begin(gauspeaks), end(gauspeaks), &PeakDef::lessThanByMeanShrdPtr);
-  
-  //We will almost never need to re-group the peaks (only if there is a peak
-  //  in a ROI energy range, that doesnt share the ROI with the other peaks - a
-  //  very rare thing to happen), so we will do a check that is hopefully a
-  //  little faster than doing the grouping to detect this condition.
-  bool need_to_group = false;
-  set<const PeakContinuum *> roiptrsset;
-  const PeakContinuum *last_cont = nullptr;
-  for( size_t i = 0; !need_to_group && (i < gauspeaks.size()); ++i )
-  {
-    const PeakContinuum * const cont = gauspeaks[i]->continuum().get();
-    if( cont != last_cont )
-    {
-      need_to_group = roiptrsset.count( cont);
-      roiptrsset.insert( cont);
-      last_cont = cont;
-    }
-  }
-  if( !need_to_group )
-    return;
-  
-  //We need to do the grouping.
-  std::vector< std::pair<const PeakContinuum *,std::vector<uint16_t> > > roi_to_index;
-  for( size_t i = 0; i < gauspeaks.size(); ++i )
-  {
-    const uint16_t peak_index = static_cast<uint16_t>(i);
-    const PeakContinuum * const cont = gauspeaks[i]->continuum().get();
-    
-    //Find index to this PeakContinuum in the vector
-    const size_t num_index = roi_to_index.size();
-    size_t index = roi_to_index.size();
-    for( size_t i = num_index; (index==num_index) && (i > 0); --i )
-    {
-      if( roi_to_index[i-1].first == cont )
-        index = i-1;
-    }
-    
-    //If we didnt find an index, add an entry into the vector
-    if( index == num_index )
-    {
-      roi_to_index.resize(num_index + 1);
-      roi_to_index.back().first = cont;
-    }
-    
-    roi_to_index[index].second.push_back( peak_index);
-  }//for( size_t i = 0; i < gauspeaks.size(); ++i )
-  
-  /*
-   //If we hadnt already detected if we needed needed to do the grouping, we
-   //  could with this block of code (leaving in to test against a little more).
-  bool all_sequential = true;
-  for( const auto &roi_p : roi_to_index )
-  {
-    for( size_t i = 1; all_sequential && (i < roi_p.second.size()); ++i )
-      all_sequential = ((roi_p.second[i-1] + 1) == roi_p.second[i]);
-    if( !all_sequential )
-      break;
-  }//for( const auto &roi_p : roi_to_index )
-  
-  if( all_sequential )
-    return;
-   */
-  
-  std::vector< PeakModel::PeakShrdPtr > newpeaks;
-  newpeaks.reserve( gauspeaks.size());
-  for( const auto &roi_pind : roi_to_index )
-  {
-    for( auto ind : roi_pind.second )
-      newpeaks.push_back( gauspeaks[ind]);
-  }
-  
-  assert( newpeaks.size() == gauspeaks.size());
-  
-  newpeaks.swap( gauspeaks);
-}//void prepare_gaus_peaks_for_iterating(...)
-  
-  
-std::vector<std::shared_ptr<const PeakDef> >::const_iterator next_gaus_peaks(
-   std::vector<std::shared_ptr<const PeakDef> >::const_iterator peak_start,
-   std::vector<std::shared_ptr<const PeakDef> >::const_iterator peak_end,
-   std::vector<std::shared_ptr<const PeakDef> > &peaks,
-   std::shared_ptr<const Measurement> data )
-{
-  peaks.clear();
-  
-  if( peak_start == peak_end )
-    return peak_end;
-  
-  std::shared_ptr<const PeakDef> first_peak = *peak_start;
 
-  peaks.push_back( first_peak);
-  
-  for( auto iter = peak_start + 1; iter != peak_end; ++iter )
+
+/** Appends the pixel points `i0` through `i1` (in reverse, if `rev`) to `path`, leaving out points
+ within 0.1 px (vertically) of the line drawn past them; a port of `coords` in SpectrumChartD3.js.
+ The first point is moved to, if `move_to`, or else a line is drawn to it.
+ */
+void append_thinned( WPainterPath &path, const std::vector<double> &xpx,
+                     const std::function<double(size_t)> &ypx,
+                     const size_t i0, const size_t i1, const bool rev, const bool move_to )
+{
+  double ax = 0.0, ay = 0.0, px = 0.0, py = 0.0;
+  double lo = 0.0, hi = 0.0;  // The range of slopes, from the last point drawn, of a line within 0.1 px of all points since
+  bool first = true;
+
+  const auto draw = [&]( const double x, const double y ){
+    if( first && move_to )
+      path.moveTo( x, y );
+    else
+      path.lineTo( x, y );
+    first = false;
+    ax = x;
+    ay = y;
+    lo = -std::numeric_limits<double>::infinity();
+    hi = std::numeric_limits<double>::infinity();
+  };//draw
+
+  for( size_t j = i0; j <= i1; ++j )
   {
-    std::shared_ptr<const PeakDef> peak = *iter;
-    if( peak->continuum() == first_peak->continuum() )
+    const size_t i = rev ? (i0 + i1 - j) : j;
+    const double x = xpx[i], y = ypx(i);
+
+    if( j == i0 )
     {
-      peaks.push_back( peak);
+      draw( x, y );
     }else
     {
-      return iter;
+      double u = std::fabs( x - ax );
+      const double slope = (y - ay) / u;
+      if( !(slope >= lo) || !(slope <= hi) )
+      {
+        draw( px, py );
+        u = std::fabs( x - ax );
+      }
+
+      if( u > 0.0 )
+      {
+        lo = std::max( lo, (y - ay - 0.1) / u );
+        hi = std::min( hi, (y - ay + 0.1) / u );
+      }
+    }//if( j == i0 ) / else
+
+    px = x;
+    py = y;
+  }//for( size_t j = i0; j <= i1; ++j )
+
+  if( i1 > i0 )
+    draw( px, py );
+}//void append_thinned(...)
+
+
+/** Adds a vertical line, from `y0` to `y1` at `x`, to `path` - dashed by the given pattern of
+ alternating dash and gap lengths (as SVG `stroke-dasharray`), or solid if it is empty.
+
+ Dashes are drawn as separate segments, so any pattern works with every paint device.
+ */
+void add_dashed_vline( WPainterPath &path, const double x, const double y0, const double y1,
+                       const std::vector<double> &pattern )
+{
+  const double len = std::fabs( y1 - y0 );
+  const double dir = (y1 >= y0) ? 1.0 : -1.0;
+
+  double total = 0.0;
+  for( const double d : pattern )
+    total += d;
+
+  if( pattern.empty() || !(total > 0.0) )
+  {
+    path.moveTo( x, y0 );
+    path.lineTo( x, y1 );
+    return;
+  }
+
+  // An odd number of entries is repeated to make it even, as SVG does.
+  std::vector<double> dashes = pattern;
+  if( dashes.size() % 2 )
+    dashes.insert( end(dashes), begin(pattern), end(pattern) );
+
+  double pos = 0.0;
+  for( size_t i = 0; pos < len; i = (i + 1) % dashes.size() )
+  {
+    const double next = std::min( len, pos + dashes[i] );
+    if( (i % 2) == 0 )
+    {
+      path.moveTo( x, y0 + dir*pos );
+      path.lineTo( x, y0 + dir*next );
     }
-  }//for( iter = peak_start; iter != peak_end; ++iter )
-  
-  return peak_end;
-}//next_gaus_peaks(...)
-  
+    pos = next;
+  }//for( loop over dashes )
+}//void add_dashed_vline(...)
+
+
+/** An estimate of the width of `nchars` characters of a font `font_px` pixels tall, for when a
+ paint device cant measure text (e.g., WSvgImage); generous, as digits are about 0.56 em wide.
+ */
+double estimated_text_width( const size_t nchars, const double font_px )
+{
+  return 0.6 * font_px * nchars;
+}
+
+
+/** The width of `text` in the painters current font: measured if the paint device can, or else
+ estimated.
+ */
+double text_width( WPainter &painter, const WString &text )
+{
+  WPaintDevice * const device = painter.device();
+  if( device && device->features().test( PaintDeviceFeatureFlag::FontMetrics ) )
+    return device->measureText( text ).width();
+  return estimated_text_width( text.value().size(), painter.font().sizeLength( 12 ).toPixels() );
+}
+
+
+/** Returns if two colors have the same RGBA values. */
+bool same_color( const WColor &lhs, const WColor &rhs )
+{
+  return (lhs.red() == rhs.red()) && (lhs.green() == rhs.green())
+         && (lhs.blue() == rhs.blue()) && (lhs.alpha() == rhs.alpha());
+}
+
+
+/** Returns `color` with its alpha multiplied by `frac`. */
+WColor with_alpha( const WColor &color, const double frac )
+{
+  const int alpha = static_cast<int>( std::round( frac * color.alpha() ) );
+  return WColor( color.red(), color.green(), color.blue(), std::clamp( alpha, 0, 255 ) );
+}
+
+
+/** Returns the SpectrumDataModel powering `chart`, or nullptr. */
+SpectrumDataModel *spectrum_model( const Chart::WCartesianChart &chart )
+{
+  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( chart.model().get() );
+  return dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr );
+}
 }//namespace
 
 
@@ -893,33 +947,16 @@ void SpectrumChart::calcRenderRectangle( const Wt::WRectF &rectangle ) const
 }//void calcRenderRectangle( const Wt::WRectF &rectangle )
 
 
-void SpectrumChart::labelRender( Wt::WPainter& painter, const Wt::WString& text,
-                                const Wt::WPointF& p, const Wt::WColor& color,
-                                Wt::WFlags<Wt::AlignmentFlag> flags,
-                                double angle, int margin) const
-{
-  const WPen oldpen = painter.pen();
-  painter.setPen( WPen(color));
-  renderLabel( painter, text, p, /*color,*/ flags, angle, margin);
-  painter.setPen( oldpen);
-}//void labelRender(...)
-
-
 void SpectrumChart::render(	Wt::WPainter &painter, const Wt::WRectF &rectangle ) const
 {
   calcRenderRectangle( rectangle);
   
+  // Grid lines, if enabled, are drawn by `paint(...)` over the spectrum and peaks, as in
+  //  SpectrumChartD3.js
   if( initLayout( rectangle, painter.device() ) )
   {
     renderChartBackground(painter, rectangle);
-    renderGridLines(painter, Chart::Axis::X);
-    renderGridLines(painter, Chart::Axis::Y1);
-    renderGridLines(painter, Chart::Axis::Y2);
     renderSeries(painter);
-    
-//    if( axis(Chart::Axis::Y2).isVisible() )
-//      axis(Chart::Axis::Y2).setTitle( "Neutron CPS"); //
-    
     renderAxes(painter, Chart::AxisProperty::Line | Chart::AxisProperty::Labels);
     renderLegend(painter);
   }//if( initLayout(rectangle) )
@@ -964,13 +1001,8 @@ void SpectrumChart::renderChartBackground( Wt::WPainter &painter, const Wt::WRec
   }
   
   
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *specModel = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *specModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( specModel);
-#endif
+  SpectrumDataModel * const specModel = spectrum_model( *this );
+  assert( specModel );
 
   
   if( textInMiddleOfChart().empty()
@@ -1052,54 +1084,45 @@ void SpectrumChart::renderGridLines( Wt::WPainter &painter,
       break;
   }//switch( axistype )
   
-  const Chart::WAxis &yaxis = WCartesianChart::axis(Chart::Axis::Y1);
-  const Chart::WAxis &xaxis = WCartesianChart::axis(Chart::Axis::X);
-  
-  const double ymin = yaxis.minimum();
-  const double ymax = yaxis.maximum();
-  const double xmin = xaxis.minimum();
-  const double xmax = xaxis.maximum();
-  
-  
+  // As SpectrumChartD3.js: a line at every tick, lighter for minor ticks.  If the axis' grid pen
+  //  was set (i.e., isnt Wt's default), it is used; otherwise the D3 charts colors are (which it
+  //  uses for every color theme).
+  const bool default_pen = (axis.gridLinesPen() == WPen( StandardColor::Gray ));
+  const WPen major_pen = default_pen ? WPen( ns_major_grid_color ) : axis.gridLinesPen();
+  WPen minor_pen = major_pen;
+  minor_pen.setColor( default_pen ? ns_minor_grid_color : with_alpha( major_pen.color(), 0.45 ) );
+  const Chart::Axis yaxis_id = vertical ? Chart::Axis::Y1 : axistype;
+  const WRectF &area = chartArea();
+
   WPainterPath majorGridPath, minorGridPath;
-  
-  for( size_t i = 0; i < ticks.size(); ++i )
+  majorGridPath.setOpenSubPathsEnabled( true );
+  minorGridPath.setOpenSubPathsEnabled( true );
+
+  for( const MyTickLabel &tick : ticks )
   {
-    const double d = ticks[i].u;
-    
-    const double x0 = vertical ? d : xmin;
-    const double x1 = vertical ? d : xmax;
-    const double y0 = vertical ? ymin : d;
-    const double y1 = vertical ? ymax : d;
-    
-    if( ticks[i].tickLength == MyTickLabel::Long )
+    if( tick.tickLength == MyTickLabel::Zero )
+      continue;
+
+    WPainterPath &path = (tick.tickLength == MyTickLabel::Long) ? majorGridPath : minorGridPath;
+    if( vertical )
     {
-      majorGridPath.moveTo( hv(mapToDevice(x0,y0)));
-      majorGridPath.lineTo( hv(mapToDevice(x1,y1)));
-    }else if( ticks[i].tickLength == MyTickLabel::Short )
+      const double x = std::floor( mapToDevice( tick.u, 0.0 ).x() ) + 0.5;
+      path.moveTo( x, area.top() );
+      path.lineTo( x, area.bottom() );
+    }else
     {
-      minorGridPath.moveTo( hv(mapToDevice(x0,y0)));
-      minorGridPath.lineTo( hv(mapToDevice(x1,y1)));
+      const double y = std::floor( mapToDevice( 0.0, tick.u, yaxis_id ).y() ) + 0.5;
+      path.moveTo( area.left(), y );
+      path.lineTo( area.right(), y );
     }
-  }//for( size_t i = 0; i < ticks.size(); ++i )
-  
-  if( !majorGridPath.isEmpty() )
-    painter.strokePath(majorGridPath, axis.gridLinesPen());
-  
-  WPen minorpen = axis.gridLinesPen();
-  
-  WColor minorColor = minorpen.color();
-  if( minorColor.name().empty() )
-  {
-    minorColor.setRgb( minorColor.red(), minorColor.green(), minorColor.blue(), 40);
-    minorpen.setColor( minorColor);
-  }//if( minorColor.name().empty() )
-  
-  minorpen.setWidth( 1);
-  
+  }//for( const MyTickLabel &tick : ticks )
+
   if( !minorGridPath.isEmpty() )
-    painter.strokePath(minorGridPath, minorpen);
-}//void renderXGrid( Wt::WPainter &painter, const Wt::WAxis &axis ) const
+    painter.strokePath( minorGridPath, minor_pen );
+
+  if( !majorGridPath.isEmpty() )
+    painter.strokePath( majorGridPath, major_pen );
+}//void renderGridLines( Wt::WPainter &painter, const Wt::WAxis &axis ) const
 
 
 
@@ -1139,13 +1162,8 @@ void SpectrumChart::renderAxes( Wt::WPainter &painter,
   if( !isLargeEnough(painter) )
     return;
   
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( m);
-#endif
+  SpectrumDataModel * const m = spectrum_model( *this );
+  assert( m );
   
   if( m )
   {
@@ -1172,14 +1190,12 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
     return;
 
   WPointF axisStart, axisEnd;
-  AlignmentFlag labelHFlag = AlignmentFlag::Center;
 
   axisStart.setY(chartArea().bottom() + 0.5);
   axisEnd.setY(chartArea().top() + 0.5);
 
   enum { Left = 0x1, Right = 0x2, Both = 0x3 } tickPos = Left;
 
-  const int TICK_LENGTH = 5;
   Chart::AxisValue location = yaxis.location();
   if( yaxis.id() == Chart::Axis::Y2 )
     location = Chart::AxisValue::Maximum;
@@ -1191,7 +1207,6 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
       const double x = chartArea().left() - yaxis.margin() + 0.5;
       axisStart.setX( x);
       axisEnd.setX( x);
-      labelHFlag = AlignmentFlag::Right;
       tickPos = Left;
 
       break;
@@ -1202,7 +1217,6 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
       double x = chartArea().right() + yaxis.margin() + 0.5;
       axisStart.setX(x);
       axisEnd.setX(x);
-      labelHFlag = AlignmentFlag::Left;
       tickPos = Right;
 
       break;
@@ -1213,7 +1227,6 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
       double x = std::floor(map(0, 0, Chart::Axis::Y1).x()) + 0.5;
       axisStart.setX(x);
       axisEnd.setX(x);
-      labelHFlag = AlignmentFlag::Right;
       tickPos = Both;
 
       break;
@@ -1228,42 +1241,31 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
   }//switch( location )
 
 
-  //Render Title
+  //Render Title, rotated, along the left edge of the image (or the right edge, for Y2)
   if( properties.test(Chart::AxisProperty::Labels) && !yaxis.title().empty() )
   {
-/*
-     WFont oldFont2 = painter.font();
-     painter.setFont( axis.titleFont());
-
-     const double u = axisStart.x();
-     const double x = u + (labelHFlag == AlignmentFlag::Right ? 15 : -15);
-     const double y = chartArea().top() - 8;
-     const WFlags<AlignmentFlag> flag = labelHFlag | AlignmentFlag::Bottom;
-     labelRender( painter, axis.title(), WPointF(x,y), black, flag, 0, 0);
-     painter.setFont(oldFont2);
-*/
-
-    //XXX - wont work for Y2Axis
-    const WPen oldPen = painter.pen();
-    const WFont oldFont = painter.font();
-    const WBrush oldBrush = painter.brush();
+    const double h = axisStart.y() - axisEnd.y();
+    const double fontheight = yaxis.titleFont().sizeLength().toPixels();
 
     painter.save();
-    painter.rotate( -90);
-    painter.setPen( m_textPen); //axis(Chart::Axis::Y1).titleFont()
+    painter.setPen( m_textPen);
     painter.setBrush( WBrush());
     painter.setFont( yaxis.titleFont());
 
-    const double h = axisStart.y() - axisEnd.y();
-
-    const WString ytitle = axis(Chart::Axis::Y1).title();
-    if( !ytitle.empty() )
-      painter.drawText( -axisStart.y(), 1.0, h, 20,
-                        AlignmentFlag::Center | AlignmentFlag::Top, ytitle);
+    if( yaxis.id() == Chart::Axis::Y2 )
+    {
+      // Reading downwards, against the right edge
+      const double right = painter.window().width();
+      painter.translate( right, axisEnd.y() );
+      painter.rotate( 90 );
+      painter.drawText( 0.0, 1.0, h, fontheight + 6, AlignmentFlag::Center | AlignmentFlag::Top, yaxis.title() );
+    }else
+    {
+      painter.rotate( -90);
+      painter.drawText( -axisStart.y(), 1.0, h, fontheight + 6,
+                        AlignmentFlag::Center | AlignmentFlag::Top, yaxis.title() );
+    }
     painter.restore();
-    painter.setPen( oldPen);
-    painter.setFont( oldFont);
-    painter.setBrush( oldBrush);
   }//if( draw labels and there is a title )
   
   
@@ -1283,6 +1285,7 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
   const size_t nticks = std::min( int(ticks.size()), 1000);
   
   WPainterPath ticksPath;
+  ticksPath.setOpenSubPathsEnabled( true );
   
   painter.save();
   const WFont oldFont = painter.font();
@@ -1295,9 +1298,9 @@ void SpectrumChart::renderYAxis( Wt::WPainter &painter,
     const double yval = ticks[i].u;
     const double ypx = std::floor(mapToDevice(1.0,yval,yaxis.id()).y()) + 0.5;
     
-    const int tickLength = ticks[i].tickLength == MyTickLabel::Long
-                            ? TICK_LENGTH : TICK_LENGTH / 2;
-    
+    const int tickLength = (ticks[i].tickLength == MyTickLabel::Long)
+                            ? ns_major_tick_length : ns_minor_tick_length;
+
     if( ticks[i].tickLength != MyTickLabel::Zero )
     {
       double x = axisStart.x() + (tickPos & Right ? +tickLength : 0);
@@ -1365,6 +1368,7 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
   
   //This function adapted from WChart2DRenderer::renderAxis(...) in order to
   //  make x axis labels always line up nice
+  const WPen oldPen = painter.pen();
   WFont oldFont1 = painter.font();
   WFont labelFont = axis.labelFont();
   painter.setFont(labelFont);
@@ -1428,24 +1432,28 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
     }
     
     const double titlewidthpx = 10.0*axis.title().narrow().size();
-    
+
     WPainterPath ticksPath;
-    
+    ticksPath.setOpenSubPathsEnabled( true );
+
     std::vector<MyTickLabel> ticks;
     getXAxisLabelTicks( this, axis, ticks);
-    
-    const int TICK_LENGTH = 5;
-    
+
     const size_t nticks = std::min( int(ticks.size()), 1000);
-    
+
+    // The last label is left off if it would run past the right of the chart, as in SpectrumChartD3.js
+    size_t last_label_index = nticks;
+    for( size_t i = 0; i < nticks; ++i )
+      last_label_index = ticks[i].label.empty() ? last_label_index : i;
+
     for( size_t i = 0; i < nticks; ++i )
     {
       const double d = ticks[i].u;
       const double dd = std::floor(mapToDevice(d,0).x()) + 0.5;
-      
-      const int tickLength = ticks[i].tickLength == MyTickLabel::Long
-      ? TICK_LENGTH : TICK_LENGTH / 2;
-      
+
+      const int tickLength = (ticks[i].tickLength == MyTickLabel::Long)
+                              ? ns_major_tick_length : ns_minor_tick_length;
+
       const Chart::AxisValue location = axis.location();
       
       if( ticks[i].tickLength != MyTickLabel::Zero )
@@ -1491,29 +1499,54 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
           const double labelwidthpx = 10.0*ticks[i].label.toUTF8().size();
           const double labelendpx = labelPos.x() + 0.5*labelwidthpx;
           drawText = (labelendpx < titlestartpx);
-        }//if( m_compactAxis )
+        }else if( i == last_label_index )
+        {
+          const double labelendpx = labelPos.x() + 0.5*text_width( painter, ticks[i].label );
+          drawText = ((labelendpx - 10.0) <= chartArea().right());
+        }//if( m_compactAxis ) / else
         
         if( drawText )
         {
           const int margin = m_compactAxis ? 0 : 3;
-          labelRender( painter, ticks[i].label,
-                      labelPos, WColor(StandardColor::Black), labelFlags, axis.labelAngle(), margin);
-        }//if( labelRender )
+          renderLabel( painter, ticks[i].label, labelPos, labelFlags, axis.labelAngle(), margin );
+        }//if( drawText )
       }//if( draw label text )
     }//for( size_t i = 0; i < nticks; ++i )
     
     if( properties.test(Chart::AxisProperty::Line) )
+    {
       painter.strokePath(ticksPath, axis.pen());
-    
+
+      // An arrow at the right end of the axis, when there is more data to the right, as
+      //  SpectrumChartD3.js does
+      const SpectrumDataModel * const m = spectrum_model( *this );
+      const shared_ptr<const Measurement> xhist = m ? m->histUsedForXAxis() : nullptr;
+      const double data_max = (xhist && xhist->num_gamma_channels()) ? xhist->gamma_energy_max() : 0.0;
+      if( (location == Chart::AxisValue::Minimum) && (plotAreaPadding(Side::Right) >= 9)
+          && (data_max > (axis.maximum() + 1.0E-6*fabs(data_max))) )
+      {
+        WPainterPath arrow;
+        arrow.moveTo( maxxpx + 2.0, lineypx - 3.0 );
+        arrow.lineTo( maxxpx + 2.0, lineypx + 8.0 );
+        arrow.lineTo( maxxpx + 8.0, lineypx + 2.0 );
+        arrow.closeSubPath();
+        painter.save();
+        painter.setPen( axis.pen() );
+        painter.setBrush( WBrush( axis.pen().color() ) );
+        painter.drawPath( arrow );
+        painter.restore();
+      }//if( there is data past the right of the chart )
+    }//if( properties.test(Chart::AxisProperty::Line) )
+
     if( properties.test(Chart::AxisProperty::Labels) && !axis.title().empty() )
     {
       WFont oldFont2 = painter.font();
       WFont titleFont = axis.titleFont();
       painter.setFont(titleFont);
-      
+
       //Normal mode is vertical
       const bool vertical = orientation() == Orientation::Vertical;
-      
+
       if( m_compactAxis && vertical )
       {
         const WPen oldpen = painter.pen();
@@ -1522,24 +1555,25 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
         painter.setPen( WPen(Wt::StandardColor::Transparent));
         const double fontheight = titleFont.sizeLength().toPixels();
         const WString &title = axis.title();
-        const WPointF pos(chartArea().right() - titlewidthpx, lineypx + TICK_LENGTH);
-        
-        const double x = pos.x(), y = lineypx + TICK_LENGTH, h = fontheight + 1;
+        const WPointF pos(chartArea().right() - titlewidthpx, lineypx + ns_major_tick_length);
+
+        const double x = pos.x(), y = lineypx + ns_major_tick_length, h = fontheight + 1;
         painter.drawRect( x, y, titlewidthpx, h);
         painter.setPen( oldpen);
         painter.setBrush( oldbrush);
         
-        labelRender( painter, title, pos, m_textPen.color(), AlignmentFlag::Top | AlignmentFlag::Left, 0, 0);
+        renderLabel( painter, title, pos, AlignmentFlag::Top | AlignmentFlag::Left, 0, 0 );
       }else
       {
+        // Just below the tick labels
+        const double label_height = axis.labelFont().sizeLength( 12 ).toPixels();
+        const double title_y = lineypx + ns_major_tick_length + 3 + label_height + 2;
         if( vertical )
-          labelRender( painter, axis.title(),
-                      WPointF(chartArea().center().x(), lineypx + 22),
-                      m_textPen.color(), AlignmentFlag::Top | AlignmentFlag::Center, 0, 0);
+          renderLabel( painter, axis.title(), WPointF(chartArea().center().x(), title_y),
+                       AlignmentFlag::Top | AlignmentFlag::Center, 0, 0 );
         else
-          labelRender( painter, axis.title(),
-                      WPointF(chartArea().right(), lineypx),
-                      m_textPen.color(), AlignmentFlag::Top | AlignmentFlag::Left, 0, 8);
+          renderLabel( painter, axis.title(), WPointF(chartArea().right(), lineypx),
+                       AlignmentFlag::Top | AlignmentFlag::Left, 0, 8 );
       }
       
       painter.setFont(oldFont2);
@@ -1547,6 +1581,7 @@ void SpectrumChart::renderXAxis( Wt::WPainter &painter,
   }
   
   painter.setFont(oldFont1);
+  painter.setPen( oldPen );
 }//void renderXAxis(...)
 
 
@@ -1584,12 +1619,14 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
   //  unsigned rows = m_model ? m_model->rowCount() : 0;
   
   
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
+  SpectrumDataModel * const m = spectrum_model( *this );
   assert( m);
 
 
-  const int nrow = (!!m ? m->rowCount() : 0);
+  if( !m )
+    return;
+
+  const int nrow = m->rowCount();
 
   for( unsigned g = 0; g < seriesv.size(); ++g )
   {
@@ -1603,11 +1640,7 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
     {
       WDataSeries &series = *seriesv[i];
 
-      bool doSeries = iterator->startSeries( series, 0.0, 1, 0);
-
-
-
-      //should consider if (pxPerBin > 3*penWidth)
+      const bool doSeries = iterator->startSeries( series, 0.0, 1, 0);
 
       if( doSeries )
       {
@@ -1627,24 +1660,12 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
             const double minx = mapFromDevice( WPointF(minXPx,0.0) ).x();
             const double maxx = mapFromDevice( WPointF(maxXPx,0.0) ).x();
             
-            int minRow = (!!m ? m->findRow( minx ) : 0);
-            int maxRow = (!!m ? m->findRow( maxx ) : 0);
-            
-            if( minRow == maxRow )
+            // The rows in view (even if just part of one row is)
+            const int minRow = std::max( m->findRow( minx ), 0 );
+            const int maxRow = std::min( m->findRow( maxx ), nrow - 1 );
+            if( (nrow < 1) || (minRow > maxRow) )
               continue;
-            
-            minRow = std::max( minRow, 0);
-            maxRow = std::min( maxRow, nrow-1);
-            
-            const double pxPerBin = ((maxXPx-minXPx) / (maxRow - minRow));
-            const double penWidth = series.pen().width().toPixels();
-#if( IOS || ANDROID )
-            const bool drawHist = (pxPerBin > 2.0*penWidth);
-#else
-            const bool drawHist = (pxPerBin > penWidth);
-#endif
-//            cerr << "pxPerBin=" << pxPerBin << ", penWidth=" << penWidth << endl;
-            
+
             iterator->startSegment( currentXSegment, currentYSegment, csa);
             
             painter.save();
@@ -1666,19 +1687,13 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
                 continue;
               
               const double y = asNumber( m->data(yIndex));
-              
-              if( !drawHist )
-              {
-                const double x = asNumber( m->data(xIndex));
-                iterator->newValue( series, x, y, 0, xIndex, yIndex);
-              }else
-              {
-                //should consider if (pxPerBin > 3*penWidth)
-                const double x_start = m->rowLowEdge( xIndex.row());
-                const double x_end = x_start + m->rowWidth( xIndex.row());
-                iterator->newValue( series, x_start, y, 0, xIndex, yIndex);
-                iterator->newValue( series, x_end, y, 0, xIndex, yIndex);
-              }//if( pxPerBin < 3.0 )
+
+              // Drawn as a histogram (stair steps), as SpectrumChartD3.js does; the rebin
+              //  factor should keep channels at least a pixel wide (see displayRebinFactor(...)).
+              const double x_start = m->rowLowEdge( xIndex.row());
+              const double x_end = x_start + m->rowWidth( xIndex.row());
+              iterator->newValue( series, x_start, y, 0, xIndex, yIndex);
+              iterator->newValue( series, x_end, y, 0, xIndex, yIndex);
             }//for( unsigned row = 0; row < rows; ++row )
             
             iterator->endSegment();
@@ -1714,11 +1729,6 @@ void SpectrumChart::iterateSpectrum( SpectrumRenderIterator *iterator,
 
 
 
-/*
- * See also: http://www.webtoolkit.eu/wt/blog/2010/03/02/javascript_that_is_c__
- */
-#define INLINE_JAVASCRIPT(...) #__VA_ARGS__
-
 SpectrumChart::SpectrumChart()
 : Wt::Chart::WCartesianChart(),
   m_widthInPixels( 0 ),
@@ -1728,7 +1738,6 @@ SpectrumChart::SpectrumChart()
   m_occupiedMarkerColor( ns_default_occupiedTimeColor ),
   m_timeHighlightColors{ ns_defaultTimeHighlightColors[0], ns_defaultTimeHighlightColors[1], ns_defaultTimeHighlightColors[2] },
   m_legendType( SpectrumChart::NoLegend ),
-  m_paintedLegendWidth(-100.0f),
   m_xAxisUnits( SpectrumChart::kUndefinedUnits ),
   m_compactAxis( false ),
   m_xAxisMinLabelSpacing( 50.0 ),
@@ -1744,13 +1753,11 @@ SpectrumChart::SpectrumChart()
   setType( Chart::ChartType::Scatter);
   //m_chart->axis(Chart::Axis::X).setLabelFormat( "%.2f");
   axis(Chart::Axis::X).setScale( Chart::AxisScale::Linear);
-  axis(Chart::Axis::Y1).setLabelFormat( "%.3g");
   
-  for( PeakLabels label = PeakLabels(0);
-       label < kNumPeakLabels; label = PeakLabels(label+1) )
+  for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
   {
     m_peakLabelsToShow[label] = false;
-    m_peakLabelsColors[label] = (0xFF << 24);  //black with alpha=255
+    m_peakLabelsColors[label] = 0;  //i.e., use the text color
   }//for( loop over all labels )
   
 //  setLayoutSizeAware( false);
@@ -1760,32 +1767,11 @@ SpectrumChart::SpectrumChart()
 }//SpectrumChart( constructor )
 
 
-//void SpectrumChart::handleClick( Wt::WMouseEvent e )
-//{
-//  cerr << "Was clicked" << endl;
-  //Wt-popup PopupDivMenu wt-no-reparent Wt-popupmenu Wt-outset
-  //Wt-popup Wt-popupmenu Wt-outset
-//  WPoint p( e.window().x, e.window().y);
-//  m_rightClickMenu->setHidden( false);
-//  m_rightClickMenu->popup( p);
-  
-//  string js = INLINE_JAVASCRIPT(
-//  var fcn = function(id,x,y){
-//    var e = Wt.WT.getElement(id);
-//    e.style['left'] = x + 'px';
-//    e.style['top'] = y + 'px';
-//  };);
-//  js += " fcn('" + m_rightClickMenu->id() + "',"
-//        + std::to_string(e.window().x) + ","
-//        + std::to_string(e.window().y) + ");";
-//  doJavaScript( js);
-//}
-
 SpectrumChart::~SpectrumChart()
 {
 }//~SpectrumChart()
 
-void SpectrumChart::setPeakLabelColor( SpectrumChart::PeakLabels label,
+void SpectrumChart::setPeakLabelColor( PeakLabelType label,
                                        uint32_t red, uint32_t green,
                                        uint32_t blue, uint32_t alpha )
 {
@@ -1798,19 +1784,19 @@ void SpectrumChart::setPeakLabelColor( SpectrumChart::PeakLabels label,
   blue  = (blue << 16);
   alpha = (alpha << 24);
   
-  m_peakLabelsColors[label] = (red | green | blue | alpha);
+  m_peakLabelsColors[static_cast<int>(label)] = (red | green | blue | alpha);
 }//void setPeakLabelColor(...)
 
 
-void SpectrumChart::setShowPeakLabel( SpectrumChart::PeakLabels label, bool show )
+void SpectrumChart::setShowPeakLabel( PeakLabelType label, bool show )
 {
-  m_peakLabelsToShow[label] = show;
+  m_peakLabelsToShow[static_cast<int>(label)] = show;
 }//void setShowPeakLabel(...)
 
 
-bool SpectrumChart::showingPeakLabel( SpectrumChart::PeakLabels label ) const
+bool SpectrumChart::showingPeakLabel( PeakLabelType label ) const
 {
-  return m_peakLabelsToShow[label];
+  return m_peakLabelsToShow[static_cast<int>(label)];
 }
 
 void SpectrumChart::peakModelDataChanged( const WModelIndex &topLeft,
@@ -1828,9 +1814,9 @@ void SpectrumChart::peakModelDataChanged( const WModelIndex &topLeft,
   }else if( left <= PeakModel::kPhotoPeakEnergy )
   {
   }
-  else if( (left == PeakModel::kUserLabel && m_peakLabelsToShow[kShowPeakUserLabel])
-          || (left == PeakModel::kIsotope && m_peakLabelsToShow[kShowPeakNuclideLabel])
-          || (left == PeakModel::kPhotoPeakEnergy && m_peakLabelsToShow[kShowPeakNuclideEnergies])  )
+  else if( (left == PeakModel::kUserLabel && showingPeakLabel( PeakLabelType::ShowPeakUserLabel ))
+          || (left == PeakModel::kIsotope && showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel ))
+          || (left == PeakModel::kPhotoPeakEnergy && showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies ))  )
   {
     //This next statment is poorly formed, and only catches if a single data thingy
     //  is changed - I'll fix this at some point when I'm not so tired
@@ -1860,6 +1846,13 @@ void SpectrumChart::setPeakModel( std::shared_ptr<PeakModel> model )
   m_peakModel->rowsRemoved().connect( this, [this]( const Wt::WModelIndex &, int, int ){ update(); } );
   m_peakModel->rowsInserted().connect( this, [this]( const Wt::WModelIndex &, int, int ){ update(); } );
 }//void setPeakModel( std::shared_ptr<PeakModel> model )
+
+
+void SpectrumChart::setPeaks( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks )
+{
+  m_peaks = std::move( peaks );
+  update();
+}//void setPeaks(...)
 
 
 void SpectrumChart::setXAxisUnits( SpectrumChart::XAxisUnits units )
@@ -2061,17 +2054,8 @@ size_t SpectrumChart::addDecorativeHighlightRegion( const float lowerx,
 
 void SpectrumChart::setXAxisRange( const double x1, const double x2 )
 {
-  const double xrange = x2 - x1;
-  
+  // (labels are formatted according to the range; see getXAxisLabelTicks(...))
   axis(Chart::Axis::X).setRange( x1, x2);
-  
-  //These labels dont
-  if( xrange < 1.0 )
-    axis(Chart::Axis::X).setLabelFormat( "%.2f");
-  else if( xrange < 10.0 )
-    axis(Chart::Axis::X).setLabelFormat( "%.1f");
-  else
-    axis(Chart::Axis::X).setLabelFormat( "%.0f");
 }//void setXAxisRange()
 
 
@@ -2097,13 +2081,8 @@ void SpectrumChart::setAutoXAxisRange()
   //  as well.
   //  Doing this means it's neccasary to re-call setAutoXAxisRange()
   //  whenever you load new data
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( theModel);
-#endif
+  SpectrumDataModel * const theModel = spectrum_model( *this );
+  assert( theModel );
   
   if( theModel )
   {
@@ -2125,26 +2104,27 @@ void SpectrumChart::yAxisRangeFromXRange( const double x0, const double x1,
                                           double &y0, double &y1 )
 {
   y0 = y1 = 0.0;
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *theModel = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( theModel);
-#endif
+  SpectrumDataModel * const theModel = spectrum_model( *this );
+  assert( theModel );
   
   if( !theModel )
     throw runtime_error( "SpectrumChart::setAutoXAxisRange(): warning, you "
                          "should only use the SpectrumChart class with a "
                          "SpectrumChart!");
   
-  theModel->yRangeInXRange( x0, x1, y0, y1);
+  double min_non_zero = 0.0;
+  theModel->yRangeInXRange( x0, x1, y0, y1, &min_non_zero );
     
   if( axis(Chart::Axis::Ordinate).scale() == Chart::AxisScale::Log )
   {
     //Specify the (approx) fraction of the chart that the scale should extend
     //  past where the data where hit.
     const double yfractop = 0.05, yfracbottom = 0.025;
+
+    // As SpectrumChartD3.js: if the data never reaches 1.0, base the minimum on the smallest
+    //  non-zero value, rather than always going down to 0.1.
+    if( (y0 <= 0.0) && (min_non_zero > 0.0) && (min_non_zero < 0.1) && (y1 < 1.0) )
+      y0 = 0.5*min_non_zero;
     
     const double y0Intitial = ((y0<=0.0) ? 0.1 : y0);
     double y1Intitial = ((y1<=0.0) ? 1.0 : y1);
@@ -2264,7 +2244,10 @@ void SpectrumChart::paintTextInMiddleOfChart( WPainter &painter ) const
 
 void SpectrumChart::paint( WPainter &painter, const WRectF &rectangle ) const
 {
-  //This function is called after (or maybye from within) SpectrumChart::paintEvent(...)
+  // WCartesianChart only sets this from paintEvent(...); without it, SVGs get jagged curves.
+  painter.setRenderHint( RenderHint::Antialiasing, true );
+
+  // Draws the background, spectra, and axes (see render(...))
   Chart::WCartesianChart::paint( painter, rectangle);
   
   paintTextInMiddleOfChart( painter);
@@ -2278,8 +2261,6 @@ void SpectrumChart::paint( WPainter &painter, const WRectF &rectangle ) const
     const double ymax = axis(Chart::Axis::Y1).maximum();
     if( ymax > 0.0 && ymin < -0.05*ymax )
     {
-      const WPen oldPen = painter.pen();
-      
       const double x_min = axis(Chart::Axis::X).minimum();
       const double x_max = axis(Chart::Axis::X).maximum();
       const WPointF leftpoint = mapToDevice( x_min, 0.0);
@@ -2289,19 +2270,45 @@ void SpectrumChart::paint( WPainter &painter, const WRectF &rectangle ) const
       painter.setPen( WPen(Wt::StandardColor::Gray));
       painter.drawLine( leftpoint, rightpoint);
       painter.restore();
-      painter.setPen( oldPen);
     }//if( ymax > 0.0 && ymin < -0.01*ymax )
   }//if( axis(Chart::Axis::Y1).scale() == Chart::AxisScale::Linear )
-  
   
   paintHighlightRegions( painter);
 
   paintPeaks( painter);
-  
-  paintOnChartLegend( painter);
-  
+
+  // Same stacking order as SpectrumChartD3.js: grid over the spectrum and peaks, then reference
+  //  lines, and the legend on top.
+  renderGridLines( painter, Chart::Axis::X );
+  renderGridLines( painter, Chart::Axis::Y1 );
+  renderGridLines( painter, Chart::Axis::Y2 );
+
   renderReferncePhotoPeakLines( painter);
+
+  paintOnChartLegend( painter);
+
+  paintTitle( painter );
 }//paint( ... )
+
+
+void SpectrumChart::paintTitle( Wt::WPainter &painter ) const
+{
+  // Wt draws the title from `renderLegend(...)`, which we override, so we draw it here.
+  if( title().empty() )
+    return;
+
+  const WFont font = titleFont();
+  const double fontheight = font.sizeLength( 16 ).toPixels();
+  const double height = std::max( chartArea().top(), fontheight );
+
+  painter.save();
+  painter.setFont( font );
+  painter.setPen( m_textPen );
+  painter.setBrush( WBrush() );
+  painter.drawText( WRectF( 0.0, 0.0, painter.window().width(), height ),
+                    AlignmentFlag::Center | AlignmentFlag::Middle, title() );
+  painter.restore();
+}//void paintTitle( Wt::WPainter &painter ) const
 
 
 void SpectrumChart::paintHighlightRegions( Wt::WPainter &painter ) const
@@ -2366,1417 +2373,680 @@ void SpectrumChart::paintHighlightRegions( Wt::WPainter &painter ) const
 }//void paintHighlightRegions( Wt::WPainter& painter ) const
 
 
-
-
-void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter ) const
+bool SpectrumChart::roiCurves( const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                               const std::vector<double> &edges,
+                               const std::vector<double> &counts,
+                               const std::vector<double> *background,
+                               const double xmin, const double xmax, const double px_per_kev,
+                               RoiCurves &curves )
 {
-  using Wt::cpp17::any_cast;
+  // A port of `roiGeometry` in SpectrumChartD3.js; see the comments there too.
+  curves = RoiCurves();
 
-  if( peak.type() != PeakDef::DataDefined )
-    return;
+  const size_t npts = counts.size();
+  if( roi_peaks.empty() || !roi_peaks.front() || (npts < 2) || (edges.size() != (npts + 1))
+     || !(px_per_kev > 0.0) || (background && (background->size() != npts)) )
+    return false;
 
-  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model().get());
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( th1Model);
+  const shared_ptr<const PeakContinuum> continuum = roi_peaks.front()->continuum();
+  if( !continuum )
+    return false;
 
-  if( !th1Model )
-    throw runtime_error( "SpectrumChart::paintNonGausPeak(...): stupid programmer error"
-                         ", SpectrumChart may only be powered by a SpectrumDataModel.");
+  const double xa = std::max( roi_peaks.front()->lowerX(), xmin );
+  const double xb = std::min( roi_peaks.back()->upperX(), xmax );
+  if( !(xb > xa) )
+    return false;
 
-  const std::shared_ptr<const Measurement> data = th1Model->getData();
-  if( !data )
+  // The energy range each peak is drawn over: Gaussians out to an amplitude-dependent number of
+  //  sigma, and skewed peaks until their tails are negligible.
+  const size_t npeaks = roi_peaks.size();
+  const double inf = std::numeric_limits<double>::infinity();
+  vector<pair<double,double>> extents( npeaks, {-inf, inf} );
+  double min_sigma = inf;
+  for( size_t j = 0; j < npeaks; ++j )
   {
-    cerr << "SpectrumChart::paint: No data histogram defined" << endl;
-    return;
-  }//if( !data )
-
-  std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
-  
-  assert( (continuum->type() != PeakContinuum::FlatStepCDF)
-         && (continuum->type() != PeakContinuum::LinearStepCDF)
-         && (continuum->type() != PeakContinuum::BiLinearStepCDF));
-  
-  const double minDispX = axis(Chart::Axis::X).minimum();
-  const double maxDispX = axis(Chart::Axis::X).maximum();
-  const double minDispY = axis(Chart::Axis::Y1).minimum();
-
-  const WPointF minXDev = mapToDevice( minDispX, minDispY, Chart::Axis::X);
-  const WPointF maxXDev = mapToDevice( maxDispX, minDispY, Chart::Axis::X);
-  
-  const double axisMinX = mapFromDevice( minXDev ).x();
-  const double axisMaxX = mapFromDevice( maxXDev ).x();
-  
-  const float lowerx = static_cast<float>( std::max( peak.lowerX(), axisMinX ));
-  const float upperx = static_cast<float>( std::min( peak.upperX(), axisMaxX ));
-  
-  if( lowerx > upperx )
-    return;
-  
-  const int lowerrow = th1Model->findRow( lowerx);
-  const int upperrow = th1Model->findRow( upperx);
-  
-  //First, draw the continuum
-  
-  WPen pen( peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor());
-  pen.setWidth( 2);
-  painter.setPen( pen);
-  switch( continuum->type() )
-  {
-    case PeakContinuum::NoOffset:
-    break;
-      
-    case PeakContinuum::Constant:      case PeakContinuum::Linear:
-    case PeakContinuum::Quadratic:     case PeakContinuum::Cubic:
-    case PeakContinuum::FlatStep:      case PeakContinuum::LinearStep:
-    case PeakContinuum::BiLinearStep:  case PeakContinuum::External:
-    case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
-    case PeakContinuum::BiLinearStepCDF:
-    {
-      const PeakDef *peak_ptr = &peak; // Note: never actualy gets used since flat/linear sCDF step cant be for data defined
-
-      vector<WPointF> path;
-      for( int row = lowerrow; row <= upperrow; ++row )
-      {
-        const double rowLowX = th1Model->rowLowEdge( row);
-        const double rowUpperX = rowLowX + th1Model->rowWidth( row);
-        const double lowerx = std::max( rowLowX, axisMinX);
-        const double upperx = std::min( rowUpperX, axisMaxX);
-        const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data, &peak_ptr, 1);
-
-        const WPointF startPoint = mapToDevice( lowerx, contheight);
-        const WPointF endPoint = mapToDevice( upperx, contheight);
-      
-        if( fabs(startPoint.x() - endPoint.x()) < 2.0 )
-        {
-          WPointF point( 0.5*(startPoint.x() + endPoint.x()), endPoint.y());
-          path.push_back( point);
-        }else
-        {
-          path.push_back( startPoint);
-          path.push_back( endPoint);
-        }
-      }//for( int row = lowerrow; row <= upperrow; ++row )
-      
-      painter.drawLines( path);
-      break;
-    }//case external or polynomial continuum
-  }//switch( continuum->type() )
-  
-  //Now draw the areas of data above the continuum
-  WPointF startpoint;
-  std::unique_ptr<WPainterPath> drawpath;
-  vector<WPointF> continuumvalues;
-
-  const PeakDef *this_peak_ptr = &peak; // Note: never actualy gets used since flat/linear sCDF step cant be for data defined
-
-  for( int row = lowerrow; row <= upperrow; ++row )
-  {
-    const double rowLowX = th1Model->rowLowEdge( row);
-    const double rowUpperX = rowLowX + th1Model->rowWidth( row);
-
-    const double lowerx = std::max( rowLowX, axisMinX);
-    const double upperx = std::min( rowUpperX, axisMaxX);
-    const Wt::cpp17::any dataheightany = th1Model->displayBinValue( row, SpectrumDataModel::DATA_COLUMN);
-    const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data, &this_peak_ptr, 1);
-    const double dataheight = asNumber( dataheightany);
-    
-    if( !dataheightany.has_value() )
+    const PeakDef &peak = *roi_peaks[j];
+    if( !peak.gausPeak() )
       continue;
-    
-    if( dataheight > contheight )
+
+    if( peak.skewType() == PeakDef::NoSkew )
     {
-      WPointF startPoint = mapToDevice( lowerx, contheight);
-      WPointF endPoint = mapToDevice( upperx, contheight);
-      
-      const bool isnarrow = (fabs(startPoint.x() - endPoint.x()) < 2.0);
-      
-      if( isnarrow )
-        startPoint = WPointF( 0.5*(startPoint.x() + endPoint.x()), endPoint.y());
-      continuumvalues.push_back( startPoint);
-      if( !isnarrow )
-        continuumvalues.push_back( endPoint);
-      
-      startPoint = mapToDevice( lowerx, dataheight);
-      endPoint = mapToDevice( upperx, dataheight);
-     
-      if( isnarrow )
-        startPoint = WPointF( 0.5*(startPoint.x() + endPoint.x()), endPoint.y());
-      
-      if( !drawpath )
+      const double amp = std::max( 1.0, std::fabs( peak.amplitude() ) );
+      const double nsigma = std::max( 4.0, std::sqrt( 2.0*std::log( 4.0E3*amp ) ) );
+      extents[j] = { peak.mean() - nsigma*peak.sigma(), peak.mean() + nsigma*peak.sigma() };
+    }else if( const optional<pair<double,double>> range = peak.visRange() )
+    {
+      extents[j] = *range;
+    }
+
+    if( (extents[j].first <= xb) && (extents[j].second >= xa) )
+      min_sigma = std::min( min_sigma, peak.sigma() );
+  }//for( size_t j = 0; j < npeaks; ++j )
+
+  // Samples are spaced about a pixel apart, but no closer than sigma/16 of the narrowest peak.
+  const double step_px = std::min( 20.0, std::max( 1.0, min_sigma*px_per_kev/16.0 ) );
+
+  const auto bin_width = [&edges]( const size_t k ) -> double { return edges[k+1] - edges[k]; };
+  const auto bin_at = [&]( const double x ) -> size_t {
+    const ptrdiff_t k = (std::upper_bound( begin(edges), begin(edges) + npts, x ) - begin(edges)) - 1;
+    return static_cast<size_t>( std::clamp( k, ptrdiff_t(0), static_cast<ptrdiff_t>(npts - 1) ) );
+  };
+
+  // Sample energies `xs`, and the displayed channel width at each, `ws`.  Samples are anchored to
+  //  channels (an odd number per channel, so its center is included), with the last sample at or
+  //  before xa, and the first at or after xb, kept so the curves can be clipped to [xa, xb].
+  vector<double> &xs = curves.energies;
+  vector<double> ws;
+  xs.push_back( xa );
+  ws.push_back( bin_width( bin_at(xa) ) );
+  bool done = false;
+  for( size_t k = (bin_at(xa) > 0) ? (bin_at(xa) - 1) : 0; !done && (k < npts); ++k )
+  {
+    const double lo = edges[k], w = bin_width(k);
+    if( !(w > 0.0) )
+      continue;
+
+    // (just the center, for channels too wide to resolve the peaks)
+    const size_t m = (w > 2.0*min_sigma) ? 1 : (1 + 2*static_cast<size_t>( std::floor( 0.5*w*px_per_kev/step_px ) ));
+    const double dx = w / m;
+    const double s0 = std::min( m - 1.0, std::max( 0.0, std::floor( (xa - lo)/dx - 0.5 ) ) );
+    for( size_t s = static_cast<size_t>( s0 ); !done && (s < m); ++s )
+    {
+      const double x = lo + (s + 0.5)*dx;
+      if( x <= xa )
       {
-        startpoint = startPoint;
-        drawpath.reset( new WPainterPath());
+        xs[0] = x;
+        ws[0] = w;
+      }else
+      {
+        xs.push_back( x );
+        ws.push_back( w );
+        done = (x >= xb);
       }
-      
-      drawpath->lineTo( startPoint);
-      if( !isnarrow )
-        drawpath->lineTo( endPoint);
-    }//if( dataheight > contheight )
-    
-    if( (contheight >= dataheight) || (row == upperrow) )
-    {
-      if( !!drawpath )
-      {
-        for( auto iter = continuumvalues.rbegin(); iter != continuumvalues.rend(); ++iter )
-          drawpath->lineTo( *iter);
-        
-        drawpath->lineTo( startpoint);
-        
-        painter.fillPath( *drawpath, WBrush( (peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor()) ));
-        //painter.fillPath( *drawpath, WBrush(m_defaultPeakColor));
-        
-        drawpath.reset();
-        continuumvalues.clear();
-      }//if( !!drawpath )
-    }//if( (contheight >= dataheight) || (row == upperrow) )
-  }//for( int row = lowerrow; row <= upperrow; ++row )
-}//void paintNonGausPeak( const Peak &peak )
+    }//for( loop over samples in this channel )
+  }//for( loop over displayed channels )
 
-
-double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
-                    const SpectrumDataModel *th1Model,
-                    std::shared_ptr<const PeakDef> prevPeak,
-                    std::shared_ptr<const PeakDef> nextPeak,
-                    const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks )
-{
-  const double bin_x_min = th1Model->rowLowEdge( row);
-  const double bin_x_max = bin_x_min + th1Model->rowWidth( row);
-
-
-  double yval = 0.0;
-
-  switch( peak.continuum()->type() )
+  if( !done )
   {
-    case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
-    case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
-    case PeakContinuum::Cubic:        case PeakContinuum::External:
-    {
-      std::shared_ptr<const SpecUtils::Measurement> data;
-      yval = peak.continuum()->offset_integral( bin_x_min, bin_x_max, data, nullptr, 0);
-      break;
-    }
-
-    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
-    case PeakContinuum::BiLinearStep:
-    {
-      std::shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
-      if( data )
-        yval = peak.continuum()->offset_integral( bin_x_min, bin_x_max, data, nullptr, 0);
-      break;
-    }
-
-    case PeakContinuum::FlatStepCDF:  case PeakContinuum::LinearStepCDF:
-    case PeakContinuum::BiLinearStepCDF:
-    {
-      std::shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
-      if( data )
-        yval = peak.continuum()->offset_integral( bin_x_min, bin_x_max, data, roi_peaks);
-      break;
-    }
-  }//switch( peak.continuum()->type() )
-  
-  if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
-    yval -= th1Model->data( row, th1Model->backgroundColumn());
-
-  return yval;
-  
-//  double distToPrev = std::numeric_limits<double>::infinity();
-//  double distToNext = std::numeric_limits<double>::infinity();
-//  const double distToCurrent = fabs( peak.mean() - bin_x_min);
-//  if( prevPeak )
-//    distToPrev = fabs( prevPeak->mean() - bin_x_min);
-//  if( nextPeak )
-//    distToNext = fabs( nextPeak->mean() - bin_x_min);
-//  
-//  if( (distToCurrent<=distToPrev) && (distToCurrent<=distToNext) )
-//  {
-//    if( peak.offsetType() >= PeakDef::Constant )
-//      ystart += peak.offset_integral( bin_x_min, bin_x_max);
-//  }else if( prevPeak && (distToPrev<=distToNext) )
-//  {
-//    if( peak.offsetType() >= PeakDef::Constant )
-//      ystart += prevPeak->offset_integral( bin_x_min, bin_x_max);
-//  }else if( nextPeak )  //the if( nextPeak ) shouldnt be necessary
-//  {
-//    ystart += nextPeak->offset_integral( bin_x_min, bin_x_max);
-//  }
-
-//  return ystart;
-}//double peakBackgroundVal(...)
-
-
-double SpectrumChart::peakYVal( const int row, const PeakDef &peak,
-                                const SpectrumDataModel *th1Model,
-                               std::shared_ptr<const PeakDef> prevPeak,
-                               std::shared_ptr<const PeakDef> nextPeak,
-                               const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks )
-{
-  double bin_x_min = th1Model->rowLowEdge( row);
-  double bin_width = th1Model->rowWidth( row);
-  double bin_x_max = bin_x_min + bin_width;
-
-  double ystart = 0.0;
-  ystart += peak.gauss_integral( bin_x_min, bin_x_max);
-  ystart += peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak, roi_peaks);
-
-  return ystart;
-}//double peakYVal(...)
-
-
-void SpectrumChart::visibleRange( double &axisMinX, double &axisMaxX,
-                                  double &axisMinY, double &axisMaxY ) const
-{
-  axisMinX = axis(Chart::Axis::X).minimum();
-  axisMaxX = axis(Chart::Axis::X).maximum();
-  axisMinY = axis(Chart::Axis::Y1).minimum();
-  axisMaxY = axis(Chart::Axis::Y1).maximum();
-  
-  
-  //Wt::Chart draws about 5 pixels to the left of axisMinX, so lets
-  //  compensate for this.
-  //Note that for newer versions of Wt, a function axisPadding() may be
-  //  available rather than hard-coding in this 5.0
-  // XXX - below might not be completely working
-  WPointF minPoint = mapToDevice( axisMinX, axisMinY, Chart::Axis::X);
-  minPoint.setX( minPoint.x() - axisPadding());
-  minPoint = mapFromDevice( minPoint, Chart::Axis::X);
-  axisMinX = minPoint.x();
-  
-  WPointF maxPoint = mapToDevice( axisMaxX, axisMaxY, Chart::Axis::X);
-  maxPoint.setX( maxPoint.x() + axisPadding());
-  maxPoint = mapFromDevice( maxPoint, Chart::Axis::X);
-  axisMaxX = maxPoint.x();
-}//void visibleXRange(...) const
-
-
-float SpectrumChart::xUnitsPerPixel() const
-{
-  const double yValMin = axis(Chart::Axis::Y1).minimum();
-  const double xValMin = axis(Chart::Axis::X).minimum();
-  const double xValMax = axis(Chart::Axis::X).maximum();
-  
-  const WPointF minpx = mapToDevice( xValMin, yValMin, Chart::Axis::X);
-  const WPointF maxpx = mapToDevice( xValMax, yValMin, Chart::Axis::X);
-  
-  return static_cast<float>( (xValMax - xValMin) / (maxpx.x() - minpx.x()));
-}//float xUnitsPerPixel() const
-
-
-bool SpectrumChart::gausPeakDrawRange( int &minrow, int &maxrow,
-                                       const PeakDef &peak,
-                                       const double axisMinX,
-                                       const double axisMaxX ) const
-{
-  if( !peak.gausPeak() )
-    return false;
-  
-  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model().get());
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-
-  assert( th1Model);
-
-  double minx = peak.lowerX();
-  double maxx = peak.upperX();
-  
-  std::shared_ptr<const Measurement> dataH = th1Model->getData();
-  if( dataH )
-  {
-    const size_t lower_channel = dataH->find_gamma_channel( peak.lowerX());
-    const size_t upper_channel = dataH->find_gamma_channel( peak.upperX());
-    minx = dataH->gamma_channel_lower(lower_channel) + 0.001;
-    maxx = dataH->gamma_channel_upper(upper_channel);
-  }//if( dataH )
-
-  
-  try
-  {
-    minrow = th1Model->findRow( minx);
-    maxrow = th1Model->findRow( maxx);
-    if( maxrow >= th1Model->rowCount() )
-      maxrow = th1Model->rowCount() - 1;
-    
-    if( minx>maxx )
-      return false;
-
-    double bin_x_min = th1Model->rowLowEdge( minrow);
-    double bin_width = th1Model->rowWidth( minrow);
-    double bin_x_max = bin_x_min + bin_width;
-  
-    //Lets not draw the part of the peak than might less than the minimum X of
-    //  the x-axis
-    while( (bin_x_max < axisMinX) && (minrow < maxrow) )
-    {
-      ++minrow;
-      bin_x_min = th1Model->rowLowEdge( minrow);
-      bin_width = th1Model->rowWidth( minrow);
-      bin_x_max = bin_x_min + bin_width;
-    }//while( (xstart < axisMinX) && (minrow < maxrow) )
-    
-    bin_x_min = th1Model->rowLowEdge( maxrow);
-    while( (bin_x_min > axisMaxX) && (maxrow > minrow) )
-    {
-      --maxrow;
-      bin_x_min = th1Model->rowLowEdge( maxrow);
-    }//while( (xstart < axisMinX) && (minrow < maxrow) )
-    
-    return (minrow < maxrow);
-  }catch(...)
-  {
-    cerr << "Shouldnt have caught errror in SpectrumChart::gausPeakDrawRange(...)" << endl;
-    return false;
+    xs.push_back( xb );
+    ws.push_back( bin_width( bin_at(xb) ) );
   }
-    
+
+  const size_t n = xs.size();
+  assert( n >= 2 );
+
+  // Each samples window, [x - w/2, x + w/2]
+  vector<double> win_lo( n ), win_hi( n );
+  for( size_t i = 0; i < n; ++i )
+  {
+    win_lo[i] = xs[i] - 0.5*ws[i];
+    win_hi[i] = xs[i] + 0.5*ws[i];
+  }
+
+  // The end samples get moved onto xa and xb, along the line to their neighbor.
+  const double fa = (xa - xs[0]) / (xs[1] - xs[0]);
+  const double fb = (xb - xs[n-2]) / (xs[n-1] - xs[n-2]);
+  xs[0] = xa;
+  xs[n-1] = xb;
+
+  // Sets out[d0..d1] to the counts in each samples window, for samples i0 through i1 (zero for
+  //  others), with the end samples moved onto xa and xb.
+  const auto window_counts = [&]( const std::function<double(double,double)> &integral, vector<double> &out,
+                                  const size_t d0, const size_t d1, const size_t i0, const size_t i1 ){
+    for( size_t i = d0; i <= d1; ++i )
+      out[i] = ((i < i0) || (i > i1)) ? 0.0 : std::max( 0.0, integral( win_lo[i], win_hi[i] ) );
+    const double v0 = out[0], v1 = out[1], vm = out[n-2], vn = out[n-1];
+    if( d0 == 0 )
+      out[0] = v0 + fa*(v1 - v0);
+    if( d1 == (n - 1) )
+      out[n-1] = vm + fb*(vn - vm);
+  };//window_counts
+
+  // Content of displayed channels at energy x, linearly interpolated between channel centers.
+  const auto hist_at = [&]( const double x, const vector<double> &values ) -> double {
+    const auto center = [&edges]( const size_t k ){ return 0.5*(edges[k] + edges[k+1]); };
+    size_t k = bin_at( x );
+    if( (k > 0) && (x < center(k)) )
+      --k;
+    if( k == (npts - 1) )
+      return values[k];
+    const double frac = std::clamp( (x - center(k)) / (center(k+1) - center(k)), 0.0, 1.0 );
+    return values[k] + frac*(values[k+1] - values[k]);
+  };//hist_at
+
+  // The background is taken at channel centers, the same way the background-subtracted data is.
+  const auto bg_at = [&]( const double x ) -> double {
+    return background ? hist_at( x, *background ) : 0.0;
+  };
+
+  // The continuum: step and External continua are defined channel-by-channel, so are drawn from
+  //  the cumulative sum of their channel counts; polynomials are integrated directly.
+  std::function<double(double,double)> continuum_integral;
+  vector<float> cont_energies;
+  vector<double> cont_cumulative;
+  if( PeakDef::continuum_channel_counts( roi_peaks, data, cont_energies, cont_cumulative ) )
+  {
+    const size_t nchan = cont_cumulative.size();
+    cont_cumulative.insert( begin(cont_cumulative), 0.0 );
+    for( size_t i = 1; i <= nchan; ++i )
+      cont_cumulative[i] += cont_cumulative[i-1];
+
+    const auto cdf = [nchan, &cont_energies, &cont_cumulative]( const double x ) -> double {
+      const ptrdiff_t k = (std::upper_bound( begin(cont_energies), end(cont_energies), x ) - begin(cont_energies)) - 1;
+      const size_t i = static_cast<size_t>( std::clamp( k, ptrdiff_t(0), static_cast<ptrdiff_t>(nchan - 1) ) );
+      const double density = (cont_cumulative[i+1] - cont_cumulative[i]) / (cont_energies[i+1] - cont_energies[i]);
+      return cont_cumulative[i] + (x - cont_energies[i])*density;
+    };
+    continuum_integral = [cdf]( const double x0, const double x1 ){ return cdf(x1) - cdf(x0); };
+  }else if( continuum->isPolynomial() && !PeakContinuum::is_step_continuum( continuum->type() ) )
+  {
+    continuum_integral = [continuum]( const double x0, const double x1 ){
+      return continuum->offset_integral( x0, x1, nullptr, nullptr, 0 );
+    };
+  }//if( step or External continuum ) / else if( polynomial )
+
+  // The continuum `c`, minus the background
+  vector<double> &c = curves.continuum;
+  c.assign( n, 0.0 );
+  if( continuum_integral )
+    window_counts( continuum_integral, c, 0, n - 1, 0, n - 1 );
+  for( size_t i = 0; i < n; ++i )
+    c[i] -= bg_at( xs[i] );
+
+  // First sample index for which `pred(i)` is true, for a `pred` that is false and then true.
+  const auto first_true = [n]( const std::function<bool(size_t)> &pred ) -> size_t {
+    size_t lo = 0, hi = n;
+    while( lo < hi )
+    {
+      const size_t mid = (lo + hi) / 2;
+      if( pred(mid) )
+        hi = mid;
+      else
+        lo = mid + 1;
+    }
+    return lo;
+  };//first_true
+
+  curves.peaks.resize( npeaks );
+  for( size_t j = 0; j < npeaks; ++j )
+  {
+    const PeakDef &peak = *roi_peaks[j];
+    RoiCurves::PeakCurve &curve = curves.peaks[j];
+
+    // The samples whose windows the peak is in (the only peak in a ROI is drawn across the whole
+    //  ROI); its fill and outline span one more sample each side, to start and end on what it
+    //  sits on.
+    const bool whole = (!peak.gausPeak() || (npeaks == 1));
+    const double lo = extents[j].first, hi = extents[j].second;
+    const size_t i0 = whole ? 0 : first_true( [&]( size_t i ){ return win_hi[i] >= lo; } );
+    const size_t i1_end = whole ? n : first_true( [&]( size_t i ){ return win_lo[i] > hi; } );
+    if( (i1_end == 0) || (i0 > (i1_end - 1)) )
+      continue;
+    const size_t i1 = i1_end - 1;
+
+    curve.first = (i0 > 0) ? (i0 - 1) : size_t(0);
+    curve.last = std::min( n - 1, i1 + 1 );
+    curve.counts.assign( n, 0.0 );
+
+    if( peak.gausPeak() )
+    {
+      window_counts( [&peak]( const double x0, const double x1 ){ return peak.gauss_integral( x0, x1 ); },
+                     curve.counts, curve.first, curve.last, i0, i1 );
+    }else
+    {
+      // A data-defined peak is the data above the continuum
+      for( size_t i = 0; i < n; ++i )
+        curve.counts[i] = std::max( 0.0, hist_at( xs[i], counts ) - bg_at( xs[i] ) - c[i] );
+    }
+  }//for( size_t j = 0; j < npeaks; ++j )
+
   return true;
-}//bool gausPeakDrawRange(...)
+}//bool roiCurves(...)
 
 
-
-
-
-void SpectrumChart::gausPeakBinValue( double &bin_center, double &y,
-                       const PeakDef &peak, const int row,
-                       const SpectrumDataModel *th1Model,
-                       const double axisMinX, const double axisMaxX,
-                       const double axisMinY, const double axisMaxY,
-                       std::shared_ptr<const PeakDef> prevPeak,
-                       std::shared_ptr<const PeakDef> nextPeak,
-                       const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const
+int SpectrumChart::displayRebinFactor( const std::shared_ptr<const SpecUtils::Measurement> &meas,
+                                       const double xmin, const double xmax,
+                                       const double plot_width_px, const double line_width )
 {
-  y = 0.0;
+  const size_t nchannel = meas ? meas->num_gamma_channels() : size_t(0);
+  if( (nchannel < 2) || !(plot_width_px > 2.0) || !(xmax > xmin) )
+    return 1;
 
-  bin_center = th1Model->rowCenter( row);
+  const size_t first = meas->find_gamma_channel( static_cast<float>( xmin ) );
+  const size_t last = meas->find_gamma_channel( static_cast<float>( xmax ) );
+  const double nvisible = (last > first) ? static_cast<double>( last - first ) : 1.0;
+  const double factor = std::ceil( std::max( line_width, 0.0 ) * nvisible / plot_width_px );
 
-  y = peakYVal( row, peak, th1Model, prevPeak, nextPeak, roi_peaks);
-
-  if( bin_center < axisMinX && row>1 )
-  {
-    double prevMid = th1Model->rowCenter( row - 1);
-    const double prevYVal = peakYVal( row-1, peak,
-                                      th1Model, prevPeak, nextPeak, roi_peaks);
-    const double dist = (axisMinX - prevMid) / (bin_center - prevMid);
-    y = prevYVal + dist * (y - prevYVal);
-    bin_center = axisMinX;
-  }//if( xstart < axisMinX )
-
-  if( bin_center > axisMaxX && row>1 )
-  {
-    double prevMid = th1Model->rowCenter( row - 1);
-    const double prevYVal = peakYVal( row-1, peak, th1Model,
-                                      prevPeak, nextPeak, roi_peaks);
-    const double dist = (axisMaxX - prevMid) / (bin_center - prevMid);
-    y = prevYVal + dist * (y - prevYVal);
-    bin_center = axisMaxX;
-  }//if( xstart < axisMinX )
-
-  y = std::max( y, axisMinY);
-  y = std::min( y, axisMaxY);
-
-  bin_center = std::max( bin_center, axisMinX);
-  bin_center = std::min( bin_center, axisMaxX);
-}//gausPeakBinValue
+  return std::max( 1, static_cast<int>( std::min( factor, 0.5*nchannel ) ) );
+}//int displayRebinFactor(...)
 
 
-
-void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
-                                         Wt::WPainter& painter,
-                                         const bool doFill,
-                                         const double xstart,
-                                         const double xend,
-                                         const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const
+void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
 {
-  double axisMinX, axisMaxX, axisMinY, axisMaxY;
-  visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY);
-  
-  if( xstart != xend )
-  {
-    if( !IsInf(xstart) && !IsNan(xstart) && xstart>axisMinX )
-      axisMinX = xstart;
-    if( !IsInf(xend) && !IsNan(xend) && xend<axisMaxX )
-      axisMaxX = xend;
-  }//if( xstart != xend )
-  
-  
-  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model().get());
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-
-  assert( th1Model);
-
-  std::shared_ptr<const PeakDef> prevPeak, nextPeak;
-  
-  int minrow, maxrow;
-  bool visible = gausPeakDrawRange( minrow, maxrow, peak, axisMinX, axisMaxX);
-  
-  if( !visible )
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel ? m_peakModel->peaks() : m_peaks;
+  const SpectrumDataModel * const model = spectrum_model( *this );
+  if( !peaks || peaks->empty() || !model )
     return;
-  
-  //Decide if we should draw peaks to the center of the bins on either end of the ROI, or
-  //  if we should explicitly go to the min/max of the left/right-most bins.
-  //  Drawing to the extremes is probably more correct, but for some reason it
-  //  still has some very minor artifacts
-#define DRAW_PEAKS_TO_BIN_EXTREMES 0
-  
-  
-  WPointF start_point(0.0, 0.0), peakMaxInPx( 999999.9, 999999.9);
 
-  try
+  const shared_ptr<const Measurement> data = model->getData();
+  const int nrow = model->rowCount();
+  if( !data || (nrow < 2) )
+    return;
+
+  const Chart::WAxis &yaxis = axis( Chart::Axis::Y1 );
+  const double xmin = axis( Chart::Axis::X ).minimum();
+  const double xmax = axis( Chart::Axis::X ).maximum();
+  const double ymin = yaxis.minimum();
+  if( !(xmax > xmin) || !(yaxis.maximum() > ymin) )
+    return;
+
+  // Group the peaks into ROIs (by continuum), ordered by energy
+  vector<vector<shared_ptr<const PeakDef>>> rois;
   {
-    double bin_center, y;
-    gausPeakBinValue( bin_center, y, peak, minrow, th1Model,
-                     axisMinX, axisMaxX, axisMinY, axisMaxY,
-                     prevPeak, nextPeak, roi_peaks);
-#if( DRAW_PEAKS_TO_BIN_EXTREMES )
-    double lower_y = y;
-    if( minrow > 1 )
-      gausPeakBinValue( bin_center, lower_y, peak, minrow-1, th1Model,
-                       axisMinX, axisMaxX, axisMinY, axisMaxY,
-                       prevPeak, nextPeak, roi_peaks);
-    const double lowx = std::max( axisMinX, std::min(axisMaxX,th1Model->rowLowEdge(minrow)));
-    lower_y = std::max( axisMinY, std::min(axisMaxY,0.5*(y+lower_y)));
-    start_point = mapToDevice( lowx, lower_y);
-#else
-    start_point = mapToDevice( bin_center, y);
-#endif
-  }catch( std::exception &e )
-  {
-    cerr << "Caught exception: SpectrumChart::drawIndependantGausPeak(...)" << "\n\t" << e.what() << endl;
+    vector<shared_ptr<const PeakDef>> sorted;
+    for( const shared_ptr<const PeakDef> &peak : *peaks )
+    {
+      if( peak && peak->continuum() )
+        sorted.push_back( peak );
+    }
+    std::sort( begin(sorted), end(sorted), &PeakDef::lessThanByMeanShrdPtr );
+
+    std::map<const PeakContinuum *, size_t> roi_index;
+    for( const shared_ptr<const PeakDef> &peak : sorted )
+    {
+      const auto pos = roi_index.emplace( peak->continuum().get(), rois.size() );
+      if( pos.second )
+        rois.emplace_back();
+      rois[pos.first->second].push_back( peak );
+    }
+
+    std::sort( begin(rois), end(rois), []( const auto &lhs, const auto &rhs ){
+      return lhs.front()->lowerX() < rhs.front()->lowerX();
+    } );
   }
 
+  // The displayed channels, from one before the chart to one past it
+  const int row0 = std::clamp( model->findRow( xmin ) - 1, 0, nrow - 1 );
+  const int row1 = std::clamp( model->findRow( xmax ) + 1, 0, nrow - 1 );
+  const bool subtract = (model->backgroundSubtract() && model->getBackground());
+  const auto value_of = [model]( const int row, const SpectrumDataModel::ColumnType column ) -> double {
+    const double value = asNumber( model->displayBinValue( row, column ) );
+    return (IsNan(value) || IsInf(value)) ? 0.0 : value;
+  };
 
-
-  WPainterPath path( start_point);
-
-  for( int row = minrow; row <= maxrow; ++row )
+  vector<double> edges, counts, background;
+  for( int row = row0; row <= row1; ++row )
   {
-    try
-    {
-      double bin_center, y;
-      gausPeakBinValue( bin_center, y, peak, row, th1Model,
-                       axisMinX, axisMaxX, axisMinY, axisMaxY,
-                       prevPeak, nextPeak, roi_peaks);
-
-      const WPointF pointInPx = mapToDevice( bin_center, y);
-      path.lineTo( pointInPx);
-
-#if( DRAW_PEAKS_TO_BIN_EXTREMES )
-      //For right-most point, draw a line to the very right edge of bin
-      if( row == maxrow )
-      {
-        double upper_y = y;
-        if( (row+1) < th1Model->rowCount() )
-          gausPeakBinValue( bin_center, upper_y, peak, row+1, th1Model,
-                            axisMinX, axisMaxX, axisMinY, axisMaxY,
-                             prevPeak, nextPeak, roi_peaks);
-        const double bin_x_min = th1Model->rowLowEdge( row);
-        const double bin_width = th1Model->rowWidth( row);
-        const double bin_x_max = bin_x_min + bin_width;
-        const double upperx = std::max( axisMinX, std::min(axisMaxX,bin_x_max));
-        upper_y = std::max( axisMinY, std::min(axisMaxY,0.5*(y+upper_y)));
-        
-        path.lineTo( mapToDevice(upperx, upper_y));
-      }//if( left most bin ) else if (right most bin )
-#endif
-      
-      if( pointInPx.y() < peakMaxInPx.y() )
-        peakMaxInPx = pointInPx;
-    }catch(...){}
-  }//for( int row = minrow; row <= maxrow; ++row )
-  
-  
-  for( int row = maxrow; row >= minrow; --row )
-  {
-    try
-    {
-      const double bin_x_min = th1Model->rowLowEdge( row);
-      const double bin_width = th1Model->rowWidth( row);
-      const double bin_center = std::max(axisMinX, std::min(axisMaxX, bin_x_min+0.5*bin_width));
-      
-      double val = peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak, roi_peaks);
-      val = std::min( axisMaxY, std::max(axisMinY, val));
-
-#if( DRAW_PEAKS_TO_BIN_EXTREMES )
-      //For right most bin, need to extend to right side of bin
-      if( row == maxrow )
-      {
-        try
-        {
-          double upper_y = val;
-          if( (row+1) < th1Model->rowCount() )
-            upper_y = peakBackgroundVal( row+1, peak, th1Model, prevPeak, nextPeak, roi_peaks);
-          const double upperx = std::max( axisMinX, std::min(axisMaxX,bin_x_min + bin_width));
-          upper_y = std::max( axisMinY, std::min(axisMaxY,0.5*(val+upper_y)));
-          path.lineTo( mapToDevice(upperx, upper_y));
-        }catch(...){}
-      }//if( right most bin )
-#endif
-
-      const WPointF pointInPx = mapToDevice( bin_center, val);
-      path.lineTo( pointInPx);
-
-      if( pointInPx.y() < peakMaxInPx.y() )
-        peakMaxInPx = pointInPx;
-
-#if( DRAW_PEAKS_TO_BIN_EXTREMES )
-      //For left-most bins,  we actually need to start at very left edge of bin,
-      //  to match what we did in the loop above
-      if( row == minrow )
-      {
-        try
-        {
-          double lower_y = val;
-          if( row > 1 )
-            lower_y = peakBackgroundVal( row-1, peak, th1Model, prevPeak, nextPeak, roi_peaks);
-          const double lowx = std::max( axisMinX, std::min(axisMaxX,bin_x_min));
-          lower_y = std::max( axisMinY, std::min(axisMaxY,0.5*(val+lower_y)));
-          path.lineTo( mapToDevice(lowx, lower_y));
-        }catch(...){}
-      }//if( left most bin )
-#endif
-    }catch(...){}
-  }//for( int row = maxrow; row >= minrow; --row )
-  
-  path.lineTo( start_point);
-  
-  const WPen oldPen = painter.pen();
-  const WBrush oldBrush = painter.brush();
-  
-  WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
-  
-  if( doFill )
-  {
-    color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha());
-    painter.setBrush( WBrush(color));
-    painter.setPen( WPen(WColor(color.red(),color.green(),color.blue())));
-    painter.drawPath( path);
-    //painter.fillPath( path, WBrush(color));
-  }else
-  {
-    painter.setPen( WPen(color));
-    painter.drawPath( path);
+    edges.push_back( model->rowLowEdge( row ) );
+    counts.push_back( value_of( row, SpectrumDataModel::DATA_COLUMN ) );
+    if( subtract )
+      background.push_back( value_of( row, SpectrumDataModel::BACKGROUND_COLUMN ) );
   }
-  
-  painter.setPen( oldPen);
-  painter.setBrush( oldBrush);
-  
-  drawPeakText( peak, painter, peakMaxInPx);
-}//void drawIndependantGausPeak(...)
+  edges.push_back( model->rowLowEdge( row1 ) + model->rowWidth( row1 ) );
+
+  // Mapping to pixels: on a log axis, values off the chart go to its edges (as d3's clamped log
+  //  scale does), and on a linear axis values are kept within reach of the chart (for the paint
+  //  devices' sake; it is clipped anyway).
+  const WRectF &area = chartArea();
+  const double x0px = mapToDevice( xmin, ymin ).x();
+  const double px_per_kev = (mapToDevice( xmax, ymin ).x() - x0px) / (xmax - xmin);
+  const double ymargin = (yaxis.scale() == Chart::AxisScale::Log) ? 0.0 : area.height();
+  const auto ypx = [&]( const double y ) -> double {
+    const double py = mapToDevice( xmin, y ).y();
+    if( IsNan(py) || IsInf(py) )
+      return area.bottom();
+    return std::clamp( py, area.top() - ymargin, area.bottom() + ymargin );
+  };
+
+  const auto peak_pen = []( const WColor &color ) -> WPen {
+    WPen pen( color );
+    pen.setWidth( WLength(1.0) );
+    pen.setCapStyle( PenCapStyle::Flat );
+    pen.setJoinStyle( PenJoinStyle::Miter );
+    return pen;
+  };
+
+  const bool showlabels = (showingPeakLabel( PeakLabelType::ShowPeakUserLabel )
+                           || showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel )
+                           || showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel ));
+  vector<pair<shared_ptr<const PeakDef>,WPointF>> labels;
+
+  painter.save();
+  WPainterPath clip;
+  clip.addRect( area );
+  painter.setClipPath( clip );
+  painter.setClipping( true );
+
+  for( const vector<shared_ptr<const PeakDef>> &roi : rois )
+  {
+    RoiCurves curves;
+    if( !roiCurves( roi, data, edges, counts, subtract ? &background : nullptr,
+                    xmin, xmax, px_per_kev, curves ) )
+      continue;
+
+    const size_t n = curves.energies.size();
+    const vector<double> &c = curves.continuum;
+
+    vector<double> xpx( n ), cpx( n );
+    for( size_t i = 0; i < n; ++i )
+    {
+      xpx[i] = x0px + px_per_kev*(curves.energies[i] - xmin);
+      cpx[i] = ypx( c[i] );
+    }
+
+    // Peaks are stacked in ROI order: each peaks fill sits on top of the continuum plus the earlier
+    //  peaks, while (in multi-peak ROIs) each peaks outline sits on just the continuum.
+    vector<double> stack = c, stack_px = cpx, top_px( n );
+    vector<pair<WPainterPath,WColor>> fills, outlines;
+    const bool multi = (roi.size() > 1);
+
+    for( size_t j = 0; j < roi.size(); ++j )
+    {
+      const RoiCurves::PeakCurve &curve = curves.peaks[j];
+      if( curve.first > curve.last )
+        continue;
+
+      const PeakDef &peak = *roi[j];
+      const vector<double> &p = curve.counts;
+      const size_t d0 = curve.first, d1 = curve.last;
+      const WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
+
+      for( size_t i = d0; i <= d1; ++i )
+        top_px[i] = ypx( stack[i] + p[i] );
+
+      WPainterPath fill;
+      append_thinned( fill, xpx, [&stack_px]( size_t i ){ return stack_px[i]; }, d0, d1, false, true );
+      append_thinned( fill, xpx, [&top_px]( size_t i ){ return top_px[i]; }, d0, d1, true, false );
+      fill.closeSubPath();
+      fills.emplace_back( fill, color );
+
+      if( multi )
+      {
+        WPainterPath outline;
+        append_thinned( outline, xpx, [&cpx]( size_t i ){ return cpx[i]; }, d0, d0, false, true );
+        append_thinned( outline, xpx, [&]( size_t i ){ return ypx( c[i] + p[i] ); }, d0, d1, false, false );
+        append_thinned( outline, xpx, [&cpx]( size_t i ){ return cpx[i]; }, d1, d1, false, false );
+        outlines.emplace_back( outline, color );
+      }//if( multi )
+
+      for( size_t i = d0; i <= d1; ++i )
+      {
+        stack[i] += p[i];
+        stack_px[i] = top_px[i];
+      }
+
+      // Labels are placed above the continuum plus this peak, at its centroid
+      const double mean = peak.mean();
+      if( showlabels && (mean >= curves.energies.front()) && (mean <= curves.energies.back()) )
+      {
+        const size_t i = std::max( size_t(1), static_cast<size_t>(
+                            std::lower_bound( begin(curves.energies), end(curves.energies), mean ) - begin(curves.energies) ) );
+        const double f = (mean - curves.energies[i-1]) / (curves.energies[i] - curves.energies[i-1]);
+        const double cont = c[i-1] + f*(c[i] - c[i-1]);
+        const double pk = p[i-1] + f*(p[i] - p[i-1]);
+        labels.emplace_back( roi[j], WPointF( x0px + px_per_kev*(mean - xmin), ypx( cont + pk ) ) );
+      }
+    }//for( size_t j = 0; j < roi.size(); ++j )
+
+    for( const pair<WPainterPath,WColor> &fill : fills )
+    {
+      painter.setPen( peak_pen( fill.second ) );
+      painter.setBrush( WBrush( with_alpha( fill.second, ns_peak_fill_opacity ) ) );
+      painter.drawPath( fill.first );
+    }
+
+    for( const pair<WPainterPath,WColor> &outline : outlines )
+      painter.strokePath( outline.first, peak_pen( outline.second ) );
+
+    // The continuum line - unless a single peak's fill outline already draws it.
+    if( multi || (fills.size() != 1) || !same_color( fills.front().second, m_defaultPeakColor ) )
+    {
+      WPainterPath line;
+      append_thinned( line, xpx, [&cpx]( size_t i ){ return cpx[i]; }, 0, n - 1, false, true );
+      painter.strokePath( line, peak_pen( m_defaultPeakColor ) );
+    }
+  }//for( const vector<shared_ptr<const PeakDef>> &roi : rois )
+
+  for( const auto &label : labels )
+    drawPeakText( *label.first, painter, label.second );
+
+  painter.restore();
+}//void paintPeaks( Wt::WPainter& painter ) const
 
 
 void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
                                   Wt::WPointF peakTip ) const
 {
-  int numLabels = 0, labelnum = 0;
-  for( PeakLabels i = PeakLabels(0); i < kNumPeakLabels; i = PeakLabels(i+1) )
-  {
-    if( !m_peakLabelsToShow[i] )
-      continue;
-    
-    switch ( i )
-    {
-      case kShowPeakUserLabel: numLabels += !peak.userLabel().empty(); break;
-      case kShowPeakEnergyLabel: ++numLabels; break;
-      case kShowPeakNuclideLabel:
-        numLabels += (peak.parentNuclide() || peak.reaction() || peak.xrayElement());
-      break;
-      case kShowPeakNuclideEnergies:
-      case kNumPeakLabels:
-      break;
-    }//switch ( i )
-  }//for( PeakLabels i = PeakLabels(0); i < kNumPeakLabels; i = PeakLabels(i+1) )
-  
-  if( numLabels )
-  {
-    for( PeakLabels i = PeakLabels(0); i < kNumPeakLabels; i=PeakLabels(i+1) )
-    {
-      if( !m_peakLabelsToShow[i] || i==kShowPeakNuclideEnergies )
-        continue;
-   
-      const int red   = (m_peakLabelsColors[i] & 0xFF);
-      const int green = ((m_peakLabelsColors[i]>>8) & 0xFF);
-      const int blue  = ((m_peakLabelsColors[i]>>16) & 0xFF);
-      const int alpha = ((m_peakLabelsColors[i]>>24) & 0xFF);
+  // The rows of text, as SpectrumChartD3.js has them
+  vector<pair<string,PeakLabelType>> rows;
+  char buffer[64] = { '\0' };
 
-      WString txt;
-      char buffer[32];
-      switch ( i )
+  if( showingPeakLabel( PeakLabelType::ShowPeakUserLabel ) && !peak.userLabel().empty() )
+    rows.emplace_back( peak.userLabel(), PeakLabelType::ShowPeakUserLabel );
+
+  if( showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel ) )
+  {
+    snprintf( buffer, sizeof(buffer), "%.2f keV", peak.mean() );
+    rows.emplace_back( buffer, PeakLabelType::ShowPeakEnergyLabel );
+  }
+
+  if( showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel ) )
+  {
+    string txt;
+    double energy = 0.0;
+    // The energies are of the source gamma (e.g., not 511 keV less, for a single escape peak), as
+    //  `PeakDef::gaus_peaks_to_json(...)` gives them to the D3 chart.
+    bool have_energy = true;
+    if( peak.parentNuclide() )
+    {
+      txt = peak.parentNuclide()->symbol;
+      const SandiaDecay::RadParticle * const particle = peak.decayParticle();
+      if( peak.sourceGammaType() == PeakDef::AnnihilationGamma )
+        energy = 510.9989;
+      else if( particle )
+        energy = particle->energy;
+      else
+        have_energy = false;
+    }else if( peak.xrayElement() )
+    {
+      txt = peak.xrayElement()->name;
+      energy = peak.xrayEnergy();
+    }else if( peak.reaction() )
+    {
+      txt = peak.reaction()->name();
+      energy = peak.reactionEnergy();
+    }
+
+    if( !txt.empty() && have_energy && showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies ) )
+    {
+      const char *type = "";
+      switch( peak.sourceGammaType() )
       {
-        case kShowPeakUserLabel:
-          txt = WString::fromUTF8( peak.userLabel());
-          break;
-        case kShowPeakEnergyLabel:
-          snprintf( buffer, sizeof(buffer), "%.2f keV", (peak.mean()/SandiaDecay::keV));
-          txt = buffer;
-          break;
-        case kShowPeakNuclideLabel:
-          if( peak.parentNuclide() )
-          {
-            txt = peak.parentNuclide()->symbol;
-            if( m_peakLabelsToShow[kShowPeakNuclideEnergies] )
-            {
-              try
-              {
-                const float energy = peak.gammaParticleEnergy();
-                snprintf( buffer, sizeof(buffer), ", %.2f keV", (energy/SandiaDecay::keV));
-                txt += buffer;
-              }catch(...){}
-            }
-          }else if( peak.reaction() )
-          {
-            txt = peak.reaction()->name();
-            if( m_peakLabelsToShow[kShowPeakNuclideEnergies] )
-            {
-              snprintf( buffer, sizeof(buffer), ", %.2f keV", (peak.reactionEnergy()/SandiaDecay::keV));
-              txt += buffer;
-            }
-          }else if( peak.xrayElement() )
-          {
-            txt = peak.xrayElement()->symbol + " xray";
-            if( m_peakLabelsToShow[kShowPeakNuclideEnergies] )
-            {
-              snprintf( buffer, sizeof(buffer), ", %.2f keV", (peak.xrayEnergy()/SandiaDecay::keV));
-              txt += buffer;
-            }
-          }//if( peak.parentNuclide() ) / if else ...
-          break;
-          
-        case kShowPeakNuclideEnergies:
-        case kNumPeakLabels:
-          break;
-      }//switch ( i )
-      
-      if( txt.empty() )
-        continue;
-      
-      const WFont  oldFont  = painter.font();
-      const WPen   oldPen   = painter.pen();
-      const WBrush oldBrush = painter.brush();
-      
-      const int npixelx = 12 * static_cast<int>(txt.toUTF8().length());
-      const double txt_yval = peakTip.y() - 15.0*(numLabels-labelnum) - 5;
-      const double txt_xval = peakTip.x() - 0.5*npixelx;
-      WFont font( FontFamily::Default);
-      font.setSize( 12);
-      painter.setPen( WPen(WColor(red,green,blue,alpha)));
-      painter.setFont( font);
-      painter.drawText(txt_xval, txt_yval, npixelx, 20.0, AlignmentFlag::Center, txt);
-      ++labelnum;
-      
-      painter.setPen( oldPen);
-      painter.setBrush( oldBrush);
-      painter.setFont( oldFont);
-    }//for( loop over PeakLabels )
-  }//if( we have to write at least one label )
+        case PeakDef::NormalGamma:       type = "";        break;
+        case PeakDef::AnnihilationGamma: type = " annih."; break;
+        case PeakDef::XrayGamma:         type = " x-ray";  break;
+        case PeakDef::DoubleEscapeGamma: type = " D.E.";   break;
+        case PeakDef::SingleEscapeGamma: type = " S.E.";   break;
+      }//switch( peak.sourceGammaType() )
+
+      snprintf( buffer, sizeof(buffer), ", %.2f keV%s", energy, type );
+      txt += buffer;
+    }//if( show nuclide energies )
+
+    if( !txt.empty() )
+      rows.emplace_back( txt, PeakLabelType::ShowPeakNuclideLabel );
+  }//if( showing nuclide labels )
+
+  if( rows.empty() )
+    return;
+
+  // The rows are centered on the peak, the last ending 10 px above it
+  const WFont font = axis( Chart::Axis::Y1 ).labelFont();
+  const double fontheight = font.sizeLength( 12 ).toPixels();
+
+  painter.save();
+  painter.setFont( font );
+  painter.setBrush( WBrush() );
+  for( size_t i = 0; i < rows.size(); ++i )
+  {
+    const uint32_t c = m_peakLabelsColors[static_cast<int>(rows[i].second)];
+    painter.setPen( c ? WPen( WColor( c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF, (c >> 24) & 0xFF ) ) : m_textPen );
+
+    const double bottom = peakTip.y() - 10.0 - (rows.size() - 1 - i)*fontheight;
+    painter.drawText( WRectF( peakTip.x() - 500.0, bottom - 1.5*fontheight, 1000.0, 1.5*fontheight ),
+                      AlignmentFlag::Center | AlignmentFlag::Bottom, WString::fromUTF8( rows[i].first ) );
+  }//for( size_t i = 0; i < rows.size(); ++i )
+  painter.restore();
 }//void drawPeakText(...)
 
 
 
-void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> > &peaks,
-                                    Wt::WPainter& painter ) const
-{
-  //XXX - this function is a mess!  Probably because I dont know what I want.
-  
-  //ToDo 20190421: Changed it so that all `peaks` should have the
-  //  same continuum (before this, this function was called with all peaks that
-  //  had ROIs that overlapped in energy, but I think parts of this function
-  //  assumed shared ROI, but other parts didnt assume this), which means we can
-  //  simplify and cleanup this function a bit; notably get rid of
-  //  `continuumToPeaks` and logic around it.
-  
-  const bool outline = (peaks.size() > 1);
-
-  typedef std::map<int,pair<double,double> > IntToDPairMap;
-  std::map<int,pair<double,double> > peaksSum, continuumVals;
-
-  double axisMinX, axisMaxX, axisMinY, axisMaxY;
-  visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY);
-  
-  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model().get());
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-
-  assert( th1Model);
-  assert( std::is_sorted( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr ));
-  
-  std::shared_ptr<const Measurement> data = th1Model->getData();
-  
-  bool hadGlobalCont = false;
-  const bool sharedContinuum = (peaks.size()>1);
-  
-  ////////////////////////////////////////////////////////////////////////////
-  //(Begin experimental code for multicolored peaks)
-  //  If peaks are all the same color, this code results in something that
-  //  looks about the same as the old way of doing things, but probably
-  //  slightly larger JS since there are more paths to draw
-  std::set<string> lineColors;
-  for( const auto &p : peaks )
-    lineColors.insert( p->lineColor().cssText(false));
-  
-  if( lineColors.size() > 1 )
-  {
-    //Find bin limits we are workging with
-    int minrow = std::numeric_limits<int>::max(), maxrow = -std::numeric_limits<int>::max();
-    vector<pair<int,int>> peak_bin_ranges;
-    //Looping throw all the peaks may be a bit overkill; most of the time just
-    //  looking at the left and right most peaks would be sufficient
-    for( const auto &p : peaks )
-    {
-      int minrowlocal, maxrowlocal;
-      if( gausPeakDrawRange(minrowlocal, maxrowlocal, *p, axisMinX, axisMaxX) )
-      {
-        minrow = std::min(minrow,minrowlocal);
-        maxrow = std::max(maxrow,maxrowlocal);
-        peak_bin_ranges.push_back( {minrowlocal,maxrowlocal});
-      }else
-      {
-        peak_bin_ranges.push_back( {-999,-999});
-      }
-    }//for( const auto &p : peaks )
-    
-    //Sanity check
-    if( maxrow < 0 || maxrow < minrow || ((maxrow-minrow) > 16384) )
-      return;
-    
-    const int nrows = 1 + maxrow - minrow;
-    
-    vector<double> xvalues(nrows, 0.0);
-    //peak_yval: Zeroeth entry is continuum_y
-    //  Each entry, j, after that is the sum of the continuum, and all peaks
-    //  up to j.  The idea is that to draw the peaks left to right stacking on
-    //  top of eachother, we can walk through j, and have peak_yval[j]
-    //  give the height of all peaks, up to and including j, and then j-1
-    //  will give the lower level of that peak.
-    vector<vector<double>> peak_yval( 1 + peaks.size(), vector<double>(nrows,0.0)); //zeroth entry is continuum_y
-    
-    //Go through and get xvalues and continuum y values.
-    std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
-    
-    assert( continuum);  //should always be true
-    
-    for( int row = minrow; row <= maxrow; ++row )
-    {
-      const double bin_x_min = th1Model->rowLowEdge( row);
-      const double bin_width = th1Model->rowWidth( row);
-      const double bin_x_max = bin_x_min + bin_width;
-      const double bin_center = bin_x_min + 0.5*bin_width;
-      
-      double cont_y = 0.0;
-      
-      cont_y = continuum->offset_integral( bin_x_min, bin_x_max, data, peaks);
-      
-      
-      if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
-        cont_y -= th1Model->data( row, th1Model->backgroundColumn());
-      cont_y = std::min( std::max(cont_y, axisMinY), axisMaxY);
-      
-      for( size_t i = 0; i < peak_yval.size(); ++i )
-        peak_yval[i][row-minrow] = cont_y;
-      
-      xvalues[row-minrow] = std::max( std::min(bin_center, axisMaxX), axisMinX);
-      
-      assert( peak_bin_ranges.size() == peaks.size());
-      
-      for( size_t i = 0; i < peaks.size(); ++i )
-      {
-        const PeakDef &peak = *(peaks[i]);
-        const auto &peak_bin_range = peak_bin_ranges[i];
-        if( row < peak_bin_range.first || row > peak_bin_range.second )
-          continue;
-        try
-        {
-          double y = peak.gauss_integral( bin_x_min, bin_x_max);
-          for( size_t j = i+1; j < peak_yval.size(); ++j )
-            peak_yval[j][row-minrow] += y;
-        }catch(...)
-        {
-          cerr << "Caught exception: SpectrumChart::paintGausPeaks(...)" << endl;  //I dont think this will happen, but JIC
-        }
-      }//for( size_t i = 0; i < peaks.size(); ++i )
-    }//for( int row = minrow; row <= maxrow; ++row )
-    
-    for( size_t j = 1; j < peak_yval.size(); ++j )
-    {
-      const auto &peak = peaks[j-1];
-      int firstbin = peak_bin_ranges[j-1].first;
-      int lastbin = peak_bin_ranges[j-1].second;
-      if( lastbin == -999 )
-        continue;
-      
-      //Try to constrain how much will need to get drawn, by requiring at
-      //  least half a pixel height from the peak fill area before drawing
-      //  (for example set of peaks in Ba133 spectrum at 80keV: go from 53->18
-      //   bins, and 53->21 bins)
-      const double px_threshold = 0.5;
-      double diff = 0.0;
-      do
-      {
-        const auto l = mapToDevice( xvalues[firstbin-minrow], peak_yval[j-1][firstbin-minrow]);
-        const auto u = mapToDevice( xvalues[firstbin-minrow], peak_yval[j][firstbin-minrow]);
-        diff = (l.y() - u.y());
-        if( diff < px_threshold )
-          ++firstbin;
-      }while( (diff < px_threshold) && (firstbin < lastbin));
-      
-      do
-      {
-        const auto l = mapToDevice( xvalues[lastbin-minrow], peak_yval[j-1][lastbin-minrow]);
-        const auto u = mapToDevice( xvalues[lastbin-minrow], peak_yval[j][lastbin-minrow]);
-        diff = (l.y() - u.y());
-        if( diff < px_threshold )
-          --lastbin;
-      }while( (diff < px_threshold) && (firstbin < lastbin));
-      
-      //Note: we are going to bin center here, and not the left/right side
-      //      of bins on the left and right side of drawing range; this is
-      //      inconsistent with how drawIndependantGausPeak(...) does it,
-      //      if the DRAW_PEAKS_TO_BIN_EXTREMES preprocessor variable is set
-      //      to true.
-      
-      const double y_start = std::min(std::max( peak_yval[j][firstbin-minrow],axisMinY), axisMaxY);
-      WPointF start_point( mapToDevice( xvalues[firstbin-minrow], y_start ));
-      
-      WPainterPath path( start_point);
-      for( int bin = firstbin+1; bin <= lastbin; ++bin )
-      {
-        const double y = std::min(std::max( peak_yval[j][bin-minrow],axisMinY), axisMaxY);
-        try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y )); }catch(...){}
-      }
-      
-      for( int bin = lastbin; bin >= firstbin; --bin )
-      {
-        const double y = std::min(std::max( peak_yval[j-1][bin-minrow],axisMinY), axisMaxY);
-        try{ path.lineTo( mapToDevice( xvalues[bin-minrow], y )); }catch(...){}
-      }
-      
-      path.lineTo( start_point);
-      
-      WColor color = peak->lineColor().isDefault() ? m_defaultPeakColor : peak->lineColor();
-      color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha());
-      
-      painter.fillPath( path, WBrush(color));
-    }//for( size_t j = 1; j < peak_yval.size(); ++j )
-    
-    //Now draw the outlines for the peaks.
-    //  Right now this results in the continuum being colored by the peak
-    //  farthest to the right - eh, should implement a custom solution here.
-    for( const auto &p : peaks  )
-      drawIndependantGausPeak( *p, painter, false, -999.9, -999.9, peaks);
-
-    //(End experimental code for multicolored peaks)
-    ////////////////////////////////////////////////////////////////////////////
-  }else //if( lineColors.size() > 1 )
-  {
-    for( size_t i = 0; i < peaks.size(); ++i )
-    {
-      const PeakDef peak = *(peaks[i]);
-      std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
-      
-      hadGlobalCont |= (continuum->type()==PeakContinuum::External);
-      
-      std::shared_ptr<const PeakDef> prevPeak, nextPeak;
-      if( i )
-        prevPeak = peaks[i-1];
-      if( i < (peaks.size()-1) )
-        nextPeak = peaks[i+1];
-      
-      //      if( independantContinuum && continuum->isPolynomial() )
-      if( !sharedContinuum && continuum->isPolynomial() )
-      {
-        //drawIndependantGausPeak( peak, painter, false);
-        drawIndependantGausPeak( peak, painter, true, -999.9, -999.9, peaks);
-        continue;
-      }//if( independantContinuum && peak.continuum().isPolynomial() )
-      
-      
-      //If we are here, we are drawing multiple peaks that share a continuum
-      int minrow, maxrow;
-      bool visible = gausPeakDrawRange(minrow, maxrow, peak, axisMinX,axisMaxX);
-      
-      if( !visible )
-        continue;
-      
-      //now limit minrow and maxrow for visible region.
-      
-      if( outline )
-        drawIndependantGausPeak( peak, painter, false, -999.9, -999.9, peaks);
-
-      WPointF start_point(0.0, 0.0);
-      try
-      {
-        double xstart, ystart;
-        gausPeakBinValue( xstart, ystart, peak, minrow, th1Model,
-                         axisMinX, axisMaxX, axisMinY, axisMaxY,
-                         prevPeak, nextPeak, peaks);
-        xstart = max( th1Model->rowLowEdge( minrow ), axisMinX);
-        start_point = mapToDevice( xstart, ystart);
-      }catch(...)
-      {
-        cerr << "Caught exception: in SpectrumChart::paintGausPeaks() from gausPeakBinValue" << endl;
-      }
-
-      WPainterPath path( start_point);
-
-      for( int row = minrow; row <= maxrow; ++row )
-      {
-        try
-        {
-          double bin_center, y;
-          gausPeakBinValue( bin_center, y, peak, row, th1Model,
-                           axisMinX, axisMaxX, axisMinY, axisMaxY,
-                           prevPeak, nextPeak, peaks);
-          if( outline )
-          {
-            if( peaksSum.find(row) == peaksSum.end() )
-              peaksSum[row] = make_pair(0.0,0.0);
-            
-            pair<double,double> &peakval = peaksSum[row];
-            
-            const double backHeight = peakBackgroundVal( row, peak,
-                                                        th1Model, prevPeak, nextPeak, peaks);
-            peakval.first = bin_center;
-            peakval.second += (y - backHeight);
-          }//if( outline )
-          
-          path.lineTo( mapToDevice( bin_center, y ));
-        }catch(...){}
-      }//for( int row = minrow; row <= maxrow; ++row )
-      
-      
-      bool hasDrawnOne = false;
-      WPointF peakTip( 999999.9, 999999.9);
-      
-      for( int row = maxrow; row >= minrow; --row )
-      {
-        try
-        {
-          const double bin_x_min = th1Model->rowLowEdge( row);
-          const double bin_width = th1Model->rowWidth( row);
-          const double bin_x_max = bin_x_min + bin_width;
-          
-          bool shouldBeLast = (row==minrow);
-          if( bin_x_max < axisMinX )
-            shouldBeLast = true;
-          
-          double bin_center = th1Model->rowCenter( row);
-          
-          if( !hasDrawnOne )
-          {
-            hasDrawnOne = true;
-            bin_center = bin_x_max;
-          }//if( hasDrawnOne )
-          
-          if( shouldBeLast )
-            bin_center = bin_x_min;
-          
-          bin_center = std::min( bin_center, axisMaxX);
-          bin_center = std::max( bin_center, axisMinX);
-          
-          double val = peakBackgroundVal( row, peak, th1Model,
-                                         std::shared_ptr<const PeakDef>(),
-                                         std::shared_ptr<const PeakDef>(), peaks);
-          
-          val = std::max( val, axisMinY);
-          val = std::min( val, axisMaxY);
-          
-          const WPointF pointInPx = mapToDevice( bin_center, val);
-          path.lineTo( pointInPx);
-          
-          if( pointInPx.y() < peakTip.y() )
-            peakTip = pointInPx;
-          
-          //          if( outline )
-          {
-            val = peakBackgroundVal( row, peak, th1Model,
-                                    prevPeak, nextPeak, peaks);
-            val = std::max( val, axisMinY);
-            val = std::min( val, axisMaxY);
-            continuumVals[row] = make_pair(bin_center,val);
-          }
-          
-          if( shouldBeLast )
-            row = minrow;  //same as a break;
-        }catch(...){}
-      }//for( int row = maxrow; row >= minrow; --row )
-      
-      path.lineTo( start_point);
-      
-      if( !outline )
-      {
-        WColor color = peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor();
-        color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha());
-        
-        //if( lineColors.size() > 1 )
-        //{
-        //}else
-        //{
-        //}//if( lineColors.size() > 1 ) / else
-        
-        painter.fillPath( path, WBrush(color));
-      }else
-      {
-        const WPen oldPen = painter.pen();
-        WColor color( peak.lineColor().isDefault() ? m_defaultPeakColor : peak.lineColor());
-        
-        painter.setPen( WPen(color));
-        painter.drawPath( path);
-        painter.setPen( oldPen);
-      }//if( outline )
-      
-      drawPeakText( peak, painter, peakTip);
-    }//for( size_t i = 0; i < peaks.size(); ++i )
-    
-  }//if( lineColors.size() > 1 ) / else
-    
-
-  if( outline )
-  {
-    //If we're here, all we did was draw the outlines of the individual peaks
-    //  Now we need to draw the filled region of all the sums of paths
-    std::unique_ptr<WPainterPath> path;
-
-    //first draw the peaks from left to right
-    for( const IntToDPairMap::value_type &vt : peaksSum )
-    {
-      const int bin = vt.first;
-      const double bin_center = vt.second.first;
-      double val = vt.second.second;
-
-      if( continuumVals.find(bin) != continuumVals.end() )
-        val += continuumVals[bin].second;
-
-      const WPointF point = mapToDevice( bin_center, val);
-
-      if( !path )
-        path.reset( new WPainterPath( point ));
-      else
-        path->lineTo( point);
-    }//for( int bin : bins )
-
-    //assert( peaksSum.empty() == !path);
-    
-    if( path )
-    {
-      //ToDo 20190421: empirically (because the mess of logic that is this
-      //  function is not straightforward to follow) it seems we only get here
-      //  if all the peaks in the ROI are the same color - should probably
-      //  verify this
-      
-      //draw the continuum, from right to left
-      for( auto iter = continuumVals.rbegin(); iter != continuumVals.rend(); ++iter )
-        path->lineTo( mapToDevice( iter->second.first, iter->second.second ));
-     
-      WColor color = peaks.front()->lineColor().isDefault() ? m_defaultPeakColor : peaks.front()->lineColor();
-      color.setRgb( color.red(), color.green(), color.blue(), (155.0/255.0)*color.alpha());
-      painter.fillPath( *path, WBrush(color));
-    }//if( path )
-  }else if( hadGlobalCont && continuumVals.size()>2 )
-  {
-    WPainterPath path;
-    std::map<int,pair<double,double> >::const_iterator vt = continuumVals.begin();
-    const WPointF start = mapToDevice( vt->second.first, vt->second.second);
-    path.moveTo( start);
-    for( vt++; vt != continuumVals.end(); ++vt )
-      path.lineTo( mapToDevice( vt->second.first, vt->second.second ));
-
-    WPen pen( m_defaultPeakColor);
-    //WPen pen( peak.lineColor().empty() ? m_defaultPeakColor : WColor(WString(peak.lineColor())));
-    
-    pen.setWidth( 2);
-    painter.strokePath( path, pen);
-  }//if( outline ) / else if( draw global continuum )
-}//void paintGausPeak( const PeakDef &peak, Wt::WPainter& painter ) const
-
-
-
-
-void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
-{
-  using Wt::cpp17::any_cast;
-  
-  if( !m_peakModel )
-    return;
-  
-  auto proxyModel = dynamic_cast<const Wt::Chart::WStandardChartProxyModel *>( model().get());
-  const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( th1Model);
-
-  if( !th1Model )
-    throw runtime_error( "SpectrumChart::paintPeaks(...): stupid programmer"
-                         " error, SpectrumChart may only be powered by a"
-                         " SpectrumDataModel.");
-
-  const double minx = axis(Chart::Axis::X).minimum();
-  const double maxx = axis(Chart::Axis::X).maximum();
-
-  std::shared_ptr<const Measurement> dataH = th1Model->getData();
-  
-  std::vector< PeakModel::PeakShrdPtr > gauspeaks, nongauspeaks;
-  std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaksDeque = m_peakModel->peaks();
-
-  if( peaksDeque )
-  {
-    for( const PeakModel::PeakShrdPtr &ptr : *peaksDeque )
-    {
-      const double lowx = ptr->lowerX();
-      const double upperx = ptr->upperX();
-      
-      if( !ptr || lowx>maxx || upperx<minx )
-        continue;
-
-      if( ptr->gausPeak() )
-        gauspeaks.push_back( ptr);
-      else
-        nongauspeaks.push_back( ptr);
-    }//for( const PeakModel::PeakShrdPtr &ptr : *peaksDeque )
-  }//if( peaksDeque )
-
-  prepare_gaus_peaks_for_iterating( gauspeaks);
-  std::vector<std::shared_ptr<const PeakDef> >::const_iterator iter = gauspeaks.begin();
-  while( iter != gauspeaks.end() )
-  {
-    vector<std::shared_ptr<const PeakDef> > peaks_to_draw;
-    iter = next_gaus_peaks( iter, gauspeaks.end(), peaks_to_draw, dataH);
-    paintGausPeaks( peaks_to_draw, painter);
-  }//while( iter != gauspeaks.end() )
-
-  for( const PeakModel::PeakShrdPtr &ptr : nongauspeaks )
-    paintNonGausPeak( *ptr, painter);
-}//paint( ... )
-
-
 void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
 {
-  //I havent perfected how I'de like the legend to be rendered, but its pretty
-  //  close.
+  // A port of SpectrumChartD3.js's legend (`updateLegend()`): a translucent box in the upper right,
+  //  with each spectrum's line, title and counts, live and real times, scale factor, and neutrons.
   if( m_legendType != OnChartLegend )
     return;
-  
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *mdl = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *mdl = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( mdl);
-#endif
-  
+
+  const SpectrumDataModel * const mdl = spectrum_model( *this );
   if( !mdl )
     return;
-  
-  const int nhists = (!!mdl->getData() + !!mdl->getSecondData() + !!mdl->getBackground());
-  
-  //Dont draw legend text if theres no spectrum on the chart
-  if( nhists < 1 )
-    return;
-  
-  //For time series data, dont show the legend for gamma only data
-  if( (m_xAxisUnits == XAxisUnits::kSeconds) && (nhists < 2) )
-    return;
-  
-  char buffer[64];
-  const double y_min = axis(Chart::Axis::Y1).minimum();
-  const double y_max = axis(Chart::Axis::Y1).maximum();
-  const double x_min = axis(Chart::Axis::X).minimum();
-  const double x_max = axis(Chart::Axis::X).maximum();
-  
-  const WPointF topLeft = mapToDevice( x_min, y_max);
-  const WPointF bottomRight = mapToDevice( x_max, y_min);
-  
-  painter.save();
-  
-  WFont font( FontFamily::Default);
-  font.setSize( 12);
 
-  const double rowheight = 20.0;
-  double width = m_paintedLegendWidth + (nhists>1 ? 10.0 : 0.0);
-  
-  if( width <= 10.1 )
+  const int nhists = (!!mdl->getData() + !!mdl->getSecondData() + !!mdl->getBackground());
+
+  //For time series data, dont show the legend for gamma only data
+  if( (nhists < 1) || ((m_xAxisUnits == XAxisUnits::kSeconds) && (nhists < 2)) )
+    return;
+
+  struct Entry
   {
-//    if( painter.device()->features().testFlag(WPaintDevice::HasFontMetrics) )
-//    {
-//      WFontMetrics meteric = painter.device()->fontMetrics();
-//      meteric...
-//    }
-    width = 13.0*font.sizeLength().toPixels();
-  }//if we dont have font metrix
-  
-  double ystart = topLeft.y();
-  const double xstart = bottomRight.x() - width;
-  
-  for( int index = 1; index < mdl->columnCount(); ++index )
-  {
-    if( !mdl->columnHasData( index ) )
-      continue;
-    
-    std::shared_ptr<const Measurement> hist;
-    const Chart::WDataSeries &serie = series(index);
-    
-    WString title = asString(mdl->headerData(index));
-    float lt = 0.0f, rt = 0.0f, neutron = 0.0f, sf = 1.0f;
-    
-    if( index == mdl->dataColumn() )
+    WPen pen;
+    vector<WString> rows;  // The first row is the title
+  };//struct Entry
+
+  vector<Entry> entries;
+
+  const auto add_entry = [&]( const shared_ptr<const Measurement> &hist, const int column,
+                              const double sf, const char *default_title ){
+    if( !hist )
+      return;
+
+    Entry entry;
+    try
     {
-      hist = mdl->getData();
-      if( title.empty() )
-        title = "Foreground";
-      lt = mdl->dataLiveTime();
-      rt = mdl->dataRealTime();
-      neutron = mdl->dataNeutronCounts();
-    }else if( index == mdl->backgroundColumn() )
+      entry.pen = series( column ).pen();
+    }catch( std::exception & )
     {
-      hist = mdl->getBackground();
-      if( title.empty() )
-        title = "Background";
-      lt = mdl->backgroundLiveTime();
-      rt = mdl->backgroundRealTime();
-      sf = mdl->backgroundScaledBy();
-      neutron = mdl->backgroundNeutronCounts();
-      neutron *= mdl->dataRealTime() / rt;
-    }else if( index == mdl->secondDataColumn() )
-    {
-      hist = mdl->getSecondData();
-      if( title.empty() )
-        title = "Second";
-      lt = mdl->secondDataLiveTime();
-      rt = mdl->secondDataRealTime();
-      sf = mdl->secondDataScaledBy();
-      neutron = mdl->secondDataNeutronCounts();
-      neutron *= mdl->dataRealTime() / rt;
-    }else
-    {
-      continue;
     }
-    
-    WRectF textArea;
-    
-    const WFont oldFont = painter.font();
-    const WPen oldPen = painter.pen();
-    const WBrush oldBrush = painter.brush();
-    
-    if( nhists > 1 )
-    {
-      const double x = xstart - 20.0;
-      const double y = ystart+0.25*rowheight;
-    
-      painter.setPen( serie.pen());
-      painter.drawLine( x, y, x+16.0, y);
-      
-//      textArea = WRectF( xstart, ystart, width, rowheight);
-//      painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, title);
-//      ystart += rowheight;
-    }//if( nhists > 1 )
-    
-    painter.setPen( m_textPen);
-    painter.setFont( font);
-    
-    bool wroteText = false;
-    
-    //display live time
+
+    const double nsum = sf * hist->gamma_count_sum();
+    string title = hist->title().empty() ? string( default_title ) : hist->title();
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), (nsum > 1000.0) ? " (%.0f counts)" : " (%.1f counts)", nsum );
+    entry.rows.push_back( WString::fromUTF8( title + buffer ) );
+
+    const double lt = hist->live_time(), rt = hist->real_time();
     if( lt > 0.0 )
+      entry.rows.push_back( WString::fromUTF8( "Live Time: " + js_to_precision( sf*lt, 4 ) + " s" ) );
+    if( rt > 0.0 )
+      entry.rows.push_back( WString::fromUTF8( "Real Time: " + js_to_precision( sf*rt, 4 ) + " s" ) );
+    if( std::fabs( sf - 1.0 ) > 1.0E-6 )
+      entry.rows.push_back( WString::fromUTF8( "Scaled by " + js_to_precision( sf, 4 ) ) );
+
+    if( hist->contained_neutron() )
     {
-      snprintf( buffer, sizeof(buffer), "Live Time %.1f s", lt);
-      textArea = WRectF( xstart, ystart, width, rowheight);
-      painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, buffer);
-      ystart += rowheight;
-      wroteText = true;
-    }//if( lt > 0.0 )
-    
-    
-    if( index == mdl->dataColumn() )
+      const double nrt = (hist->neutron_live_time() > 0.0f) ? hist->neutron_live_time()
+                                                             : ((rt > 1.0E-6) ? rt : lt);
+      const double neutrons = hist->neutron_counts_sum();
+      if( nrt > 0.0 )
+        entry.rows.push_back( WString::fromUTF8( "Neutrons: " + legend_rate_str( neutrons/nrt, 3 ) + " cps" ) );
+      else
+        entry.rows.push_back( WString::fromUTF8( "Neutrons: " + legend_rate_str( sf*neutrons, 3 ) ) );
+    }//if( hist->contained_neutron() )
+
+    entries.push_back( entry );
+  };//add_entry
+
+  // In the same order as SpectrumChartD3.js
+  add_entry( mdl->getData(), mdl->dataColumn(), 1.0, "Foreground" );
+  add_entry( mdl->getSecondData(), mdl->secondDataColumn(), mdl->secondDataScaledBy(), "Secondary" );
+  add_entry( mdl->getBackground(), mdl->backgroundColumn(), mdl->backgroundScaledBy(), "Background" );
+
+  if( entries.empty() )
+    return;
+
+  painter.save();
+
+  const WFont font = axis( Chart::Axis::Y1 ).labelFont();
+  painter.setFont( font );
+
+  const double fontheight = font.sizeLength( 12 ).toPixels();
+  const double rowheight = 1.2*fontheight;
+  const double entry_spacing = 5.0;
+
+  // The body: title rows start 15 px in, the rest 20 px
+  double body_width = 0.0, body_height = 0.0;
+  for( const Entry &entry : entries )
+  {
+    for( size_t i = 0; i < entry.rows.size(); ++i )
+      body_width = std::max( body_width, (i ? 20.0 : 15.0) + text_width( painter, entry.rows[i] ) );
+    body_height += rowheight*entry.rows.size();
+  }
+  body_height += entry_spacing*(entries.size() - 1);
+
+  // The box is 30 px in from the right of the image, and 10 px below the top of the chart
+  const double box_width = body_width + 15.0, box_height = body_height + 10.0;
+  const double image_width = painter.window().width();
+  const double box_x = std::max( chartArea().left(), image_width - 30.0 - box_width );
+  const double box_y = chartArea().top() + 10.0;
+
+  // A rounded rectangle (using quadratic curves, which every paint device supports)
+  const double r = 5.0;
+  WPainterPath box;
+  box.moveTo( box_x + r, box_y );
+  box.lineTo( box_x + box_width - r, box_y );
+  box.quadTo( box_x + box_width, box_y, box_x + box_width, box_y + r );
+  box.lineTo( box_x + box_width, box_y + box_height - r );
+  box.quadTo( box_x + box_width, box_y + box_height, box_x + box_width - r, box_y + box_height );
+  box.lineTo( box_x + r, box_y + box_height );
+  box.quadTo( box_x, box_y + box_height, box_x, box_y + box_height - r );
+  box.lineTo( box_x, box_y + r );
+  box.quadTo( box_x, box_y, box_x + r, box_y );
+  box.closeSubPath();
+
+  const WBrush &chart_brush = background();
+  const WColor fill = ((chart_brush.style() == BrushStyle::Solid) && !chart_brush.color().isDefault())
+                      ? with_alpha( chart_brush.color(), 0.5 )
+                      : ns_legend_fill_color;
+  painter.setPen( WPen( ns_legend_stroke_color ) );
+  painter.setBrush( WBrush( fill ) );
+  painter.drawPath( box );
+
+  // The entries
+  painter.setBrush( WBrush() );
+  double y = box_y + 6.0;
+  const double x = box_x + 8.0;
+  for( const Entry &entry : entries )
+  {
+    WPen swatch_pen = entry.pen;
+    swatch_pen.setCapStyle( PenCapStyle::Flat );
+    painter.setPen( swatch_pen );
+    painter.drawLine( x, y + 0.5*rowheight - 1.0, x + 12.0, y + 0.5*rowheight - 1.0 );
+
+    painter.setPen( m_textPen );
+    for( size_t i = 0; i < entry.rows.size(); ++i )
     {
-      //display live time
-      if( rt > 0.0 )
-      {
-        snprintf( buffer, sizeof(buffer), "Real Time %.1f s", rt);
-        textArea = WRectF( xstart, ystart, width, rowheight);
-        painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, buffer);
-        ystart += rowheight;
-        wroteText = true;
-      }//if( rt > 0.0 )
-    }//if( data column )
-    
-    //display neutrons
-    const bool hasNeut = (!IsNan(neutron) && !IsInf(neutron)
-                           && (neutron>1.0E-4 || (hist && hist->contained_neutron())));
-    if( hasNeut )
-    {
-      snprintf( buffer, sizeof(buffer), "%.1f Neutrons", neutron);
-      textArea = WRectF( xstart, ystart, width, rowheight);
-      painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, buffer);
-      ystart += rowheight;
-      wroteText = true;
-    }//if( hasNeut )
-    
-    if( index != mdl->dataColumn() )
-    {
-      //display scale factor
-      const bool isScaled = (sf>0.0 && fabs(sf-1.0)>1.0e-3);
-      
-      if( isScaled )
-      {
-        const float datalt = mdl->dataLiveTime();
-        const float ltscale = datalt / lt;
-        const bool isltscale = (fabs(sf-ltscale) < 1.0e-3);
-        
-        string frmt = "Scaled %.";
-        frmt += (sf >= 0.1) ? "2f" : "1E";
-        if( isltscale )
-          frmt += " for LT";
-        snprintf( buffer, sizeof( buffer ), frmt.c_str(), sf);
-        textArea = WRectF( xstart, ystart, width, rowheight);
-        painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, buffer);
-        ystart += rowheight;
-        wroteText = true;
-      } // if( isScaled )
-    }//if( not data column )
-    
-    InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp);
-    std::shared_ptr<SpecMeas> meas = ((app && app->viewer()) ? app->viewer()->measurment( SpecUtils::SpectrumType::Foreground ) : std::shared_ptr<SpecMeas>());
-      
-    if( meas && meas->sample_numbers().size() > 1 )
-    {
-        const std::set<int> total_sample_nums = meas->sample_numbers();
-        const std::set<int> &currentSamples = app->viewer()->displayedSamples( SpecUtils::SpectrumType::Foreground);
-        int currentSample = -1;
-        
-        if( currentSamples.empty() && total_sample_nums.size() )
-            currentSample = *(total_sample_nums.begin());
-        else if( currentSamples.size() > 1 )
-            currentSample = *(currentSamples.rbegin());
-        else if( currentSamples.size() )
-            currentSample = *(currentSamples.begin());
-        
-        snprintf( buffer, sizeof(buffer), "Sample: %d/%zu", currentSample , total_sample_nums.size());
-        textArea = WRectF( xstart, ystart, width, rowheight);
-        painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, buffer);
-        ystart += rowheight;
-        wroteText = true;
+      const double left = x + (i ? 20.0 : 15.0);
+      painter.drawText( WRectF( left, y, image_width, rowheight ),
+                        AlignmentFlag::Left | AlignmentFlag::Middle, entry.rows[i] );
+      y += rowheight;
     }
-      
-      
-    if( !wroteText )
-    {
-      if( !title.empty() )
-      {
-        textArea = WRectF( xstart, ystart, width, rowheight);
-        painter.drawText( textArea, AlignmentFlag::Left | AlignmentFlag::Top, title);
-      }//if( !title.empty() )
-      
-      ystart += rowheight;
-    }//if( !wroteText )
-    
-    painter.setPen( oldPen);
-    painter.setBrush( oldBrush);
-    painter.setFont( oldFont);
-    
-    ystart += 5.0;
-  }//for( int index = 1; index < mdl->columnCount(); ++index )
-  
+    y += entry_spacing;
+  }//for( const Entry &entry : entries )
+
   painter.restore();
 }//void paintOnChartLegend()
-
-
-void SpectrumChart::legendTextSizeCallback( const float legendwidth )
-{
-  m_paintedLegendWidth = legendwidth;
-  m_legendTextMetric.reset();
-}//void legendTextSizeCallback(...)
 
 
 void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
@@ -3796,32 +3066,6 @@ void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
   }
 #endif
 
-  //When we are drawinging the legend on the chart, and its a <cavnas> element,
-  //  we dont have server side font metrics, so we will call to the client side
-  //  to get them, but only if we havent done this before, and the chart is
-  //  actually rendered.
-  //Has to be done from this function since the chart wont be rendered to the
-  //  client side by the time enableLegend() has been called, and this all must
-  //  be done from a non const member function.
-  if( wApp
-     && (m_legendType == OnChartLegend)
-     && (preferredMethod() == RenderMethod::HtmlCanvas)
-     && (m_widthInPixels>1.0)
-     && (m_heightInPixels>1.0)
-     && (m_paintedLegendWidth<=-10.0f) )
-  {
-    //m_paintedLegendWidth is -100 if we have never made it here, so lets
-    //  indicate we have made it here
-    m_paintedLegendWidth = -1.0f;
-    LOAD_JAVASCRIPT(wApp, "src/js_inline/SpectrumChart.js", "SpectrumChart", wtjsDrawnLegendTextMetric);
-    
-    m_legendTextMetric.reset( new JSignal<float>( this, "LegendTextMetric" ));
-    m_legendTextMetric->connect( [this]( float a1 ){ legendTextSizeCallback( a1); } );
-    
-    wApp->doJavaScript( "Wt.WT.DrawnLegendTextMetric('"+id()+"');" );
-  }//if( preferredMethod() == RenderMethod::HtmlCanvas )
-
-  
   //paint the chart
   Wt::Chart::WCartesianChart::paintEvent( paintDevice);
 }//void paintEvent( WPaintDevice *paintDevice )
@@ -3841,13 +3085,8 @@ void SpectrumChart::setYAxisScale( Wt::Chart::AxisScale scale )
 
 void SpectrumChart::showHistogramIntegralsInLegend( const bool show )
 {
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *the_model = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *the_model = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( the_model);
-#endif
+  SpectrumDataModel * const the_model = spectrum_model( *this );
+  assert( the_model );
   
   if( the_model )
     the_model->addIntegralOfHistogramToLegend( show);
@@ -4084,69 +3323,138 @@ void SpectrumChart::clearAllReferncePhotoPeakLines()
 void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter,
                             const ReferenceLineInfo &nuc ) const
 {
-  painter.save();
-  
+  // A port of SpectrumChartD3.js's `drawRefGammaLines()`, with lines at the same energy (to 10 eV)
+  //  combined, as `ReferenceLineInfo::toJson(...)` does for the JS.
   const double minx = axis(Chart::Axis::X).minimum();
   const double maxx = axis(Chart::Axis::X).maximum();
   const double miny = axis(Chart::Axis::Y1).minimum();
-  const double maxy = axis(Chart::Axis::Y1).maximum();
-  
-  double max_amp = -1.0;
-  
-  for( size_t i = 0; i < nuc.m_ref_lines.size(); ++i )
-  {
-    const ReferenceLineInfo::RefLine &line = nuc.m_ref_lines[i];
-    if( (line.m_energy >= minx) && (line.m_energy <= maxx) )
-    {
-#if(DRAW_GAMMA_LINES_LOG_AND_LIN)
-      max_amp = std::max( max_amp, miny + yrange*line.m_normalized_intensity )
-#else
-      max_amp = std::max( line.m_normalized_intensity, max_amp);
-#endif
-    }
-  }//for( size_t i = startindex; i < endindex; ++i )
-  
-  if( max_amp <= 0.0 )
-    return;
-  
-  const bool isValidColor = !nuc.m_input.m_color.isDefault();
-  const WColor color( isValidColor ? nuc.m_input.m_color : WColor("#0000FF"));
-  
-  for( size_t i = 0; i < nuc.m_ref_lines.size(); ++i )
-  {
-    const ReferenceLineInfo::RefLine &line = nuc.m_ref_lines[i];
-    if( (line.m_energy < minx) || (line.m_energy > maxx) || (line.m_normalized_intensity <= 0.0) )
-      continue;
-    
-#if( DRAW_GAMMA_LINES_LOG_AND_LIN )
-    cerr << "renderReferncePhotoPeakLines() Not tested for DRAW_GAMMA_LINES_LOG_AND_LIN=true!" << endl;
-    const double yrange = maxy - miny;
-    const double yval = miny + yrange*(miny + yrange*line.m_normalized_intensity)/max_amp;
-    WPointF lower = mapToDevice( line.m_energy, miny);
-    WPointF upper = mapToDevice( line.m_energy, yval);
-#else
-    WPointF lower = mapToDevice( line.m_energy, miny);
-    WPointF upper = mapToDevice( line.m_energy, maxy);
-    lower.setY( lower.y() + axisPadding());
-    const double yvalpx = upper.y() + (1.0 - line.m_normalized_intensity/max_amp)*(lower.y()-upper.y());
-    upper.setY( yvalpx);
-#endif
 
-    //Lets make sure the line is at least visible
-    if( (lower.y() - upper.y()) < 2.0 )
-      upper.setY( lower.y() - 2.0);
-    
-    WPen pen;
-    pen.setColor( color);
-    pen.setWidth( 1);
-    if( line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma )
-      pen.setStyle( Wt::PenStyle::DashLine);
-    painter.setPen( pen);
-        
-    painter.drawLine( lower, upper);
-  }//for( size_t i = startindex; i < endindex; ++i )
-  
-  painter.restore();
+  struct DrawnLine
+  {
+    double energy = 0.0, h = 0.0, hu = 0.0;  // hu is the height without cascade summing
+    std::set<std::string> particles;
+    bool major = false;
+    WColor color;
+  };//struct DrawnLine
+
+  vector<const ReferenceLineInfo::RefLine *> sorted;
+  for( const ReferenceLineInfo::RefLine &line : nuc.m_ref_lines )
+  {
+    if( line.m_normalized_intensity > std::numeric_limits<float>::min() )
+      sorted.push_back( &line );
+  }
+  std::stable_sort( begin(sorted), end(sorted), []( const auto *lhs, const auto *rhs ){
+    return lhs->m_energy < rhs->m_energy;
+  } );
+
+  const auto round_energy = []( const double e ) -> double { return std::round(100.0*e)/100.0; };
+
+  vector<DrawnLine> lines;
+  for( const ReferenceLineInfo::RefLine *line : sorted )
+  {
+    const double energy = round_energy( line->m_energy );
+    if( (energy < minx) || (energy > maxx) )
+      continue;
+
+    if( lines.empty() || (lines.back().energy != energy) )
+    {
+      lines.emplace_back();
+      lines.back().energy = energy;
+      lines.back().color = line->m_color;
+    }
+
+    DrawnLine &drawn = lines.back();
+    drawn.h += line->m_normalized_intensity;
+    drawn.hu += line->m_uncorrected_intensity;
+    drawn.particles.insert( line->particlestr() );
+    drawn.major = (drawn.major || line->m_major_line);
+  }//for( const ReferenceLineInfo::RefLine *line : sorted )
+
+  // The uncorrected height is only used if cascade summing changed the height
+  for( DrawnLine &line : lines )
+  {
+    if( IsNan(line.hu) || IsInf(line.hu) || (std::fabs(line.hu - line.h) <= 0.0001*line.h) )
+      line.hu = line.h;
+  }
+
+  double max_amp = 0.0;
+  for( const DrawnLine &line : lines )
+    max_amp = std::max( max_amp, std::max( line.h, line.hu ) );
+
+  if( !(max_amp > 0.0) )
+    return;
+
+  const WColor source_color = nuc.m_input.m_color.isDefault() ? WColor( "#0000FF" ) : nuc.m_input.m_color;
+
+  // Heights are linear in intensity, with the largest line in view reaching 30 px below the top
+  const WRectF &area = chartArea();
+  const double h = area.height();
+  const double top_pad = std::min( h, ns_ref_line_top_pad );
+  const auto ypx = [&]( const double amp ) -> double {
+    return area.top() + std::min( h - (h - top_pad)*amp/max_amp, h - 2.0 );
+  };
+
+  const auto dashes_for = []( const std::set<std::string> &particles ) -> vector<double> {
+    if( particles.size() != 1 )
+      return {};
+    const std::string &particle = *particles.begin();
+    if( particle == "xray" )
+      return { 3.0, 3.0 };
+    if( particle == "beta" )
+      return { 1.0, 1.0 };
+    if( particle == "alpha" )
+      return { 3.0, 2.0, 1.0 };
+    if( particle == "positron" )
+      return { 3.0, 1.0 };
+    if( (particle == "electronCapture") || (particle == "cascade-sum") )
+      return { 6.0, 6.0 };
+    if( (particle == "S.E.") || (particle == "D.E.") )
+      return { 4.0, 1.0 };
+    return {};
+  };//dashes_for
+
+  // Lines are collected into a path for each color and opacity, and then drawn
+  vector<tuple<WColor,double,WPainterPath>> paths;
+  const auto path_for = [&paths]( const WColor &color, const double opacity ) -> WPainterPath & {
+    for( auto &entry : paths )
+    {
+      if( same_color( std::get<0>(entry), color ) && (std::get<1>(entry) == opacity) )
+        return std::get<2>(entry);
+    }
+    paths.emplace_back( color, opacity, WPainterPath() );
+    std::get<2>(paths.back()).setOpenSubPathsEnabled( true );
+    return std::get<2>(paths.back());
+  };//path_for
+
+  const double threshold = 1.0E-4 * max_amp;
+  for( const DrawnLine &line : lines )
+  {
+    if( (std::max( line.h, line.hu ) < threshold) && !line.major )
+      continue;
+
+    const WColor color = line.color.isDefault() ? source_color : line.color;
+    const double x = mapToDevice( line.energy, miny ).x();
+    const bool gain = (line.h > 1.0001*line.hu);  // summing-in made the line taller
+    const bool loss = (line.hu > 1.0001*line.h);  // summing-out made the line shorter
+
+    add_dashed_vline( path_for( color, 1.0 ), x, area.bottom(), ypx( gain ? line.hu : line.h ),
+                      dashes_for( line.particles ) );
+
+    // Summing-out: a translucent segment shows the amplitude lost, up to the no-summing height.
+    // Summing-in: a dashed segment shows the amplitude gained, above the no-summing height.
+    if( loss )
+      add_dashed_vline( path_for( color, 0.35 ), x, ypx( line.hu ), ypx( line.h ), {} );
+    else if( gain )
+      add_dashed_vline( path_for( color, 1.0 ), x, ypx( line.hu ), ypx( line.h ), { 3.0, 2.0 } );
+  }//for( const DrawnLine &line : lines )
+
+  for( const auto &entry : paths )
+  {
+    WPen pen( with_alpha( std::get<0>(entry), std::get<1>(entry) ) );
+    pen.setWidth( WLength(1.0) );
+    pen.setCapStyle( PenCapStyle::Flat );
+    painter.strokePath( std::get<2>(entry), pen );
+  }
 }//void renderReferncePhotoPeakLines(...)
 
 
@@ -4164,14 +3472,7 @@ void SpectrumChart::modelChanged()
 {
   Wt::Chart::WCartesianChart::modelChanged();
 
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( m);
-#endif
-
+  SpectrumDataModel * const m = spectrum_model( *this );
   if( !m && model() )
     throw runtime_error( "SpectrumChart can only be used with SpectrumDataModel models");
 }//void modelChanged()
