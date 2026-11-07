@@ -240,6 +240,7 @@ SpectraFileHeader::SpectraFileHeader( bool keepInMemmory,
   m_user = viewer->user();
   m_modifiedSinceDecode = false;
   m_candidateForSavingToDb = true;
+  m_userStateDbId = -1;
   m_app = wApp;
   if( m_app )
     m_appId = m_app->sessionId();
@@ -333,12 +334,16 @@ void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
     m_fileDbEntry.reset();
   }
   
-  if( initialentry )
+  if( initialentry && !initialentry.isTransient() )
   {
+    // Remove the previous entry, unless it belongs to a saved state, in which case only the state may remove it.
     DataBaseUtils::DbTransaction transaction( *m_sql);
-    initialentry.remove();
+    Dbo::ptr<UserFileInDb> current = m_sql->session()->find<UserFileInDb>()
+                                      .where( "id = ?" ).bind( initialentry.id() ).resultValue();
+    if( current && !UserFileInDb::isOwnedByState( current, *m_sql->session() ) )
+      current.remove();
     transaction.commit();
-  }//if( m_fileDbEntry )
+  }//if( initialentry )
   
   if( entry && entry.id() < 0 )
   {
@@ -367,6 +372,76 @@ Wt::Dbo::ptr<UserFileInDb> SpectraFileHeader::dbEntry()
 }//Wt::Dbo::ptr<UserFileInDb> dbEntry()
 
 
+Wt::Dbo::ptr<UserFileInDb> SpectraFileHeader::writableDbEntry( bool &wasStateRow ) const
+{
+  wasStateRow = false;
+  
+  Dbo::ptr<UserFileInDb> entry;
+  string uuid;
+  {
+    RecursiveLock lock( m_mutex);
+    entry = m_fileDbEntry;
+    uuid = m_uuid;
+  }
+  
+  if( !entry )
+    return entry;
+  
+  Dbo::ptr<UserFileInDb> standalone;
+  
+  {//begin interact with database
+    DataBaseUtils::DbTransaction transaction( *m_sql);
+    Wt::Dbo::Session &session = *m_sql->session();
+    
+    // A transient entry has been deleted from the database (e.g., its state was removed)
+    if( entry.isTransient() )
+    {
+      entry.reset();
+    }else
+    {
+      entry = session.find<UserFileInDb>().where( "id = ?" ).bind( entry.id() ).resultValue();
+      wasStateRow = (entry && UserFileInDb::isOwnedByState( entry, session ));
+    }
+    
+    // When disconnecting from a saved states entry, reuse this files most recent standalone entry, if
+    //  there is one, so that repeatedly working from a state (e.g., resuming the end-of-session state
+    //  each time the app starts) doesnt keep adding entries to the database.
+    if( wasStateRow && !uuid.empty() && m_user )
+    {
+      Dbo::collection<Dbo::ptr<UserFileInDb>> candidates = session.find<UserFileInDb>()
+        .where( "InterSpecUser_id = ? AND UUID = ? AND IsPartOfSaveState = 0 AND SnapshotParent_id IS NULL" )
+        .bind( m_user.id() )
+        .bind( uuid )
+        .orderBy( "id desc" )
+        .limit( 5 );
+      const vector<Dbo::ptr<UserFileInDb>> rows( candidates.begin(), candidates.end() );
+      
+      for( const Dbo::ptr<UserFileInDb> &row : rows )
+      {
+        if( !UserFileInDb::isOwnedByState( row, session ) )
+        {
+          standalone = row;
+          break;
+        }
+      }//for( const Dbo::ptr<UserFileInDb> &row : rows )
+    }//if( wasStateRow && !uuid.empty() && m_user )
+    
+    transaction.commit();
+  }//end interact with database
+  
+  if( !entry || wasStateRow )
+  {
+    // The entry was removed from the database, or belongs to a saved state; either way we need a
+    //  standalone entry for this file - we will never write to a saved states entry.
+    RecursiveLock lock( m_mutex);
+    m_fileDbEntry = standalone;
+    return standalone;
+  }//if( !entry || wasStateRow )
+  
+  return entry;
+}//Wt::Dbo::ptr<UserFileInDb> writableDbEntry( bool &wasStateRow ) const
+
+
 void SpectraFileHeader::setBasicFileInDbInfo( UserFileInDb *info ) const
 {
   RecursiveLock lock( m_mutex);
@@ -376,7 +451,7 @@ void SpectraFileHeader::setBasicFileInDbInfo( UserFileInDb *info ) const
   if( static_cast<int>(info->uuid.length()) > UserFileInDb::sm_maxUuidLength )
     info->uuid = info->uuid.substr( 0, UserFileInDb::sm_maxUuidLength);
   info->sessionID       = m_appId;
-  if( static_cast<int>(info->uuid.length()) > UserFileInDb::sm_maxSessionIdLength )
+  if( static_cast<int>(info->sessionID.length()) > UserFileInDb::sm_maxSessionIdLength )
     info->sessionID = info->sessionID.substr( 0, UserFileInDb::sm_maxSessionIdLength);
   
   info->filename      = m_displayName; //meas->filename();
@@ -508,28 +583,24 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
     if( m_fileSystemLocation.empty() )
       throw runtime_error( "SpectraFileHeader::saveToDatabaseFromTempFile():"
                            " no cached file");
-    
-    fileDbEntry = m_fileDbEntry;
   }//end locked section
+  
+  // Grab a fresh copy of the entry (there is a chance m_fileDbEntry has gone stale), or if it belongs to
+  //  a saved state, disconnect from it, and we'll create a new standalone entry below (we cant check if
+  //  the file has been modified since the state was saved, as it isnt in memory).
+  bool wasStateRow = false;
+  fileDbEntry = writableDbEntry( wasStateRow );
   
   Dbo::ptr<UserFileInDbData> data;
 
-  //There is a chance m_fileDbEntry has gone stale
   vector< Dbo::ptr<UserFileInDbData> > files;
   if( fileDbEntry )
   {
     DataBaseUtils::DbTransaction transaction( *m_sql);
-    
-    //grab a fresh copy of fileDbEntry to avoid any thread safety issues
-    fileDbEntry = m_sql->session()->find<UserFileInDb>()
-                                  .where( "id = ?" )
-                                  .bind( fileDbEntry.id());
-    if( fileDbEntry )
-      std::copy( fileDbEntry->filedata.begin(), fileDbEntry->filedata.end(),
-                  std::back_inserter(files));
-    
+    std::copy( fileDbEntry->filedata.begin(), fileDbEntry->filedata.end(),
+                std::back_inserter(files));
     transaction.commit();
-  }//if( m_fileDbEntry )
+  }//if( fileDbEntry )
 
   if( files.size() )
   {
@@ -697,16 +768,29 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   }//end code block to do check
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
   
-  Wt::Dbo::ptr<UserFileInDb> fileDbEntry;
-  
   bool modifiedSinceDecode;
   
   {
     RecursiveLock lock( m_mutex);
     modifiedSinceDecode = m_modifiedSinceDecode = meas->modified_since_decode();
-    fileDbEntry = m_fileDbEntry;
   }
   
+  // If we are connected to an entry that belongs to a saved state, we will disconnect from it, and
+  //  (if there are changes since the state was saved or loaded) create a new standalone entry.
+  bool wasStateRow = false;
+  Wt::Dbo::ptr<UserFileInDb> fileDbEntry = writableDbEntry( wasStateRow );
+  
+  if( wasStateRow )
+  {
+    bool modified;
+    {
+      RecursiveLock lock( m_mutex);
+      modified = meas->modified();
+    }
+    
+    if( !modified )
+      return;
+  }//if( wasStateRow )
   
   if( !fileDbEntry || fileDbEntry.isTransient() )
   {
@@ -735,24 +819,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     }
   }else
   {
-    //TODO: couldnt the below query just be accomplished by `fileDbEntry.reread()`?
-    try
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql);
-      fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind(fileDbEntry.id()).resultValue();
-      //fileDbEntry.flush();
-      transaction.commit();
-      
-      if( !fileDbEntry )
-        throw runtime_error("no entry");
-    }catch( Wt::Dbo::Exception &e )
-    {
-      throw runtime_error( "SpectraFileHeader::saveToDatabase(), database error: " + string(e.what()));
-    }catch( std::exception & )
-    {
-      throw runtime_error( "SpectraFileHeader::saveToDatabase(): error re-reading UserFileInDb in DB");
-    }//try / catch
-    
+    // Note: `writableDbEntry(...)` gave us a fresh copy of the entry from the database.
     typedef Dbo::collection<Dbo::ptr<UserFileInDbData> > Files;
     
     Dbo::ptr<UserFileInDbData> data;
@@ -873,7 +940,10 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     {
       RecursiveLock lock( m_mutex);
       ncmeas = m_weakMeasurmentPtr.lock();
-      if( !!ncmeas )
+      
+      // If the file is connected to a user-saved state, leave it marked as modified, so the work
+      //  will still be saved as that states auto-saved work (see InterSpec::saveStateAtForegroundChange)
+      if( ncmeas && (ncmeas->dbStateId() < 0) )
         ncmeas->reset_modified();
     }
   }
@@ -975,7 +1045,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
       //  cause us to overwrite a state.
       // I *think* all opening of spectrum files from filesystem go through here of `setFile(...)`.
       //Currently we are not writing this info to the SpecFile, so this call is not actually needed.
-      info->clearAllDbStateId(); //JIV
+      info->setDbStateId( -1 ); //JIV
       
       RecursiveLock lock( m_mutex);
       m_weakMeasurmentPtr = info;
@@ -1030,6 +1100,9 @@ void SpectraFileHeader::saveToFileSystemImmediately( SpecMeas *meas ) const
     if( !meas )
       throw runtime_error( "You must pass in a SpecMeas object to save.");
 
+    // Keep the database state connection, so it can be restored when the file is parsed back in.
+    m_userStateDbId = meas->dbStateId();
+    
     std::shared_ptr<SpecMeas> from_mem = measurementIfInMemory();
     if( from_mem && from_mem.get() != meas )
       throw runtime_error( "SpecMeas passed in is not the same as in memmorry");
@@ -1121,7 +1194,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
       RecursiveLock lock( m_mutex);
       m_fileSystemLocation = tempfile;
       
-      m_userStateDbIndexes = info->dbUserStateIndexes();
+      m_userStateDbId = info->dbStateId();
     }
     
     success = true;
@@ -1202,6 +1275,7 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 {
   RecursiveLock lock( m_mutex);
 
+  m_userStateDbId = -1;  // Only valid while a (previous) measurement is not in memory
   m_displayName = info->filename();
 
   m_uploadTime = WDateTime::currentDateTime();
@@ -1327,7 +1401,7 @@ void SpectraFileHeader::setFile( const std::string &displayFileName, std::shared
   //  cause us to overwrite a state.
   // I *think* all opening of spectrum files from filesystem go through here of `initFile(...)`.
   //Currently we are not writing this info to the SpecFile, so this call is not actually needed.
-  info->clearAllDbStateId(); //JIC
+  info->setDbStateId( -1 ); //JIC
   
   m_modifiedSinceDecode = false;
   
@@ -1412,10 +1486,8 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
     if( info )
     {
       // Restore mappings of sample numbers in this file, to UserState indexes in the database
-      info->clearAllDbStateId(); //JIC, but not needed
-      for( const auto &sn_index : m_userStateDbIndexes )
-        info->setDbStateId( sn_index.second, sn_index.first);
-      m_userStateDbIndexes.clear();
+      info->setDbStateId( m_userStateDbId );
+      m_userStateDbId = -1;
       
       if( m_aboutToBeDeletedConnection.isConnected() )
         m_aboutToBeDeletedConnection.disconnect();

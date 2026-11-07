@@ -87,33 +87,42 @@ class InterSpecUser;
  Tracking user stats and preferences is pretty straight-forward via the `InterSpecUser` and
  `UserOption` structs.
  
- Tracking user-saved states, and files users opened, but didn't explicitly save, purports to use the
- following model (although testing of details is still ongoing, as of 20241028).
- - The user can explicitly save state  (via "Store As..." menu item).  This saves the opened foreground,
+ Tracking user-saved states, and files users opened but didn't explicitly save, uses the following model:
+ - The user can explicitly save state (via "Store As..." menu item).  This saves the opened foreground,
  background, and secondary spectrum, as well as any of their fit peaks, the Activity/Shielding source
- model, energy calibration, and Rel. Eff. tool states.  It also store current user options, spectrum energy \
- range and some other things.  The user gets to name the state, and add a description.
- - Once a state is saved, the user can save over it (via the "Store" menu item), and the stored state in
- the database will just be updated to current values.
- - If in a saved state, users can also create a "tag" state, which creates a immutable tag in the database,
+ model, energy calibration, and Rel. Eff. tool states.  It also stores displayed sample numbers, current
+ user options, spectrum energy range and some other things.  The user gets to name the state, and add a
+ description.
+ - The app is then "connected" to that state: the foreground `SpecMeas` holds the state's id
+ (`SpecMeas::dbStateId()`), regardless of which of its samples are displayed.  If the user switches to
+ another foreground file, and later back to this one, they are again connected.
+ - While connected, the user can save over the state (via the "Store" menu item), which updates the
+ stored state in the database to current values (including the currently displayed sample numbers).
+ - While connected, users can also create a "tag" state, which creates a immutable tag in the database,
  that wont be modified.  If the user loads a tag state, makes changes, and saves them, it will save the
- overall state, and the tag will not be modified.  When user looks to open previous stored states, the tagged
- states will be listed under the parent state.
- - If in a saved state, the user can also create a whole new saved state (via "Store As..." menu item) that
- will be totally independent of the original then.
- - If in a saved state, where additional changes have been made, and the user changes foreground file, or
- ends their session, then a `UserState::UserStateType::kUserStateAutoSavedWork` state
- will be saved, that the user can pick back up from, if they choose.
- - If not in a saved state, and the user changes foreground, or ends a session, the spectrum files will
- be updated in the database, to include their current changes (if the "AutoSaveSpectraToDb" user preference
- is true).
+ overall (parent) state, and the tag will not be modified.  When user looks to open previous stored states,
+ the tagged states will be listed under the parent state.
+ - While connected, the user can also create a whole new saved state (via "Store As..." menu item) that
+ will be totally independent of the original; the app is then connected to the new state.
+ - Every state exclusively owns the `UserFileInDb` rows it references; only saving that state writes to
+ them, and only removing that state deletes them (see `UserFileInDb::isOwnedByState`).
+ - If connected, and additional changes have been made, and the user changes foreground file, loads
+ another state, or ends their session, then a `UserState::UserStateType::kUserStateAutoSavedWork`
+ child state is saved (replacing any previous one), that the user can pick back up from, if they choose.
+ Explicitly storing the state removes this auto-saved child, so an auto-saved child is always newer than
+ its parent state.
+ - If not connected, and the user changes foreground, or ends a session, the spectrum files will be updated
+ in the database (as rows not part of any state), to include their current changes (if the
+ "AutoSaveSpectraToDb" user preference is true).
  - If user loads a spectrum file, the database is checked to see if it is part of a user-saved state, or a spectrum
  file that was loaded previously, but not explicitly saved.  If found, it will be presented to user to pick up from
  where they left off.
+ - Loading a state never modifies the database.  Loading a child state (tag, auto-saved work, or
+ end-of-session) shows its contents, but connects to its top-level user-saved parent state.
  - When a users session is over, and if the "AutoSaveSpectraToDb" user preference is true, a
  `UserState::UserStateType::kEndOfSessionTemp` state is saved - which will either not a have a
- parent if not in a user-saved state, or may have a user saved state as a parent.  This state will be auto-loaded
- next-time the user starts the app.
+ parent if not connected to a user-saved state, or will have the connected user saved state as a parent.
+ This state will be auto-loaded next-time the user starts the app.
  */
 
 
@@ -427,14 +436,34 @@ public:
   
   Wt::Dbo::collection<Wt::Dbo::ptr<ShieldingSourceModel> > modelsUsedWith;
   
-  //makeDeepCopyOfFileInDatabase(...): creates a new UserFileInDb object
-  //  in the database, including a new UserFileInDbData entry, as well as a any
-  //  ShieldingSourceModels.
-  static Wt::Dbo::ptr<UserFileInDb> makeDeepCopyOfFileInDatabase(
-                                            Wt::Dbo::ptr<UserFileInDb> orig,
-                                            DataBaseUtils::DbSession &session,
-                                            bool isSaveState );
-  
+  /** Returns the number of `UserState` rows, other than `excludeStateId`, whose foreground, background, or
+   secondary foreground is the `UserFileInDb` with id `fileId`.
+
+   Must be called within an active transaction.
+   */
+  static size_t numStatesUsingFile( Wt::Dbo::Session &session,
+                                    const long long int fileId,
+                                    const long long int excludeStateId = -1 );
+
+  /** Returns true if `file` belongs to a saved state (i.e., it is marked `isPartOfSaveState`, has a
+   `snapshotParent`, is the `snapshotParent` of other rows, or is referenced by any `UserState`).
+
+   Only saving that state may write to such a row, and only removing that state may delete it; the generic
+   spectrum-file auto-saving (#SpectraFileHeader::saveToDatabase) must never modify or delete it.
+
+   Must be called within an active transaction.
+   */
+  static bool isOwnedByState( const Wt::Dbo::ptr<UserFileInDb> &file, Wt::Dbo::Session &session );
+
+  /** Fills out the descriptive fields of this entry from `meas` (UUID, filename, sample and detector info,
+   live/real time, counts, start time), and marks it as being part of a saved state.
+
+   Leaves `uploadTime` alone if it is already valid.
+   */
+  void setInfoForSaveState( const SpecMeas &meas,
+                            const Wt::Dbo::ptr<InterSpecUser> &owner,
+                            const std::string &sessionId );
+
   
   template<class Action>
   void persist( Action &a )
@@ -683,10 +712,11 @@ struct UserState
     
     kUndefinedStateType,
     
-    /** State automatically saved when the user loads a different foreground file, or exits.
-     It is treated kinda as a tag - e.g., `UserState::snapshotTagParent` will point back to
-     the original user-saved state - but will be overridden next time user opens the state, and then
-     changes state.
+    /** State automatically saved, when connected to a user-saved state with unsaved changes, and the user
+     loads a different foreground file, loads a different state, or exits.
+     It is treated kinda as a tag - e.g., `UserState::snapshotTagParent` will point back to the original
+     user-saved state - but there is at most one of these per user-saved state: it is replaced the next time
+     work is auto-saved, and removed when the user explicitly stores the parent state.
      */
     kUserStateAutoSavedWork
   };//enum UserStateType
@@ -771,7 +801,9 @@ struct UserState
   UserState();
   
   /** Removes a state, and all of its tags and associated files, from the database.
-   
+
+   Files that are (erroneously) also referenced by another state are not removed.
+
    Throws exception on error.
    */
   static void removeFromDatabase( Wt::Dbo::ptr<UserState> state,

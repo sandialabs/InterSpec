@@ -337,26 +337,17 @@ public:
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
-  /** The database UserState table index for the state associated with the passed in sample numbers.
-   
-   @returns The db index value that is >=0, if there is a state associated with this spectrum, otherwise returns -1.
-   
-   This quantity is stored when the user loads or saves the application state.
-   This value is not currently persisted into the XML.
+  /** The database UserState table id of the top-level user-saved state this file is connected to (i.e., the
+   state the "Store" menu item will update), or -1 if not connected to a state.
+
+   The connection is to the file, regardless of which sample numbers are displayed.
+   This quantity is set when the user loads or saves the application state; it is not written to N42 files,
+   and is not copied by #uniqueCopyContents.
    */
-  long long int dbStateId( const std::set<int> &samplenums ) const;
+  long long int dbStateId() const;
   
-  /** Sets the database UserState table index for the state associated with the passed in sample numbers. 
-   
-   Passing in a ID of less than zero removes the index for the specified sample numbers.
-   */
-  void setDbStateId( const long long int db_id, const std::set<int> &samplenums );
-  
-  /** Clears all UserState table index associations. */
-  void clearAllDbStateId();
-  
-  /** Returns the full map from sample numbers, to database UserState indexes. */
-  const std::map<std::set<int>,long long int> &dbUserStateIndexes() const;
+  /** Sets the database UserState table id this file is connected to; a value less than zero disconnects. */
+  void setDbStateId( const long long int db_id );
   
   //shiftPeaksForRecalibration: shift the peaks for when you apply a
   //  recalibration to the spectrum, for instance after calling
@@ -426,15 +417,6 @@ public:
   void addPeaksToXml( ::rapidxml::xml_node<char> *peaksnode ) const;
   void addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode );
   
-  // I dont think we ever want to store the database index(es) into the written N42
-  //  file, but if we ever do, these next two functions implement writing to, and
-  //  reading from the xml.
-  //  If you change this, at a minimum, check for commented out calls to
-  //  `SpecMeas::clearAllDbStateId()`, so we don't erroneously setup to write over
-  //  existing database states, that may not be related to the data being loaded.
-  // void addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const;
-  // void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
-  
 #if( PERFORM_DEVELOPER_CHECKS )
   //equalEnough(...): tests whether the passed in Measurement objects are
   //  equal, for most intents and purposes.  Allows some small numerical
@@ -491,7 +473,7 @@ public:
 
 protected:
   /** Changes all instances of the first sample number, to the second sample number in `m_peaks`, `m_autoSearchPeaks`,
-   `m_dbUserStateIndexes`, `m_displayedSampleNumbers`, and `m_llmConversationHistory`.  DOES NOT change the
+   `m_displayedSampleNumbers`, and `m_llmConversationHistory`.  DOES NOT change the
    sample numbers of `SpecUtils::Measurement` - see `change_sample_numbers` for that.
    */
   void change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums );
@@ -588,11 +570,11 @@ protected:
    */
   bool m_fileWasFromInterSpec;
   
-  /** A mapping of sample numbers, to the UserState table, if the user has saved state to the DB.
-   
-   Not currently serialized to N42.
+  /** The UserState table id of the user-saved state this file is connected to, or -1; see #dbStateId.
+
+   Not serialized to N42 (a file opened from the filesystem must never be connected to a state).
    */
-  std::map<std::set<int>,long long int> m_dbUserStateIndexes;
+  long long int m_dbStateId;
   
   /** Version of XML serialization of the <DHS:InterSpec> node.
    Changes:
