@@ -66,7 +66,9 @@
 #include "io/SolidAngle.h"
 #include "io/DetectorResponse.h"
 
-#include "SpecUtils/UriSpectrum.h"
+#if( SpecUtils_ENABLE_URI_SPECTRA )
+#include "SpecUtils/UriSpectrum.h"  //for deflate_compress/deflate_decompress
+#endif
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/XmlUtils.hpp"
@@ -3416,7 +3418,9 @@ std::string DetectorPeakResponse::toAppUrl() const
   uint64_t hash_to_send = m_hash, parent_to_send = m_parentHash;
   
   //  An imported grid sends the user's (possibly edited) description of the detector.
-  const shared_ptr<const ceelo::GeometryDescriptor> geom = geometryDisabled() ? nullptr : monteCarloGeometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> shape = geometryDisabled() ? nullptr : monteCarloGeometry();
+#if( SpecUtils_ENABLE_URI_SPECTRA )
+  const shared_ptr<const ceelo::GeometryDescriptor> geom = shape;
   if( geom )
   {
     try
@@ -3431,8 +3435,12 @@ std::string DetectorPeakResponse::toAppUrl() const
       cerr << "toAppUrl: failed to encode detector geometry (" << e.what() << ") - omitting" << endl;
     }
   }//if( geom )
+#else
+  // Builds without SpecUtils' URI support cant compress the shape, so it isnt sent.
+  const shared_ptr<const ceelo::GeometryDescriptor> geom = nullptr;
+#endif //SpecUtils_ENABLE_URI_SPECTRA
   
-  if( m_ceeloResponse || geometryDisabled() )
+  if( m_ceeloResponse || geometryDisabled() || (geom != shape) )
   {
     // `computeHash` folds in the response's content_hash when one is attached, and the geometry's
     //  XML otherwise (a switched-off one included, which is not sent) - so the hash this DRF carries
@@ -4124,6 +4132,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_geometryDisabled = false;
   if( parts.count("DETGEOM") )
   {
+#if( SpecUtils_ENABLE_URI_SPECTRA )
     try
     {
       const vector<uint8_t> deflated = AppUtils::base32_decode( parts["DETGEOM"] );
@@ -4149,6 +4158,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     {
       cerr << "fromAppUrl: failed to decode detector geometry (" << e.what() << ") - ignoring" << endl;
     }
+#else
+    cerr << "fromAppUrl: this build cant decompress the detector geometry - ignoring it" << endl;
+#endif //SpecUtils_ENABLE_URI_SPECTRA
   }//if( parts.count("DETGEOM") )
 
   // `toAppUrl` url-encodes "TEFE" after DetectorEfficiencyCurve::toUrlParts writes it, so undo

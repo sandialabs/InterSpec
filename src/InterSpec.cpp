@@ -13521,8 +13521,12 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   if( SpecUtils::icontains(url, "RADDATA://")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
+#if( USE_QR_CODES )
     m_fileManager->handleSpectrumUrl( std::move(url) );
     return;
+#else
+    throw runtime_error( "This build of InterSpec does not support spectra encoded in URLs." );
+#endif
   }
   
   string host, path, query_str, frag;

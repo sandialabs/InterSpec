@@ -66,7 +66,6 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
-#include "InterSpec/QrCode.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 
@@ -106,6 +105,10 @@
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#endif
 
 
 // The regex in GCC 4.8.x does not have working regex
@@ -4375,7 +4378,9 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   stringstream eff_chart_svg;
   eff_chart.write( eff_chart_svg );
   
+  // The sheet has no QR code if this build cant make them
   string qr_code, qr_note;
+#if( USE_QR_CODES )
   try
   {
     shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
@@ -4397,6 +4402,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     qr_code = WString::tr("app-qr-err").arg(e.what()).toUTF8();
     cerr << qr_code << endl;
   }
+#endif //USE_QR_CODES
   
   
   WTemplate tmplt;

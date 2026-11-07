@@ -108,7 +108,9 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
+#if( USE_QR_CODES )
 #include "SpecUtils/UriSpectrum.h"
+#endif
 
 
 #include "InterSpec/WidgetUtils.h"
@@ -1003,6 +1005,7 @@ protected:
     if( uris.empty() )
       return;
     
+#if( USE_QR_CODES )
     // For spectrum files, we could just call `m_viewer->handleAppUrl( uri );`, but then we
     //  cant preserve if the user dropped it in as a foreground, background, or secondary,
     //  and also I'm not sure how multi-qr-code URIs would work out, so we'll decode and
@@ -1087,6 +1090,7 @@ protected:
         cerr << "Failed to decode spectrum URI from image - will let handleAppUrl() deal with things: " << e.what() << endl;
       }
     }//if( a spectrum URI )
+#endif //USE_QR_CODES
     
     // If we are here - its not valid spectrum file URIs, so we'll just handle them as if the OS
     //  had past them off to the app.
