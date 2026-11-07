@@ -67,6 +67,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
+#include "SpecUtils/DateTime.h"
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecUser.h"
@@ -474,12 +475,7 @@ void UserState::removeFromDatabase( Wt::Dbo::ptr<UserState> state,
       //  UserState (the one we are deleting) - however, due to historical bugs,
       //  this may not be exactly the case, so we'll check for this, and only
       //  delete the UserFileInDb, if it uniquely belongs to us.
-      Dbo::collection<Dbo::ptr<UserState>> states_with_file
-      = session.session()->find<UserState>()
-        .where( "ForegroundId = ? OR BackgroundId = ? OR SecondForegroundId = ?" )
-        .bind(dbid).bind(dbid).bind(dbid);
-      
-      const size_t nstates_with_file = states_with_file.size();
+      const size_t nother_states = UserFileInDb::numStatesUsingFile( *session.session(), dbid, state.id() );
       
       Dbo::ptr<UserFileInDb> dbfile = session.session()->find<UserFileInDb>()
         .where( "id = ?" )
@@ -490,21 +486,17 @@ void UserState::removeFromDatabase( Wt::Dbo::ptr<UserState> state,
         continue;
       
 #if( PERFORM_DEVELOPER_CHECKS )
-      if( nstates_with_file != 1 )
+      if( nother_states != 0 )
       {
         const string errmsg = "File '" + dbfile->filename + "', part of state "
                 + std::to_string(state.id()) + ", is shared by "
-                + std::to_string(nstates_with_file) + " states.";
+                + std::to_string(nother_states + 1) + " states.";
         log_developer_error( __func__, errmsg.c_str() );
       }
 #endif
       
-      if( nstates_with_file == 1 )
-      {
-        assert( (*states_with_file.begin()) == state );
-        if( dbfile )
-          dbfile.remove();
-      }//if( nstates_with_file == 1 )
+      if( nother_states == 0 )
+        dbfile.remove();
     }//for( const long long int dbid : file_indices )
     
     state.remove();
@@ -585,90 +577,102 @@ void UserFileInDbData::setFileData( const std::string &path,
 
 
 UserFileInDb::UserFileInDb()
+  : userHasModified( false ),
+    numSamples( 0 ),
+    isPassthrough( false ),
+    totalLiveTime( 0.0 ),
+    totalRealTime( 0.0 ),
+    totalGammaCounts( 0.0 ),
+    totalNeutronCounts( 0.0 ),
+    numDetectors( 0 ),
+    hasNeutronDetector( false ),
+    isPartOfSaveState( false )
 {
-  isPartOfSaveState = false;
 }
 
 
-Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
-                                                  Dbo::ptr<UserFileInDb> orig,
-                                                  DataBaseUtils::DbSession &sqldb,
-                                                  bool isSaveState )
+size_t UserFileInDb::numStatesUsingFile( Wt::Dbo::Session &session,
+                                         const long long int fileId,
+                                         const long long int excludeStateId )
 {
-  if( !orig )
-    return orig;
+  if( fileId < 0 )
+    return 0;
   
-  auto session = sqldb.session();
-  if( !session )
-    throw runtime_error( "UserFileInDb::makeDeepCopyOfFileInDatabase():"
-                          " invalid input.");
+  Dbo::collection<Dbo::ptr<UserState>> states = session.find<UserState>()
+    .where( "(ForegroundId = ? OR BackgroundId = ? OR SecondForegroundId = ?) AND id <> ?" )
+    .bind( fileId ).bind( fileId ).bind( fileId ).bind( excludeStateId );
   
-  UserFileInDb *newfile = new UserFileInDb();
-  newfile->user = orig->user;
-  newfile->uuid = orig->uuid;
-  newfile->filename = orig->filename;
-  
-  newfile->userHasModified = orig->userHasModified;
-  newfile->uploadTime = orig->uploadTime;
-  newfile->serializeTime = WDateTime::currentDateTime();
-  newfile->sessionID = orig->sessionID;
-  
-  newfile->numSamples = orig->numSamples;
-  newfile->isPassthrough = orig->isPassthrough;
-  newfile->totalLiveTime = orig->totalLiveTime;
-  newfile->totalRealTime = orig->totalRealTime;
-  newfile->totalGammaCounts = orig->totalGammaCounts;
-  newfile->totalNeutronCounts = orig->totalNeutronCounts;
-  newfile->numDetectors = orig->numDetectors;
-  newfile->hasNeutronDetector = orig->hasNeutronDetector;
-  newfile->measurementsStartTime = orig->measurementsStartTime;
-  
-  newfile->isPartOfSaveState = isSaveState;
+  return states.size();
+}//size_t numStatesUsingFile(...)
 
-  newfile->snapshotParent = orig->snapshotParent;
+
+bool UserFileInDb::isOwnedByState( const Wt::Dbo::ptr<UserFileInDb> &file, Wt::Dbo::Session &session )
+{
+  if( !file )
+    return false;
   
-  DataBaseUtils::DbTransaction transaction( sqldb );
+  if( file->isPartOfSaveState || file->snapshotParent )
+    return true;
   
-  try
+  if( file.isTransient() || (file.id() < 0) )
+    return false;
+  
+  // Deleting a row cascade-deletes rows that have it as their `snapshotParent` (from legacy versions of
+  //  InterSpec), so treat such a row as belonging to a state too.
+  if( !file->snapshots.empty() )
+    return true;
+  
+  return (numStatesUsingFile( session, file.id() ) > 0);
+}//bool isOwnedByState(...)
+
+
+void UserFileInDb::setInfoForSaveState( const SpecMeas &meas,
+                                        const Wt::Dbo::ptr<InterSpecUser> &owner,
+                                        const std::string &sessionId )
+{
+  user = owner;
+  
+  uuid = meas.uuid();
+  if( static_cast<int>(uuid.length()) > sm_maxUuidLength )
+    uuid = uuid.substr( 0, sm_maxUuidLength );
+  
+  sessionID = sessionId;
+  if( static_cast<int>(sessionID.length()) > sm_maxSessionIdLength )
+    sessionID = sessionID.substr( 0, sm_maxSessionIdLength );
+  
+  filename = meas.filename();
+  userHasModified = meas.modified_since_decode();
+  
+  if( !uploadTime.isValid() )
+    uploadTime = Wt::WDateTime::currentDateTime();
+  serializeTime = Wt::WDateTime::currentDateTime();
+  
+  const set<int> &sample_numbers = meas.sample_numbers();
+  numSamples = static_cast<int>( sample_numbers.size() );
+  isPassthrough = meas.passthrough();
+  totalLiveTime = meas.gamma_live_time();
+  totalRealTime = meas.gamma_real_time();
+  totalGammaCounts = meas.gamma_count_sum();
+  totalNeutronCounts = meas.neutron_counts_sum();
+  numDetectors = static_cast<int>( meas.detector_numbers().size() );
+  hasNeutronDetector = !meas.neutron_detector_names().empty();
+  
+  measurementsStartTime = Wt::WDateTime();
+  if( !sample_numbers.empty() )
   {
-    Dbo::ptr<UserFileInDb> answer = session->add( std::unique_ptr<UserFileInDb>(newfile) );
-
-    // The passed in `UserFileInDb` may not actually be in the database, so we have to check
-    //  for this.
-    if( !orig.isTransient() )
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meas.sample_measurements( *begin(sample_numbers) ) )
     {
-      for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
-          iter != orig->filedata.end(); ++iter )
+      if( m && !SpecUtils::is_special( m->start_time() ) )
       {
-        UserFileInDbData *newdata = new UserFileInDbData( **iter );
-        newdata->fileInfo = answer;
-        session->add( std::unique_ptr<UserFileInDbData>(newdata) );
+        measurementsStartTime = WDateTime::fromTime_t( std::chrono::system_clock::to_time_t( m->start_time() ) );
+        break;
       }
-      
-      /*
-      for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
-          = orig->modelsUsedWith.begin();
-          iter != orig->modelsUsedWith.end();
-          ++iter )
-      {
-        ShieldingSourceModel *newmodel = new ShieldingSourceModel();
-        newmodel->shallowEquals( **iter );
-        Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
-        modelptr.modify()->filesUsedWith.insert( answer );
-      }//for( loop over ShieldingSourceModel )
-       */
-    }//if( orig.id() >= 0 )
-    
-    transaction.commit();
-    return answer;
-  }catch( std::exception &e )
-  {
-    transaction.rollback();
-    throw runtime_error( e.what() );
-  }//try catch
+    }//for( loop over measurements of first sample )
+  }//if( !sample_numbers.empty() )
   
-  return Dbo::ptr<UserFileInDb>();
-}//makeDeepCopyOfFileInDatabase(...)
+  isPartOfSaveState = true;
+  snapshotParent.reset();
+}//void setInfoForSaveState(...)
 
 
 void ShieldingSourceModel::shallowEquals( const ShieldingSourceModel &rhs )

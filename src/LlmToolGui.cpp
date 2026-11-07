@@ -2133,7 +2133,9 @@ void LlmToolGui::clearConversationHistory()
   if( !m_llmInterface )
     return;
 
-  shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  // As clearHistory(), ending any turn stopped on a paused sub-agent
+  m_llmInterface->abandonStoppedRounds();
+  shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
   if( history )
     history->clear();
 

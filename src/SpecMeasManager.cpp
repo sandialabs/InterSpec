@@ -5774,9 +5774,8 @@ std::shared_ptr<SpecMeas> SpecMeasManager::selectedToSpecMeas() const
     shared_ptr<SpecMeas> newspec = make_shared<SpecMeas>();
     newspec->uniqueCopyContents( *parent_file );
     newspec->set_uuid( "" );
-    // The copy is a new file, so must not refer to the parent files states in the database, or
-    //  saving a state for it could overwrite the parents states.
-    newspec->clearAllDbStateId();
+    // Note: `uniqueCopyContents` does not copy the database state connection, so the copy wont
+    //  refer to the parent files states in the database.
     
     if( samples_to_use == parent_file->sample_numbers() )
       return newspec;

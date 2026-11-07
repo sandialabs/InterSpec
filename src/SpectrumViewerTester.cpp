@@ -949,7 +949,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::doTest( SpectrumViewerTester::
 #if( USE_DB_TO_STORE_SPECTRA )
   score.m_dbid = -1;
   if( m_viewer->m_dataMeasurement )
-    score.m_dbid = m_viewer->m_dataMeasurement->dbStateId( m_viewer->m_displayedSamples );
+    score.m_dbid = m_viewer->m_dataMeasurement->dbStateId();
 #endif
   return score;
 }//Score doTest( TestType type )

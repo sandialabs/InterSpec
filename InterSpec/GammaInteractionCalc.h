@@ -758,8 +758,11 @@ struct ShieldingDetails
   */
   
   std::string m_name;
+  /** The `Material::chemicalFormula()` string; elements followed by their partial densities. */
   std::string m_chemical_formula;
-  
+  /** Human-readable composition by mass fraction, ex. "N 75.53%, O 23.18%, Ar 1.29%". */
+  std::string m_composition;
+
   bool m_is_generic = false;
   double m_an = 0.0, m_ad = 0.0;
   double m_density = 0.0;
@@ -788,6 +791,18 @@ struct SourceDetails
   /** The total activity of the source. */
   double activity = 0.0;
   double activityUncertainty = 0.0;
+
+  /** Parts of `activityUncertainty`, for reporting; negative if not computed.
+
+   `activityUncertStatOnly` is from peak counting statistics alone (no detector efficiency
+   uncertainty), with the other fit parameters free; `activityUncertStatFixedOthers` additionally
+   holds every other fit parameter fixed at its fit value, and is only computed for point and trace
+   sources (where activity is a single fit parameter).
+   See `ShieldingSourceFitCalc::ModelFitResults::paramErrorsStatOnly`.
+   */
+  double activityUncertStatOnly = -1.0;
+  double activityUncertStatFixedOthers = -1.0;
+
   /** If the activity is fit for.
    
    Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
@@ -1451,6 +1466,11 @@ public:
   double age( const SandiaDecay::Nuclide *nuclide,
                    const std::vector<double> &params ) const;
   size_t nuclideIndex( const SandiaDecay::Nuclide *nuclide ) const;
+
+  /** Index, into the fit parameters, of the nuclides activity parameter.  Note: for
+   self-attenuating sources this parameter is unused (activity comes from the mass fraction).
+   */
+  size_t activityParameterIndex( const SandiaDecay::Nuclide *nuclide ) const;
 
   /** Returns whether or not the nuclide is a self-attenuating source. */
   bool isSelfAttenSource( const SandiaDecay::Nuclide *nuc ) const;

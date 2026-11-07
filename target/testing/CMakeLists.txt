@@ -619,6 +619,13 @@ add_test( NAME TSpecMeasManager
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_AppStateDb test_AppStateDb.cpp )
+target_link_libraries( test_AppStateDb PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+add_test( NAME TAppStateDb
+  COMMAND $<TARGET_FILE:test_AppStateDb> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # The deconvolution coverage study is a report, not a gate: it is opt-in, it is held to a
 #  wall-clock budget rather than a fixed trial count, and `DeconCoverageGate` inside
 #  test_DetectionLimit is what actually guards against regressions on every build.

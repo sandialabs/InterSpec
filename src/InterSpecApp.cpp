@@ -1664,6 +1664,25 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
   }//if( signal == "showRemoteRidRefLines-" )
 #endif
   
+#if( USE_DB_TO_STORE_SPECTRA )
+  if( SpecUtils::istarts_with( signal, "loadAutoSavedState-" ) )
+  {
+    // From the notification posted by `InterSpec::notifyOfAutoSavedWork(...)`
+    try
+    {
+      const string prefix = "loadAutoSavedState-";
+      const long long int stateId = std::stoll( signal.substr( prefix.size() ) );
+      if( m_viewer )
+        m_viewer->loadNewestAutoSavedWork( stateId );
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "Invalid loadAutoSavedState signal '" << signal << "': " << e.what();
+    }//try / catch
+    
+    return;
+  }//if( SpecUtils::istarts_with( signal, "loadAutoSavedState-" ) )
+#endif
+  
   if( SpecUtils::istarts_with( signal, "showMultimedia-" ) )
   {
     SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;

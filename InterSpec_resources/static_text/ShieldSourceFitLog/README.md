@@ -310,12 +310,16 @@ it does not exist in the payload.
   "FitChi2": 12.34,
   "NumberFcnCalls": 187,
   "NumDof": 7,
+  "NumFitParameters": 2,
+  "FitChi2PerDofStr": "1.76",
   "NumSources": 1,
   "HasTraceSource": false,
   "HasSelfAttenSource": false,
   "HasVolumetricSource": false,
   "AnySourceAgeFit": false,
   "AnyShieldingFit": true,
+  "HasActivityUncertBreakdown": true,
+  "HasPerShieldAttenuations": true,
   "FixedGeometryDetector": false,
   "RawFitParameter": { "Values": [...], "Errors": [...] },
   "Detector": { ... },              // §5.2
@@ -368,13 +372,17 @@ it does not exist in the payload.
 | `Warnings`                     | array[string] | Human-readable warning strings. Always emitted (may be empty). |
 | `FitChi2`                      | number  | Final χ² value reported by the fitter. |
 | `NumberFcnCalls`               | int     | Number of objective-function evaluations. |
-| `NumDof`                       | int     | Degrees of freedom (number of free parameters). |
+| `NumDof`                       | int     | Degrees of freedom: the number of peaks fit, minus `NumFitParameters` (zero if that would be negative). |
+| `NumFitParameters`             | int     | Number of parameters varied in the fit. |
+| `FitChi2PerDofStr`             | string  | `FitChi2 / NumDof`, via `printCompact(...,3)`. Only present when `NumDof > 0`. |
 | `NumSources`                   | int     | Number of distinct nuclides being fit. |
 | `HasTraceSource`               | bool    | At least one source is a trace source (§5.6). |
 | `HasSelfAttenSource`           | bool    | At least one source is self-attenuating (§5.6). |
 | `HasVolumetricSource`          | bool    | `HasTraceSource OR HasSelfAttenSource`. |
 | `AnySourceAgeFit`              | bool    | At least one source's age was fitted. |
 | `AnyShieldingFit`              | bool    | At least one shielding dimension or property was fitted. |
+| `HasActivityUncertBreakdown`   | bool    | At least one `Sources[]` entry has an `ActivityUncertBreakdown` (§5.6.1). |
+| `HasPerShieldAttenuations`     | bool    | At least one used peak has a non-empty `ShieldAttenuations` (§5.7) - these are only computed for point sources, so this is false when every source is volumetric. |
 | `FixedGeometryDetector`        | bool    | The DRF has a fixed-geometry efficiency (no `Distance`/`Geometry`). |
 | `RawFitParameter.Values`       | array[number] | Raw parameter vector from the fitter (implementation-defined ordering — for diagnostics). |
 | `RawFitParameter.Errors`       | array[number] | Raw parameter uncertainties (paired with `.Values`). |
@@ -720,6 +728,39 @@ areal too (e.g. µCi/m²), matching `ActivityPostFix`.
 | `UsedSubstitutePeak`        | bool   |     | True when the exemplar's designated line was not fit in this spectrum and a fallback line was used. Always present. |
 | `IsDetected`                | bool   |     | Always present. True if observed source counts ≥ Lc. Report wording (e.g. FRMAC "Approved" / "Less than Lc") is a template concern. Defaults to `true` when no limit was computed. |
 
+#### 5.6.1 `Sources[].ActivityUncertBreakdown`
+
+Splits `ActivityUncert` into parts that add in quadrature to it. Only present if `ActivityIsFit`
+and the fit computed the statistics-only uncertainties (any completed fit does; results re-rendered
+from older data, or the GUI's pre-fit chart, will not have it).
+
+```json
+"ActivityUncertBreakdown": {
+  "HasStatFixedOthers": true,
+  "HasDetEff": true,
+  "StatFixedOthers": { "Uncert": "26.74 nCi", "Uncert_bq": 989.4, "PercentOfActivityStr": "0.848", "VarianceSharePercentStr": "12.2" },
+  "FitCorrelation":  { "Uncert": "0", ... },
+  "StatOnly":        { "Uncert": "26.74 nCi", ... },
+  "DetEff":          { "Uncert": "71.66 nCi", ... },
+  "Total":           { "Uncert": "76.49 nCi", ..., "VarianceSharePercentStr": "100.0" }
+}
+```
+
+| Part | Notes |
+|---|---|
+| `StatFixedOthers` | From the peak-area (and background-subtraction) uncertainties alone, with every other fit parameter held fixed at its fitted value. Only present if `HasStatFixedOthers` - true for point and trace sources; a self-attenuating source's activity depends on several parameters, so it has no single one to hold the rest fixed against. |
+| `FitCorrelation`  | What also fitting the other parameters (shielding, ages, other nuclides sharing peaks) adds: `sqrt(StatOnly² - StatFixedOthers²)`. Only present if `HasStatFixedOthers`. |
+| `StatOnly`        | From the peak-area uncertainties alone, with the other parameters free. Always present. |
+| `DetEff`          | What the detector efficiency uncertainty adds: `sqrt(Total² - StatOnly²)`. Always present; `HasDetEff` is false when it is zero (method `None`, or the DRF has no uncertainty), and `DetectorEff.UncertUsedDescription` (§5.19) says why. With the `Likelihood` method the fit weights the peaks using this uncertainty, so the split is approximate. |
+| `Total`           | Same as `ActivityUncert`. |
+
+Each part has: `Uncert` (best activity units, 2 decimals, `ActivityPostFix` appended; `"0"` when
+zero), `Uncert_bq`, `PercentOfActivityStr` (`100·part/activity`, 3 significant figures), and
+`VarianceSharePercentStr` (`100·part²/Total²`, one decimal - e.g. for a CSS bar width). Parts below
+1E-4 of the total (numerical noise) are reported as zero. Nuclear-data, distance, and geometry
+uncertainties are not part of the fit, so are not included; nor are any of the uncertainties scaled
+by `FitChi2PerDofStr`.
+
 ### 5.7 `Sources[].PeaksThisNucContributesTo[]`
 
 Each element describes one fitted peak that the source contributes gammas to. Built by
@@ -822,14 +863,15 @@ Each element of `Shields[]`:
   "Name": "Lead",
   "ShieldingNumber": 0,
   "IsGeneric": false,
-  "Formula": "Pb",
+  "Formula": "Pb11.34",
+  "CompositionStr": "Pb 100%",
   "Density_gPerCm3": 11.34,
   "DensityStr": "11.34 g/cm3",
   "Thickness":      "5.00 mm",
   "Thickness_mm":   5.0, "Thickness_cm": 0.5, "Thickness_m": 0.005, "Thickness_inch": 0.1969, "Thickness_feet": 0.01641,
   "VolumeCm3": 12.57, "VolumeUncertCm3": 0.21,
   "InnerRadius": "0 mm",  "OuterRadius": "5.0 mm",
-  "InnerDims":   ["0 mm"], "OuterDims": ["5.0 mm"], "Thicknesses": ["5.0 mm"], "ThicknessesUncerts": ["0.08 mm"],
+  "InnerDims":   ["0 mm"], "OuterDims": ["5 mm"], "Thicknesses": ["5 mm"], "ThicknessesUncerts": ["0.08 mm"],
   "InnerDims_mm":         [0.0],   "OuterDims_mm":         [5.0],   "Thicknesses_mm":         [5.0],   "ThicknessesUncerts_mm":   [0.08],
   "InnerDims_cm":         [0.0],   "OuterDims_cm":         [0.5],   "Thicknesses_cm":         [0.5],   "ThicknessesUncerts_cm":   [0.008],
   "InnerDims_m":          [0.0],   "OuterDims_m":          [0.005], "Thicknesses_m":          [0.005], "ThicknessesUncerts_m":    [8e-5],
@@ -848,8 +890,9 @@ Each element of `Shields[]`:
 | `ShieldingNumber`       | int     |          | 0-based index in the array. |
 | `Geometry`              | string  |          | Per-shield geometry, same vocabulary as `Shieldings.Geometry`: `"Spherical"`, `"CylinderEndOn"`, `"CylinderSideOn"`, `"Rectangular"`. (Currently always matches the top-level `Shieldings.Geometry`.) |
 | `IsGeneric`             | bool    |          | True for AN/AD generic shielding; false for material-defined shielding. |
-| `Formula`               | string  |          | Chemical formula of the material. Only present if `!IsGeneric`. |
-| `Density_gPerCm3`       | number  | g/cm³    | Only present if `!IsGeneric`. |
+| `Formula`               | string  |          | The material as InterSpec parses it: each element followed by its partial density in g/cm³, e.g. `"N0.000974337O0.000299022Ar1.6641e-05"` for air. Only present if `!IsGeneric`. |
+| `CompositionStr`        | string  |          | Human-readable composition by mass fraction, largest first, e.g. `"N 75.5%, O 23.2%, Ar 1.29%"`. Only present if `!IsGeneric`. |
+| `Density_gPerCm3`       | number  | g/cm³    | Only present if `!IsGeneric`. The value is from a single-precision float, so prints with spurious digits (e.g. `0.0012900000896201534`); use `DensityStr` or `printCompact(...)` for display. |
 | `DensityStr`            | string  |          | Best-units density. Only present if `!IsGeneric`. |
 | `AN`                    | string  |          | Effective atomic number, formatted. Only present if `IsGeneric` and AN > 0. |
 | `AD`                    | string  |          | Areal density, formatted. Only present if `IsGeneric` and AD > 0. |
@@ -865,10 +908,10 @@ Each element of `Shields[]`:
 | `VolumeUncertCm3`       | number  | cm³      | |
 | `InnerRadius`           | string  |          | Best-units inner radius (sphere/cylinder). |
 | `OuterRadius`           | string  |          | Best-units outer radius (sphere/cylinder). |
-| `InnerDims`             | array[string] |    | Per-axis inner edges, best-units strings (length = `NumDimensions`). |
+| `InnerDims`             | array[string] |    | Per-axis inner edges, best-units strings to 5 significant figures, trailing zeros trimmed (length = `NumDimensions`). |
 | `OuterDims`             | array[string] |    | Per-axis outer edges, best-units strings. |
-| `Thicknesses`           | array[string] |    | Per-axis thickness strings. |
-| `ThicknessesUncerts`    | array[string] |    | Per-axis thickness uncertainty strings. |
+| `Thicknesses`           | array[string] |    | Per-axis thickness strings, e.g. `"74.5 cm"`. |
+| `ThicknessesUncerts`    | array[string] |    | Per-axis thickness uncertainty strings, to 3 significant figures; empty for dimensions not fit. |
 | `InnerDims_mm`          | array[number] | mm | Per-axis inner edge in mm. |
 | `InnerDims_cm`          | array[number] | cm | |
 | `InnerDims_m`           | array[number] | m  | |
@@ -1707,7 +1750,8 @@ are confirmed to work against the bundled templates.  Two of them the detection-
 rely on: **`{% else if %}`** (chained else-if, spelled with a space; one `{% endif %}` closes the
 whole chain, not one per arm) and **string equality** (`{% if x == "SomeValue" %}` against a
 literal). `set_trim_blocks(true)` is on, so
-the first newline after a block is dropped.
+the first newline after a block is dropped - and, in this Inja version, so are any spaces or tabs
+right after the `%}`; see §8.7 before relying on whitespace around `{% %}` tags.
 
 ```jinja
 {# This is a comment.  Inja drops comments before parsing. #}
@@ -1874,6 +1918,30 @@ wouldn't).
 `{% if %} ... {% endif %}` block syntax over the `## for` / `## if` line-statement
 syntax. Both work, but if you stick to `{% %}` you can't accidentally turn a heading
 into a syntax error by adding text starting with `##`.
+
+
+### 8.7 Whitespace after `{% ... %}` tags
+
+With `trim_blocks` on, this Inja drops the spaces and tabs right after every `%}`, **and** the
+newline after them.  So
+
+```jinja
+{{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }}{% endif %}
+Next line
+```
+
+renders as `3.15 uCiwith uncertainty 76.4 nCiNext line`.  Worse, the bundled templates are not
+always parsed the same way: the GUI calculation-log dialog parses the template files with
+`get_default_inja_env()` (trim on), while batch renders `"html"` / `"txt"` through the
+pre-registered includes, which are parsed without trimming.  The bundled templates are written to
+come out the same either way:
+
+- Put a needed space *before* the `{%`, not after the `%}`: `{{ a }} {% if b %}with ...`.
+- If the text after `%}` must start with a space, emit it from an expression, which is never
+  trimmed: `{% if b %}{{ " with " }}...`, or in HTML use `&#32;`.
+- Don't end a line of text output with a `{% ... %}` tag (its newline would be eaten); end it with
+  text or a `{{ ... }}` expression.  For whole-line conditionals and loops use `##` line
+  statements, which consume their own line the same way in both modes.
 
 ## 9. Custom callbacks
 

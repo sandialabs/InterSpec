@@ -95,6 +95,12 @@ The conversation continues across prompts in a session, so follow-ups ("what abo
 peak?", "assume 2 cm of steel") work naturally.  Give the assistant context the user has: detector
 type, distance, shielding, the situation (e.g., a vehicle at a portal, a package, a lab sample).
 
+To start over with a new conversation, call `load_spectrum_file` with `specType: "Foreground"` and
+`conversation: "new"`: with the current foreground's `path` to keep the spectrum and its analysis
+(the displayed copy is reused), or with no `path` to also unload the foreground (this works when no
+foreground is loaded, too).  Loading a file again after unloading it reads it from disk, without
+the analysis done on it.
+
 ## Calling analysis tools directly
 
 Most tools return in well under a second, but some do real fitting and can take minutes:

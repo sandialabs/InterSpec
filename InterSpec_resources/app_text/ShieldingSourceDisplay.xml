@@ -337,6 +337,8 @@
   <message id="ssd-diag-lines-crystal">crystal: where 90% of the photons interact</message>
   <message id="ssd-diag-lines-path">rest of the line</message>
   <message id="ssd-diag-lines-caption">{1} of {2} integration lines, by contribution at {3} keV</message>
+  <message id="ssd-diag-to-surface">To surface:</message>
+  <message id="ssd-diag-to-center">To center:</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuclides are added or removed according to the photopeaks used for this fit, thus may not be edited in this table</message>

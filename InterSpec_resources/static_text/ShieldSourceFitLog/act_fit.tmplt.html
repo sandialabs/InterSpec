@@ -70,6 +70,42 @@
       .InfoTable td {
         padding-right: 10px;
       }
+
+      /* Keep numbers like 1.2835E-5 from wrapping mid-value; wide tables scroll instead */
+      .ResultTable td { white-space: nowrap; }
+      .ResultTable td.Wrap { white-space: normal; }
+      .TableScroll { overflow-x: auto; }
+
+      .ReportNote {
+        margin-top: 6px;
+        color: #444;
+        font-size: 95%;
+        max-width: 60em;
+      }
+
+      /* Stacked bar of each part's share of an activity uncertainties variance */
+      .VarShareBar {
+        display: inline-flex;
+        gap: 2px;
+        width: 160px;
+        height: 10px;
+        vertical-align: middle;
+      }
+      .VarShareBar > span { display: block; height: 100%; }
+      .VarShareBar > span:first-child { border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+      .VarShareBar > span:last-child { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+      .VarShareKey {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-left: 12px;
+        margin-right: 4px;
+        vertical-align: middle;
+      }
+      .UncertStat { background-color: #2a78d6; }
+      .UncertFitCorr { background-color: #eb6834; }
+      .UncertDetEff { background-color: #1baf7a; }
     </style>
 
     <!-- D3-based spectrum chart styling -->
@@ -137,7 +173,7 @@
 
   {% if exists("DetectorEff") %}
   <div id="det-eff-note" style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
-    Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %} [{{ DetectorEff.Note }}]{% endif %}
+    Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %}&#32;[{{ DetectorEff.Note }}]{% endif %}
     <br />Detector efficiency uncertainty used: {{ DetectorEff.UncertUsedDescription }}
   </div>
   {% endif %}
@@ -314,6 +350,12 @@
               <td> {{ ActShieldFitSetup.Distance }} </td>
             {% endif %}        
             </tr>
+            {% if not FixedGeometryDetector and existsIn(ActShieldFitSetup,"Geometry") %}
+            <tr>
+              <th colspan="2">Geometry:</th>
+              <td> {{ ActShieldFitSetup.Geometry }} </td>
+            </tr>
+            {% endif %}
         </table>
     </li>
     {% endif %} <!-- if exists("Detector") -->
@@ -348,6 +390,7 @@
 {% if exists("Sources") %}
 <div id="sources" style="margin-top: 25px">
 Sources:
+<div class="TableScroll">
 <table class="ActivitySummary ResultTable">
     <thead><tr>
         <th>Nuclide</th>
@@ -375,7 +418,7 @@ Sources:
     <td> {{ src.AgeIsFit }} </td>
   {% endif %}
   <td> {{ src.Activity }} </td>
-  <td> {% if src.ActivityIsFit %} {{ src.ActivityUncert }} {% endif %} </td>
+  <td>{% if src.ActivityIsFit %}{{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}%){% endif %}</td>
   <td> {{ src.ActivityIsFit }} </td>
   {% if HasTraceSource %}
     <td> {% if src.IsTraceSource %} {{src.TraceDisplayActivity}} {% endif %} </td>
@@ -386,11 +429,95 @@ Sources:
 ## endfor
   </tbody>
 </table>   
+</div>
 </div> <!-- <div id="sources" style="margin-top: 25px"> -->
+{% endif %}
+
+{% if exists("HasActivityUncertBreakdown") and HasActivityUncertBreakdown %}
+<div id="UncertBreakdown" style="margin-top: 25px">
+Activity uncertainty breakdown:
+<div class="TableScroll">
+<table class="ResultTable">
+  <thead>
+    <tr>
+      <th>Nuclide</th>
+      <th>Total</th>
+      <th title="From the peak-area (and background-subtraction) uncertainties, if every other fit parameter were known exactly.">Counting statistics</th>
+      <th title="The extra uncertainty from also fitting shielding, ages, and other nuclides that share peaks.">Fitting other parameters</th>
+      <th title="From the detector response&apos;s efficiency uncertainty.">Detector efficiency</th>
+      <th title="Each part&apos;s share of the total variance; the squares of the parts add up to the square of the total.">Share of variance</th>
+    </tr>
+  </thead>
+  <tbody>
+## for src in Sources
+## if existsIn(src,"ActivityUncertBreakdown")
+    <tr>
+      <td>{{ src.Nuclide }}</td>
+      <td>{{ src.ActivityUncertBreakdown.Total.Uncert }} ({{ src.ActivityUncertBreakdown.Total.PercentOfActivityStr }}%)</td>
+{% if src.ActivityUncertBreakdown.HasStatFixedOthers %}
+      <td>{{ src.ActivityUncertBreakdown.StatFixedOthers.Uncert }} ({{ src.ActivityUncertBreakdown.StatFixedOthers.PercentOfActivityStr }}%)</td>
+      <td>{{ src.ActivityUncertBreakdown.FitCorrelation.Uncert }} ({{ src.ActivityUncertBreakdown.FitCorrelation.PercentOfActivityStr }}%)</td>
+{% else %}
+      <td>{{ src.ActivityUncertBreakdown.StatOnly.Uncert }} ({{ src.ActivityUncertBreakdown.StatOnly.PercentOfActivityStr }}%)*</td>
+      <td>included at left*</td>
+{% endif %}
+      <td>{% if src.ActivityUncertBreakdown.HasDetEff %}{{ src.ActivityUncertBreakdown.DetEff.Uncert }} ({{ src.ActivityUncertBreakdown.DetEff.PercentOfActivityStr }}%){% else %}not included{% endif %}</td>
+      <td>
+        <span class="VarShareBar">
+{% if src.ActivityUncertBreakdown.HasStatFixedOthers %}
+{% if src.ActivityUncertBreakdown.StatFixedOthers.Uncert_bq > 0 %}
+          <span class="UncertStat" style="width: {{ src.ActivityUncertBreakdown.StatFixedOthers.VarianceSharePercentStr }}%;" title="Counting statistics: {{ src.ActivityUncertBreakdown.StatFixedOthers.VarianceSharePercentStr }}% of the variance"></span>
+{% endif %}
+{% if src.ActivityUncertBreakdown.FitCorrelation.Uncert_bq > 0 %}
+          <span class="UncertFitCorr" style="width: {{ src.ActivityUncertBreakdown.FitCorrelation.VarianceSharePercentStr }}%;" title="Fitting other parameters: {{ src.ActivityUncertBreakdown.FitCorrelation.VarianceSharePercentStr }}% of the variance"></span>
+{% endif %}
+{% else %}
+{% if src.ActivityUncertBreakdown.StatOnly.Uncert_bq > 0 %}
+          <span class="UncertStat" style="width: {{ src.ActivityUncertBreakdown.StatOnly.VarianceSharePercentStr }}%;" title="Counting statistics (incl. fitting other parameters): {{ src.ActivityUncertBreakdown.StatOnly.VarianceSharePercentStr }}% of the variance"></span>
+{% endif %}
+{% endif %}
+{% if src.ActivityUncertBreakdown.HasDetEff %}
+          <span class="UncertDetEff" style="width: {{ src.ActivityUncertBreakdown.DetEff.VarianceSharePercentStr }}%;" title="Detector efficiency: {{ src.ActivityUncertBreakdown.DetEff.VarianceSharePercentStr }}% of the variance"></span>
+{% endif %}
+        </span>
+      </td>
+    </tr>
+## endif
+## endfor
+  </tbody>
+</table>
+</div>
+<div class="ReportNote">
+  <span style="white-space: nowrap;"><span class="VarShareKey UncertStat" style="margin-left: 0;"></span>Counting statistics</span>
+  <span style="white-space: nowrap;"><span class="VarShareKey UncertFitCorr"></span>Fitting other parameters</span>
+  <span style="white-space: nowrap;"><span class="VarShareKey UncertDetEff"></span>Detector efficiency</span>
+</div>
+<div class="ReportNote">
+  The parts add in quadrature to the total; the bar shows each part&apos;s share of the total variance.
+  <b>Counting statistics</b> is from the peak-area (and background-subtraction) uncertainties, if
+  every other fit parameter were known exactly.
+  <b>Fitting other parameters</b> is what also fitting shielding, ages, and other nuclides that share
+  peaks adds.
+  <b>Detector efficiency</b> is from the detector response&apos;s efficiency uncertainty {% if exists("DetectorEff") %}({{ DetectorEff.UncertUsedDescription }}){% endif %}.
+{% if HasSelfAttenSource %}
+  <br />* For self-attenuating sources the activity depends on several fit parameters, so their
+  counting-statistics part includes the effect of fitting the other parameters.
+{% endif %}
+{% if ActShieldFitSetup.FitOptions.DrfUncertaintyMethodName == "Likelihood" %}
+  <br />The fit weighted the peaks using the detector efficiency uncertainty (the "Likelihood"
+  method), so this split is approximate.
+{% endif %}
+  <br />Not included: nuclear data (ex., branching ratio) uncertainties, and the source-to-detector
+  distance and geometry, which are taken as exact.  Uncertainties are not scaled by
+  &chi;<sup>2</sup>/dof {% if exists("FitChi2PerDofStr") %}(here {{ FitChi2PerDofStr }}){% endif %};
+  a value well above 1 suggests the model, or the peak uncertainties, do not fully describe the data.
+</div>
+</div> <!-- <div id="UncertBreakdown"> -->
 {% endif %}
 
 <div id="peaks" style="margin-top: 25px">
   Peaks:
+  <div class="TableScroll">
   <table class="ResultTable">
     <thead>
       <tr>
@@ -430,8 +557,8 @@ Sources:
         </td>
         <td>{{ printCompact(peak.SignalCounts,4) }} &pm; {{ printCompact(peak.SignalCountsUncert,4) }}</td>
         <td>{{ peak.AssignedNuclide }} ({{ printFixed(peak.DecayParticleEnergy_keV,1) }})</td>
-        <td>{{ printCompact(peak.DetectorIntrinsicEff,5) }}</td>
-        <td>{{ printCompact(peak.DetectorEff,5) }}</td>
+        <td>{{ printCompact(peak.DetectorIntrinsicEff,4) }}</td>
+        <td>{{ printCompact(peak.DetectorEff,4) }}</td>
         <td>{{ printCompact(peak.PredictedCounts,5) }}</td>
         <td>{{ printFixed(peak.PredictedNumSigmaOff,3) }}</td>
 {% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.DrfUncertaintyMethodName == "Likelihood" %}
@@ -445,15 +572,17 @@ Sources:
 {% endif %}
 </tbody>
 </table>
+</div>
 
 </div> <!-- <div id="peaks" style="margin-top: 25px"> -->
 
 
 {% if exists("NotFitPeaks") %}
 <div id="NotFitPeaks" style="margin-top: 25px">
-<h2>Peaks Not Fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %} - Detection Limits{% endif %}:</h2>
+<h2>Peaks Not Fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}&#32;- Detection Limits{% endif %}:</h2>
 Peaks in the exemplar that could not be fit in this spectrum.
 {% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}The limits below are for the shielding, distance, and source ages this fit determined.{% endif %}
+<div class="TableScroll">
 <table class="ActivitySummary ResultTable">
   <thead>
     <tr>
@@ -484,20 +613,21 @@ Peaks in the exemplar that could not be fit in this spectrum.
 ##endfor
   </tbody>
 </table>
+</div>
 
 {% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}
 <div style="margin-top: 15px">
 <ul>
 ## for peak in NotFitPeaks.Peaks
 {% if existsIn(peak,"Mda") %}
-  <li><b>{{ printFixed(peak.PeakMean,2) }} keV{% if peak.HasSourceAssigned %} ({{ peak.SourceName }}){% endif %}:</b>
-    {{ peak.Mda.ResultSummary }}{% if peak.Mda.ActivitySummary %} {{ peak.Mda.ActivitySummary }}{% endif %}
+  <li><b>{{ printFixed(peak.PeakMean,2) }} keV{% if peak.HasSourceAssigned %}&#32;({{ peak.SourceName }}){% endif %}:</b>
+    {{ peak.Mda.ResultSummary }}{% if peak.Mda.ActivitySummary %}&#32;{{ peak.Mda.ActivitySummary }}{% endif %}
 {% if peak.Mda.HasCaveats %}
     <span class="MdaCaveat">{{ peak.Mda.Caveats }}</span>
 {% endif %}
 {% if peak.Mda.DeconAttempted %}
 {% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}
-    The deconvolution method {% if peak.Mda.DeconIsPredictedSensitivity and existsIn(peak.Mda,"DeconSampleExposure_s") %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for a {{ printFixed(peak.Mda.DeconSampleExposure_s,1) }} second measurement{% else if peak.Mda.DeconIsPredictedSensitivity %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for the planned measurement{% else if peak.Mda.DeconLimitType == "CentralInterval" %}gives a {{ peak.Mda.ConfidenceLevelStr }} central-interval upper endpoint of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}{% else %}gives a one-sided upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level{% endif %} (&chi;<sup>2</sup>={{ printFixed(peak.Mda.DeconLimitChi2,2) }}).
+    The deconvolution method {% if peak.Mda.DeconIsPredictedSensitivity and existsIn(peak.Mda,"DeconSampleExposure_s") %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}&#32;at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for a {{ printFixed(peak.Mda.DeconSampleExposure_s,1) }} second measurement{% else if peak.Mda.DeconIsPredictedSensitivity %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}&#32;at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for the planned measurement{% else if peak.Mda.DeconLimitType == "CentralInterval" %}gives a {{ peak.Mda.ConfidenceLevelStr }} central-interval upper endpoint of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}{% else %}gives a one-sided upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}&#32;at the {{ peak.Mda.ConfidenceLevelStr }} confidence level{% endif %}&#32;(&chi;<sup>2</sup>={{ printFixed(peak.Mda.DeconLimitChi2,2) }}).
 {% else %}
     The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.
 {% endif %}{% else %}
@@ -523,6 +653,7 @@ The activity each would imply on its own is shown, holding everything else at th
 The useful reading is whether they agree with the answer the used peaks gave; a systematic offset
 across all of them means something different (efficiency, shielding, branching ratio) than scatter
 does.
+<div class="TableScroll">
 <table class="ActivitySummary ResultTable">
   <thead>
     <tr>
@@ -542,18 +673,19 @@ does.
         <td>{% if peak.HasSourceAssigned %}{{ peak.SourceName }} ({{ printFixed(peak.SourceEnergy,1) }}){% endif %}</td>
         <td>{{ peak.PeakAmplitudeStr }}</td>
         <td>{% if peak.ModelEvaluated %}{{ peak.ExpectedCountsStr }}{% else %}&mdash;{% endif %}</td>
-        <td>{% if peak.HasNominalActivity %}{{ peak.ImpliedActivity }}{% if existsIn(peak,"ImpliedActivityUncert") %} &plusmn; {{ peak.ImpliedActivityUncert }}{% endif %}{% else %}&mdash;{% endif %}</td>
+        <td>{% if peak.HasNominalActivity %}{{ peak.ImpliedActivity }}{% if existsIn(peak,"ImpliedActivityUncert") %}&#32;&plusmn; {{ peak.ImpliedActivityUncert }}{% endif %}{% else %}&mdash;{% endif %}</td>
         <td>{% if peak.HasNominalActivity %}{{ peak.RatioToFitActivityStr }}{% else %}&mdash;{% endif %}</td>
         <td>{% if peak.HasNominalActivity %}{{ peak.NumSigmaOffStr }}{% else %}&mdash;{% endif %}</td>
       </tr>
 ## endfor
   </tbody>
 </table>
+</div>
 
 <div style="margin-top: 15px">
 <ul>
 ## for peak in SupplementalPeakInfo.PeaksNotUsedForFit.Peaks
-  <li><b>{{ printFixed(peak.PeakMean,2) }} keV{% if peak.HasSourceAssigned %} ({{ peak.SourceName }}){% endif %}:</b>
+  <li><b>{{ printFixed(peak.PeakMean,2) }} keV{% if peak.HasSourceAssigned %}&#32;({{ peak.SourceName }}){% endif %}:</b>
 {% if peak.HasNominalActivity %}{{ peak.ResultSummary }}{% else %}No activity could be derived: {{ peak.NotEvaluatedReason }}.{% endif %}
 {% if peak.HasCaveats %}
     <span class="MdaCaveat">{{ peak.Caveats }}</span>
@@ -570,6 +702,7 @@ does.
 A Currie-style (ISO 11929 gross-counts) check of every peaks region.  A peak can be fit, and still
 sit below the level at which a signal can be reliably claimed - those are flagged as
 &ldquo;Fit, but less than L<sub>c</sub>&rdquo;.
+<div class="TableScroll">
 <table class="ActivitySummary ResultTable">
   <thead>
     <tr>
@@ -598,6 +731,7 @@ sit below the level at which a signal can be reliably claimed - those are flagge
 ## endfor
   </tbody>
 </table>
+</div>
 </div> <!-- <div id="PeakDetectionChecks"> -->
 ## endif
 ## endif
@@ -605,10 +739,12 @@ sit below the level at which a signal can be reliably claimed - those are flagge
 
 {% if exists("Sources") %}
 <div id="PeakContributions" style="margin-top: 25px">
+Contributions to peaks from fit model:
 <ul style="list-style-type: none; padding: 0; margin: 0;">
 ## for src in Sources
   <li style="margin-top: 10px;"> Peak contributions from {{ src.Nuclide }}:
 
+    <div class="TableScroll">
     <table class="ResultTable">
       <thead>
         <tr>
@@ -617,7 +753,7 @@ sit below the level at which a signal can be reliably claimed - those are flagge
           <th>&Delta;Counts</th>
           <th>Pred. Model Sum</th>
           <th>Det. Intrinsic Eff.</th>
-          <th>Det. Solid Angle.</th>
+          <th>Det. Solid Angle</th>
           <th>Det. Eff.</th>
           <th>Shield Atten. Factor</th>
           <th>Air Atten. Factor</th>
@@ -633,15 +769,15 @@ sit below the level at which a signal can be reliably claimed - those are flagge
 ## for peak in src.PeaksThisNucContributesTo
         <tr>
           <td>{{ printFixed(peak.Energy_keV,2) }}</td>
-          <td>{{ printCompact(peak.SignalCounts,5) }}</td>
-          <td>{{ printCompact(peak.SignalCountsUncert,5) }}</td>
-          <td>{{ printCompact(peak.PredictedCounts,5) }}</td>
-          <td>{{ printCompact(peak.DetectorIntrinsicEff,5) }}</td>
-          <td>{{ printCompact(peak.DetectorSolidAngleFraction,5) }}</td>
-          <td>{{ printCompact(peak.DetectorEff,5) }}</td>
-          <td>{{ printCompact(peak.AttenuationByShieldingFactor,5) }}</td>
-          <td>{{ printCompact(peak.AttenuationByAirFactor,5) }}</td>
-          <td>{{ printCompact(peak.AttenuationTotalFactor,5) }}</td>
+          <td>{{ printCompact(peak.SignalCounts,4) }}</td>
+          <td>{{ printCompact(peak.SignalCountsUncert,3) }}</td>
+          <td>{{ printCompact(peak.PredictedCounts,4) }}</td>
+          <td>{{ printCompact(peak.DetectorIntrinsicEff,4) }}</td>
+          <td>{{ printCompact(peak.DetectorSolidAngleFraction,4) }}</td>
+          <td>{{ printCompact(peak.DetectorEff,4) }}</td>
+          <td>{{ printCompact(peak.AttenuationByShieldingFactor,4) }}</td>
+          <td>{{ printCompact(peak.AttenuationByAirFactor,4) }}</td>
+          <td>{{ printCompact(peak.AttenuationTotalFactor,4) }}</td>
     {% if existsIn(peak,"ThisNucsGammasForPeak") %}
 ## for src in peak.ThisNucsGammasForPeak
         {% if loop.is_first %}
@@ -659,9 +795,9 @@ sit below the level at which a signal can be reliably claimed - those are flagge
           <td></td>
         {% endif %}
           <td>{{ src.Nuclide }}</td>
-          <td>{{ printFixed(src.Energy_keV,3) }}</td>
-          <td>{{ printCompact(src.PredictedCounts,6) }}</td>
-          <td>{{ printCompact(src.SourcePhotons,6) }}</td>
+          <td>{{ printFixed(src.Energy_keV,2) }}</td>
+          <td>{{ printCompact(src.PredictedCounts,4) }}</td>
+          <td>{{ printExp(src.SourcePhotons,3) }}</td>
         </tr>
 ##endfor
     {% else %}
@@ -674,15 +810,11 @@ sit below the level at which a signal can be reliably claimed - those are flagge
 ##endfor
       </tbody>
     </table>
+    </div>
   </li>
 ##endfor
 </ul>
-
-  Contributions to peaks from fit model:
-  
-        
-
-</div> <!-- <div id="peaks" style="margin-top: 25px"> -->
+</div> <!-- <div id="PeakContributions" style="margin-top: 25px"> -->
 {% endif %}        
 
 
@@ -772,59 +904,98 @@ Mass fractions for {{ shield.Name }}:
 {% endif %} <!-- if exists("Shieldings") -->
 
 
-<pre>
-{% if exists("Shieldings") %}
-{% if existsIn(Shieldings,"Shields") %}
-Shieldings:
-## for shield in Shieldings.Shields
-{% if shield.IsGeneric %}
-    Generic AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3:
-{% else %}
-    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density_gPerCm3 }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum > 1 %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
-{% endif %}
-{% if exists("PeaksUsedForActivityFitting") %}
-## for peak in PeaksUsedForActivityFitting.Peaks
-        {% if (shield.ShieldingNumber < length(peak.ShieldAttenuations)) %}{% 
-          if (at(peak.ShieldAttenuations,shield.ShieldingNumber) > 0.0) 
-          %}For peak at {{ peak.Energy}} keV, attenuation multiple of {{ at(peak.ShieldAttenuations,shield.ShieldingNumber) }}{% 
-            endif %}{% endif %}
-
-##endfor
-{% endif %}
-
-##endfor
-{% endif %}
-{% endif %}
-
+{% if HasFitResults %}
+<div id="FitSummary" style="margin-top: 25px">
+Fit summary:
+<ul style="margin-top: 4px;">
 {% if exists("Sources") %}
 ## for src in Sources
-{{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}
+  <li>{{ src.Nuclide }}: {{ src.Activity }}{% if src.ActivityIsFit %}&#32;&plusmn; {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}%){% endif %}, at {% if src.AgeIsFit %}fit age {{ src.Age }} &plusmn; {{ src.AgeUncert }}{% else %}assumed age {{ src.Age }}{% endif %}</li>
 ## endfor
 {% endif %}
-{% if HasFitResults %}
-Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}{{ ActShieldFitSetup.Geometry }}{% endif %}
+  <li>Geometry: {% if FixedGeometryDetector %}fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}{% else %}{{ ActShieldFitSetup.Geometry }}, with the source center {{ ActShieldFitSetup.Distance }} from the detector{% endif %}</li>
+</ul>
+</div> <!-- <div id="FitSummary"> -->
 {% endif %}
+
 {% if exists("Shieldings") %}
-Shieldings:
-{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
+<div id="ShieldingSummary" style="margin-top: 25px">
+Shielding:
+{% if existsIn(Shieldings,"Shields") %}
+<div class="TableScroll">
+<table class="ResultTable">
+  <thead>
+    <tr>
+      <th>Material</th>
+      <th>Composition (by mass)</th>
+      <th>Density</th>
+{% for dimNum in range(Shieldings.NumDimensions) %}
+      <th title="Thickness of this layer, along this dimension">{{ at(Shieldings.DimensionMeanings,dimNum) }}</th>
+{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
 ## for shield in Shieldings.Shields
+    <tr>
 {% if shield.IsGeneric %}
-    Generic shielding AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3
+      <td>Generic</td>
+      <td>AN = {{ shield.AN }} {% if shield.FitAN %}(fit){% endif %}</td>
+      <td>AD = {{ shield.AD }} g/cm<sup>2</sup> {% if shield.FitAD %}(fit){% endif %}</td>
+{% for dimNum in range(Shieldings.NumDimensions) %}
+      <td></td>
+{% endfor %}
 {% else %}
-    {{ shield.Name }} has density {{ shield.Density_gPerCm3 }} g/cm3 and dimensions {% for i in range(shield.NumDimensions) %} {{ at(Shieldings.DimensionMeanings,i) }}: {{ at(shield.Thicknesses, i) }}{% if at(shield.DimensionIsFit, i) %} (+-{{ at(shield.ThicknessesUncerts,i) }}) {% endif %} {% endfor %}
+      <td>{{ shield.Name }}</td>
+      <td class="Wrap">{% if existsIn(shield,"CompositionStr") %}{{ shield.CompositionStr }}{% endif %}</td>
+      <td>{{ shield.DensityStr }}</td>
+{% for dimNum in range(Shieldings.NumDimensions) %}
+      <td>{{ at(shield.Thicknesses,dimNum) }} {% if at(shield.DimensionIsFit,dimNum) %}&plusmn; {{ at(shield.ThicknessesUncerts,dimNum) }} (fit){% endif %}</td>
+{% endfor %}
 {% endif %}
-##endfor
+    </tr>
+## endfor
+  </tbody>
+</table>
+</div>
+
+{% if exists("HasPerShieldAttenuations") and HasPerShieldAttenuations and exists("PeaksUsedForActivityFitting") %}
+<div style="margin-top: 10px;">Fraction of each peak&apos;s gammas making it through each shielding layer:</div>
+<div class="TableScroll">
+<table class="ResultTable">
+  <thead>
+    <tr>
+      <th>Energy (keV)</th>
+      <th>Nuclide</th>
+{% for shield in Shieldings.Shields %}
+      <th>{% if shield.IsGeneric %}Generic{% else %}{{ shield.Name }}{% endif %}</th>
+{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+## for peak in PeaksUsedForActivityFitting.Peaks
+    <tr>
+      <td>{{ printFixed(peak.Energy_keV,2) }}</td>
+      <td>{{ peak.AssignedNuclide }}</td>
+{% for shield in Shieldings.Shields %}
+      <td>{% if shield.ShieldingNumber < length(peak.ShieldAttenuations) %}{{ printCompact(at(peak.ShieldAttenuations,shield.ShieldingNumber),4) }}{% endif %}</td>
+{% endfor %}
+    </tr>
+## endfor
+  </tbody>
+</table>
+</div>
+{% endif %}
 {% else %}
-    None
+None
 {% endif %}
+</div> <!-- <div id="ShieldingSummary"> -->
 {% endif %}
-</pre>
 
 <div style="margin-top: 20px">
 <ul style="list-style-type: none; padding: 0; margin: 0;">
   {% if HasFitResults %}
-  <li>There were {{ NumDof }} parameters fit for</li>
-  <li>It took {{ NumberFcnCalls }} solution trials to reach chi2={{ printCompact(FitChi2,5) }}</li>
+  <li>&chi;<sup>2</sup> = {{ printCompact(FitChi2,4) }} for {{ NumDof }} degrees of freedom{% if exists("FitChi2PerDofStr") %}, or &chi;<sup>2</sup>/dof = {{ FitChi2PerDofStr }}{% endif %}</li>
+  <li>{% if exists("NumFitParameters") %}{{ NumFitParameters }} parameter{% if NumFitParameters != 1 %}s{% endif %}&#32;fit, using {% endif %}{% if exists("PeaksUsedForActivityFitting") %}{{ length(PeaksUsedForActivityFitting.Peaks) }} peaks, {% endif %}with {{ NumberFcnCalls }} model evaluations</li>
   {% endif %}
   {% if exists("ExemplarFile") %}<li>Exemplar File: {{ ExemplarFile }}{% if exists("ExemplarSampleNumbers") %}, exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}</li>{% endif %}
   <li>Analysis Performed at: {{ AnalysisTime }}, 

@@ -224,6 +224,9 @@ public:
   
   //saveToDatabase(...): saves the SpecMeas to the database if it has been
   //  modified since last save, or never saved at all.
+  //  Never writes to (or deletes) a database entry that belongs to a saved state
+  //  (see UserFileInDb::isOwnedByState); if m_fileDbEntry is such an entry, this
+  //  object is disconnected from it, and a new standalone entry is created.
   //  Will throw runtime_error if spectrum is too large to save in database, or
   //  there are other issues with the database.
   //  A Wt::Dbo::StaleObjectException may be thrown if you are concurrently
@@ -241,6 +244,7 @@ public:
   
   //saveToDatabaseFromTempFile(): saves the SpecMeas to the database,
   //  essentially just coping the file to the UserFileInDbData object.
+  //  Like saveToDatabase(), never writes to an entry belonging to a saved state.
   //  This funtions is useful when the spectrum is no longer in memory, but you
   //  want to save it to the database.
   //  A Wt::Dbo::StaleObjectException may be thrown if you are concurrently
@@ -263,8 +267,9 @@ public:
   void setBasicFileInDbInfo( UserFileInDb *info ) const;
   
   //setDbEntry(...): deletes database entry represented by m_fileDbEntry (if it
-  //  exists and doesnt equal entry) and then associate the spectrum represented
-  //  by this object to 'entry' via setting m_fileDbEntry to `entry`.  Does not
+  //  exists, doesnt equal entry, and does not belong to a saved state) and then
+  //  associate the spectrum represented by this object to 'entry' via setting
+  //  m_fileDbEntry to `entry`.  Does not
   //  check that 'entry' is a correct UserFileInDb object, and does not
   //  serialize the SpecMeas object, nor mark it as modified.  May throw
   //  exception if 'entry' is invalid, or there are errors righting to database.
@@ -294,6 +299,14 @@ public:
   
   
 protected:
+#if( USE_DB_TO_STORE_SPECTRA )
+  /** Returns a fresh copy of `m_fileDbEntry`, if it is a database entry this object may write to (i.e., it is not
+   part of a saved state).  Otherwise clears `m_fileDbEntry` (without deleting the database entry) and returns
+   a null pointer; `wasStateRow` is set to true if the entry belonged to a saved state.
+   */
+  Wt::Dbo::ptr<UserFileInDb> writableDbEntry( bool &wasStateRow ) const;
+#endif
+  
   //initFile(): will return empty pointers in case of failure. Does not throw.
   std::shared_ptr<SpecMeas> initFile( const std::string &filename,
                                         const SpecUtils::ParserType parseTypeconst,
@@ -363,15 +376,15 @@ public:
   std::string m_appId;
   mutable Wt::WApplication *m_app;
 
-  /** Keep a mapping of UserState database indexes, when files are removed from memory, and written back to disk.
-   This will be restored when the file is parsed back in.
+  /** Keeps the UserState database id (see #SpecMeas::dbStateId) when the file is removed from memory, and written
+   back to disk.  This will be restored when the file is parsed back in.
    
-   Values in this variable are only valid if the measurement is not in memory.
+   Value in this variable is only valid if the measurement is not in memory.
    
    This variable is only accessed or modified when there is a lock on `m_mutex`, and is mutable so that
-   it can be set and cleared in `saveToFileSystem(...)` and `parseFile()`, respectively.
+   it can be set and cleared in `saveToFileSystem(...)` / `saveToFileSystemImmediately(...)` and `parseFile()`.
    */
-  mutable std::map<std::set<int>,long long int> m_userStateDbIndexes;
+  mutable long long int m_userStateDbId;
   
   mutable Wt::Signals::connection m_aboutToBeDeletedConnection;
 };//class SpectraFileHeader
