@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <memory>
 #include <vector>
 
 #include <Wt/WContainerWidget.h>
@@ -46,6 +48,7 @@ class SwitchCheckbox;
 class DetectorPeakResponse;
 class PeakFitDetPrefsGui;
 class MakeMcResponseForDrf;
+struct FitSkewSpectrumInput;
 
 namespace Wt
 {
@@ -157,6 +160,18 @@ public:
    */
   void useSourceLibrary( const std::vector<std::shared_ptr<const SrcLibLineInfo>> &srcs,
                          const bool auto_populate );
+
+  /** The spectra, and their peaks, the DRF is being made from - one entry per sample(s) with peaks, of
+   each file; for fitting the peak skew across all the calibration spectra (see FitSkewParamsTool).
+   */
+  std::vector<FitSkewSpectrumInput> skewFitSpectra();
+
+  /** Replaces peaks (e.g., refit with a new peak skew) with the ones they map to in `old_to_new`, both in
+   this tool and in the spectrum files, then re-fits the efficiency and FWHM.  The keys are peaks from
+   #skewFitSpectra.
+   */
+  void replacePeaks( const std::map<std::shared_ptr<const PeakDef>,std::shared_ptr<const PeakDef>> &old_to_new );
+
 protected:
   /** Recomputes the fits from the current source/peak inputs.
 

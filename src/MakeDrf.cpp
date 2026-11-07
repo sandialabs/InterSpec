@@ -90,6 +90,8 @@
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
+#include "InterSpec/FitSkewParamsTool.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MakeDrfSrcDef.h"
@@ -502,7 +504,7 @@ namespace
   class DrfPeak : public WContainerWidget
   {
   public:
-    const std::shared_ptr<const PeakDef> m_peak;
+    std::shared_ptr<const PeakDef> m_peak;
     const double m_livetime;
     Wt::WCheckBox *m_useForEffCb;
     WText *m_descTxt;
@@ -534,40 +536,11 @@ namespace
       m_useForEffCb = addNew<WCheckBox>( WString::fromUTF8("Use") );
       m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
-      char buffer[256];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
-        const bool use = peak->useForDrfIntrinsicEffFit();
-        
-        const char *gammatype = "";
-        switch( peak->sourceGammaType() )
-        {
-          case PeakDef::SourceGammaType::NormalGamma:
-            break;
-          case PeakDef::SourceGammaType::AnnihilationGamma:
-            gammatype = " (annih.)";
-            break;
-          case PeakDef::SourceGammaType::DoubleEscapeGamma:
-            gammatype = " (D.E.)";
-            break;
-          case PeakDef::SourceGammaType::SingleEscapeGamma:
-            gammatype = " (S.E.)";
-            break;
-          case PeakDef::SourceGammaType::XrayGamma:
-            gammatype = " (x-ray)";
-            break;
-        }//switch( peak->sourceGammaType() )
-        
-        m_useForEffCb->setChecked( use );
-        snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
-                  peak->parentNuclide()->symbol.c_str(),
-                  peak->mean(),
-                  (peak->amplitude() / livetime),
-                  peak->gammaParticleEnergy(),
-                  gammatype );
+        m_useForEffCb->setChecked( peak->useForDrfIntrinsicEffFit() );
       }else
       {
-        snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", peak->mean() );
         m_userBr = new WDoubleSpinBox();
         //m_userBr->addStyleClass( "DrfPeakNoNucBr" );
         m_userBr->setRange( 0.0, 1.0 );
@@ -586,7 +559,7 @@ namespace
         } );
       }
       
-      m_descTxt = addNew<WText>( WString::fromUTF8(buffer) );
+      m_descTxt = addNew<WText>( descriptionText() );
       // This is totally bizarre, but Safari (version 16.5 at least), and Chrome, will crash
       //  (the rendering process for the tab, by running up huge amounts of memory), the
       //  second time we create the "Make Detector Response" window, under some
@@ -617,6 +590,68 @@ namespace
       m_previewBtn->clicked().connect( this, [this]( WMouseEvent a1 ){ togglePeakPreview( a1 ); } );
     }//DrfPeak constructor;
     
+    /** The text describing the peak to the user. */
+    WString descriptionText() const
+    {
+      char buffer[256];
+      if( m_peak && m_peak->parentNuclide() && m_peak->nuclearTransition() )
+      {
+        const char *gammatype = "";
+        switch( m_peak->sourceGammaType() )
+        {
+          case PeakDef::SourceGammaType::NormalGamma:
+            break;
+          case PeakDef::SourceGammaType::AnnihilationGamma:
+            gammatype = " (annih.)";
+            break;
+          case PeakDef::SourceGammaType::DoubleEscapeGamma:
+            gammatype = " (D.E.)";
+            break;
+          case PeakDef::SourceGammaType::SingleEscapeGamma:
+            gammatype = " (S.E.)";
+            break;
+          case PeakDef::SourceGammaType::XrayGamma:
+            gammatype = " (x-ray)";
+            break;
+        }//switch( m_peak->sourceGammaType() )
+
+        snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
+                  m_peak->parentNuclide()->symbol.c_str(),
+                  m_peak->mean(),
+                  (m_peak->amplitude() / m_livetime),
+                  m_peak->gammaParticleEnergy(),
+                  gammatype );
+      }else
+      {
+        snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", (m_peak ? m_peak->mean() : 0.0) );
+      }
+
+      return WString::fromUTF8( buffer );
+    }//WString descriptionText() const
+
+
+    /** Replaces the peak (e.g., refit with a new peak shape); whether it is used, and any user entered
+     branching ratio, are kept.
+     */
+    void setPeak( const std::shared_ptr<const PeakDef> &peak )
+    {
+      assert( peak );
+      if( !peak || (peak == m_peak) )
+        return;
+
+      m_peak = peak;
+      m_descTxt->setText( descriptionText() );
+
+      // The preview chart is of the old peak; it gets re-made when next shown
+      if( m_previewPopup )
+      {
+        m_previewBtn->removeStyleClass( "active", true );
+        removeWidget( m_previewPopup );
+        m_previewPopup = nullptr;
+      }
+    }//void setPeak( const std::shared_ptr<const PeakDef> &peak )
+
+
     bool useForEffFit() const
     {
       return m_useForEffCb->isChecked();
@@ -784,6 +819,9 @@ namespace
     WCheckBox *m_allNoneSome;
     Wt::Signal<> m_srcInfoUpdated;
     DetectorPeakResponse::EffGeometryType m_geometry_type;
+
+    /** The spectrum the peaks are of - the sum over the sample numbers and detectors, if more than one. */
+    std::shared_ptr<const SpecUtils::Measurement> m_summedMeas;
     
     void updateTitle()
     {
@@ -940,6 +978,7 @@ namespace
         summed_meas = meas->measurement( *begin(samples), detnames[0] );
       if( !summed_meas )
         summed_meas = meas->sum_measurements( samples, meas->detector_names(), nullptr );
+      m_summedMeas = summed_meas;
       
       //ToDo: in principle, summed_meas->live_time() should equal livetime; should check
       
@@ -1419,6 +1458,87 @@ namespace
     
     std::shared_ptr<const SpecMeas> measurement() { return m_meas; }
     const set<int> &samples(){ return m_samples; }
+    std::shared_ptr<const SpecUtils::Measurement> summedMeasurement() const { return m_summedMeas; }
+
+
+    /** A plain-text title for the sample (no markup): the file name, the sample number(s) if the
+     file has more than one, and the spectrum title, if any.
+     */
+    std::string plainTitle() const
+    {
+      std::string spectitle;
+      for( const int sample : m_samples )
+      {
+        for( const string &detname : m_meas->detector_names() )
+        {
+          const shared_ptr<const SpecUtils::Measurement> m = m_meas->measurement( sample, detname );
+          if( m && !m->title().empty() )
+            spectitle = m->title();
+        }
+      }//for( const int sample : m_samples )
+
+      std::string answer = SpecUtils::filename( m_meas->filename() );
+      if( m_meas->sample_numbers().size() > 1 )
+      {
+        std::string samplestr;
+        for( const int sample : m_samples )
+          samplestr += (samplestr.empty() ? "" : ",") + std::to_string( sample );
+        answer += (answer.empty() ? "" : ": ")
+                  + WString::tr( (m_samples.size() == 1) ? "dsfs-sample" : "dsfs-samples" ).toUTF8()
+                  + " " + samplestr;
+      }//if( more than one sample in the file )
+
+      SpecUtils::trim( spectitle );
+      if( !spectitle.empty() )
+        answer += (answer.empty() ? "\"" : ", \"") + spectitle + "\"";
+
+      return answer;
+    }//std::string plainTitle() const
+
+
+    /** Replaces peaks of this sample, both in the peak rows and in the file, with the ones they map to
+     in `old_to_new`.  If `peak_model` is non-null (i.e., this sample is the displayed foreground), the
+     peaks are set through it, so the spectrum chart updates too.  Returns if any peak was replaced.
+     */
+    bool replacePeaks( const map<shared_ptr<const PeakDef>,shared_ptr<const PeakDef>> &old_to_new,
+                       PeakModel * const peak_model )
+    {
+      bool any_replaced = false;
+      for( DrfPeak *peakw : peaks() )
+      {
+        const auto iter = old_to_new.find( peakw->m_peak );
+        if( (iter != end(old_to_new)) && iter->second )
+        {
+          peakw->setPeak( iter->second );
+          any_replaced = true;
+        }
+      }//for( DrfPeak *peakw : peaks() )
+
+      if( !any_replaced )
+        return false;
+
+      // Copy the file's peaks by value, as `setPeaks(...)` refills its deque in place
+      const shared_ptr<const SpecMeas> const_meas = m_meas;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> file_peaks = const_meas->peaks( m_samples );
+      vector<shared_ptr<const PeakDef>> updated;
+      if( file_peaks )
+      {
+        for( const shared_ptr<const PeakDef> &peak : *file_peaks )
+        {
+          const auto iter = old_to_new.find( peak );
+          updated.push_back( ((iter != end(old_to_new)) && iter->second) ? iter->second : peak );
+        }
+      }//if( file_peaks )
+
+      if( peak_model )
+        peak_model->setPeaks( updated );
+      else
+        m_meas->setPeaks( deque<shared_ptr<const PeakDef>>( begin(updated), end(updated) ), m_samples );
+
+      updateTitle();
+
+      return true;
+    }//bool replacePeaks(...)
     
   };//class DrfSpecFileSample
   
@@ -1800,6 +1920,8 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   // Peak fit preferences (optional, embedded in DRF)
   GroupBox *peakFitPrefsGroup = optionsRow->addNew<GroupBox>( WString::tr("md-peak-fit-prefs-title") );
   m_peakFitDetPrefsGui = peakFitPrefsGroup->addNew<PeakFitDetPrefsGui>( m_interspec, false );
+  // Show changes made elsewhere - e.g., by the "fit skew pars" dialog it opens
+  m_interspec->peakFitDetPrefsChanged().connect( m_peakFitDetPrefsGui, &PeakFitDetPrefsGui::handlePrefsChanged );
   
   auto fileHolderOwned = std::make_unique<WContainerWidget>();
   WContainerWidget *fileHolder = fileHolderOwned.get();
@@ -4483,3 +4605,79 @@ void MakeDrf::useSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &
   }//for( auto w : m_files->children() )
   
 }//void useSourceLibrary( const vector<SrcLibLineInfo> &srcs );
+
+
+vector<FitSkewSpectrumInput> MakeDrf::skewFitSpectra()
+{
+  const shared_ptr<const SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  const set<int> &foreground_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+  vector<FitSkewSpectrumInput> answer;
+  for( WWidget *w : m_files->children() )
+  {
+    DrfSpecFile * const fileWidget = dynamic_cast<DrfSpecFile *>( w );
+    if( !fileWidget )
+      continue;
+
+    for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+    {
+      FitSkewSpectrumInput input;
+      input.spectrum = sample->summedMeasurement();
+      input.title = WString::fromUTF8( sample->plainTitle() );
+      input.isBackground = sample->isBackground();
+      input.isDisplayedForeground = foreground && (sample->measurement() == foreground)
+                                    && (sample->samples() == foreground_samples);
+
+      // The "selected" peaks are whole ROIs: every peak sharing a continuum with a peak being used
+      set<shared_ptr<const PeakContinuum>> used_rois;
+      for( DrfPeak *peak : sample->peaks() )
+      {
+        input.allPeaks.push_back( peak->m_peak );
+        if( peak->useForEffFit() )
+          used_rois.insert( peak->m_peak->continuum() );
+      }
+
+      for( const shared_ptr<const PeakDef> &peak : input.allPeaks )
+      {
+        if( used_rois.count( peak->continuum() ) )
+          input.selectedPeaks.push_back( peak );
+      }
+
+      if( input.spectrum && !input.allPeaks.empty() )
+        answer.push_back( std::move(input) );
+    }//for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+  }//for( WWidget *w : m_files->children() )
+
+  return answer;
+}//vector<FitSkewSpectrumInput> skewFitSpectra()
+
+
+void MakeDrf::replacePeaks( const map<shared_ptr<const PeakDef>,shared_ptr<const PeakDef>> &old_to_new )
+{
+  if( old_to_new.empty() )
+    return;
+
+  const shared_ptr<const SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  const set<int> &foreground_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<PeakModel> peak_model = m_interspec->peakModel();
+
+  bool any_replaced = false;
+  for( WWidget *w : m_files->children() )
+  {
+    DrfSpecFile * const fileWidget = dynamic_cast<DrfSpecFile *>( w );
+    if( !fileWidget )
+      continue;
+
+    for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+    {
+      // The displayed foreground's peaks go through the PeakModel, so the spectrum chart shows them
+      const bool is_foreground = foreground && (sample->measurement() == foreground)
+                                 && (sample->samples() == foreground_samples);
+      if( sample->replacePeaks( old_to_new, is_foreground ? peak_model.get() : nullptr ) )
+        any_replaced = true;
+    }
+  }//for( WWidget *w : m_files->children() )
+
+  if( any_replaced )
+    handleSourcesUpdates();
+}//void replacePeaks(...)

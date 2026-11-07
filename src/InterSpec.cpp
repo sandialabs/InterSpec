@@ -3079,13 +3079,27 @@ void InterSpec::deletePeakEdit()
 
 void InterSpec::showFitSkewParamsWindow()
 {
+  // When the (modal) "Create Detector Response Function" tool is open, it is what opened us, so the
+  //  skew is fit across the spectra it is using.
+  vector<FitSkewSpectrumInput> drfSpectra;
+  if( m_makeDrfTool && m_makeDrfTool->tool() )
+    drfSpectra = m_makeDrfTool->tool()->skewFitSpectra();
+
   if( m_fitSkewParamsWindow )
   {
-    m_fitSkewParamsWindow->show();
-    return;
-  }
+    FitSkewParamsTool * const tool = m_fitSkewParamsWindow->tool();
+    if( tool && (tool->isDrfMode() == !drfSpectra.empty()) )
+    {
+      m_fitSkewParamsWindow->show();
+      return;
+    }
 
-  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this );
+    // Opened for the other mode - start over (without an undo step for closing it)
+    AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
+    assert( !m_fitSkewParamsWindow );
+  }//if( m_fitSkewParamsWindow )
+
+  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this, std::move(drfSpectra) );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -3136,6 +3150,10 @@ void InterSpec::acceptFitSkewParamsWindow()
   {
     UndoRedoManager::BlockUndoRedoInserts block;
     tool->acceptResults();
+
+    // The DRF tool's peaks, refit with the new skew (the DRF tool blocks undo/redo while open)
+    if( !tool->drfPeakReplacements().empty() && m_makeDrfTool && m_makeDrfTool->tool() )
+      m_makeDrfTool->tool()->replacePeaks( tool->drfPeakReplacements() );
   }
 
   // Capture new state
@@ -11492,6 +11510,13 @@ void InterSpec::handleCloseMakeDrfWindow( MakeDrfWindow *window )
   
   m_makeDrfTool = nullptr;
   AuxWindow::deleteAuxWindow( window );
+
+  // A fit skew dialog fitting across the DRF tool's spectra no longer has anywhere to put its peaks
+  if( m_fitSkewParamsWindow && m_fitSkewParamsWindow->tool() && m_fitSkewParamsWindow->tool()->isDrfMode() )
+  {
+    AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
+    assert( !m_fitSkewParamsWindow );
+  }
 }//void handleCloseMakeDrfWindow( MakeDrfWindow *window )
 
 

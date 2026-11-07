@@ -21,16 +21,62 @@
   width: 100%;
 }
 
-/* Controls area below the chart — flex column, centered, does not grow */
+/* Controls below the chart, in three columns: the spectra options, the skew options, and the fit status
+   and button.  The left and right columns share the space equally, so the skew options stay centered,
+   and the "Fit" button at the far right whether or not there is status text.  Does not grow. */
 .FswControls
 {
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  gap: 12px;
   padding: 6px 8px;
   border-top: 1px solid var(--interspec-border-color);
+}
+
+/* Left: the displayed spectrum, and which peaks and spectra to fit */
+.FswSpectraOpts
+{
+  flex: 1 1 0px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+/* Middle: skew type, and the skew parameters */
+.FswSkewOpts
+{
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 4px;
+}
+
+/* Right: what will be fit, and the fit status, to the left of the "Fit" button */
+.FswFitOpts
+{
+  flex: 1 1 0px;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.FswStatusDiv
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  gap: 2px;
 }
 
 /* Skew type row: label + combo side by side */
@@ -54,6 +100,36 @@
   box-sizing: border-box;
 }
 
+.FswSpectrumCombo
+{
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+label.FswOptCb:has(input[type="checkbox"])
+{
+  font-size: 11px;
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+/* Stacked, and centered, on phones and narrow windows */
+@media screen and (max-width: 900px)
+{
+  .FswControls { flex-direction: column; align-items: stretch; gap: 6px; }
+  .FswSpectraOpts, .FswFitOpts { flex: 0 0 auto; }
+  .FswSpectraOpts { align-items: center; }
+  .FswFitOpts { justify-content: center; }
+  .FswStatusDiv { flex: 0 1 auto; align-items: center; text-align: center; }
+}
+
+.IsPhone .FswControls { flex-direction: column; align-items: stretch; gap: 6px; }
+.IsPhone .FswSpectraOpts, .IsPhone .FswFitOpts { flex: 0 0 auto; }
+.IsPhone .FswSpectraOpts { align-items: center; }
+.IsPhone .FswFitOpts { justify-content: center; }
+.IsPhone .FswStatusDiv { flex: 0 1 auto; align-items: center; text-align: center; }
+
 
 /* ==================== Skew parameters section ==================== */
 
@@ -65,16 +141,14 @@
 }
 
 
-/* ==================== Fit button row ==================== */
-.FswFitRow
+/* ==================== Fit status and button ==================== */
+.FswFitBtn
 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 2px;
+  flex: 0 0 auto;
+  font-size: 11px;
 }
 
-.FswFitBtn
+.FswDesc
 {
   font-size: 11px;
 }
