@@ -2164,7 +2164,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
     upperx = upperx + upperXChangeFrac*energydelta;
     
     D3SpectrumDisplayDiv *specchart = m_viewer->spectrum();
-    specchart->performDragCreateRoiWork( lowerx, upperx, npeaks, true, -1.0, -1.0 );
+    specchart->performDragCreateRoiWork( lowerx, upperx, npeaks, true, -1.0, -1.0,
+                                         SpecUtils::SpectrumType::Foreground );
     
     vector<PeakDef> foundpeaks, refitOrigPeaks, allPostFitPeaks;
     for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )
