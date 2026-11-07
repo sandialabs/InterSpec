@@ -98,6 +98,13 @@ namespace
 {
   string g_data_dir, g_test_data_dir, g_truth_out, g_only, g_measure_out;
   unsigned g_threads = 3;
+  // `--back-near-angles=93,115,155,180`: also measure the covered responses with their side & back
+  //  near-field tables cut to these angles (no new MC) - the angle-subset A/B.
+  vector<double> g_back_near_angles;
+
+  /** The detector body InterSpec's MC tool assumes behind the crystal face (GenerationOptions::
+   back_body_depth_cm); the gates below do not judge sources inside it. */
+  const double sm_body_depth_cm = 15.0;
 
   struct Fixture
   {
@@ -120,6 +127,13 @@ namespace
           g_only = arg.substr( 7 );
         else if( SpecUtils::istarts_with( arg, "--measure-out=" ) )
           g_measure_out = arg.substr( 14 );
+        else if( SpecUtils::istarts_with( arg, "--back-near-angles=" ) )
+        {
+          vector<string> fields;
+          SpecUtils::split( fields, arg.substr( 19 ), "," );
+          for( const string &f : fields )
+            g_back_near_angles.push_back( std::stod( f ) );
+        }
       }
       if( !g_data_dir.empty() )
         InterSpec::setStaticDataDirectory( g_data_dir );
@@ -170,13 +184,70 @@ namespace
 
     if( r->provenance.back_coverage )
       r->provenance.back_coverage = ceelo::BackCoverage::None;
+    // ...and the side & back near-field tables, which only exist with coverage.
+    r->back_near_field = ceelo::NearFieldModel{};
+    r->tot_eff.back_near_field = ceelo::NearFieldModel{};
+    r->provenance.back_body_depth_cm = 0.0;
     r->finalize();
     return r;
   }//uncovered_response(...)
 
 
-  /** The committed covered full-MC response of detector `name`, and the uncovered one it implies -
-   labelled "fullmc_none" and "fullmc_coarse" - or nothing when `dir` has no fixture for it. */
+  /** `covered` without its side & back near-field tables: every other table is the same nodes and
+   values (the tables are their own generation stage), so this is the clean A/B of what they do. */
+  shared_ptr<ceelo::DetectorResponse> without_back_near( const ceelo::DetectorResponse &covered )
+  {
+    const shared_ptr<ceelo::DetectorResponse> r = ceelo::DetectorResponse::from_xml_string( covered.to_xml_string() );
+    r->back_near_field = ceelo::NearFieldModel{};
+    r->tot_eff.back_near_field = ceelo::NearFieldModel{};
+    r->provenance.back_body_depth_cm = 0.0;
+    r->finalize();
+    return r;
+  }//without_back_near(...)
+
+
+  /** `covered` with its side & back near-field tables cut to the angle columns nearest `thetas_deg`
+   - what generating with those angles alone would have given, without new MC. */
+  shared_ptr<ceelo::DetectorResponse> back_near_subset( const ceelo::DetectorResponse &covered,
+                                                        const vector<double> &thetas_deg )
+  {
+    const shared_ptr<ceelo::DetectorResponse> r = ceelo::DetectorResponse::from_xml_string( covered.to_xml_string() );
+    for( ceelo::NearFieldModel *m : { &r->back_near_field, &r->tot_eff.back_near_field } )
+    {
+      if( m->empty() )
+        continue;
+      vector<size_t> keep;
+      for( size_t c = 0; c < m->cos_thetas.size(); ++c )
+        for( const double th : thetas_deg )
+          if( std::fabs( std::acos( m->cos_thetas[c] ) * 180.0 / M_PI - th ) < 0.5 )
+            keep.push_back( c );
+      std::sort( begin(keep), end(keep) );
+      keep.erase( std::unique( begin(keep), end(keep) ), end(keep) );
+      const size_t ne = m->energies_keV.size(), nd = m->dists_cm.size();
+      vector<double> cts, ln_n, frac_sigma;
+      for( const size_t c : keep )
+        cts.push_back( m->cos_thetas[c] );
+      for( size_t e = 0; e < ne; ++e )
+        for( const size_t c : keep )
+          for( size_t d = 0; d < nd; ++d )
+          {
+            ln_n.push_back( m->ln_n[m->index( e, c, d )] );
+            frac_sigma.push_back( m->frac_sigma[m->index( e, c, d )] );
+          }
+      m->cos_thetas = cts;
+      m->ln_n = ln_n;
+      m->frac_sigma = frac_sigma;
+      m->break_cos_thetas = { cts.front(), cts.back() };
+    }
+    r->finalize();
+    return r;
+  }//back_near_subset(...)
+
+
+  /** The committed covered full-MC response of detector `name`, and what it implies: the uncovered
+   one ("fullmc_none"), and - when it carries side & back near-field tables - itself without them
+   ("fullmc_coarse_nonear") and, with --back-near-angles, cut to those angles ("fullmc_coarse_subset");
+   the response itself is "fullmc_coarse".  Nothing when `dir` has no fixture for it. */
   vector<pair<const char *,shared_ptr<const ceelo::DetectorResponse>>> full_mc_responses( const string &dir,
                                                                                         const string &name )
   {
@@ -184,8 +255,35 @@ namespace
     if( xml.empty() )
       return {};
     const shared_ptr<const ceelo::DetectorResponse> covered = ceelo::DetectorResponse::from_xml_string( xml );
-    return { { "fullmc_none", uncovered_response( *covered ) }, { "fullmc_coarse", covered } };
+    vector<pair<const char *,shared_ptr<const ceelo::DetectorResponse>>> out{ { "fullmc_none", uncovered_response( *covered ) } };
+    if( !covered->back_near_field.empty() )
+    {
+      out.emplace_back( "fullmc_coarse_nonear", without_back_near( *covered ) );
+      if( !g_back_near_angles.empty() )
+        out.emplace_back( "fullmc_coarse_subset", back_near_subset( *covered, g_back_near_angles ) );
+    }
+    out.emplace_back( "fullmc_coarse", covered );
+    return out;
   }//full_mc_responses(...)
+
+
+  /** Whether `src` is inside the detector body InterSpec assumes (sm_body_depth_cm) - outside the
+   described detector, but where a real one keeps its cryostat or electronics. */
+  bool inside_assumed_body( const ceelo::GeometryDescriptor &gd, const Eigen::Vector3d &src )
+  {
+    ceelo::GeometryDescriptor::Envelope body = gd.outer_envelope();
+    body.z_max_cm = std::max( body.z_max_cm, sm_body_depth_cm );
+    const ceelo::ConvexSolid s = body.solid();
+    return !((src - s.project( src )).norm() > 0.0);
+  }
+
+  /** The detectors the side & back near-field gates are judged on.  nai_log is reported only: seen
+   from its face its back occupies the last few degrees, its far-field back nodes sit within ~2a, and
+   it is a box whose phi = 45 deg reuses the phi = 0 tables. */
+  bool is_gated_detector( const string &name )
+  {
+    return (name == "gem35_70") || (name == "detective_x") || (name == "nai3x3");
+  }
 
 
   // ---------------------------------------------------------------------------------------------
@@ -815,11 +913,26 @@ BOOST_AUTO_TEST_CASE( GenerateBackCoveredResponses )
     opts.num_threads = g_threads;
     opts.base_seed = 4242;
     opts.back_coverage = ceelo::BackCoverage::Coarse;
+    opts.back_body_depth_cm = sm_body_depth_cm;   // as InterSpec's MC tool
+    ceelo::GenerationStats stats;
+    opts.stats_out = &stats;
+    const ceelo::ResponseGenerator::NodePlan plan = ceelo::ResponseGenerator::plan_nodes( det.approx, opts );
     const shared_ptr<ceelo::DetectorResponse> resp = ceelo::ResponseGenerator::generate( det.approx, opts );
     BOOST_REQUIRE( resp );
     ofstream out( SpecUtils::append_path( g_truth_out, det.name + "_fullmc_coarse_response.xml" ).c_str() );
+    BOOST_REQUIRE( out.is_open() );
     out << resp->to_xml_string();
-    cout << det.name << ": covered response written" << endl;
+
+    // What each stage cost, CPU seconds and MC nodes run (stage 5 skips refuse-grade nodes).
+    size_t n_by_stage[8] = {};
+    for( const ceelo::NodeStat &ns : stats.nodes )
+      ++n_by_stage[std::min( ns.stage, 7u )];
+    cout << det.name << ": covered response written; CPU s by stage:";
+    for( unsigned st = 1; st <= 5; ++st )
+      cout << " " << st << "=" << std::fixed << std::setprecision( 0 ) << stats.cpu_s_by_stage[st]
+           << " (" << n_by_stage[st] << " nodes)";
+    cout << std::defaultfloat << std::setprecision( 6 ) << "; stage 5 planned " << plan.n_back_near() << ", body depth "
+         << resp->provenance.back_body_depth_cm << " cm; total " << stats.total_cpu_s << " s" << endl;
   }
 }//GenerateBackCoveredResponses
 
@@ -900,15 +1013,83 @@ BOOST_AUTO_TEST_CASE( VolumetricSceneMeasure )
           ceelo::ResponseFlag flag = ceelo::ResponseFlag::Ok;
           const double model = line_path_eff( resp, sc, e, flag );
           const McPoint &mc = pos->second;
+          const double rel = model/mc.fep - 1.0;
           cout << det.name << " | " << kind << " | " << sc.name << " @ " << e << " keV: line/MC - 1 = "
-               << std::showpos << std::fixed << std::setprecision( 2 ) << 100.0*(model/mc.fep - 1.0)
+               << std::showpos << std::fixed << std::setprecision( 2 ) << 100.0*rel
                << "%" << std::noshowpos << " (MC +- " << 100.0*mc.fep_sig/mc.fep << "%) "
                << ceelo::to_string( flag ) << std::defaultfloat << endl;
+
+          // Gates (2026-11-05) for a covered response with side & back near-field tables: the
+          //  scene behind within max(1.5%, 3 sigma of the MC), every scene within 2.7% - where the
+          //  response gives an answer at all.  A refuse-grade one (NeedsMc: the direct path through
+          //  the back nearly blocked, 60 keV behind) is left out, as in BackEnvelopeMeasure.
+          if( (string( kind ) == "fullmc_coarse") && !resp->back_near_field.empty()
+              && (flag != ceelo::ResponseFlag::NeedsMc) )
+          {
+            const double tol = (sc.name == "sphere_behind") ? std::max( 0.015, 3.0*mc.fep_sig/mc.fep ) : 0.027;
+            BOOST_CHECK_MESSAGE( std::fabs( rel ) <= tol, det.name << " " << sc.name << " @ " << e << " keV: line/MC - 1 = "
+                                 << 100.0*rel << "% exceeds " << 100.0*tol << "%" );
+          }
         }
       }
     }//for( response kinds )
   }//for( detectors )
 }//VolumetricSceneMeasure
+
+
+BOOST_AUTO_TEST_CASE( PrefactorGridBehindResolution )
+{
+  // The line path reads the response prefactor off a grid in (ln d, cos theta) from the crystal-face
+  //  origin (12 nodes per octave); close behind a detector a ln d step there is a larger step in the
+  //  side & back near-field table's own distance (clearance past the housing).  Gate (2026-11-05):
+  //  grid vs direct evaluation within 0.3%, for water spheres close beside and behind each detector.
+  using GT = GammaInteractionCalc::GeometryType;
+  const string dir = g_truth_out.empty() ? truth_dir() : g_truth_out;
+  for( const BackDet &det : back_detectors() )
+  {
+    if( !g_only.empty() && !SpecUtils::icontains( det.name, g_only ) )
+      continue;
+    const string xml = read_file( SpecUtils::append_path( dir, det.name + "_fullmc_coarse_response.xml" ) );
+    if( xml.empty() )
+      continue;
+    const shared_ptr<const ceelo::DetectorResponse> resp = ceelo::DetectorResponse::from_xml_string( xml );
+    if( resp->back_near_field.empty() || (resp->descriptor.shape != ceelo::DetectorShape::Cylinder) )
+      continue;
+
+    const ceelo::GeometryDescriptor::Envelope env = resp->descriptor.outer_envelope();
+    const double r = 1.5, gap = 0.5, side = env.radius_cm + r + gap;
+    const vector<VolScene> scenes = {
+      { "grid_beside_front", GT::Spherical, { r, 0.0, 0.0 }, -1.0, side },
+      { "grid_beside_back",  GT::Spherical, { r, 0.0, 0.0 }, -0.7*env.z_max_cm, side },
+      { "grid_behind_near",  GT::Spherical, { r, 0.0, 0.0 }, -(env.z_max_cm + r + gap), 0.0 },
+      { "grid_behind_body",  GT::Spherical, { r, 0.0, 0.0 }, -(std::max( env.z_max_cm, sm_body_depth_cm ) + r + gap), 0.0 }
+    };
+    for( const VolScene &sc : scenes )
+    {
+      for( const double e : { 60.0, 661.7 } )
+      {
+        ceelo::ResponseFlag flag = ceelo::ResponseFlag::Ok;
+        const double grid = line_path_eff( resp, sc, e, flag );
+        GammaInteractionCalc::sm_prefactor_direct_eval = true;
+        double direct = 0.0;
+        try
+        {
+          direct = line_path_eff( resp, sc, e, flag );
+        }catch( ... )
+        {
+          GammaInteractionCalc::sm_prefactor_direct_eval = false;
+          throw;
+        }
+        GammaInteractionCalc::sm_prefactor_direct_eval = false;
+        const double rel = grid / direct - 1.0;
+        cout << det.name << " | " << sc.name << " @ " << e << " keV: grid/direct - 1 = " << std::showpos
+             << 100.0*rel << "%" << std::noshowpos << endl;
+        BOOST_CHECK_MESSAGE( std::fabs( rel ) <= 0.003, det.name << " " << sc.name << " @ " << e
+                             << " keV: prefactor grid off by " << 100.0*rel << "%" );
+      }
+    }
+  }//for( detectors )
+}//PrefactorGridBehindResolution
 
 
 BOOST_AUTO_TEST_CASE( BackEnvelopeMeasure )
@@ -946,15 +1127,50 @@ BOOST_AUTO_TEST_CASE( BackEnvelopeMeasure )
       {
         csv.open( SpecUtils::append_path( g_measure_out, det.name + "_" + named.first + "_measure.csv" ).c_str() );
         csv << "region,E_keV,theta_deg,phi_deg,s_over_a,mc_fep,mc_rel_sig,model_fep,model_rel_sig,rel_err,"
-               "transmission,flag\n";
+               "transmission,flag,in_body\n";
       }
+
+      // The pre-registered gates (2026-11-05), for a covered response with side & back near-field
+      //  tables on a gated detector, outside the assumed body, the direct path mostly open
+      //  (s >= 0.3) and not refuse-grade.  Pulls leave out back_structure_approx: it covers a back
+      //  described differently from the real one, which MC of the same description cannot see.
+      const shared_ptr<const ceelo::DetectorResponse> &resp = named.second;
+      const bool gated = is_gated_detector( det.name ) && (named.first == "fullmc_coarse")
+                         && !resp->back_near_field.empty();
+      const shared_ptr<const ceelo::DetectorResponse> stripped = gated ? without_back_near( *resp ) : nullptr;
+      map<string,vector<double>> gate_err, gate_contact_err, gate_pull;   // side -> values
+      size_t n_in_body = 0, n_in_body_moved = 0;
       for( const TruthRow &r : rows )
       {
         if( (r.region != "point") || !(r.mc.fep > 0.0) )
           continue;
-        const string where = string( (r.src.z() > crystal_back) ? "behind" : "beside" )
-                             + ((r.s_over_a < 1.0) ? "_near" : "_far");
+        const string side = (r.src.z() > crystal_back) ? "behind" : "beside";
+        const string where = side + ((r.s_over_a < 1.0) ? "_near" : "_far");
         const ceelo::EffResult m = named.second->eps_fep_at( r.energy, r.src );
+        const bool in_body = inside_assumed_body( det.approx, r.src );
+        if( gated )
+        {
+          const ceelo::ApertureQuadrature q = resp->make_quadrature( r.src );
+          const double s = (q.omega_frac_active > 0.0) ? resp->kernel_transmitted( r.energy, q ) / q.omega_frac_active : 0.0;
+          if( in_body )
+          {
+            // Inside the body the tables do not apply: the answer is the one without them.
+            const ceelo::EffResult o = stripped->eps_fep_at( r.energy, r.src );
+            ++n_in_body;
+            n_in_body_moved += ((o.value != m.value) || (o.sigma != m.sigma) || (o.flag != m.flag));
+          }else if( (s >= 0.3) && (m.flag != ceelo::ResponseFlag::NeedsMc) && (m.value > 0.0) )
+          {
+            const double rel = m.value / r.mc.fep - 1.0;
+            double sig2 = m.sigma*m.sigma;
+            if( (r.src.z() > crystal_back) && (det.approx.back_structure_extent_cm() > 0.0) )
+              sig2 -= std::pow( ceelo::model_sigma::back_structure_approx * m.value, 2.0 );
+            gate_pull[where].push_back( rel * r.mc.fep / std::sqrt( std::max( 0.0, sig2 ) + r.mc.fep_sig*r.mc.fep_sig ) );
+            if( r.s_over_a >= 0.3 - 1e-9 )
+              gate_err[side].push_back( std::fabs( rel ) );
+            else
+              gate_contact_err[side].push_back( std::fabs( rel ) );
+          }
+        }//if( gated )
         if( m.flag == ceelo::ResponseFlag::NeedsMc )
           ++flagged[where];
         if( m.value > 0.0 )
@@ -977,7 +1193,7 @@ BOOST_AUTO_TEST_CASE( BackEnvelopeMeasure )
                                ? named.second->kernel_transmitted( r.energy, q ) / q.omega_frac_active : 0.0;
             csv << where << "," << r.energy << "," << r.theta << "," << r.phi << "," << r.s_over_a << ","
                 << r.mc.fep << "," << r.mc.fep_sig/r.mc.fep << "," << m.value << "," << m.sigma/m.value << ","
-                << rel << "," << s << "," << ceelo::to_string( m.flag ) << "\n";
+                << rel << "," << s << "," << ceelo::to_string( m.flag ) << "," << in_body << "\n";
           }
         }
         try
@@ -1017,6 +1233,41 @@ BOOST_AUTO_TEST_CASE( BackEnvelopeMeasure )
       };
       report( "FEP (excl. NeedsMc)", fep );
       report( "total", tot );
+
+      if( gated )
+      {
+        const auto pct = []( vector<double> v, const double f ) {
+          std::sort( begin(v), end(v) );
+          return v.empty() ? 0.0 : v[std::min( v.size() - 1, static_cast<size_t>( f * v.size() ) )];
+        };
+        for( const auto &kv : gate_err )
+        {
+          const double median = pct( kv.second, 0.5 ), p95 = pct( kv.second, 0.95 );
+          cout << "GATE " << det.name << " " << kv.first << " s/a>=0.3: n=" << kv.second.size() << " median "
+               << 100*median << "% p95 " << 100*p95 << "%" << endl;
+          BOOST_CHECK_MESSAGE( median <= 0.01, det.name << " " << kv.first << ": median " << 100*median << "% > 1%" );
+          BOOST_CHECK_MESSAGE( p95 <= 0.03, det.name << " " << kv.first << ": p95 " << 100*p95 << "% > 3%" );
+        }
+        for( const auto &kv : gate_contact_err )
+        {
+          const double median = pct( kv.second, 0.5 );
+          cout << "GATE " << det.name << " " << kv.first << " s/a=0.05: n=" << kv.second.size() << " median "
+               << 100*median << "% p95 " << 100*pct( kv.second, 0.95 ) << "%" << endl;
+          BOOST_CHECK_MESSAGE( median <= 0.02, det.name << " " << kv.first << " at contact: median " << 100*median << "% > 2%" );
+        }
+        for( const auto &kv : gate_pull )
+        {
+          double pull2 = 0.0;
+          for( const double p : kv.second )
+            pull2 += p*p;
+          const double rms = std::sqrt( pull2 / std::max<size_t>( 1, kv.second.size() ) );
+          cout << "GATE " << det.name << " " << kv.first << ": rms pull " << rms << " (n=" << kv.second.size() << ")" << endl;
+          BOOST_CHECK_MESSAGE( (rms >= 0.5) && (rms <= 1.3), det.name << " " << kv.first << ": rms pull " << rms << " outside [0.5, 1.3]" );
+        }
+        cout << "GATE " << det.name << " inside the assumed body: " << n_in_body << " rows, "
+             << n_in_body_moved << " differ from the response without the tables" << endl;
+        BOOST_CHECK_EQUAL( n_in_body_moved, 0u );
+      }//if( gated )
       for( auto &kv : worst_rows )
       {
         std::sort( begin(kv.second), end(kv.second),

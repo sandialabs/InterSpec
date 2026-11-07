@@ -161,7 +161,8 @@ namespace
 
   /** Predicted cumulative wall-seconds after each planned node, in generation order (backbone
    energies ascending, then the angular nodes of each shape energy, then the near-field nodes of
-   each, then the side & back nodes of each); size total + 1, [0] = 0. */
+   each, then the side & back nodes of each, then the side & back near-field nodes of each); size
+   total + 1, [0] = 0. */
   std::vector<double> prior_cumulative_cost( const ceelo::ResponseGenerator::NodePlan &plan,
                                              const ceelo::GenerationOptions &opts,
                                              const McTimeCalibration *calib )
@@ -188,6 +189,10 @@ namespace
     for( const double energy : plan.shape_energies_keV )
       for( int i = 0; i < plan.n_back_cos_theta * plan.n_phi; ++i )
         cum.push_back( cum.back() + node_cost_s( opts.back_precision_scale * prec(4, energy),
+                                                 opts.scans_stop_on_total, opts, calib ) );
+    for( const double energy : plan.shape_energies_keV )
+      for( int i = 0; i < plan.n_back_near_positions; ++i )
+        cum.push_back( cum.back() + node_cost_s( opts.back_precision_scale * prec(5, energy),
                                                  opts.scans_stop_on_total, opts, calib ) );
 
     return cum;
@@ -1749,6 +1754,12 @@ void MakeMcResponseForDrf::updateEstimate()
       parts = WString::tr("mmr-est-part-join").arg( parts ).arg( back_part );
     }//if( side & back nodes )
 
+    if( (plan.n_back_near() > 0) && (nE > 0) )
+    {
+      const WString back_near_part = WString::tr("mmr-est-part-back-near").arg( plan.n_back_near_positions ).arg( nE );
+      parts = WString::tr("mmr-est-part-join").arg( parts ).arg( back_near_part );
+    }//if( side & back near-field nodes )
+
     const char *durKey = "mmr-est-dur-model";
     if( m_calibrating )
       durKey = "mmr-est-dur-measuring";
@@ -2111,6 +2122,8 @@ void MakeMcResponseForDrf::refreshProgressText()
       case 1:  stageKey = "mmr-stage-backbone"; break;
       case 2:  stageKey = m_transferAnchors ? "mmr-stage-anchors" : "mmr-stage-angular"; break;
       case 3:  stageKey = "mmr-stage-near"; break;
+      case 4:  stageKey = "mmr-stage-back"; break;
+      case 5:  stageKey = "mmr-stage-back-near"; break;
       default: break;
     }
   }//if( n < N )
@@ -2170,6 +2183,11 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
       case 2:  opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Fine;   break;
       default: opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Coarse; break;
     }
+    // HPGe, NaI and similar detectors keep at least about this much cryostat, photomultiplier or
+    //  electronics behind the crystal face, described or not (pager-sized ones excepted, which do
+    //  not need this precision), so the side & back near field spends no Monte Carlo there.  A
+    //  source can still be placed there, and is then left to the ray-traced geometry.
+    opts.back_body_depth_cm = 15.0;
   }//if( Full MC, or an imported grid's total )
 
   if( selectedMethod() == Method::QuickMc )
@@ -2192,6 +2210,9 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
     //  cost ~0.1% RMS, which is not worth the hour.  Only the on-axis backbone stops on the FEP.
     //  Cover the grid's own energy range, not the default.
     opts.scans_stop_on_total = true;
+    // attachTotalEfficiency reads the total/FEP ratio at the grid's own nodes, none of which are a
+    //  side & back near-field position, so that scan would be spent for nothing.
+    opts.back_near_field = false;
     const ceelo::ResponseProvenance &prov = m_gridResponse->provenance;
     if( (prov.valid_e_min_keV > 0.0) && (prov.valid_e_max_keV > prov.valid_e_min_keV) )
     {

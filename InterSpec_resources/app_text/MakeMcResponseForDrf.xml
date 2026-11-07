@@ -54,7 +54,8 @@
     (source angle 0&#176; on-axis through 90&#176; grazing) and the detector&apos;s whole
     energy range; they differ only in the closest distance they model. (Sources
     <i>beside or behind</i> the detector - angles &gt; 90&#176; - are covered by the
-    separate <b>Side &amp; back</b> option.)</p>
+    separate <b>Side &amp; back</b> option; with it on, General and Extra near detail also model
+    the near field there.)</p>
     <ul>
     <li><b>Far-field only</b> - no near-field model at all. Accurate from
     roughly a few detector-widths outward; queries closer than that are flagged
@@ -80,13 +81,18 @@
     <li><b>None</b> - the front hemisphere only. A source beside the detector is extrapolated with
     a large uncertainty, and one behind the crystal is not modeled.</li>
     <li><b>Coarse (default)</b> - 6 angles from 93&#176; to 180&#176; at each shape energy, at half
-    the precision of the front nodes. Adds roughly a tenth to the run time.</li>
+    the precision of the front nodes. With the General profile it adds roughly a tenth to the run
+    time, near field included.</li>
     <li><b>Fine</b> - 11 angles; for sources often placed beside or behind the detector.</li>
     </ul>
-    <p>These are far-field nodes; close beside the detector the ray-traced geometry carries the
-    distance dependence, with a larger uncertainty. Behind the crystal the response is only as good
-    as the housing described there - give the housing layers a back thickness in the geometry.
-    The response's front values are the same whichever option is chosen.</p></message>
+    <p>With the General or Extra near detail profile, the near field is measured there too: close
+    beside the detector down to its housing, and directly behind it from 15 cm behind the crystal
+    face - where a real detector's cryostat, photomultiplier or electronics usually end. A source can
+    still be placed closer than that directly behind, but there (and everywhere beside and behind,
+    with Far-field only) the ray-traced geometry carries the distance dependence, with a larger
+    uncertainty. Behind the crystal the response is only as good as the housing described there -
+    give the housing layers a back thickness in the geometry. The response's front values are the
+    same whichever option is chosen.</p></message>
   <message id="mmr-back-no-structure">The geometry describes nothing behind the crystal, so sources
     behind the detector will see a bare crystal back; giving the housing a back thickness makes
     them see the real detector's back.</message>
@@ -162,6 +168,7 @@
   <message id="mmr-est-part-anchors">{1} angle anchors × {2} energies</message>
   <message id="mmr-est-part-near">{1} near-field positions × {2} energies</message>
   <message id="mmr-est-part-back">{1} side &amp; back angles × {2} energies</message>
+  <message id="mmr-est-part-back-near">{1} side &amp; back near-field positions × {2} energies</message>
   <message id="mmr-est-part-join">{1} + {2}</message>
   <message id="mmr-est-dur-model">very roughly {1}</message>
   <message id="mmr-est-dur-measuring">very roughly {1} (timing a short test run...)</message>
@@ -178,6 +185,8 @@
   <message id="mmr-stage-angular">the angular response</message>
   <message id="mmr-stage-anchors">the angle anchors</message>
   <message id="mmr-stage-near">the near field</message>
+  <message id="mmr-stage-back">the side &amp; back response</message>
+  <message id="mmr-stage-back-near">the side &amp; back near field</message>
   <message id="mmr-stage-finishing">finishing up</message>
   <message id="mmr-err-no-backbone">Could not build an efficiency curve from the generated response, so the detector was not changed: {1}</message>
   <message id="mmr-generate-btn">Generate Response</message>

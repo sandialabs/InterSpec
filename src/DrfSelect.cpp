@@ -3788,6 +3788,8 @@ void DrfSelect::updateDrfContentSummary()
       else if( prov.back_coverage == ceelo::BackCoverage::Fine )
         back_key = "ds-chip-tt-mc-back-fine";
       tip += WString::tr( back_key );
+      if( !mc->back_near_field.empty() )
+        tip += WString::tr( "ds-chip-tt-mc-back-near" );
     }//if( full MC )
 
     add_chip( WString::tr("ds-chip-mc"), tip, true );
