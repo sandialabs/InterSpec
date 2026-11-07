@@ -20,18 +20,15 @@
 #include <Wt/WContainerWidget.h>
 #include <Wt/Core/observing_ptr.hpp>
 
-#include "SpecUtils/SpecFile.h"
-#include "InterSpec/SpectrumChart.h"
-#include "InterSpec/InterSpec.h"  //Only for FeatureMarkerType::NumFeatureMarkers
 #include "InterSpec/ReferenceLineInfo.h"
 
 
 //Forward declarations
-class SpecMeas;
+class PeakDef;
 class PeakModel;
-class InterSpec;
 struct ColorTheme;
 class PopupDivMenu;
+struct PeakContinuum;
 class RefLineDynamic;
 
 namespace Wt
@@ -41,6 +38,7 @@ namespace Wt
   class WMemoryResource;
 }//namespace Wt
 
+enum class PeakLabelType : int;
 enum class FeatureMarkerType : int;
 namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
@@ -440,10 +438,8 @@ public:
    */
   std::tuple<double,double,Wt::WString> setYAxisRange( double minimum, double maximum );
     
-  //peakLabel should be of type SpectrumChart::PeakLabels, but I didnt want
-  //  to include the SpectrumChart header for just this
-  void setShowPeakLabel( int peakLabel, bool show );
-  bool showingPeakLabel( int peakLabel ) const;
+  void setShowPeakLabel( PeakLabelType peakLabel, bool show );
+  bool showingPeakLabel( PeakLabelType peakLabel ) const;
     
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
@@ -670,7 +666,7 @@ protected:
   
   std::vector<HighlightRegion> m_highlights;
   
-  std::map<SpectrumChart::PeakLabels,bool> m_peakLabelsToShow;
+  std::map<PeakLabelType,bool> m_peakLabelsToShow;
   
   Wt::WString m_xAxisTitle;
   Wt::WString m_yAxisTitle;
@@ -854,7 +850,10 @@ protected:
   std::vector<std::pair<double,ReferenceLineInfo>> m_dynamicRefLines;
   std::string m_dynamicRefLinesJsFwhmFcn;
   
-  bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
+  /** Indexed by `FeatureMarkerType`; sized here without including InterSpec.h, where it is defined,
+   with a static_assert in the .cpp checking the size is `FeatureMarkerType::NumFeatureMarkers`.
+   */
+  bool m_showFeatureMarker[4];
   
   /** Current compton angle used - note there is a bug in the WSpinBox inside
      WMenu (at least in Wt 3.3.4) so this value is likely not valid, and instead

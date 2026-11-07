@@ -59,7 +59,6 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -442,12 +441,13 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv()
   wApp->require( resource_base + "SpectrumChartD3.js" );
   
   
-  for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-      label < SpectrumChart::PeakLabels::kNumPeakLabels; label = SpectrumChart::PeakLabels(label+1) )
-  {
-    m_peakLabelsToShow[label] = false;
-  }//for( loop over all labels )
+  for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
+    m_peakLabelsToShow[PeakLabelType(label)] = false;
   
+  static_assert( (sizeof(m_showFeatureMarker) / sizeof(m_showFeatureMarker[0]))
+                   == static_cast<size_t>(FeatureMarkerType::NumFeatureMarkers),
+                 "D3SpectrumDisplayDiv::m_showFeatureMarker must be sized to the number of FeatureMarkerTypes" );
+
   for( FeatureMarkerType type = FeatureMarkerType(0);
       type < FeatureMarkerType::NumFeatureMarkers;
       type = FeatureMarkerType( static_cast<int>(type) + 1) )
@@ -478,10 +478,10 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", wheelScrollYAxis: true";
   options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
   options += ", spectrumLineWidth: 1.0";  //ToDo: Let this be specified in C++
-  options += ", showUserLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakUserLabel]);
-  options += ", showPeakLabels: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakEnergyLabel]);
-  options += ", showNuclideNames: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideLabel]);
-  options += ", showNuclideEnergies: " + jsbool(m_peakLabelsToShow[SpectrumChart::kShowPeakNuclideEnergies]);
+  options += ", showUserLabels: " + jsbool(m_peakLabelsToShow[PeakLabelType::ShowPeakUserLabel]);
+  options += ", showPeakLabels: " + jsbool(m_peakLabelsToShow[PeakLabelType::ShowPeakEnergyLabel]);
+  options += ", showNuclideNames: " + jsbool(m_peakLabelsToShow[PeakLabelType::ShowPeakNuclideLabel]);
+  options += ", showNuclideEnergies: " + jsbool(m_peakLabelsToShow[PeakLabelType::ShowPeakNuclideEnergies]);
   
   for( FeatureMarkerType type = FeatureMarkerType(0);
       type < FeatureMarkerType::NumFeatureMarkers;
@@ -750,26 +750,24 @@ Signal<> &D3SpectrumDisplayDiv::legendDisabled()
 }
 
 
-void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
+void D3SpectrumDisplayDiv::setShowPeakLabel( PeakLabelType peakLabel, bool show )
 {
-  SpectrumChart::PeakLabels peakLabel = SpectrumChart::PeakLabels(label);
-  
   string js = "try{" + m_jsgraph;
   switch( peakLabel )
   {
-    case SpectrumChart::PeakLabels::kShowPeakUserLabel:
+    case PeakLabelType::ShowPeakUserLabel:
       js += ".setShowUserLabels";
       break;
-    case SpectrumChart::PeakLabels::kShowPeakEnergyLabel:
+    case PeakLabelType::ShowPeakEnergyLabel:
       js += ".setShowPeakLabels";
       break;
-    case SpectrumChart::PeakLabels::kShowPeakNuclideLabel:
+    case PeakLabelType::ShowPeakNuclideLabel:
       js += ".setShowNuclideNames";
       break;
-    case SpectrumChart::PeakLabels::kShowPeakNuclideEnergies:
+    case PeakLabelType::ShowPeakNuclideEnergies:
       js += ".setShowNuclideEnergies";
       break;
-    case SpectrumChart::PeakLabels::kNumPeakLabels:
+    case PeakLabelType::NumPeakLabels:
     default:
       return;
       break;
@@ -781,13 +779,13 @@ void D3SpectrumDisplayDiv::setShowPeakLabel( int label, bool show )
   
   if( isRendered() )
     doJavaScript( js );
-}//void setShowPeakLabel( int label, bool show )
+}//void setShowPeakLabel( PeakLabelType peakLabel, bool show )
 
 
-bool D3SpectrumDisplayDiv::showingPeakLabel( int peakLabel ) const
+bool D3SpectrumDisplayDiv::showingPeakLabel( PeakLabelType peakLabel ) const
 {
-  return m_peakLabelsToShow.at( SpectrumChart::PeakLabels(peakLabel) );
-}//bool showingPeakLabel( int peakLabel ) const
+  return m_peakLabelsToShow.at( peakLabel );
+}//bool showingPeakLabel( PeakLabelType peakLabel ) const
 
 
 Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::chartClicked()

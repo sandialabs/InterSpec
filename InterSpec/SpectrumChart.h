@@ -125,15 +125,6 @@ public:
   };//HighlightRegion
   
   
-  enum PeakLabels
-  {
-    kShowPeakUserLabel,
-    kShowPeakEnergyLabel,
-    kShowPeakNuclideLabel,
-    kShowPeakNuclideEnergies,
-    kNumPeakLabels
-  };//enum PeakLabels
-  
 public:
   SpectrumChart();
   virtual ~SpectrumChart();
@@ -183,10 +174,10 @@ public:
   
   void showHistogramIntegralsInLegend( const bool show = true );
 
-  void setPeakLabelColor( PeakLabels label, uint32_t red, uint32_t green,
+  void setPeakLabelColor( PeakLabelType label, uint32_t red, uint32_t green,
                           uint32_t blue, uint32_t alpha = 255 );
-  void setShowPeakLabel( PeakLabels label, bool show );
-  bool showingPeakLabel( PeakLabels label ) const;
+  void setShowPeakLabel( PeakLabelType label, bool show );
+  bool showingPeakLabel( PeakLabelType label ) const;
   
   virtual void paint( Wt::WPainter& painter,
                      const Wt::WRectF& rectangle = Wt::WRectF() ) const;
@@ -482,13 +473,13 @@ protected:
   //m_legendType: indicates whether the legend should be painted on the chart.
   LegendType m_legendType;
 
-  /** Indexed by `PeakLabels`. */
-  bool m_peakLabelsToShow[kNumPeakLabels];
+  /** Indexed by `PeakLabelType`. */
+  bool m_peakLabelsToShow[static_cast<int>(PeakLabelType::NumPeakLabels)];
 
-  /** Indexed by `PeakLabels`; {red, green, blue, alpha}, with zero (i.e., transparent) meaning
+  /** Indexed by `PeakLabelType`; {red, green, blue, alpha}, with zero (i.e., transparent) meaning
    to use the text color.
    */
-  uint32_t m_peakLabelsColors[kNumPeakLabels];
+  uint32_t m_peakLabelsColors[static_cast<int>(PeakLabelType::NumPeakLabels)];
   
   //if m_xAxisUnits==kUndefinedUnits, then mouse coordinates wont be displayed
   XAxisUnits m_xAxisUnits;

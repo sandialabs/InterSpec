@@ -306,7 +306,7 @@ void DetectionLimitSimple::init()
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->setYAxisLog( false );
   m_spectrum->disableLegend();
-  m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
+  m_spectrum->setShowPeakLabel( PeakLabelType::ShowPeakUserLabel, true );
   
   m_spectrum->existingRoiEdgeDragUpdate().connect( this, [this]( double a, double b, double c, double d, const std::string &e, bool f ){
     roiDraggedCallback( a, b, c, d, e, f );

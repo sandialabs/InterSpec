@@ -59,6 +59,31 @@ namespace rapidxml
 }//namespace rapidxml
 
 
+/** The text labels the spectrum charts can show above each peak.
+
+ Headers that only pass this type around can forward declare it, as
+ `enum class PeakLabelType : int;`, rather than including this header.
+
+ The values are bit positions in `UserState::showingPeakLabels` (saved app states; see
+ `InterSpec::saveStateToDb(...)`), so must not be changed.
+ */
+enum class PeakLabelType : int
+{
+  /** The label the user gave the peak. */
+  ShowPeakUserLabel = 0,
+
+  /** The peak mean, e.g., "661.66 keV". */
+  ShowPeakEnergyLabel = 1,
+
+  /** The nuclide, x-ray, or reaction the peak is assigned to. */
+  ShowPeakNuclideLabel = 2,
+
+  /** The energy of the assigned source gamma, appended to `ShowPeakNuclideLabel`. */
+  ShowPeakNuclideEnergies = 3,
+
+  NumPeakLabels = 4
+};//enum class PeakLabelType
+
 
 /**
  

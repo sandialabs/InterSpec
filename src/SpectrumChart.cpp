@@ -1754,7 +1754,7 @@ SpectrumChart::SpectrumChart()
   //m_chart->axis(Chart::Axis::X).setLabelFormat( "%.2f");
   axis(Chart::Axis::X).setScale( Chart::AxisScale::Linear);
   
-  for( int label = 0; label < static_cast<int>(kNumPeakLabels); ++label )
+  for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
   {
     m_peakLabelsToShow[label] = false;
     m_peakLabelsColors[label] = 0;  //i.e., use the text color
@@ -1771,7 +1771,7 @@ SpectrumChart::~SpectrumChart()
 {
 }//~SpectrumChart()
 
-void SpectrumChart::setPeakLabelColor( PeakLabels label,
+void SpectrumChart::setPeakLabelColor( PeakLabelType label,
                                        uint32_t red, uint32_t green,
                                        uint32_t blue, uint32_t alpha )
 {
@@ -1788,13 +1788,13 @@ void SpectrumChart::setPeakLabelColor( PeakLabels label,
 }//void setPeakLabelColor(...)
 
 
-void SpectrumChart::setShowPeakLabel( PeakLabels label, bool show )
+void SpectrumChart::setShowPeakLabel( PeakLabelType label, bool show )
 {
   m_peakLabelsToShow[static_cast<int>(label)] = show;
 }//void setShowPeakLabel(...)
 
 
-bool SpectrumChart::showingPeakLabel( PeakLabels label ) const
+bool SpectrumChart::showingPeakLabel( PeakLabelType label ) const
 {
   return m_peakLabelsToShow[static_cast<int>(label)];
 }
@@ -1814,9 +1814,9 @@ void SpectrumChart::peakModelDataChanged( const WModelIndex &topLeft,
   }else if( left <= PeakModel::kPhotoPeakEnergy )
   {
   }
-  else if( (left == PeakModel::kUserLabel && showingPeakLabel( kShowPeakUserLabel ))
-          || (left == PeakModel::kIsotope && showingPeakLabel( kShowPeakNuclideLabel ))
-          || (left == PeakModel::kPhotoPeakEnergy && showingPeakLabel( kShowPeakNuclideEnergies ))  )
+  else if( (left == PeakModel::kUserLabel && showingPeakLabel( PeakLabelType::ShowPeakUserLabel ))
+          || (left == PeakModel::kIsotope && showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel ))
+          || (left == PeakModel::kPhotoPeakEnergy && showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies ))  )
   {
     //This next statment is poorly formed, and only catches if a single data thingy
     //  is changed - I'll fix this at some point when I'm not so tired
@@ -2707,9 +2707,9 @@ void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
     return pen;
   };
 
-  const bool showlabels = (showingPeakLabel( kShowPeakUserLabel )
-                           || showingPeakLabel( kShowPeakEnergyLabel )
-                           || showingPeakLabel( kShowPeakNuclideLabel ));
+  const bool showlabels = (showingPeakLabel( PeakLabelType::ShowPeakUserLabel )
+                           || showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel )
+                           || showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel ));
   vector<pair<shared_ptr<const PeakDef>,WPointF>> labels;
 
   painter.save();
@@ -2819,19 +2819,19 @@ void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
                                   Wt::WPointF peakTip ) const
 {
   // The rows of text, as SpectrumChartD3.js has them
-  vector<pair<string,PeakLabels>> rows;
+  vector<pair<string,PeakLabelType>> rows;
   char buffer[64] = { '\0' };
 
-  if( showingPeakLabel( kShowPeakUserLabel ) && !peak.userLabel().empty() )
-    rows.emplace_back( peak.userLabel(), kShowPeakUserLabel );
+  if( showingPeakLabel( PeakLabelType::ShowPeakUserLabel ) && !peak.userLabel().empty() )
+    rows.emplace_back( peak.userLabel(), PeakLabelType::ShowPeakUserLabel );
 
-  if( showingPeakLabel( kShowPeakEnergyLabel ) )
+  if( showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel ) )
   {
     snprintf( buffer, sizeof(buffer), "%.2f keV", peak.mean() );
-    rows.emplace_back( buffer, kShowPeakEnergyLabel );
+    rows.emplace_back( buffer, PeakLabelType::ShowPeakEnergyLabel );
   }
 
-  if( showingPeakLabel( kShowPeakNuclideLabel ) )
+  if( showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel ) )
   {
     string txt;
     double energy = 0.0;
@@ -2858,7 +2858,7 @@ void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
       energy = peak.reactionEnergy();
     }
 
-    if( !txt.empty() && have_energy && showingPeakLabel( kShowPeakNuclideEnergies ) )
+    if( !txt.empty() && have_energy && showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies ) )
     {
       const char *type = "";
       switch( peak.sourceGammaType() )
@@ -2875,7 +2875,7 @@ void SpectrumChart::drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
     }//if( show nuclide energies )
 
     if( !txt.empty() )
-      rows.emplace_back( txt, kShowPeakNuclideLabel );
+      rows.emplace_back( txt, PeakLabelType::ShowPeakNuclideLabel );
   }//if( showing nuclide labels )
 
   if( rows.empty() )

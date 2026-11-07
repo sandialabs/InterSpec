@@ -864,7 +864,7 @@ struct UserState
 
   int showingMarkers;        //bitwise or of FeatureMarkers (not implemented yet)
   int disabledNotifications; //bitwise or of (0x1<<WarningWidget::WarningMsgLevel)
-  int showingPeakLabels;     //bitwise or of PeakLabels
+  int showingPeakLabels;     //bitwise or of (1 << PeakLabelType)
   int showingWindows;        //(not implemented yet)
   
   std::string userOptionsJson;

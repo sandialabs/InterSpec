@@ -88,6 +88,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/MakeDrf.h"
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
@@ -119,7 +120,6 @@
 #include "InterSpec/EnergyCalGainMatch.h"
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
@@ -1678,10 +1678,10 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
   const bool showHorizontalGridLines = m_spectrum->horizontalLinesShowing();
   const bool legendEnabled = m_spectrum->legendIsEnabled();
   const bool compactXAxis = m_spectrum->isAxisCompacted();
-  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel );
-  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel );
-  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel );
-  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies );
+  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakUserLabel );
+  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel );
+  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel );
+  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies );
   const bool showEscapePeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
   const bool showComptonPeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
   const bool showComptonEdgeMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
@@ -4035,12 +4035,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         entry.modify()->disabledNotifications |= (0x1<<level);
     }
     
+    // A bit for each label showing, at the `PeakLabelType` value
     entry.modify()->showingPeakLabels = 0x0;
-    for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-         label < SpectrumChart::kNumPeakLabels;
-         label = SpectrumChart::PeakLabels(label+1) )
+    for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
     {
-      if( m_spectrum->showingPeakLabel( label ) )
+      if( m_spectrum->showingPeakLabel( PeakLabelType(label) ) )
         entry.modify()->showingPeakLabels |= (0x1<<label);
     }
 
@@ -4782,12 +4781,10 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
-    for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-        label < SpectrumChart::kNumPeakLabels;
-        label = SpectrumChart::PeakLabels(label+1) )
+    for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
     {
       const bool showing = (entry->showingPeakLabels & (0x1<<label));
-      m_spectrum->setShowPeakLabel( label, showing );
+      m_spectrum->setShowPeakLabel( PeakLabelType(label), showing );
     }//for( loop over peak labels )
 
     // We wont change user preferences if this state was an end of session state.
@@ -8614,7 +8611,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
                                                         "InterSpec_resources/images/tag.svg" );
   
   // Make a lamda to do work of connecting signals, and undo/redo
-  auto setupLabelCbCallbacks = [this]( const SpectrumChart::PeakLabels label, WCheckBox *cb ){
+  auto setupLabelCbCallbacks = [this]( const PeakLabelType label, WCheckBox *cb ){
     
     cb->checked().connect( this, [this, label](){ m_spectrum->setShowPeakLabel( label, true ); } );
     cb->unChecked().connect( this, [this, label](){ m_spectrum->setShowPeakLabel( label, false ); } );
@@ -8650,18 +8647,18 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   //  reads the initial state from - setChecked() afterwards emits nothing for it to notice.
   cb->setChecked(true);
   PopupDivMenuItem *item = menu->addWidget( cb );
-  m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
+  m_spectrum->setShowPeakLabel( PeakLabelType::ShowPeakUserLabel, true );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakUserLabel, cb );
   
   cb = new WCheckBox( WString::tr("app-mi-view-lbl-peak-en") );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakEnergyLabel, cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakEnergyLabel, cb );
   
   cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-nm") );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideLabel, cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakNuclideLabel, cb );
   
   WCheckBox *nuc_energy_cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-en") );
   nuc_energy_cb->setChecked(false);
@@ -8679,7 +8676,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
     nuc_energy_cb->disable();
     syncNativeMenuCheckBox( nuc_energy_cb );
   } );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideEnergies, nuc_energy_cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakNuclideEnergies, nuc_energy_cb );
 }//void addPeakLabelMenu( Wt::WContainerWidget *menuDiv )
 
 

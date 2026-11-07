@@ -45,6 +45,7 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchGuiInputFile.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 

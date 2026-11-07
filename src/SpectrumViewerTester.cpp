@@ -77,7 +77,6 @@
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecFileSummary.h"
