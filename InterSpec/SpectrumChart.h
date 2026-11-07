@@ -25,10 +25,10 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <memory>
 #include <vector>
 #include <utility>
-
 
 #include <Wt/WColor.h>
 #include <Wt/WRectF.h>
@@ -72,13 +72,15 @@ class SpectrumRenderIterator;
 
 static_assert( WT_VERSION > 0x3030100, "Wt should be 3.3.2 or newer (really 3.3.4 at least)" );
 
+/** Draws spectra (or time histories) with Wt's painting API, for server-side images and small
+ non-interactive charts; its appearance follows the interactive `SpectrumChartD3.js` chart.
+
+ Whenever you load a new data histogram into the model powering this chart, call
+ `setAutoXAxisRange()` (and `setAutoYAxisRange()`) as well, as Wt doesnt compute the axis ranges
+ until the chart is painted.
+ */
 class SpectrumChart : public Wt::Chart::WCartesianChart
 {
-//XXX
-// Whenever you load a new data histogram into the model which powers this
-// chart, please call SpectrumChart::setAutoXAxisRange() as well, this is a
-// workaround, for more info see XXX note in SpectrumChart::handleDrag(...)
- 
 public:
   enum XAxisUnits
   {
@@ -137,6 +139,11 @@ public:
   virtual ~SpectrumChart();
 
   void setPeakModel( std::shared_ptr<PeakModel> model );
+
+  /** Sets the peaks to draw, for when there is no `PeakModel` (which needs an InterSpec session);
+   ignored if a `PeakModel` is set.
+   */
+  void setPeaks( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks );
   
   //Note: do not overide height() and width() or else when used in a stretching
   //      layout side will get really messed up after the first painting
@@ -189,80 +196,90 @@ public:
   virtual void paintOnChartLegend( Wt::WPainter &painter ) const;
   void paintTextInMiddleOfChart( Wt::WPainter &painter ) const;
 
-  virtual void paintPeaks( Wt::WPainter& painter ) const;
-  virtual void paintNonGausPeak( const PeakDef &peak, Wt::WPainter &painter ) const;
+  /** Paints `title()` centered above the chart, in `titleFont()`. */
+  void paintTitle( Wt::WPainter &painter ) const;
 
+  /** Paints the peaks the way `SpectrumChartD3.js` does: each peak as a filled area stacked on its
+   ROI's continuum (and the peaks before it), plus, for ROIs of more than one peak, each peaks
+   outline above the continuum, and the continuum line.
+   */
+  virtual void paintPeaks( Wt::WPainter& painter ) const;
+
+  /** Draws the enabled labels (see `setShowPeakLabel(...)`) of a peak, centered above `peakTip`. */
   virtual void drawPeakText( const PeakDef &peak, Wt::WPainter &painter,
-                             Wt::WPointF peakMaxInPx ) const;
+                             Wt::WPointF peakTip ) const;
   
   //peakModelDataChanged(...): decides if the whole chart should be re-drawn
   //  if the peak mode data is changed.
   virtual void peakModelDataChanged( const Wt::WModelIndex &topLeft,
                                      const Wt::WModelIndex &bottomRight );
 
-  //peakYVal(...): returns the y-value to paint for the center of the bin, for
-  //  given the peak; includes the background value.
-  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
-  //  continuum types; defaults to empty (which is fine for non-CDF types).
-  static double peakYVal( const int bin, const PeakDef &peak,
-                          const SpectrumDataModel *th1Model,
-                          std::shared_ptr<const PeakDef> prevPeak,
-                          std::shared_ptr<const PeakDef> nextPeak,
-                          const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} );
 
-  //gausPeakBinValue(...): gets the x and y values for the marker, for bin
-  //  of data specified.
-  //May throw exception
-  void gausPeakBinValue( double &xvalue, double &yvalue,
-                         const PeakDef &peak, const int bin,
-                         const SpectrumDataModel *th1Model,
-                         const double axisMinX, const double axisMaxX,
-                         const double axisMinY, const double axisMaxY,
-                         std::shared_ptr<const PeakDef> prevPeak,
-                         std::shared_ptr<const PeakDef> nextPeak,
-                         const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} ) const;
+  /** The curves a ROI is drawn with; see `roiCurves(...)`. */
+  struct RoiCurves
+  {
+    /** The energies the curves are sampled at; the first and last are the ROIs edges (clipped to
+     the displayed energy range).
+     */
+    std::vector<double> energies;
 
-  //peakBackgroundVal(...): gives the bottom of the peak (e.g. the continuum)
-  //  to paint.  Acounts for data background subtraction as well.
-  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
-  //  continuum types (FlatStepCDF, LinearStepCDF).
-  static double peakBackgroundVal( const int bin,
-                                   const PeakDef &peak,
-                                   const SpectrumDataModel *th1Model,
-                                   std::shared_ptr<const PeakDef> prevPeak,
-                                   std::shared_ptr<const PeakDef> nextPeak,
-                                   const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} );
-  
+    /** The continuum at each energy; minus the background, when it is subtracted. */
+    std::vector<double> continuum;
 
-  //paintGausPeaks(): Paints peaks that share a ROI.  All peaks passed into
-  //  this function must share a PeakContinuum, be sorted by peak mean, and be
-  //  valid pointers in the vector (e.g., no nullptrs).
-  virtual void paintGausPeaks( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
-                              Wt::WPainter &painter ) const;
+    struct PeakCurve
+    {
+      /** The range of samples the peak is drawn over; it is not drawn if `first > last`. */
+      size_t first = 1, last = 0;
 
-  //drawIndependantGausPeak(...): draw a peak, not taking into account any other
-  //  peaks.  If doFill==false then only the outline for the peak is drawn, or
-  //  else the fill area and outline of the peak will be drawn.
-  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
-  //  continuum types; defaults to empty (which is fine for non-CDF types).
-  void drawIndependantGausPeak( const PeakDef &peak,
-                                Wt::WPainter& painter,
-                                const bool doFill = false,
-                                const double xstart = -999.9,
-                                const double xend = -999.9,
-                                const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} ) const;
-  
-  void visibleRange( double &xmin, double &xmax,
-                     double &ymin, double &ymax ) const;
+      /** The peaks counts at each sample (zero where it is not drawn). */
+      std::vector<double> counts;
+    };//struct PeakCurve
 
-  float xUnitsPerPixel() const;
-  
-  //gausPeakDrawRange(...): returns if the peak is visible at all
-  bool gausPeakDrawRange( int &minbin, int &maxbin,
-                          const PeakDef &peak,
-                          const double axisMinX,
-                          const double axisMaxX ) const;
-  
+    /** The curve of each of the ROIs peaks, in the same order. */
+    std::vector<PeakCurve> peaks;
+  };//struct RoiCurves
+
+  /** Computes the curves to draw a ROI with, as `SpectrumChartD3.js` does.
+
+   At each energy x, the curves give the counts a displayed (possibly rebinned) channel centered
+   on x would hold, i.e., `F(x + w/2) - F(x - w/2)`, with F the cumulative counts, and w the width
+   of the displayed channel x is in.  This passes through the tops of the histogram bars at
+   channel centers, and is smooth between them.  Samples are spaced about every pixel (but no
+   closer than a sixteenth of the narrowest peaks sigma), and are anchored to the displayed
+   channels; channels too wide to resolve the peaks are only sampled at their center.
+
+   A lone peak is drawn across its whole ROI, while in multi-peak ROIs each peak is drawn only
+   where it is non-negligible.
+
+   @param roi_peaks The peaks of one ROI (i.e., sharing a continuum), sorted by mean.
+   @param data The spectrum the peaks belong to (needed for stepped continua).
+   @param edges The lower energy of each displayed channel, followed by the upper energy of
+          the last; must cover the displayed energy range.
+   @param counts The contents of each displayed channel (used for data-defined peaks); these must
+          be the raw contents, not background-subtracted, even when `background` is given.
+   @param background If not null, the (scaled) background contents of each displayed channel,
+          to subtract.
+   @param xmin The lower energy of the chart.
+   @param xmax The upper energy of the chart.
+   @param px_per_kev Pixels per keV on the chart.
+   @param[out] curves The results.
+   @returns Whether there is anything to draw.
+   */
+  static bool roiCurves( const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                         const std::shared_ptr<const SpecUtils::Measurement> &data,
+                         const std::vector<double> &edges,
+                         const std::vector<double> &counts,
+                         const std::vector<double> *background,
+                         const double xmin, const double xmax, const double px_per_kev,
+                         RoiCurves &curves );
+
+  /** The number of channels to combine for display, so each displayed channel is at least
+   `line_width` pixels wide - the same rule as `SpectrumChartD3.js`.
+   */
+  static int displayRebinFactor( const std::shared_ptr<const SpecUtils::Measurement> &meas,
+                                 const double xmin, const double xmax,
+                                 const double plot_width_px, const double line_width = 1.0 );
+
   virtual void paintHighlightRegions( Wt::WPainter& painter ) const;
 
   virtual void setYAxisScale( Wt::Chart::AxisScale scale );
@@ -305,16 +322,14 @@ public:
                                        const Wt::WColor &color );
 
   
-  //enableLegend(): paints a legend directly on the chart.
-  //  No-op if a legend is already enabled.
+  //enableLegend(): paints a legend directly on the chart, in its upper right, as
+  //  SpectrumChartD3.js does.  No-op if a legend is already enabled.
   void enableLegend();
 
   //disableLegend(): causes legend to stop being drawn.
   void disableLegend();
 
   bool legendIsEnabled() const;
-
-  void legendTextSizeCallback( const float legendwidth );
 
   void setDefaultPeakColor( const Wt::WColor &color );
   
@@ -365,6 +380,10 @@ public:
   int setLeftYAxisPadding( double width, double height, Wt::WPaintDevice *paintDevice );
 #endif
   
+  /** Sets the reference lines to draw; like `SpectrumChartD3.js`, line heights are proportional to
+   their intensity, relative to the largest line of the source in view, and non-gamma lines are
+   dashed according to their particle type.
+   */
   void setReferncePhotoPeakLines( const ReferenceLineInfo &nuc );
   void persistCurrentReferncePhotoPeakLines();
   void clearAllReferncePhotoPeakLines();
@@ -379,11 +398,6 @@ protected:
   virtual void modelChanged();
 
 protected:
-  void labelRender( Wt::WPainter& painter, const Wt::WString& text,
-                   const Wt::WPointF& p, const Wt::WColor& color,
-                   Wt::WFlags<Wt::AlignmentFlag> flags,
-                   double angle, int margin) const;
-  
   virtual void render( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const;
   
   virtual void renderChartBackground( Wt::WPainter &painter, const Wt::WRectF &rectangle ) const;  //Take places of WCartesianChart::renderBackground(...)
@@ -418,6 +432,10 @@ protected:
   double m_heightInPixels;       //The height of the chart in pixels
   
   std::shared_ptr<PeakModel> m_peakModel;
+
+  /** Peaks to draw if there is no `m_peakModel`. */
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> m_peaks;
+
   Wt::WColor m_defaultPeakColor;
   
   /** The vertical lines (and text) that mark the beggining and end of an
@@ -464,17 +482,13 @@ protected:
   //m_legendType: indicates whether the legend should be painted on the chart.
   LegendType m_legendType;
 
-  //m_paintedLegendWidth: for m_legendType==OnChartLegend, with the chart being
-  //  rendered to a <canvas> element, we dont have server side font metrics, so
-  //  will execute some javascript to measure the font metrics, and then call
-  //  back to legendTextSizeCallback(...) to set the following variable.
-  float m_paintedLegendWidth;
-  std::unique_ptr< Wt::JSignal<float> > m_legendTextMetric;
-  
-
-  //
+  /** Indexed by `PeakLabels`. */
   bool m_peakLabelsToShow[kNumPeakLabels];
-  uint32_t m_peakLabelsColors[kNumPeakLabels]; //{red, green, blue, alpha}
+
+  /** Indexed by `PeakLabels`; {red, green, blue, alpha}, with zero (i.e., transparent) meaning
+   to use the text color.
+   */
+  uint32_t m_peakLabelsColors[kNumPeakLabels];
   
   //if m_xAxisUnits==kUndefinedUnits, then mouse coordinates wont be displayed
   XAxisUnits m_xAxisUnits;

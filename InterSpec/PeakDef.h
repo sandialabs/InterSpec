@@ -31,6 +31,7 @@
 #include <vector>
 #include <utility>
 #include <assert.h>
+#include <optional>
 #include <algorithm>
 #include <stdexcept>
 
@@ -56,6 +57,7 @@ namespace rapidxml
   template<class Ch> class xml_node;
   template<class Ch> class xml_document;
 }//namespace rapidxml
+
 
 
 /**
@@ -1160,8 +1162,32 @@ public:
    \param nchannel The number of channels to do the integration over.
    */
   void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
-  
-  
+
+  /** The energy range, for drawing, outside of which only about 1E-6 of the peaks area lies.
+
+   For distributions whose tails are too long for this to be found, `lowerX()` and `upperX()` are
+   returned instead.  Returns nothing if the limits could not be computed (e.g., invalid skew).
+   Only meaningful for `GaussianDefined` peaks.
+   */
+  std::optional<std::pair<double,double>> visRange() const;
+
+  /** The continuum counts in each channel of a step (see `PeakContinuum::is_step_continuum`) or
+   External continuum's ROI, extended by two channels on each side, for drawing; the spectrum
+   charts draw these continua from the cumulative sum of these counts.
+
+   For step continua the channels are of `data`, with counts from the continuums
+   `offset_integral(...)`; for External continua they are the external histograms channels.
+
+   @param roi_peaks All the peaks in the ROI (i.e., that share the continuum); must not be empty.
+   @param data The spectrum the peaks belong to.
+   @param[out] energies The lower energy of each channel, followed by the upper energy of the last.
+   @param[out] counts The continuum counts of each channel (one fewer entry than `energies`).
+   @returns If the continuum is one of these types, and the outputs were filled.
+   */
+  static bool continuum_channel_counts( const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                        std::vector<float> &energies,
+                                        std::vector<double> &counts );
 
 
   inline bool fitFor( CoefficientType type ) const;

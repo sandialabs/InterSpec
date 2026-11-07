@@ -2168,22 +2168,15 @@ namespace PeakSearchGuiUtils
     if( !inmeas )
       return nullptr;
     
-    auto meas = std::make_shared<SpecUtils::Measurement>( *inmeas );
-    std::shared_ptr<SpecMeas> specmeas = std::make_shared<SpecMeas>();
-    specmeas->add_measurement( meas, true );
-    if( peaks )
-      specmeas->setPeaks( *peaks, specmeas->sample_numbers() );
+    const std::shared_ptr<const SpecUtils::Measurement> &meas = inmeas;
     
     std::unique_ptr<SpectrumChart> chart( new SpectrumChart() );
     chart->setWidth( width );
     chart->setHeight( height );
-    const std::shared_ptr<PeakModel> peakmodel = PeakModel::create();
     auto dataModel = std::make_shared<SpectrumDataModel>();
 
     chart->setModel( dataModel );
-    chart->setPeakModel( peakmodel );
-    peakmodel->setForeground( meas );
-    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers(), SpecUtils::SpectrumType::Foreground );
+    chart->setPeaks( peaks );
 
     dataModel->setDataHistogram( meas );
 
@@ -2217,15 +2210,10 @@ namespace PeakSearchGuiUtils
     
     chart->setXAxisRange( lowx, upperx );
     
-    const size_t displayednbin = meas->find_gamma_channel( upperx )
-                              - meas->find_gamma_channel( lowx );
     const int plotAreaWidth = width 
                               - chart->plotAreaPadding(Wt::Side::Left)
                               - chart->plotAreaPadding(Wt::Side::Right);
-    const float bins_per_pixel = float(displayednbin) / float(plotAreaWidth);
-    const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
-    
-    dataModel->setRebinFactor( factor );
+    dataModel->setRebinFactor( SpectrumChart::displayRebinFactor( meas, lowx, upperx, plotAreaWidth ) );
     
     chart->setAutoYAxisRange();
     

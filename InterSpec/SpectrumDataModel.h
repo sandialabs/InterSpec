@@ -171,9 +171,10 @@ public:
   // This finds the row corresponding to a given x value.
   int findRow( const double x ) const;
 
-  // Similarly, this finds the range of y values in a given x range.
+  // Similarly, this finds the range of y values in a given x range.  If `minNonZero` is given,
+  //  it is set to the smallest value above zero (or zero, if there are none).
   void yRangeInXRange( const double xMin, const double xMax,
-                       double &yMin, double &yMax ) const;
+                       double &yMin, double &yMax, double *minNonZero = nullptr ) const;
 
   //Simplified convenience functions to grab data without futzing around with
   // either WModelIndex or Wt::cpp17::any
