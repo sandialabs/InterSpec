@@ -215,6 +215,13 @@ struct GeometryDescriptor {
         /// along `u` has a CLEARANCE of d - exit_distance_cm(u) beyond the detector's outside.
         double exit_distance_cm(const Eigen::Vector3d& u) const;
 
+        /// The point along the unit direction `u` from the crystal-face origin whose distance to
+        /// this envelope - to its nearest point, as solid().project() finds it - is
+        /// `clearance_cm` (>= 0).  Past the exit point that distance only grows (the envelope is
+        /// convex), so it is found by bisection.  Beside a long detector it is closer to the
+        /// envelope than exit_distance_cm(u) + clearance_cm, which measures along the ray.
+        Eigen::Vector3d position_at_clearance(const Eigen::Vector3d& u, double clearance_cm) const;
+
         /// This envelope as a solid in the crystal frame (cm), for convex_separation() from a
         /// source and convex_entry_distance() along a ray; place it elsewhere with
         /// ConvexSolid::transformed().

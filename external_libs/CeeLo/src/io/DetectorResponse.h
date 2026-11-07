@@ -496,7 +496,8 @@ private:
 struct NearFieldModel {
     std::vector<double> energies_keV;   ///< shape energies, ascending
     std::vector<double> cos_thetas;     ///< ascending, e.g. 0.02 .. 1.0
-    std::vector<double> dists_cm;       ///< ascending, from crystal-face origin
+    std::vector<double> dists_cm;       ///< ascending, from crystal-face origin (the side &
+                                        ///< back table: a + clearance, see back_near_field)
     std::vector<double> ln_n;           ///< [e][c][d] energy-major flattened
     std::vector<double> frac_sigma;     ///< per-node MC fractional sigma
     /// Breakpoint distances (cm, from crystal-face origin) on
@@ -568,6 +569,10 @@ struct TotEffPayload {
     /// transport anyway; a far-field-profile or transfer response has none.  Empty = absent: not
     /// serialized, so such responses keep their bytes and content_hash.
     NearFieldModel near_field;
+
+    /// The total's twin of DetectorResponse::back_near_field: ln(MC total / the far-field model) at
+    /// the same nodes, on the same lattice and coordinate.  Empty = absent.
+    NearFieldModel back_near_field;
 
     void finalize();
     double ln_b_at(double energy_keV) const;   ///< clamped PCHIP over (lnE, ln b)
@@ -714,6 +719,10 @@ struct ResponseProvenance {
     std::optional<PrecisionProfile> precision_profile;
     std::optional<BackCoverage> back_coverage;
     std::optional<int> n_anchor_angles;
+    /// Depth (cm, behind the crystal face) of the detector body the side & back near-field tables
+    /// assume - GenerationOptions::back_body_depth_cm, or 0 where it was dropped or not asked for.
+    /// Used in evaluation (DetectorResponse::back_near_body), so written and hashed when > 0.
+    double back_body_depth_cm = 0.0;
     /// Half-width (keV) of the full-energy-peak window this response's FEP was
     /// scored with (physics/FepWindow.h).  A model that credits in-window
     /// Compton must use the SAME window, or it is calibrated against the wrong
@@ -786,6 +795,18 @@ public:
     std::vector<MuTable> mu_tables;      ///< one per referenced material
     EtaTable eta_fep;
     NearFieldModel near_field;
+
+    /// Side & back near field: ln N behind the face plane (cos theta < 0), measured at generation
+    /// (GenerationOptions::back_coverage with the General or Contact profile).  Same layout and
+    /// interpolation as `near_field`, but its distance axis is d = a + the CLEARANCE past
+    /// back_near_body() - the nearest point of the detector's outside, its back extended over the
+    /// assumed body - rather than the distance from the crystal-face origin, which says little
+    /// about how near a source beside a long detector is.  A source inside that body (outside the
+    /// described detector, but where a real one keeps its cryostat or electronics) is left to the
+    /// kernel, as on a response without the table.  phi = 0 only, as `near_field`.  Empty =
+    /// absent: not serialized, so a response without it keeps its bytes and content_hash.
+    NearFieldModel back_near_field;
+
     TotEffPayload tot_eff;
     GroundingBlock grounding;
     SigmaFloors floors;
@@ -857,6 +878,10 @@ public:
     Eigen::Vector3d reference_point_position() const {
         return query_position(0.0, 0.0, 0.0);
     }
+
+    /// The outside the back near-field tables measure clearance from: the described outer
+    /// envelope, its back face moved to provenance.back_body_depth_cm when that is further back.
+    GeometryDescriptor::Envelope back_near_body() const;
 
     // --- point-source evaluation ---
     /// dist_cm measured from descriptor.reference_point along the (theta,
@@ -1014,8 +1039,9 @@ private:
     /// fep_prefactor (hence eps_fep) and frac_covariance are its only callers - which is what
     /// makes the covariance diagonal equal the per-query sigma by construction.
     void fep_budget(double energy_keV, EvalCommon& ec, double& ln_N, double& ln_k) const;
-    /// ln N_tot from tot_eff.near_field below its breakpoint (0 without one), adding its node
-    /// sigma to `ec`'s budget - the total's counterpart of fep_budget's near-field term.
+    /// ln N_tot from tot_eff.near_field below its breakpoint (0 without one) - behind the face
+    /// plane, from tot_eff.back_near_field - adding its node sigma to `ec`'s budget: the total's
+    /// counterpart of fep_budget's near-field term.
     double total_near_ln(double energy_keV, EvalCommon& ec) const;
     /// Shared ray loop behind kernel_K and the *_ray_weights accessors, so the decomposition and
     /// the thing it decomposes cannot drift apart.

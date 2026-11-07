@@ -38,6 +38,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -100,6 +101,93 @@ std::vector<double> back_coverage_thetas(const GenerationOptions::BackCoverage l
             return {92.0, 96.0, 100.0, 107.0, 115.0, 125.0, 135.0, 145.0, 155.0, 167.0, 180.0};
     }
     return {};
+}
+
+/// Stage id of the side & back near-field scan (GenerationOptions::back_near_field).
+constexpr uint32_t kBackNearStage = 5;
+
+/// The angles of the side & back near-field table: those of the far-field back scan, plus the
+/// direction of the crystal's back rim when no angle lies within 4 degrees of it.  Close beside the
+/// detector the near field changes sharply as a source passes the crystal's back end (measured +8%
+/// at the rim of a 6.5 x 5 cm HPGe, 2026-11); interpolating across it from 135 and 155 degrees
+/// missed it, while detectors whose rim fell within 2 degrees of a node were within ~2.5%.
+std::vector<double> back_near_thetas(const GeometryDescriptor& gd,
+                                     const GenerationOptions::BackCoverage level) {
+    std::vector<double> thetas = back_coverage_thetas(level);
+    if (thetas.empty() || gd.dimensions_cm.empty())
+        return thetas;
+    const double rim_deg = 180.0 - std::atan2(gd.dimensions_cm.front(), gd.dimensions_cm.back())
+                                   * 180.0 / kPi;   // the radius (or x half-width) over the length
+    bool near_node = false;
+    for (const double th : thetas)
+        near_node = near_node || (std::fabs(th - rim_deg) < 4.0);
+    if (!near_node && (rim_deg > 90.0) && (rim_deg < 180.0)) {
+        thetas.push_back(rim_deg);
+        std::sort(thetas.begin(), thetas.end());
+    }
+    return thetas;
+}
+
+/// The side & back near-field lattice of a run - empty when it measures none.  Shared by
+/// plan_nodes() and generate(), so the plan is what runs.
+struct BackNearLattice {
+    std::vector<double> thetas_deg;     ///< past the axis (> 90), as back_coverage_thetas
+    std::vector<double> clearances_cm;  ///< MC rows: clearance past the body, ascending
+    double body_depth_cm = 0.0;         ///< the assumed body (0: the housing as described)
+    double anchor_d_cm = 0.0;           ///< the ln N = 0 row, on the table's a + clearance axis
+    int n_positions() const { return static_cast<int>(thetas_deg.size() * clearances_cm.size()); }
+};
+
+BackNearLattice back_near_lattice(const GeometryDescriptor& gd, const GenerationOptions& o) {
+    const std::vector<double> far_thetas = back_coverage_thetas(o.back_coverage);
+    if (far_thetas.empty() || !o.back_near_field || o.transfer_mode || o.closed_loop
+        || (o.profile == ResponseProfile::FarField))
+        return BackNearLattice{};
+
+    const double a = gd.transverse_half_extent();
+    const double d_far = std::max(o.far_distance_a * a, 10.0);
+    const GeometryDescriptor::Envelope described = gd.outer_envelope();
+
+    // The far-field back nodes (phi = 0), placed as generate()'s side & back scan places them.
+    std::vector<Eigen::Vector3d> far_nodes;
+    for (const double th : far_thetas) {
+        const Eigen::Vector3d u = source_position(1.0, std::cos(th * kPi / 180.0));
+        far_nodes.push_back(std::max(d_far, described.exit_distance_cm(u) + a) * u);
+    }
+
+    // The assumed body, unless it would swallow one of those nodes (a detector too small for it).
+    BackNearLattice lat;
+    lat.body_depth_cm = std::max(0.0, o.back_body_depth_cm);
+    GeometryDescriptor::Envelope body = described;
+    body.z_max_cm = std::max(body.z_max_cm, lat.body_depth_cm);
+    ConvexSolid outside = body.solid();
+    const auto clearance = [&outside](const Eigen::Vector3d& p) {
+        return (p - outside.project(p)).norm();
+    };
+    for (const Eigen::Vector3d& p : far_nodes) {
+        if (!(clearance(p) > 0.0)) {
+            lat.body_depth_cm = 0.0;
+            outside = described.solid();
+            break;
+        }
+    }
+
+    // ln N is 0 where the back eta table was measured - the far nodes - so the anchor row sits at
+    //  the nearest of them; the MC rows stay well inside it (a long detector loses its outer ones).
+    double c_far = std::numeric_limits<double>::infinity();
+    for (const Eigen::Vector3d& p : far_nodes)
+        c_far = std::min(c_far, clearance(p));
+    lat.anchor_d_cm = a + c_far;
+    const std::vector<double> c_over_a = (o.profile == ResponseProfile::Contact)
+        ? std::vector<double>{0.05, 0.12, 0.3, 0.6, 1.0, 1.5, 2.2, 3.3}
+        : std::vector<double>{0.05, 0.3, 1.0, 2.0};
+    for (const double c : c_over_a)
+        if (1.3 * a * (1.0 + c) <= lat.anchor_d_cm)
+            lat.clearances_cm.push_back(c * a);
+    if (lat.clearances_cm.empty())
+        return BackNearLattice{};
+    lat.thetas_deg = back_near_thetas(gd, o.back_coverage);
+    return lat;
 }
 
 // Per-node target FEP precision: the graded map when set, else the scalar.
@@ -183,9 +271,9 @@ struct Runner {
         configure(calc);
         calc.set_point_source(src);
         calc.enable_fep_only_mode(fep_only);
-        // Back-incidence nodes (stage 4) sit beside or behind the detector, where only the
+        // Back-incidence nodes (stages 4 and 5) sit beside or behind the detector, where only the
         //  general cone avoids sampling the full sphere; they are allowed a looser precision.
-        const bool back_stage = (stage == kBackStage);
+        const bool back_stage = (stage == kBackStage) || (stage == kBackNearStage);
         if (back_stage)
             calc.enable_general_cone_sampling(true);
         SimulationConfig cfg;
@@ -1164,6 +1252,9 @@ ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
         plan.n_near_positions = 9 * nd;
     }
     plan.n_back_cos_theta = static_cast<int>(back_coverage_thetas(o.back_coverage).size());
+    const BackNearLattice back_near = back_near_lattice(gd, o);
+    plan.n_back_near_positions = back_near.n_positions();
+    plan.back_body_depth_cm = back_near.body_depth_cm;
     return plan;
 }
 
@@ -1883,6 +1974,141 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         if (resp->tot_eff.tier == TotEffTier::EtaTotTable)
             add_back_columns(resp->tot_eff.eta_tot, b_ln_tot, b_tot_sig, ang_ln_tot);
     }//if( side & back coverage )
+
+    // ---- 7. side & back near field -------------------------------------------
+    // The far-field back nodes above are carried inward by the kernel alone, which reads 2-9% high
+    //  within a crystal radius of the housing beside and behind the detector (FEP per interaction
+    //  changes with how the photons enter; InterSpec test_BackIncidence, 2026-11).  Measure ln N
+    //  there as the front near-field table is measured - ln(MC / (eta K)) on (shape energy x angle
+    //  x distance), with an ln N = 0 anchor row where the far back nodes sit - but on the distance
+    //  a + clearance past the detector's outside (its back extended over the assumed body), so no
+    //  node falls inside the detector, or where a real one keeps its cryostat or electronics.
+    const BackNearLattice back_near = back_near_lattice(gd, opts);
+    if (!back_near.thetas_deg.empty()) {
+        resp->provenance.back_body_depth_cm = back_near.body_depth_cm;
+        const GeometryDescriptor::Envelope body = resp->back_near_body();
+
+        NearFieldModel bn;
+        bn.energies_keV = shape_E;
+        for (auto it = back_near.thetas_deg.rbegin(); it != back_near.thetas_deg.rend(); ++it)
+            bn.cos_thetas.push_back(std::cos(*it * kPi / 180.0));   // ascending, as the eta tables
+        for (const double c : back_near.clearances_cm)
+            bn.dists_cm.push_back(a + c);
+        bn.dists_cm.push_back(back_near.anchor_d_cm);
+        const size_t nnc = bn.cos_thetas.size();
+        const size_t nnd = bn.dists_cm.size();
+        bn.ln_n.assign(nE_s * nnc * nnd, 0.0);         // the anchor row stays ln N = 0
+        bn.frac_sigma.assign(bn.ln_n.size(), 0.002);   // anchor sigma, as the front table's
+        // One constant gate, the anchor distance, as the front table's.
+        bn.break_cos_thetas = {bn.cos_thetas.front(), bn.cos_thetas.back()};
+        bn.break_d_cm.assign(nE_s * 2, bn.dists_cm.back());
+        NearFieldModel tn = bn;                        // the total's twin, on the same lattice
+
+        // Node positions and quadratures do not depend on energy.
+        std::vector<Eigen::Vector3d> node_pos(nnc * nnd, Eigen::Vector3d::Zero());
+        std::vector<ApertureQuadrature> node_q(nnc * nnd);
+        for (size_t ic = 0; ic < nnc; ++ic) {
+            for (size_t id = 0; id + 1 < nnd; ++id) {
+                const Eigen::Vector3d u = source_position(1.0, bn.cos_thetas[ic]);
+                node_pos[ic * nnd + id] = body.position_at_clearance(u, bn.dists_cm[id] - a);
+                node_q[ic * nnd + id] = resp->make_quadrature(node_pos[ic * nnd + id]);
+            }
+        }
+
+        std::vector<bool> fep_ok(bn.ln_n.size(), false), tot_ok(bn.ln_n.size(), false);
+        std::vector<double> mc_tot(bn.ln_n.size(), 0.0), mc_tot_sig(bn.ln_n.size(), 0.0);
+        for (size_t ie = 0; ie < nE_s; ++ie) {
+            const double E = shape_E[ie];
+            for (size_t ic = 0; ic < nnc; ++ic) {
+                for (size_t id = 0; id + 1 < nnd; ++id) {
+                    // The node id is the lattice index, so a node skipped below moves no seed.
+                    const uint32_t node_id = static_cast<uint32_t>((ie * nnc + ic) * (nnd - 1) + id);
+                    const size_t idx = bn.index(ie, ic, id);
+                    const Eigen::Vector3d& src = node_pos[ic * nnd + id];
+                    const ApertureQuadrature& q = node_q[ic * nnd + id];
+                    // Where the direct path is all but blocked the evaluator refuses whatever the
+                    //  table says (the shadow gate), and these nodes would run to the CPU cap: no MC,
+                    //  held below.
+                    if ((q.omega_frac_active > 0.0)
+                        && (resp->kernel_transmitted(E, q) / q.omega_frac_active
+                            < model_sigma::shadow_refuse_s)) {
+                        run.last = NodeStat{};
+                        run.last.stage = kBackNearStage;
+                        run.last.energy_keV = E;
+                        run.tick("Side & back near field");
+                        continue;
+                    }
+                    const EfficiencyResult r = run.run_node(E, src, kBackNearStage, node_id);
+                    const double K = resp->kernel_K(E, q, MuChoice::Total);
+                    const double fep = r.full_energy_peak_efficiency;
+                    if ((fep > 0.0) && (K > 0.0) && (r.fep_uncertainty / fep < kMaxBackNodeRelSigma)) {
+                        bool clamped = false;
+                        bn.ln_n[idx] = std::log(fep / K)
+                                       - resp->eta_fep.eval_ln(E, bn.cos_thetas[ic], 0.0, clamped);
+                        bn.frac_sigma[idx] = r.fep_uncertainty / fep;
+                        fep_ok[idx] = true;
+                    }
+                    mc_tot[idx] = r.total_efficiency;
+                    mc_tot_sig[idx] = r.total_uncertainty;
+                    run.tick("Side & back near field");
+                }
+            }
+        }
+
+        // A node not measured - skipped above, no full-energy counts, or > 50% uncertain - takes the
+        //  nearest measured clearance at its energy and angle (the closer one on a tie), else no
+        //  correction; with a 100% sigma.  Not another angle's value: when a whole column is
+        //  shadowed that would carry beside-the-detector physics behind it, and a step at the
+        //  assumed body's back face, where a source inside the body has no correction.
+        const auto hold_unmeasured = [nE_s, nnc, nnd](NearFieldModel& m, const std::vector<bool>& ok) {
+            for (size_t ie = 0; ie < nE_s; ++ie) {
+                for (size_t ic = 0; ic < nnc; ++ic) {
+                    for (size_t id = 0; id + 1 < nnd; ++id) {
+                        const size_t idx = m.index(ie, ic, id);
+                        if (ok[idx])
+                            continue;
+                        size_t from = idx;
+                        for (size_t k = 1; (from == idx) && (k + 1 < nnd); ++k) {
+                            if ((id >= k) && ok[m.index(ie, ic, id - k)])
+                                from = m.index(ie, ic, id - k);
+                            else if ((id + k + 1 < nnd) && ok[m.index(ie, ic, id + k)])
+                                from = m.index(ie, ic, id + k);
+                        }
+                        m.ln_n[idx] = (from == idx) ? 0.0 : m.ln_n[from];
+                        m.frac_sigma[idx] = 1.0;
+                    }
+                }
+            }
+        };
+        hold_unmeasured(bn, fep_ok);
+        bn.finalize();
+
+        // The total's twin: ln(MC total / what would otherwise be served - eps_total_at with no back
+        //  table yet), from the same histories.
+        if (resp->tot_eff.characterized()) {
+            for (size_t ic = 0; ic < nnc; ++ic) {
+                for (size_t id = 0; id + 1 < nnd; ++id) {
+                    for (size_t ie = 0; ie < nE_s; ++ie) {
+                        const size_t idx = tn.index(ie, ic, id);
+                        const double mc = mc_tot[idx];
+                        if (!(mc > 0.0) || !(mc_tot_sig[idx] / mc < kMaxBackNodeRelSigma))
+                            continue;
+                        const double far = resp->eps_total_at(shape_E[ie], node_pos[ic * nnd + id],
+                                                              node_q[ic * nnd + id]).value;
+                        if (!(far > 0.0))
+                            continue;
+                        tn.ln_n[idx] = std::log(mc / far);
+                        tn.frac_sigma[idx] = mc_tot_sig[idx] / mc;
+                        tot_ok[idx] = true;
+                    }
+                }
+            }
+            hold_unmeasured(tn, tot_ok);
+            tn.finalize();
+            resp->tot_eff.back_near_field = std::move(tn);
+        }
+        resp->back_near_field = std::move(bn);
+    }//if( side & back near field )
 
     // Last, so the e_nodes indexing and evaluations above - the side & back columns included - see
     //  only measured rows, and a held end row is an exact copy of every column, back ones too.

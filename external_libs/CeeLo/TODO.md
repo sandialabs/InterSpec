@@ -1065,19 +1065,26 @@ Found by review on 2026-11-03 and measured there with direct Monte Carlo; not ye
   `rect_rotation_`; nested daughters share its frame.
 - **Shows up:** validating a side-on cylinder or tilted box against GEANT4.
 
-### Side & back incidence: no near-field model behind the face plane
-`[medium — accuracy close beside/behind]`
-- **Effect:** `back_coverage` scans the far field only; close beside or behind the detector the
-  kernel alone carries the distance dependence, with the `NearFieldUnmodeled` envelope; and
-  behind a thick back, the removal-only kernel misses full-energy in-scatter (shadow-gated, so
-  flagged rather than wrong, but unanswered).
-- **Implementation:** a back near-field table on (E, cos theta < 0, phi, clearance s/a), clearance
-  measured past `outer_envelope()` so no node falls inside the detector, with an ln N = 0 anchor
-  row. In the shadow regime (s < 0.3) even back nodes do not help - the in-scatter ratio varies too
-  steeply between them (measured 20-70% off) - so that needs either much denser nodes there or a
-  scatter term in the kernel. `closed_loop` probe families and transfer-mode back anchors could
-  follow.
-- **Shows up:** sources within a few detector widths of the side wall or the back.
+### Side & back incidence: what the side & back near field leaves open
+`[low — accuracy in corners of the side & back regime]`
+- **Effect:** the side & back near-field tables (stage 5) answer close beside and behind the
+  detector, but:
+  - in the shadow regime (direct transmission s < 0.3) the removal-only kernel misses full-energy
+    in-scatter, which varies too steeply between nodes (20-70% off measured), so it stays gated
+    (`Shadowed` / `NeedsMc`), table or not;
+  - a source inside the assumed body (`back_body_depth_cm`, 15 cm in InterSpec), and every source
+    beside or behind a far-field-profile response, is still carried by the kernel alone
+    (`NearFieldUnmodeled`);
+  - theta is measured from the crystal-face origin, so the back face of a long detector (a 2x4x16
+    in NaI log) occupies the last few degrees, and its far-field back nodes there sit within ~2a of
+    the housing;
+  - boxes reuse the phi = 0 tables at every azimuth;
+  - InterSpec's imported grids keep their behind-the-face rows only as far-field eta nodes, and
+    their Monte-Carlo total donor runs without the side & back near field.
+- **Implementation:** for the shadow regime, much denser nodes there or a scatter term in the
+  kernel; for long detectors, place back nodes on the envelope's own surface rather than by angle
+  from the face.  `closed_loop` probe families and transfer-mode back anchors could follow.
+- **Shows up:** sources against the back of a thick housing at low energy; long logs; box crystals.
 
 ---
 
