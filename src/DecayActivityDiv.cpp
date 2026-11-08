@@ -2200,8 +2200,16 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 
   m_displayActivityUnitsCombo->addItem( WString::tr("dad-arbitrary") );
 
+  // Default to MBq or mCi - found by name, as units have been added to the list over time.
   const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-  m_displayActivityUnitsCombo->setCurrentIndex( (useBq ? 2 : 7) ); //MBq : mCi
+  const string default_unit = useBq ? "MBq" : "mCi";
+  int default_unit_index = 0;
+  for( size_t i = 0; i < PhysicalUnits::sm_activityUnitNameValues.size(); ++i )
+  {
+    if( PhysicalUnits::sm_activityUnitNameValues[i].first == default_unit )
+      default_unit_index = static_cast<int>( i );
+  }
+  m_displayActivityUnitsCombo->setCurrentIndex( default_unit_index );
 
 
   WContainerWidget *displayOptionsDiv = new WContainerWidget();
@@ -2900,6 +2908,9 @@ void DecayActivityDiv::setDecayChartTimeRange( double finalTime )
 {
   string txt = PhysicalUnitsLocalized::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
+
+  // Redraw with the new range, as editing the field does (addNuclide draws with its own range).
+  refreshDecayDisplay( true );
 }//void setDecayChartTimeRange()
 
 
