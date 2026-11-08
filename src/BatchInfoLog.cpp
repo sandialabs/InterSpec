@@ -905,6 +905,115 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       src_json["SelfAttenMassFracUncert"] = src.selfAttenMassFracUncertainty;
   }
 }//add_basic_src_details( SourceDetails &src, src_json )
+
+
+  /** Adds an activity (that may be negative) as "<name>" (with units and `postfix`), and as numbers
+   "<name>_bq", "<name>_kBq", ..., "<name>_pCi". */
+  static void add_activity_values( const string &name, const double activity, const bool useBq,
+                            const string &postfix, nlohmann::basic_json<> &json )
+  {
+    json[name] = string( (activity < 0.0) ? "-" : "" )
+                 + PhysicalUnits::printToBestActivityUnits( fabs(activity), 4, !useBq ) + postfix;
+    json[name + "_bq"]  = activity / PhysicalUnits::bq;
+    json[name + "_kBq"] = activity / PhysicalUnits::kBq;
+    json[name + "_MBq"] = activity / PhysicalUnits::MBq;
+    json[name + "_GBq"] = activity / PhysicalUnits::GBq;
+    json[name + "_ci"]  = activity / PhysicalUnits::ci;
+    json[name + "_mCi"] = activity / PhysicalUnits::mCi;
+    json[name + "_uCi"] = activity / PhysicalUnits::microCi;
+    json[name + "_pCi"] = activity / PhysicalUnits::pCi;
+  }//add_activity_values(...)
+
+
+  /** Adds the activity at the back-decay reference time, of source `src`, to `src_json` (which
+   #add_basic_src_details has already filled out).  Does nothing if `back_decay` has no entry for it. */
+  static void add_back_decay_src_details( const ShieldingSourceFitCalc::BackDecayResults &back_decay,
+                                   const GammaInteractionCalc::SourceDetails &src,
+                                   const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                   const bool useBq,
+                                   nlohmann::basic_json<> &src_json )
+  {
+    const ShieldingSourceFitCalc::BackDecaySourceResult * const res = back_decay.source( src.nuclide );
+    if( !res )
+      return;
+
+    const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
+                                              : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+    const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix( eff_type );
+    const bool is_ok = (res->status == ShieldingSourceFitCalc::BackDecayStatus::Ok);
+
+    src_json["HasBackDecay"] = true;
+    src_json["BackDecayStatus"] = ShieldingSourceFitCalc::backDecayStatusName( res->status );
+    src_json["BackDecayIsValid"] = is_ok;
+    src_json["BackDecayNote"] = res->note;
+    src_json["BackDecayHasNote"] = !res->note.empty();
+    src_json["BackDecayHalfLives"] = res->half_lives;
+    src_json["BackDecayHalfLivesStr"] = SpecUtils::printCompact( res->half_lives, 4 );
+    src_json["BackDecayHasFittedAncestor"] = res->has_fitted_ancestor;
+    src_json["BackDecayHasUncert"] = false;
+
+    if( !is_ok )
+      return;
+
+    src_json["BackDecayFactor"] = res->ratio;
+    src_json["BackDecayFactorStr"] = SpecUtils::printCompact( res->ratio, 5 );
+    add_activity_values( "BackDecayActivity", res->activity, useBq, act_postfix, src_json );
+
+    if( res->activity_uncertainty.has_value() && (*res->activity_uncertainty > 0.0) )
+    {
+      const double uncert = *res->activity_uncertainty;
+      src_json["BackDecayHasUncert"] = true;
+      add_activity_values( "BackDecayActivityUncert", uncert, useBq, act_postfix, src_json );
+      src_json["BackDecayActivityUncertPercent"] = (res->activity != 0.0)
+                    ? SpecUtils::printCompact( 100.0 * uncert / fabs(res->activity), 4 ) : string("--");
+    }//if( we have an uncertainty )
+
+    // A trace source is also quoted per unit volume (or mass, ...), which scales the same way.
+    if( src.isTraceSource && src_json.contains("TraceActivityPostFix") )
+    {
+      const string trace_postfix = src_json["TraceActivityPostFix"].get<string>();
+      add_activity_values( "BackDecayTraceDisplayActivity", src.traceSrcDisplayAct * res->ratio,
+                           useBq, trace_postfix, src_json );
+    }//if( src.isTraceSource )
+  }//void add_back_decay_src_details(...)
+
+
+  /** Adds the top-level "BackDecay" object describing the reference time; see the ShieldSourceFitLog
+   README for the fields. */
+  static void add_back_decay_info( const ShieldingSourceFitCalc::BackDecayResults &back_decay,
+                            nlohmann::json &data )
+  {
+    const double dt = back_decay.time_before_meas;
+
+    nlohmann::json &bd = data["BackDecay"];
+    bd["Mode"] = (back_decay.spec.mode == ShieldingSourceFitCalc::BackDecaySpec::Mode::DateTime)
+                  ? "DateTime" : "DurationBeforeMeas";
+    bd["HasError"] = !back_decay.error.empty();
+    bd["Error"] = back_decay.error;
+    bd["TimeBeforeMeas"] = PhysicalUnits::printToBestTimeUnits( fabs(dt), 4 );
+    bd["TimeBeforeMeasSigned"] = string( (dt < 0.0) ? "-" : "" ) + PhysicalUnits::printToBestTimeUnits( fabs(dt), 4 );
+    bd["TimeBeforeMeas_s"] = dt / PhysicalUnits::second;
+    bd["TimeBeforeMeas_days"] = dt / PhysicalUnits::day;
+    bd["TimeBeforeMeas_years"] = dt / PhysicalUnits::year;
+    bd["IsAfterMeas"] = (dt < 0.0);
+    bd["RefTimeIsValid"] = !SpecUtils::is_special( back_decay.ref_time );
+    bd["RefTime"] = ShieldingSourceFitCalc::back_decay_time_str( back_decay.ref_time );
+    bd["RefTime_iso"] = SpecUtils::is_special( back_decay.ref_time ) ? string()
+                                         : SpecUtils::to_extended_iso_string( back_decay.ref_time );
+    bd["MeasStartTimeIsValid"] = !SpecUtils::is_special( back_decay.meas_start );
+    bd["MeasStartTime"] = ShieldingSourceFitCalc::back_decay_time_str( back_decay.meas_start );
+    bd["HasWarnings"] = !back_decay.warnings.empty();
+    bd["Warnings"] = back_decay.warnings;
+
+    bool any_coupled = false, any_undetermined = false;
+    for( const ShieldingSourceFitCalc::BackDecaySourceResult &src : back_decay.sources )
+    {
+      any_coupled |= src.has_fitted_ancestor;
+      any_undetermined |= (src.status != ShieldingSourceFitCalc::BackDecayStatus::Ok);
+    }
+    bd["AnyCoupled"] = any_coupled;
+    bd["AnyUndetermined"] = any_undetermined;
+  }//void add_back_decay_info(...)
   
   
   
@@ -987,6 +1096,18 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       fit_options["DrfUncertIncludeAssumed"]  = options.drf_uncert_include_assumed;
     }
     fit_options["CorrectForCascadeSumming"] = options.correct_for_cascade_summing;
+
+    // Only when used, so setups without back-decay give exactly the JSON they did before.
+    if( options.back_decay.enabled )
+    {
+      const ShieldingSourceFitCalc::BackDecaySpec &spec = options.back_decay;
+      fit_options["BackDecayEnabled"] = true;
+      if( spec.mode == ShieldingSourceFitCalc::BackDecaySpec::Mode::DateTime )
+        fit_options["BackDecayDescription"] = "to " + ShieldingSourceFitCalc::back_decay_time_str( spec.date );
+      else
+        fit_options["BackDecayDescription"] = PhysicalUnits::printToBestTimeUnits( fabs(spec.duration), 4 )
+                                    + ((spec.duration < 0.0) ? " after" : " before") + " the measurement start";
+    }//if( options.back_decay.enabled )
   }//void add_act_shield_fit_options_to_json(...)
   
   
@@ -1262,6 +1383,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         
         add_basic_src_details( src, drf, useBq, results.shield_calc_details.get(), src_json );
         hasAnyUncertBreakdown |= src_json.contains( "ActivityUncertBreakdown" );
+
+        if( results.back_decay.has_value() && results.options.back_decay.enabled )
+          add_back_decay_src_details( *results.back_decay, src, drf, useBq, src_json );
         
         // We wont put peaks into this struct, but instead when we make the JSON, we'll
         //  insert peaks from `PeakDetail` as `PeakDetailSrc::nuclide` match this nuclide.
@@ -1306,6 +1430,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     data["HasVolumetricSource"] = (hasAnyTraceSrc || hasAnyVolumetricSrc);
     data["AnySourceAgeFit"] = hasFitAnyAge;
     data["HasActivityUncertBreakdown"] = hasAnyUncertBreakdown;
+
+    // The activities at the back-decay reference time; only present when that option was used.
+    if( results.back_decay.has_value() && results.options.back_decay.enabled )
+      add_back_decay_info( *results.back_decay, data );
     
     auto &shieldings_json = data["Shieldings"];
     shieldings_json["Geometry"] = GammaInteractionCalc::to_str(results.geometry);

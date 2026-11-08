@@ -784,6 +784,31 @@ public:
   /** Handler for the volumetric-efficiency method combo; records undo/redo and refits the chart. */
   void volEffMethodChanged();
 
+  /** Handler for the "Back decay" checkbox and value entry: reads the widgets into #m_backDecaySpec,
+   records undo/redo, and updates the shown back-decay values.  Does not re-fit, as back-decay does
+   not affect the fit. */
+  void backDecayInputChanged();
+
+  /** Handler for the back-decay mode combo; converts the entered value to the new mode when it can
+   (e.g., a duration to the date/time it corresponds to), then as #backDecayInputChanged. */
+  void backDecayModeChanged();
+
+  /** Sets #m_backDecaySpec and the back-decay widgets to `spec`, and updates what is shown; does
+   not add an undo/redo step. */
+  void setBackDecaySpec( const ShieldingSourceFitCalc::BackDecaySpec &spec );
+
+  /** Updates the back-decay widgets visibility and status text, the nuclide cards act(T_ref), and
+   the back-decay results of #m_lastFitResults (so the calc log reflects the current setting). */
+  void updateBackDecayDisplay();
+
+  /** Back-decay results for the sources as currently in the model (so they reflect manual edits);
+   nullptr when back-decay is not enabled, or the entered value is not valid. */
+  std::shared_ptr<const ShieldingSourceFitCalc::BackDecayResults> currentBackDecayResults() const;
+
+  /** A back-decay duration as (localized) text, e.g. "3.5 d" - without the trailing zeros
+   PhysicalUnitsLocalized::printToBestTimeUnits pads to its number of decimals. */
+  static std::string backDecayDurationText( const double duration );
+
   /** Enables the volumetric-efficiency method combo only when a volumetric (trace / self-attenuating)
    source exists and the DRF is not fixed-geometry; enables the MC / EFFTRAN items per-DRF, and sets
    the status text to the resolved active method.  Called on detector / geometry / source changes. */
@@ -995,6 +1020,21 @@ protected:
   /** The combo index before the most recent #volEffMethodChanged, for undo/redo. */
   int m_lastVolEffMethodIndex = 0;
 
+  /** The "Back decay" option row: enable checkbox, mode (duration before meas. or date/time), the
+   value entry, and a status text saying what is wrong with the entered value (on phones, also what
+   it means; on desktop the nuclides' footer shows that - see SourceFitNuclideDisplay). */
+  Wt::WCheckBox *m_backDecayCb = nullptr;
+  Wt::WComboBox *m_backDecayMode = nullptr;
+  Wt::WLineEdit *m_backDecayEdit = nullptr;
+  Wt::WText *m_backDecayStatus = nullptr;
+
+  /** The back-decay option; the source of truth for #fitOptions.  Holds the last valid entered
+   values, so an invalid entry does not lose them. */
+  ShieldingSourceFitCalc::BackDecaySpec m_backDecaySpec;
+
+  /** Non-empty when the value currently in #m_backDecayEdit could not be used; shown as the status. */
+  Wt::WString m_backDecayInputError;
+
   Wt::WPushButton *m_fixedGeomMcBtn = nullptr;
   Wt::WText *m_fixedGeomLockedNote;
 
@@ -1113,7 +1153,10 @@ protected:
   //A class to draw the chi2 distribution of the fit to activity/shielding.
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
-  
+
+  /** The minor version written when the XML does not use back-decay (i.e., the version before it). */
+  static const int sm_preBackDecayMinorVersion;
+
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   // So the tester can call updateChi2ChartActual
   friend class SpectrumViewerTester;

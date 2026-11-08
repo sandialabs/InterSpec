@@ -432,6 +432,49 @@ Sources:
 </div>
 </div> <!-- <div id="sources" style="margin-top: 25px"> -->
 {% endif %}
+## if exists("BackDecay") and exists("Sources")
+
+<div id="BackDecay" style="margin-top: 25px">
+{% if BackDecay.HasError %}
+Back-decay could not be done: {{ BackDecay.Error }}
+{% else %}
+Activities back-decayed to {% if BackDecay.RefTimeIsValid %}{{ BackDecay.RefTime }}, {% endif %}{{ BackDecay.TimeBeforeMeas }} {% if BackDecay.IsAfterMeas %}after{% else %}before{% endif %}{{ " the measurement start" }}{% if BackDecay.MeasStartTimeIsValid %}{{ " (" }}{{ BackDecay.MeasStartTime }}){% endif %}:
+<div class="TableScroll">
+<table class="BackDecaySummary ResultTable">
+    <thead><tr>
+        <th>Nuclide</th>
+        <th>Activity at Measurement</th>
+        <th>Activity at Reference Time</th>
+        <th>Uncertainty</th>
+        <th>Half-lives</th>
+        <th>Note</th>
+    </tr></thead>
+    <tbody>
+## for src in Sources
+{% if existsIn(src,"HasBackDecay") %}
+  <tr>
+  <td> {{ src.Nuclide }} </td>
+  <td> {{ src.Activity }} </td>
+  <td> {% if src.BackDecayIsValid %}{{ src.BackDecayActivity }}{% if existsIn(src,"BackDecayTraceDisplayActivity") %}{{ " (" }}{{ src.BackDecayTraceDisplayActivity }}){% endif %}{% else %}not determinable{% endif %} </td>
+  <td> {% if src.BackDecayIsValid and src.BackDecayHasUncert %}{{ src.BackDecayActivityUncert }} ({{ src.BackDecayActivityUncertPercent }}%){% endif %} </td>
+  <td> {{ src.BackDecayHalfLivesStr }} </td>
+  <td> {{ src.BackDecayNote }} </td>
+  </tr>
+{% endif %}
+## endfor
+  </tbody>
+</table>
+</div>
+{% if BackDecay.HasWarnings %}
+<ul>
+## for warning in BackDecay.Warnings
+  <li>{{ warning }}</li>
+## endfor
+</ul>
+{% endif %}
+{% endif %}
+</div> <!-- <div id="BackDecay"> -->
+## endif
 
 {% if exists("HasActivityUncertBreakdown") and HasActivityUncertBreakdown %}
 <div id="UncertBreakdown" style="margin-top: 25px">

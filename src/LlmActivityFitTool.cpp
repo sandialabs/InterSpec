@@ -1034,6 +1034,17 @@ nlohmann::json format_shielding_source_state_to_json(
   result["options"]["drf_uncert_method"] = ShieldingSourceFitCalc::drfUncertMethodName( config.options.drf_uncert_method );
   result["options"]["include_assumed_drf_uncert"] = config.options.drf_uncert_include_assumed;
 
+  // Only when used, so the output is unchanged for setups that do not use it.
+  const ShieldingSourceFitCalc::BackDecaySpec &back_decay = config.options.back_decay;
+  if( back_decay.enabled )
+  {
+    if( back_decay.mode == ShieldingSourceFitCalc::BackDecaySpec::Mode::DateTime )
+      result["options"]["back_decay_to"] = ShieldingSourceFitCalc::back_decay_time_str( back_decay.date );
+    else
+      result["options"]["back_decay_to"] = PhysicalUnits::printToBestTimeUnits( fabs(back_decay.duration), 4 )
+                                + ((back_decay.duration < 0.0) ? " after" : " before") + " measurement start";
+  }//if( back_decay.enabled )
+
   return result;
 }//format_shielding_source_state_to_json(...)
 
@@ -2646,6 +2657,60 @@ nlohmann::json fit_results_to_comprehensive_json(
     }//for( sources )
   }//if( source_calc_details )
 
+  // Activities at the "Back decay" reference time, when that option is used.
+  if( fit_results->back_decay.has_value() && fit_results->options.back_decay.enabled )
+  {
+    const ShieldingSourceFitCalc::BackDecayResults &bd = *fit_results->back_decay;
+    json &bd_json = result["back_decay"];
+
+    if( !bd.error.empty() )
+    {
+      bd_json["error"] = bd.error;
+    }else
+    {
+      const double dt = bd.time_before_meas;
+      // (Omitted when not known - e.g., a duration with a spectrum that has no valid start time.)
+      const string ref_str = ShieldingSourceFitCalc::back_decay_time_str( bd.ref_time );
+      const string meas_str = ShieldingSourceFitCalc::back_decay_time_str( bd.meas_start );
+      if( !ref_str.empty() )
+        bd_json["reference_time"] = ref_str;
+      if( !meas_str.empty() )
+        bd_json["measurement_start"] = meas_str;
+      bd_json["time_before_measurement_s"] = round_to_sig_figs( dt / PhysicalUnits::second, 8 );
+      bd_json["time_before_measurement_str"] = PhysicalUnits::printToBestTimeUnits( fabs(dt), 4 )
+                                               + ((dt < 0.0) ? " after" : " before") + " measurement start";
+      bd_json["description"] = "Each source's own activity at the reference time (excluding in-growth"
+                               " from other fitted sources, as for the fit activities).";
+      if( !bd.warnings.empty() )
+        bd_json["warnings"] = bd.warnings;
+
+      bd_json["sources"] = json::array();
+      for( const ShieldingSourceFitCalc::BackDecaySourceResult &src : bd.sources )
+      {
+        json src_json;
+        src_json["nuclide"] = src.nuclide ? src.nuclide->symbol : string("?");
+        src_json["status"] = ShieldingSourceFitCalc::backDecayStatusName( src.status );
+        src_json["half_lives"] = round_to_sig_figs( src.half_lives, 5 );
+        if( src.status == ShieldingSourceFitCalc::BackDecayStatus::Ok )
+        {
+          src_json["activity_bq"] = round_to_sig_figs( src.activity / PhysicalUnits::bq, 6 );
+          src_json["activity_str"] = string( (src.activity < 0.0) ? "-" : "" )
+                              + PhysicalUnits::printToBestActivityUnits( fabs(src.activity), 4, !use_bq );
+          if( src.activity_uncertainty.has_value() )
+          {
+            src_json["uncertainty_bq"] = round_to_sig_figs( *src.activity_uncertainty / PhysicalUnits::bq, 4 );
+            src_json["uncertainty_str"] = PhysicalUnits::printToBestActivityUnits( *src.activity_uncertainty, 4, !use_bq );
+          }
+        }//if( determined )
+        if( src.has_fitted_ancestor )
+          src_json["fed_by_fitted_source"] = true;
+        if( !src.note.empty() )
+          src_json["note"] = src.note;
+        bd_json["sources"].push_back( src_json );
+      }//for( bd.sources )
+    }//if( error ) / else
+  }//if( back-decay used )
+
   // 4. Shielding
   if( fit_results->shield_calc_details )
   {
@@ -2876,6 +2941,8 @@ nlohmann::json executeActivityFit(
     result["shielding"] = formatted_results["shielding"];
     result["solution_to_peak_comparison"] = formatted_results["solution_to_peak_comparison"];
     result["pull_trend_diagnostic"] = formatted_results["pull_trend_diagnostic"];
+    if( formatted_results.contains("back_decay") )
+      result["back_decay"] = formatted_results["back_decay"];
 
     // Keep legacy fields for backward compatibility
     result["chi2"] = formatted_results["fit_quality"]["chi2"];
@@ -3551,6 +3618,8 @@ nlohmann::json executeActivityFitOneOff(
   result["shielding"] = fit_json["shielding"];
   result["solution_to_peak_comparison"] = fit_json["solution_to_peak_comparison"];
   result["pull_trend_diagnostic"] = fit_json["pull_trend_diagnostic"];
+  if( fit_json.contains("back_decay") )
+    result["back_decay"] = fit_json["back_decay"];
 
   // Keep legacy fields for backward compatibility
   result["chi2"] = fit_json["fit_quality"]["chi2"];

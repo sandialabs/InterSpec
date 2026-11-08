@@ -31,6 +31,25 @@ Warnings:
 ## endfor
 ## endif
 ## endfor
+## if exists("AnyBackDecay") and AnyBackDecay
+
+
+Back-decayed activities
+Filename, Nuclide, Measurement start, Reference time, Time before measurement start, Activity at measurement, Activity at reference time, Uncertainty at reference time, Activity at reference time (bq), Uncertainty at reference time (bq), Activity at reference time (uCi), Uncertainty at reference time (uCi), Half-lives, Status, Note
+## for file in Files
+## if existsIn(file,"BackDecay")
+## if file.BackDecay.HasError
+{{ file.Filename }}, , {{ file.BackDecay.MeasStartTime }}, , , , , , , , , , , Error,"{{ file.BackDecay.Error }}"
+## else if existsIn(file,"Sources")
+## for src in file.Sources
+## if existsIn(src,"HasBackDecay")
+{{ file.Filename }}, {{ src.Nuclide }}, {{ file.BackDecay.MeasStartTime }}, {{ file.BackDecay.RefTime }}, {{ file.BackDecay.TimeBeforeMeasSigned }}, {{ src.Activity }}, {% if src.BackDecayIsValid %}{{ src.BackDecayActivity }}, {% if src.BackDecayHasUncert %}{{ src.BackDecayActivityUncert }}{% endif %}, {{ src.BackDecayActivity_bq }}, {% if src.BackDecayHasUncert %}{{ src.BackDecayActivityUncert_bq }}{% endif %}, {{ src.BackDecayActivity_uCi }}, {% if src.BackDecayHasUncert %}{{ src.BackDecayActivityUncert_uCi }}{% endif %}{% else %}, , , , , {% endif %}, {{ src.BackDecayHalfLivesStr }}, {{ src.BackDecayStatus }},"{{ src.BackDecayNote }}"
+## endif
+## endfor
+## endif
+## endif
+## endfor
+## endif
 
 
 Exemplar peaks that could not be fit

@@ -220,6 +220,79 @@ namespace DecayBatchCalc
                           const BatchDecayOptions &opts );
 
 
+  /** Smallest fraction of a nuclide that may survive the look-back time and still have its past
+   activity solved for.  2^-47 matches the ~47 half-lives SandiaDecay allows in
+   NuclideMixture::addAgedNuclideByNumAtoms, i.e. an amplification of at most ~1.4E+14.
+   */
+  extern const double sm_min_back_decay_surviving_fraction;
+
+
+  /** Outcome of #solve_past_activities for one input row. */
+  enum class PastActivityStatus
+  {
+    /** The past activity was solved for. */
+    Solved,
+
+    /** Under #sm_min_back_decay_surviving_fraction of the nuclide survives the look-back time, so its
+     past amount has no recoverable effect on anything measurable now; its past activity is given as
+     zero (which is only right if an ancestor among the inputs accounts for the present activity).
+     */
+    DecayedAway
+  };//enum class PastActivityStatus
+
+
+  /** The past state #solve_past_activities found; every vector is indexed like its inputs. */
+  struct PastActivitySolution
+  {
+    /** Each row's activity `age` ago, in the units of the input activities. */
+    std::vector<double> past_activities;
+
+    std::vector<PastActivityStatus> status;
+
+    /** True for a row that a #PastActivityStatus::DecayedAway row (of a different nuclide) feeds:
+     that ancestor's unknown past amount could have grown into this row, so this row's past activity
+     (computed taking that ancestor as zero) is not actually determined by the present measurement.
+     */
+    std::vector<bool> depends_on_decayed_away;
+
+    /** The fraction of each row's nuclide surviving `age`, i.e. exp(-lambda*age). */
+    std::vector<double> surviving_fraction;
+
+    /** Present number of atoms of each row's nuclide, summed over all rows of that nuclide. */
+    std::vector<double> now_atoms_total;
+
+    /** Present number of atoms of each row's nuclide that the solved past amounts of its ancestors
+     among the inputs grow into it.
+     */
+    std::vector<double> from_ancestors_atoms;
+
+    /** Row indices, ancestors before descendants, in the order they were solved. */
+    std::vector<std::size_t> solve_order;
+  };//struct PastActivitySolution
+
+
+  /** Solves for the activities a set of nuclides must have had `age` ago to give `activities` now,
+   accounting for inputs that are descendants of other inputs (part of their present activity grew in
+   from those ancestors, so the nuclides are coupled and must be solved together).
+
+   `seed_ages` are the ages each row is taken to have at the past time; each row then carries its
+   in-grown progeny into the solve exactly as such an aged source would.  `age` is a positive magnitude
+   (how far back to look).  Rows of one nuclide share a single unknown, which is divided among them in
+   proportion to their present activities.
+
+   When `clamp_negative` is true, a nuclide whose ancestors alone already over-produce its present
+   activity is given a past activity of zero (as #decay does); when false the (negative) linear
+   solution is returned, which keeps the result a linear function of the inputs.
+
+   Never throws for physical reasons; a nuclide too many half-lives back is reported via `status`.
+   */
+  PastActivitySolution solve_past_activities( const std::vector<const SandiaDecay::Nuclide *> &nuclides,
+                                              const std::vector<double> &activities,
+                                              const std::vector<double> &seed_ages,
+                                              const double age,
+                                              const bool clamp_negative );
+
+
   /** The location key for a source row's first-column value; see `BatchNuclide::location`.
 
    Rows of one location differ only by a trailing "_<something>" that indexes the row within the

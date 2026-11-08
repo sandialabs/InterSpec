@@ -71,6 +71,11 @@ CSS variables InterSpec will define for colors:
 
 .ShieldingSourceFitPlot .devtext {
   fill: var(--d3spec-text-color, black);
+  /* The average deviation is a result the user may want to copy. */
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 
 .ShieldingSourceFitPlot .trendline {

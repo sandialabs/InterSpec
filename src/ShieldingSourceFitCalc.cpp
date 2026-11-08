@@ -55,6 +55,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/CeresUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DecayBatchCalc.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1832,6 +1833,575 @@ FitShieldingInfo::FitShieldingInfo()
 }
   
   
+const char *backDecayStatusName( const BackDecayStatus status )
+{
+  switch( status )
+  {
+    case BackDecayStatus::Ok:                    return "Ok";
+    case BackDecayStatus::DecayedAway:           return "DecayedAway";
+    case BackDecayStatus::DependsOnUndetermined: return "DependsOnUndetermined";
+  }//switch( status )
+
+  assert( 0 );
+  return "Unknown";
+}//const char *backDecayStatusName( const BackDecayStatus status )
+
+
+double BackDecaySpec::time_before_meas( const SpecUtils::time_point_t &meas_start ) const
+{
+  switch( mode )
+  {
+    case Mode::DurationBeforeMeas:
+      if( !std::isfinite(duration) )
+        throw runtime_error( "The back-decay duration is not a valid number." );
+      return duration;
+
+    case Mode::DateTime:
+    {
+      if( SpecUtils::is_special(date) )
+        throw runtime_error( "No back-decay reference date/time has been entered." );
+
+      if( SpecUtils::is_special(meas_start) )
+        throw runtime_error( "The spectrum start time is not known, so the time to the back-decay"
+                             " reference date/time can not be computed; enter a duration instead." );
+
+      const std::chrono::duration<double> diff = meas_start - date;
+      return diff.count() * PhysicalUnits::second;
+    }//case Mode::DateTime:
+  }//switch( mode )
+
+  assert( 0 );
+  throw std::logic_error( "Invalid BackDecaySpec::Mode" );
+}//double BackDecaySpec::time_before_meas(...)
+
+
+SpecUtils::time_point_t BackDecaySpec::reference_time( const SpecUtils::time_point_t &meas_start ) const
+{
+  switch( mode )
+  {
+    case Mode::DurationBeforeMeas:
+    {
+      const double offset_us = 1.0E6 * duration / PhysicalUnits::second;
+      // Keep well inside the microsecond-count range (~292 thousand years).
+      if( SpecUtils::is_special(meas_start) || !std::isfinite(offset_us) || (fabs(offset_us) > 4.0E18) )
+        return SpecUtils::time_point_t{};
+
+      const SpecUtils::time_point_t ref = meas_start - std::chrono::microseconds( static_cast<int64_t>( std::round(offset_us) ) );
+
+      // Dates far enough from now (e.g., more than ~1500 years ago) can not be written as text that
+      //  reads back, so are not usable as a date - only as a duration.
+      if( SpecUtils::is_special(ref)
+         || (SpecUtils::time_from_string( SpecUtils::to_extended_iso_string(ref) ) != ref) )
+        return SpecUtils::time_point_t{};
+
+      return ref;
+    }//case Mode::DurationBeforeMeas:
+
+    case Mode::DateTime:
+      return date;
+  }//switch( mode )
+
+  assert( 0 );
+  return SpecUtils::time_point_t{};
+}//SpecUtils::time_point_t BackDecaySpec::reference_time(...)
+
+
+bool BackDecaySpec::is_default() const
+{
+  return !enabled && (mode == Mode::DurationBeforeMeas) && (duration == 0.0) && SpecUtils::is_special(date);
+}
+
+
+bool BackDecaySpec::operator==( const BackDecaySpec &rhs ) const
+{
+  return (enabled == rhs.enabled) && (mode == rhs.mode) && (duration == rhs.duration)
+         && (SpecUtils::is_special(date) ? SpecUtils::is_special(rhs.date) : (date == rhs.date));
+}
+
+
+bool BackDecaySpec::operator!=( const BackDecaySpec &rhs ) const
+{
+  return !(*this == rhs);
+}
+
+
+void BackDecaySpec::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  // Nothing written if never used, so setups without back-decay serialize exactly as they did
+  //  before this option existed.
+  if( is_default() )
+    return;
+
+  rapidxml::xml_document<char> *doc = parent_node ? parent_node->document() : nullptr;
+  if( !doc )
+    throw runtime_error( "BackDecaySpec::serialize: invalid parent" );
+
+  rapidxml::xml_node<char> *base_node = doc->allocate_node( rapidxml::node_element, "BackDecay" );
+  parent_node->append_node( base_node );
+
+  base_node->append_attribute( doc->allocate_attribute( "Enabled", enabled ? "1" : "0" ) );
+  const char *mode_str = (mode == Mode::DateTime) ? "DateTime" : "Duration";
+  base_node->append_attribute( doc->allocate_attribute( "Mode", mode_str ) );
+
+  // Both values are kept, so switching modes in the GUI does not lose what was entered.
+  if( duration != 0.0 )
+  {
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.17g", duration / PhysicalUnits::second );
+    const char *value = doc->allocate_string( buffer );
+    base_node->append_node( doc->allocate_node( rapidxml::node_element, "Duration", value ) );
+  }//if( duration != 0.0 )
+
+  if( !SpecUtils::is_special(date) )
+  {
+    const char *value = doc->allocate_string( SpecUtils::to_extended_iso_string(date).c_str() );
+    base_node->append_node( doc->allocate_node( rapidxml::node_element, "DateTime", value ) );
+  }//if( !SpecUtils::is_special(date) )
+}//void BackDecaySpec::serialize(...)
+
+
+void BackDecaySpec::deSerialize( const rapidxml::xml_node<char> *parent_node )
+{
+  *this = BackDecaySpec();
+
+  const rapidxml::xml_node<char> *base_node = parent_node ? XML_FIRST_NODE(parent_node, "BackDecay") : nullptr;
+  if( !base_node )
+    return;
+
+  // This option does not affect the fit, so a node this version can not read (e.g., a mode added
+  //  later) is skipped - leaving back-decay off - rather than failing to load the whole model.
+  try
+  {
+    deSerializeNode( base_node );
+  }catch( std::exception &e )
+  {
+    cerr << "Ignoring invalid <BackDecay> node: " << e.what() << endl;
+    *this = BackDecaySpec();
+  }//try / catch
+}//void BackDecaySpec::deSerialize(...)
+
+
+void BackDecaySpec::deSerializeNode( const rapidxml::xml_node<char> *base_node )
+{
+  assert( base_node );
+
+  const rapidxml::xml_attribute<char> *enabled_attrib = XML_FIRST_ATTRIB( base_node, "Enabled" );
+  const string enabled_str = SpecUtils::xml_value_str( enabled_attrib );
+  enabled = (enabled_str == "1") || SpecUtils::iequals_ascii(enabled_str, "true");
+
+  const string mode_str = SpecUtils::xml_value_str( XML_FIRST_ATTRIB(base_node, "Mode") );
+  if( SpecUtils::iequals_ascii(mode_str, "DateTime") )
+    mode = Mode::DateTime;
+  else if( mode_str.empty() || SpecUtils::iequals_ascii(mode_str, "Duration") )
+    mode = Mode::DurationBeforeMeas;
+  else
+    throw runtime_error( "BackDecay invalid Mode: '" + mode_str + "'" );
+
+  const rapidxml::xml_node<char> *dur_node = XML_FIRST_NODE( base_node, "Duration" );
+  if( dur_node )
+  {
+    const string dur_str = SpecUtils::xml_value_str( dur_node );
+    double seconds = 0.0;
+    if( !(stringstream(dur_str) >> seconds) || !std::isfinite(seconds) )
+      throw runtime_error( "BackDecay invalid Duration: '" + dur_str + "'" );
+    duration = seconds * PhysicalUnits::second;
+  }//if( dur_node )
+
+  const rapidxml::xml_node<char> *date_node = XML_FIRST_NODE( base_node, "DateTime" );
+  if( date_node )
+  {
+    const string date_str = SpecUtils::xml_value_str( date_node );
+    date = SpecUtils::time_from_string( date_str );
+    if( SpecUtils::is_special(date) )
+      throw runtime_error( "BackDecay invalid DateTime: '" + date_str + "'" );
+  }//if( date_node )
+}//void BackDecaySpec::deSerializeNode(...)
+
+
+const BackDecaySourceResult *BackDecayResults::source( const SandiaDecay::Nuclide *nuc ) const
+{
+  for( const BackDecaySourceResult &src : sources )
+  {
+    if( src.nuclide == nuc )
+      return &src;
+  }
+  return nullptr;
+}//const BackDecaySourceResult *BackDecayResults::source(...)
+
+
+BackDecayResults compute_back_decay( const std::vector<SourceFitDef> &sources,
+                                     const BackDecaySpec &spec,
+                                     const SpecUtils::time_point_t &meas_start,
+                                     const bool interference_correction )
+{
+  // Ages are only used for what a source grows into other fitted sources.  An aged SandiaDecay
+  //  mixture is scaled by 2^(age/half-life), which underflows past ~1000 half-lives, so limit them
+  //  (as DecayBatchCalc does) - by then the in-growth is long since settled anyway.
+  const double max_age_half_lives = 500.0;
+
+  BackDecayResults answer;
+  answer.spec = spec;
+  answer.meas_start = meas_start;
+  answer.ref_time = spec.reference_time( meas_start );
+
+  try
+  {
+    answer.time_before_meas = spec.time_before_meas( meas_start );
+  }catch( std::exception &e )
+  {
+    answer.error = e.what();
+    return answer;
+  }//try / catch
+
+  const double dt = answer.time_before_meas;
+  const size_t nsrc = sources.size();
+  answer.sources.resize( nsrc );
+
+  vector<const SandiaDecay::Nuclide *> nucs( nsrc, nullptr );
+  vector<double> acts( nsrc, 0.0 ), ages( nsrc, 0.0 );
+  vector<vector<string>> notes( nsrc );
+  for( size_t i = 0; i < nsrc; ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = sources[i].nuclide;
+    assert( nuc );
+    nucs[i] = nuc;
+    const double act = sources[i].activity, age = sources[i].age;
+    acts[i] = (std::isfinite(act) && (act > 0.0)) ? act : 0.0;
+    ages[i] = (std::isfinite(age) && (age > 0.0)) ? age : 0.0;
+
+    if( nuc && !nuc->isStable() && (nuc->halfLife > 0.0) && (ages[i] > max_age_half_lives*nuc->halfLife) )
+    {
+      char buffer[256] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "The age of %s (%.3G half-lives) is longer than can be"
+               " evaluated; %.0f half-lives is used.", nuc->symbol.c_str(), ages[i]/nuc->halfLife,
+               max_age_half_lives );
+      notes[i].push_back( buffer );
+      ages[i] = max_age_half_lives * nuc->halfLife;
+    }//if( age too long to evaluate )
+  }//for( size_t i = 0; i < nsrc; ++i )
+
+  // ancestors[i] are the indices of the other fitted sources that are ancestors of source i.
+  vector<vector<size_t>> ancestors( nsrc );
+  for( size_t i = 0; i < nsrc; ++i )
+  {
+    if( !nucs[i] )
+      continue;
+
+    const vector<const SandiaDecay::Nuclide *> forebearers = nucs[i]->forebearers();
+    for( size_t j = 0; j < nsrc; ++j )
+    {
+      if( nucs[j] && (nucs[j] != nucs[i])
+         && (std::find( begin(forebearers), end(forebearers), nucs[j] ) != end(forebearers)) )
+      {
+        ancestors[i].push_back( j );
+      }
+    }//for( size_t j = 0; j < nsrc; ++j )
+  }//for( size_t i = 0; i < nsrc; ++i )
+
+  const auto is_ancestor_of = [&ancestors]( const size_t anc, const size_t desc ) -> bool {
+    return std::find( begin(ancestors[desc]), end(ancestors[desc]), anc ) != end(ancestors[desc]);
+  };
+
+  const auto nuc_list = [&nucs]( const vector<size_t> &indices ) -> string {
+    string names;
+    for( const size_t j : indices )
+      names += (names.empty() ? "" : ", ") + (nucs[j] ? nucs[j]->symbol : string("?"));
+    return names;
+  };
+
+  // What a source's value depends on, besides its own fitted activity: with interference correction
+  //  a source keeps its own in-growth, so only an ancestor taken as pure at the reference time (its
+  //  age being shorter than the back-decay time) has an effect; without it, every fitted source is
+  //  taken as pure at the reference time (see below), so every ancestor does.
+  vector<vector<size_t>> coupled_to( nsrc );
+  for( size_t i = 0; i < nsrc; ++i )
+  {
+    for( const size_t j : ancestors[i] )
+    {
+      if( (dt != 0.0) && (!interference_correction || ((dt > 0.0) && (ages[j] < dt))) )
+        coupled_to[i].push_back( j );
+    }
+  }//for( size_t i = 0; i < nsrc; ++i )
+
+  // Earlier than the measurement: each source's own share at the reference time, for given
+  //  present activities and ages - the solution of the coupled problem.
+  //
+  //  With interference correction, the fit models what each source grows into the other fitted
+  //  nuclides separately from their own activities: each source is seeded at the reference time
+  //  with its age less the back-decay time (so it keeps the in-growth it already had then), and its
+  //  in-growth is added to the present activities the past state must reproduce.  An age shorter
+  //  than the back-decay time gives a seed age of zero - taken as pure at the reference time - so
+  //  what it has grown in since is subtracted from the progeny, rather than being scaled up with it.
+  //
+  //  Without interference correction, each fit activity is all of that nuclide's activity, so every
+  //  source is taken as pure at the reference time, and only in-growth since then is subtracted.
+  const auto past_state = [&]( const vector<double> &a, const vector<double> &ag )
+                                                          -> DecayBatchCalc::PastActivitySolution {
+    vector<double> total_now = a;
+    for( size_t i = 0; interference_correction && (i < nsrc); ++i )
+    {
+      if( !nucs[i] || nucs[i]->isStable() || (a[i] <= 0.0) || (ag[i] <= 0.0) )
+        continue;
+
+      bool feeds_another = false;
+      for( size_t j = 0; !feeds_another && (j < nsrc); ++j )
+        feeds_another = is_ancestor_of( i, j );
+      if( !feeds_another )
+        continue;
+
+      SandiaDecay::NuclideMixture mix;
+      mix.addAgedNuclideByActivity( nucs[i], a[i], ag[i] );
+      for( size_t j = 0; j < nsrc; ++j )
+      {
+        if( is_ancestor_of( i, j ) )
+          total_now[j] += static_cast<double>( mix.activity( 0.0, nucs[j] ) );
+      }
+    }//for( each source that may feed another )
+
+    vector<double> seed_ages( nsrc, 0.0 );
+    for( size_t i = 0; interference_correction && (i < nsrc); ++i )
+      seed_ages[i] = std::max( 0.0, ag[i] - dt );
+
+    return DecayBatchCalc::solve_past_activities( nucs, total_now, seed_ages, dt, false );
+  };//past_state lambda
+
+  // Later than (or at) the measurement, without interference correction: every fitted nuclide pure
+  //  at the measurement, with all of its activity, decayed forward as one mixture - so the in-growth
+  //  from the other fitted sources is added (the inverse of `past_state` for this case).  Rows of one
+  //  nuclide share its activity in proportion to their present activities.
+  const auto later_state = [&]( const vector<double> &a ) -> vector<double> {
+    SandiaDecay::NuclideMixture mix;
+    map<const SandiaDecay::Nuclide *,pair<double,size_t>> now_total;  //{activity, num rows}
+    for( size_t i = 0; i < nsrc; ++i )
+    {
+      if( !nucs[i] || nucs[i]->isStable() )
+        continue;
+      if( a[i] > 0.0 )
+        mix.addNuclideByActivity( nucs[i], a[i] );
+      now_total[nucs[i]].first += a[i];
+      now_total[nucs[i]].second += 1;
+    }//for( size_t i = 0; i < nsrc; ++i )
+
+    vector<double> then( nsrc, 0.0 );
+    for( size_t i = 0; i < nsrc; ++i )
+    {
+      if( !nucs[i] || nucs[i]->isStable() || (mix.numInitialNuclides() == 0) )
+        continue;
+      const pair<double,size_t> &total = now_total[nucs[i]];
+      const double share = (total.first > 0.0) ? (a[i] / total.first) : (1.0 / total.second);
+      then[i] = share * static_cast<double>( mix.activity( -dt, nucs[i] ) );
+    }//for( size_t i = 0; i < nsrc; ++i )
+
+    return then;
+  };//later_state lambda
+
+  vector<double> variance( nsrc, 0.0 );
+
+  if( dt > 0.0 )
+  {
+    const DecayBatchCalc::PastActivitySolution nominal = past_state( acts, ages );
+
+    // Propagate each input uncertainty separately (no fit correlations are available).  The
+    //  solution is linear in the activities, so a one-sided step is exact for them; ages enter
+    //  non-linearly, so use a central difference.
+    for( size_t k = 0; k < nsrc; ++k )
+    {
+      const std::optional<double> &act_unc = sources[k].activityUncertainty;
+      if( act_unc.has_value() && std::isfinite(*act_unc) && (*act_unc > 0.0) )
+      {
+        vector<double> stepped = acts;
+        stepped[k] += *act_unc;
+        const DecayBatchCalc::PastActivitySolution sol = past_state( stepped, ages );
+        for( size_t i = 0; i < nsrc; ++i )
+        {
+          const double diff = sol.past_activities[i] - nominal.past_activities[i];
+          variance[i] += diff * diff;
+        }
+      }//if( activity uncertainty )
+
+      const std::optional<double> &age_unc = sources[k].ageUncertainty;
+      if( interference_correction && age_unc.has_value() && std::isfinite(*age_unc) && (*age_unc > 0.0) )
+      {
+        vector<double> up = ages, down = ages;
+        up[k] += *age_unc;
+        down[k] = std::max( 0.0, ages[k] - *age_unc );
+        const double span = up[k] - down[k];
+        const DecayBatchCalc::PastActivitySolution sol_up = past_state( acts, up );
+        const DecayBatchCalc::PastActivitySolution sol_down = past_state( acts, down );
+        for( size_t i = 0; i < nsrc; ++i )
+        {
+          const double diff = (sol_up.past_activities[i] - sol_down.past_activities[i]) * (*age_unc) / span;
+          variance[i] += diff * diff;
+        }
+      }//if( age uncertainty )
+    }//for( size_t k = 0; k < nsrc; ++k )
+
+    for( size_t i = 0; i < nsrc; ++i )
+    {
+      BackDecaySourceResult &res = answer.sources[i];
+      if( nominal.status[i] == DecayBatchCalc::PastActivityStatus::DecayedAway )
+        res.status = BackDecayStatus::DecayedAway;
+      else if( nominal.depends_on_decayed_away[i] )
+        res.status = BackDecayStatus::DependsOnUndetermined;
+      else
+        res.activity = nominal.past_activities[i];
+    }//for( size_t i = 0; i < nsrc; ++i )
+  }else if( interference_correction )
+  {
+    // Later than the measurement (or at it): each source decays on its own, its in-growth into other
+    //  fitted nuclides staying part of it - so nothing is coupled.
+    for( size_t i = 0; i < nsrc; ++i )
+    {
+      const double lambda = (nucs[i] && !nucs[i]->isStable()) ? nucs[i]->decayConstant() : 0.0;
+      const double factor = std::exp( lambda * dt );
+      answer.sources[i].activity = acts[i] * factor;
+
+      const std::optional<double> &act_unc = sources[i].activityUncertainty;
+      if( act_unc.has_value() && std::isfinite(*act_unc) && (*act_unc > 0.0) )
+        variance[i] = (*act_unc) * (*act_unc) * factor * factor;
+    }//for( size_t i = 0; i < nsrc; ++i )
+  }else
+  {
+    const vector<double> nominal = later_state( acts );
+    for( size_t k = 0; k < nsrc; ++k )
+    {
+      const std::optional<double> &act_unc = sources[k].activityUncertainty;
+      if( act_unc.has_value() && std::isfinite(*act_unc) && (*act_unc > 0.0) )
+      {
+        vector<double> stepped = acts;
+        stepped[k] += *act_unc;
+        const vector<double> then = later_state( stepped );
+        for( size_t i = 0; i < nsrc; ++i )
+          variance[i] += (then[i] - nominal[i]) * (then[i] - nominal[i]);
+      }//if( activity uncertainty )
+    }//for( size_t k = 0; k < nsrc; ++k )
+
+    for( size_t i = 0; i < nsrc; ++i )
+      answer.sources[i].activity = nominal[i];
+  }//if( dt > 0.0 ) / else if( interference_correction ) / else
+
+  vector<size_t> coupled_srcs;
+
+  for( size_t i = 0; i < nsrc; ++i )
+  {
+    BackDecaySourceResult &res = answer.sources[i];
+    const SandiaDecay::Nuclide * const nuc = nucs[i];
+    const string symbol = nuc ? nuc->symbol : string("?");
+
+    res.nuclide = nuc;
+    res.activity_now = acts[i];
+    res.has_fitted_ancestor = !ancestors[i].empty();
+    res.half_lives = (nuc && (nuc->halfLife > 0.0) && std::isfinite(nuc->halfLife)) ? (dt / nuc->halfLife) : 0.0;
+    // With interference correction a source keeps its age (pure at the reference time if it is not
+    //  that old); without it every source is taken as pure at the earlier of the two times.
+    res.age_at_ref = interference_correction ? std::max( 0.0, ages[i] - dt ) : std::max( 0.0, -dt );
+
+    switch( res.status )
+    {
+      case BackDecayStatus::DecayedAway:
+      {
+        char buffer[512] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "Can not be determined: the reference time is %.0f half-lives"
+                  " of %s before the measurement, so its activity then has no measurable effect now.",
+                  res.half_lives, symbol.c_str() );
+        notes[i].insert( begin(notes[i]), buffer );
+        break;
+      }//case BackDecayStatus::DecayedAway:
+
+      case BackDecayStatus::DependsOnUndetermined:
+      {
+        vector<size_t> undetermined;
+        for( const size_t j : ancestors[i] )
+        {
+          if( answer.sources[j].status == BackDecayStatus::DecayedAway )
+            undetermined.push_back( j );
+        }
+
+        notes[i].insert( begin(notes[i]), "Can not be determined: it is fed by " + nuc_list(undetermined)
+                                          + ", whose activity at the reference time can not be determined." );
+        break;
+      }//case BackDecayStatus::DependsOnUndetermined:
+
+      case BackDecayStatus::Ok:
+      {
+        if( variance[i] > 0.0 )
+          res.activity_uncertainty = std::sqrt( variance[i] );
+
+        res.ratio = (res.activity_now > 0.0) ? (res.activity / res.activity_now) : 0.0;
+
+        if( coupled_to[i].empty() )
+          break;
+
+        coupled_srcs.push_back( i );
+
+        // With interference correction, say when an ancestor was taken as pure at the reference
+        //  time (without it they all are, which the overall warning says).
+        if( interference_correction )
+        {
+          const string anc = nuc_list( coupled_to[i] );
+          notes[i].push_back( "The age of " + anc + " is shorter than the back-decay time, so " + anc
+                              + (coupled_to[i].size() > 1 ? " are" : " is") + " taken as pure at the"
+                              " reference time, and the " + symbol + " grown in since then is not part of "
+                              + symbol + "'s activity then." );
+        }//if( interference_correction )
+
+        if( (dt > 0.0) && (res.activity < 0.0) )
+        {
+          string neg = "In-growth from " + nuc_list(coupled_to[i]) + " since the reference time is more"
+                       " than the fitted " + symbol;
+          if( res.activity_uncertainty.has_value() && (*res.activity_uncertainty > 0.0) )
+          {
+            const double nsigma = fabs(res.activity) / *res.activity_uncertainty;
+            char buffer[128] = { '\0' };
+            if( nsigma <= 2.0 )
+              snprintf( buffer, sizeof(buffer), "; consistent with zero (%.1f sigma)", nsigma );
+            else
+              snprintf( buffer, sizeof(buffer), "; inconsistent by %.1f sigma - check the ages", nsigma );
+            neg += buffer;
+          }//if( we have an uncertainty )
+          notes[i].push_back( neg + "." );
+        }//if( res.activity < 0.0 )
+        break;
+      }//case BackDecayStatus::Ok:
+    }//switch( res.status )
+
+    for( const string &note : notes[i] )
+      res.note += (res.note.empty() ? "" : " ") + note;
+  }//for( size_t i = 0; i < nsrc; ++i )
+
+  if( !coupled_srcs.empty() )
+  {
+    const string names = nuc_list( coupled_srcs );
+
+    if( !interference_correction )
+      answer.warnings.push_back( "Interference correction is off, so the fit activity of " + names
+                    + " is taken as all of its activity: the other nuclides being fit are taken as pure"
+                    + ((dt > 0.0) ? " at the reference time, and what they have grown into it since then"
+                                    " is subtracted."
+                                  : " at the measurement, and what they grow into it by the reference"
+                                    " time is added.") );
+
+    answer.warnings.push_back( "The uncertainties at the reference time of " + names + " neglect"
+                               " correlations with the fit activities of the nuclides that feed them." );
+  }//if( any source depends on another )
+
+  return answer;
+}//BackDecayResults compute_back_decay(...)
+
+
+std::string back_decay_time_str( const SpecUtils::time_point_t &t )
+{
+  if( SpecUtils::is_special(t) )
+    return string();
+
+  string answer = SpecUtils::to_extended_iso_string( t );  //e.x., "2019-12-28T12:00:00"
+  const size_t tpos = answer.find( 'T' );
+  if( tpos != string::npos )
+    answer[tpos] = ' ';
+  return answer;
+}//std::string back_decay_time_str( const SpecUtils::time_point_t &t )
+
+
 void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
   // For backwards compatibility, we wont create a <ShieldingSourceFitOptions> node,
@@ -1921,6 +2491,8 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   value = doc->allocate_string( buffer );
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
+
+  back_decay.serialize( parent_node );  //Writes nothing unless back-decay has been used
 }//void serialize( rapidxml::xml_node<char> *parent_node ) const
   
   
@@ -2024,6 +2596,8 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
     if( !(stringstream(clusterstr) >> photopeak_cluster_sigma) )
       throw runtime_error( "ShieldingSourceFitOptions invalid cluster sigma: '" + clusterstr + "'" );
   }//if( node )
+
+  back_decay.deSerialize( parent_node );  //absent in older XML -> not enabled
 }//void deSerialize( const rapidxml::xml_node<char> *parent_node )
   
   
@@ -2066,6 +2640,18 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
 
   if( lhs.volumetric_eff_method != rhs.volumetric_eff_method )
     throw runtime_error( "ShieldingSourceFitOptions LHS volumetric_eff_method != RHS volumetric_eff_method" );
+
+  const BackDecaySpec &lbd = lhs.back_decay, &rbd = rhs.back_decay;
+  if( (lbd.enabled != rbd.enabled) || (lbd.mode != rbd.mode) )
+    throw runtime_error( "ShieldingSourceFitOptions LHS back_decay enabled/mode != RHS back_decay" );
+
+  if( fabs(lbd.duration - rbd.duration) > 1.0E-6*std::max( 1.0, std::max(fabs(lbd.duration), fabs(rbd.duration)) ) )
+    throw runtime_error( "ShieldingSourceFitOptions LHS back_decay.duration != RHS back_decay.duration" );
+
+  if( SpecUtils::is_special(lbd.date) != SpecUtils::is_special(rbd.date)
+     || (!SpecUtils::is_special(lbd.date)
+         && (std::chrono::abs(lbd.date - rbd.date) > std::chrono::microseconds(1))) )
+    throw runtime_error( "ShieldingSourceFitOptions LHS back_decay.date != RHS back_decay.date" );
 }//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
 #endif
   
@@ -2962,6 +3548,13 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
   //  computation rather than about the trustworthiness of the fit itself.
   results->warnings.insert( end(results->warnings),
                             begin(supplemental_warnings), end(supplemental_warnings) );
+
+  // Activities at the optional back-decay reference time; does not throw, and does not affect the fit.
+  results->back_decay.reset();
+  if( results->options.back_decay.enabled )
+    results->back_decay = ShieldingSourceFitCalc::compute_back_decay( results->fit_src_info,
+                                     results->options.back_decay, results->foreground_start_time,
+                                     results->options.multiple_nucs_contribute_to_peaks );
 }//fill_fit_results(...)
 
 
@@ -4514,6 +5107,9 @@ void fit_model( const std::string wtsession,
 
   results->options = chi2Fcn->options();
   results->initial_shieldings = chi2Fcn->initialShieldings();
+
+  const shared_ptr<const SpecUtils::Measurement> &fit_foreground = chi2Fcn->createInput().foreground;
+  results->foreground_start_time = fit_foreground ? fit_foreground->start_time() : SpecUtils::time_point_t{};
 
   shared_ptr<ShieldingSourceChi2Fcn::GuiProgressUpdateInfo> gui_progress_info;
 

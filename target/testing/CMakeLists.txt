@@ -459,6 +459,13 @@ add_test( NAME TShieldingSourceFitCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ShieldSourceBackDecay test_ShieldSourceBackDecay.cpp )
+target_link_libraries( test_ShieldSourceBackDecay PRIVATE InterSpecLib )
+add_test( NAME TShieldSourceBackDecay
+  COMMAND $<TARGET_FILE:test_ShieldSourceBackDecay> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_MaterialDB test_MaterialDB.cpp )
 target_link_libraries( test_MaterialDB PRIVATE InterSpecLib )
 add_test( NAME TMaterialDB

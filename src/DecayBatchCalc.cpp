@@ -51,12 +51,6 @@ using namespace std;
 
 namespace
 {
-  /** Smallest surviving fraction a nuclide may have and still have its past activity solved for; see
-   the use in #back_decay_activities.  2^-47 matches the ~47 half-lives SandiaDecay allows in
-   NuclideMixture::addAgedNuclideByNumAtoms, i.e. an amplification of at most ~1.4E+14.
-   */
-  const double sm_min_back_decay_diagonal = 7.1E-15;
-
   /** The longest initial age accepted, in half-lives of the nuclide.  An aged seed is scaled up by
    2^(age/half-life) (see NuclideMixture::addAgedNuclideByActivity), which underflows - silently
    giving zero - past ~1000 half-lives; nothing that old could be measured, so leave a wide margin.
@@ -162,29 +156,7 @@ namespace
 
 
   /** Solves for the activities a set of nuclides must have had `age` ago to give the measured
-   activities now.  `age` is a positive magnitude (how far back to look).
-
-   Why this is not just `A_now / exp(-lambda*age)` per nuclide: if any input is a descendant of
-   another (Cs137 -> Ba137m, Zr95 -> Nb95, ...) then part of its present activity grew in from that
-   ancestor, so the nuclides are coupled and must be solved together.
-
-   The forward map from past amounts to present amounts is linear, and lower-triangular when the
-   nuclides are ordered ancestor-before-descendant, so the past amounts follow by forward
-   substitution.  Each column of that matrix is obtained from SandiaDecay itself - seed a mixture with
-   one unit of nuclide j, evaluate at `age`, and read off what it produced in every i - which avoids
-   relying on the "barely tested" branchRatioFromForebear()/branchRatioToDecendant().
-
-   Everything is done in numbers of atoms, which keeps the matrix well conditioned (activity would
-   scale rows by wildly different decay constants) and lets stable nuclides participate.
-
-   `seed_ages` are the ages each nuclide will be seeded with at the past time (see #decay), so each
-   column carries that nuclide's in-grown progeny exactly as the seeded mixture will; a fresh seed here
-   would have the solve miss (and so double count) an aged parent's daughters.
-
-   Rows of one nuclide share a single unknown: in a mixture they add, and nothing tells them apart.  So
-   each distinct nuclide is solved once, and its past amount is shared among its rows in proportion to
-   their measurements.  A nuclide's surviving fraction does not depend on a row's seed age, so this is
-   exact; each row still carries its own column (and so its own in-grown progeny) to the descendants.
+   activities now; see DecayBatchCalc::solve_past_activities for the method.
 
    Two things can go wrong, and both are physical rather than numerical:
      - Over enough half-lives a nuclide's surviving fraction `exp(-lambda*age)` becomes too small to
@@ -194,7 +166,7 @@ namespace
        zero; if not, there is nothing to report and this throws so the user can look back less far.
      - The measurements may not be mutually consistent with any past state (e.g. a measured
        Ba137m/Cs137 ratio that secular equilibrium forbids).  The solve then cannot reproduce them;
-       `warnings` says so rather than silently returning a set that does not decay back to the input.
+       `notes` says so rather than silently returning a set that does not decay back to the input.
 
    Returns past activities in the same (SandiaDecay) units as `activities`, indexed like `nuclides`.
    Throws UnrecoverablePastError when a measured nuclide's past activity is wholly unrecoverable.
@@ -206,134 +178,32 @@ namespace
                                         BackDecayNotes &notes )
   {
     const size_t nnuc = nuclides.size();
-    assert( activities.size() == nnuc );
-    assert( seed_ages.size() == nnuc );
     assert( age > 0.0 );
 
     notes.age = age;
 
-    // Order ancestor-before-descendant, so the forward map is lower-triangular.  Counting, for each
-    //  nuclide, how many of the other input nuclides are its ancestors gives such an order directly:
-    //  if j is an ancestor of i then every ancestor of j is also one of i, plus j itself, so j's count
-    //  is strictly smaller than i's.  Sorting by that count ascending therefore always places an
-    //  ancestor before its descendants.
-    vector<size_t> num_ancestors( nnuc, 0 );
-    for( size_t i = 0; i < nnuc; ++i )
+    const DecayBatchCalc::PastActivitySolution sol
+                 = DecayBatchCalc::solve_past_activities( nuclides, activities, seed_ages, age, true );
+
+    // Walk the distinct nuclides in the order they were solved, so the first unrecoverable one (the
+    //  one the user is told about) is the same as when this threw from inside the solve.
+    vector<bool> handled( nnuc, false );
+    for( const size_t i : sol.solve_order )
     {
-      if( !nuclides[i] )
+      if( handled[i] )
         continue;
-
-      // forebearers() includes the nuclide itself, so skip any input that is the same nuclide.
-      const vector<const SandiaDecay::Nuclide *> forebearers = nuclides[i]->forebearers();
-      for( size_t j = 0; j < nnuc; ++j )
-      {
-        if( (j != i) && nuclides[j] && (nuclides[j] != nuclides[i])
-           && (std::find( begin(forebearers), end(forebearers), nuclides[j] ) != end(forebearers)) )
-        {
-          num_ancestors[i] += 1;
-        }
-      }
-    }//for( each nuclide )
-
-    vector<size_t> order( nnuc );
-    for( size_t i = 0; i < nnuc; ++i )
-      order[i] = i;
-
-    std::stable_sort( begin(order), end(order), [&num_ancestors]( const size_t a, const size_t b ){
-      return num_ancestors[a] < num_ancestors[b];
-    } );
-
-    // Column j of the forward map: atoms of each nuclide at `age` from one atom of j, seeded the same
-    //  way #decay seeds its mixtures (addAgedNuclideByNumAtoms would also refuse ages past ~45
-    //  half-lives, which the mixtures take fine).  Also gives the diagonal, j's own surviving
-    //  fraction - which an aged seed does not change, since its atom count is the parent's.
-    vector<vector<double>> forward( nnuc, vector<double>( nnuc, 0.0 ) );
-    for( size_t j = 0; j < nnuc; ++j )
-    {
-      const SandiaDecay::Nuclide * const src = nuclides[j];
-      if( !src )
-        continue;
-
-      SandiaDecay::NuclideMixture mix;
-      if( (seed_ages[j] > 0.0) && !src->isStable() )
-        mix.addAgedNuclideByActivity( src, src->decayConstant(), seed_ages[j] );  // one atom's activity
-      else
-        mix.addNuclideByAbundance( src, 1.0 );
-
-      const vector<SandiaDecay::NuclideNumAtomsPair> atoms = mix.numAtoms( age );
-      for( const SandiaDecay::NuclideNumAtomsPair &nap : atoms )
-      {
-        for( size_t i = 0; i < nnuc; ++i )
-        {
-          // Another row of the same nuclide is not something j produces (see the substitution below).
-          if( (nuclides[i] == nap.nuclide) && ((i == j) || (nuclides[i] != src)) )
-            forward[i][j] = nap.numAtoms;
-        }
-      }
-    }//for( each column )
-
-    // Present-day atoms from the measured activities (a stable nuclide has no decay constant, so it
-    //  cannot be expressed as an activity at all - it contributes nothing to solve for).
-    vector<double> now_atoms( nnuc, 0.0 );
-    for( size_t i = 0; i < nnuc; ++i )
-    {
-      const SandiaDecay::Nuclide * const nuc = nuclides[i];
-      if( nuc && !nuc->isStable() && (nuc->decayConstant() > 0.0) )
-        now_atoms[i] = activities[i] / nuc->decayConstant();
-    }
-
-#if( PERFORM_DEVELOPER_CHECKS )
-    // The whole method rests on `order` making the forward map lower-triangular: a nuclide must not
-    //  receive atoms from one solved after it.  Cheap to check, and silently wrong if it ever fails.
-    for( size_t a = 0; a < nnuc; ++a )
-    {
-      for( size_t b = a + 1; b < nnuc; ++b )
-        assert( forward[order[a]][order[b]] <= 0.0 );
-    }
-#endif
-
-    // Forward substitution in ancestor-first order, one distinct nuclide at a time (see above).
-    vector<double> past_atoms( nnuc, 0.0 );
-    vector<bool> solved( nnuc, false );
-
-    for( size_t pos = 0; pos < nnuc; ++pos )
-    {
-      const size_t i = order[pos];
-      if( solved[i] )
-        continue;
-
-      // All rows of this nuclide; they have the same row of the forward map, so `i` stands for them.
-      vector<size_t> rows;
-      double now_total = 0.0;
-      for( size_t k = pos; k < nnuc; ++k )
-      {
-        if( nuclides[order[k]] == nuclides[i] )
-        {
-          rows.push_back( order[k] );
-          now_total += now_atoms[order[k]];
-        }
-      }
-
-      // Subtract what the already-solved rows - which by construction include every ancestor of i -
-      //  grow into i by now.
-      double from_ancestors = 0.0;
       for( size_t k = 0; k < nnuc; ++k )
       {
-        if( solved[k] )
-          from_ancestors += forward[i][k] * past_atoms[k];
+        if( nuclides[k] == nuclides[i] )
+          handled[k] = true;
       }
 
+      const double now_total = sol.now_atoms_total[i];
+      const double from_ancestors = sol.from_ancestors_atoms[i];
       const double residual = now_total - from_ancestors;
-      const double diagonal = forward[i][i];
-      double past_total = 0.0;
+      const double diagonal = sol.surviving_fraction[i];
 
-      // Past enough half-lives a nuclide's own past amount stops being recoverable from today's
-      //  measurement: the diagonal underflows to exactly zero (Ba137m over 48 h), or gets so small
-      //  that dividing by it amplifies the measurement - and its noise - without bound (at 48 h Pr144
-      //  has a diagonal of 7E-51, which would turn a real 1.4E-03 uCi/m2 into 2E+47 uCi/m2).  Both
-      //  are the same situation, so treat them the same; SandiaDecay draws this same line at ~47
-      //  half-lives in NuclideMixture::addAgedNuclideByNumAtoms.
-      if( diagonal < sm_min_back_decay_diagonal )
+      if( diagonal < DecayBatchCalc::sm_min_back_decay_surviving_fraction )
       {
         // With an ancestor among the inputs, its in-growth accounts for the measurement and zero is
         //  the right answer for i itself - only a note is owed.  With none there is nothing to fall
@@ -350,28 +220,18 @@ namespace
                     compact_time_str( age ).c_str(),
                     (half_life > 0.0) ? (age / half_life) : 0.0,
                     (nuclides[i] ? nuclides[i]->symbol.c_str() : "?"),
-                    1.0 / sm_min_back_decay_diagonal );
+                    1.0 / DecayBatchCalc::sm_min_back_decay_surviving_fraction );
           throw UnrecoverablePastError( buffer );
         }
 
         if( now_total > 0.0 )
           notes.unrecoverable.insert( nuclides[i] );
-      }else if( residual > 0.0 )
-      {
-        // A negative residual means the ancestors alone already over-produce i; no (non-negative) past
-        //  amount of i can fix that, so it stays at zero and the disagreement is reported below.
-        past_total = residual / diagonal;
-      }
-
-      for( const size_t r : rows )
-      {
-        past_atoms[r] = (now_total > 0.0) ? (past_total * now_atoms[r] / now_total) : 0.0;
-        solved[r] = true;
-      }
+      }//if( diagonal < sm_min_back_decay_surviving_fraction )
 
       // Whenever i's own past amount could not absorb the difference - because it is unidentifiable, or
       //  because the ancestors already over-produce i - the past state cannot reproduce the input.
-      const bool absorbed = (diagonal >= sm_min_back_decay_diagonal) && (residual > 0.0);
+      const bool absorbed = (diagonal >= DecayBatchCalc::sm_min_back_decay_surviving_fraction)
+                            && (residual > 0.0);
       if( !absorbed && (now_total > 0.0) && (from_ancestors > 0.0) )
       {
         const double diff = fabs( from_ancestors - now_total ) / now_total;
@@ -388,16 +248,7 @@ namespace
       }//if( the measurement could not be matched )
     }//for( each nuclide, ancestors first )
 
-    // Back to activities.
-    vector<double> past_activities( nnuc, 0.0 );
-    for( size_t i = 0; i < nnuc; ++i )
-    {
-      const SandiaDecay::Nuclide * const nuc = nuclides[i];
-      if( nuc && !nuc->isStable() )
-        past_activities[i] = past_atoms[i] * nuc->decayConstant();
-    }
-
-    return past_activities;
+    return sol.past_activities;
   }//back_decay_activities(...)
 
 
@@ -511,6 +362,221 @@ namespace
 
 namespace DecayBatchCalc
 {
+
+const double sm_min_back_decay_surviving_fraction = 7.1E-15;
+
+
+/** The method (see also the header):
+
+ The forward map from past amounts to present amounts is linear, and lower-triangular when the
+ nuclides are ordered ancestor-before-descendant, so the past amounts follow by forward substitution.
+ Each column of that matrix is obtained from SandiaDecay itself - seed a mixture with one unit of
+ nuclide j, evaluate at `age`, and read off what it produced in every i - which avoids relying on the
+ "barely tested" branchRatioFromForebear()/branchRatioToDecendant().
+
+ Everything is done in numbers of atoms, which keeps the matrix well conditioned (activity would
+ scale rows by wildly different decay constants) and lets stable nuclides participate.
+
+ `seed_ages` are the ages each nuclide is seeded with at the past time, so each column carries that
+ nuclide's in-grown progeny exactly as the seeded mixture will; a fresh seed here would have the solve
+ miss (and so double count) an aged parent's progeny.
+
+ Rows of one nuclide share a single unknown: in a mixture they add, and nothing tells them apart.  So
+ each distinct nuclide is solved once, and its past amount is shared among its rows in proportion to
+ their measurements.  A nuclide's surviving fraction does not depend on a row's seed age, so this is
+ exact; each row still carries its own column (and so its own in-grown progeny) to the descendants.
+ */
+PastActivitySolution solve_past_activities( const vector<const SandiaDecay::Nuclide *> &nuclides,
+                                            const vector<double> &activities,
+                                            const vector<double> &seed_ages,
+                                            const double age,
+                                            const bool clamp_negative )
+{
+  const size_t nnuc = nuclides.size();
+  assert( activities.size() == nnuc );
+  assert( seed_ages.size() == nnuc );
+  assert( age > 0.0 );
+
+  PastActivitySolution sol;
+  sol.status.assign( nnuc, PastActivityStatus::Solved );
+  sol.depends_on_decayed_away.assign( nnuc, false );
+  sol.surviving_fraction.assign( nnuc, 0.0 );
+  sol.now_atoms_total.assign( nnuc, 0.0 );
+  sol.from_ancestors_atoms.assign( nnuc, 0.0 );
+
+  // Order ancestor-before-descendant, so the forward map is lower-triangular.  Counting, for each
+  //  nuclide, how many of the other input nuclides are its ancestors gives such an order directly:
+  //  if j is an ancestor of i then every ancestor of j is also one of i, plus j itself, so j's count
+  //  is strictly smaller than i's.  Sorting by that count ascending therefore always places an
+  //  ancestor before its descendants.
+  vector<size_t> num_ancestors( nnuc, 0 );
+  for( size_t i = 0; i < nnuc; ++i )
+  {
+    if( !nuclides[i] )
+      continue;
+
+    // forebearers() includes the nuclide itself, so skip any input that is the same nuclide.
+    const vector<const SandiaDecay::Nuclide *> forebearers = nuclides[i]->forebearers();
+    for( size_t j = 0; j < nnuc; ++j )
+    {
+      if( (j != i) && nuclides[j] && (nuclides[j] != nuclides[i])
+         && (std::find( begin(forebearers), end(forebearers), nuclides[j] ) != end(forebearers)) )
+      {
+        num_ancestors[i] += 1;
+      }
+    }
+  }//for( each nuclide )
+
+  vector<size_t> order( nnuc );
+  for( size_t i = 0; i < nnuc; ++i )
+    order[i] = i;
+
+  std::stable_sort( begin(order), end(order), [&num_ancestors]( const size_t a, const size_t b ){
+    return num_ancestors[a] < num_ancestors[b];
+  } );
+
+  // Column j of the forward map: atoms of each nuclide at `age` from one atom of j, seeded the same
+  //  way #decay seeds its mixtures (addAgedNuclideByNumAtoms would also refuse ages past ~45
+  //  half-lives, which the mixtures take fine).  Also gives the diagonal, j's own surviving
+  //  fraction - which an aged seed does not change, since its atom count is the parent's.
+  vector<vector<double>> forward( nnuc, vector<double>( nnuc, 0.0 ) );
+  for( size_t j = 0; j < nnuc; ++j )
+  {
+    const SandiaDecay::Nuclide * const src = nuclides[j];
+    if( !src )
+      continue;
+
+    SandiaDecay::NuclideMixture mix;
+    if( (seed_ages[j] > 0.0) && !src->isStable() )
+      mix.addAgedNuclideByActivity( src, src->decayConstant(), seed_ages[j] );  // one atom's activity
+    else
+      mix.addNuclideByAbundance( src, 1.0 );
+
+    const vector<SandiaDecay::NuclideNumAtomsPair> atoms = mix.numAtoms( age );
+    for( const SandiaDecay::NuclideNumAtomsPair &nap : atoms )
+    {
+      for( size_t i = 0; i < nnuc; ++i )
+      {
+        // Another row of the same nuclide is not something j produces (see the substitution below).
+        if( (nuclides[i] == nap.nuclide) && ((i == j) || (nuclides[i] != src)) )
+          forward[i][j] = nap.numAtoms;
+      }
+    }
+  }//for( each column )
+
+  // Present-day atoms from the measured activities (a stable nuclide has no decay constant, so it
+  //  cannot be expressed as an activity at all - it contributes nothing to solve for).
+  vector<double> now_atoms( nnuc, 0.0 );
+  for( size_t i = 0; i < nnuc; ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = nuclides[i];
+    if( nuc && !nuc->isStable() && (nuc->decayConstant() > 0.0) )
+      now_atoms[i] = activities[i] / nuc->decayConstant();
+  }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // The whole method rests on `order` making the forward map lower-triangular: a nuclide must not
+  //  receive atoms from one solved after it.  Cheap to check, and silently wrong if it ever fails.
+  for( size_t a = 0; a < nnuc; ++a )
+  {
+    for( size_t b = a + 1; b < nnuc; ++b )
+      assert( forward[order[a]][order[b]] <= 0.0 );
+  }
+#endif
+
+  // Forward substitution in ancestor-first order, one distinct nuclide at a time (see above).
+  vector<double> past_atoms( nnuc, 0.0 );
+  vector<bool> solved( nnuc, false );
+
+  for( size_t pos = 0; pos < nnuc; ++pos )
+  {
+    const size_t i = order[pos];
+    if( solved[i] )
+      continue;
+
+    // All rows of this nuclide; they have the same row of the forward map, so `i` stands for them.
+    vector<size_t> rows;
+    double now_total = 0.0;
+    for( size_t k = pos; k < nnuc; ++k )
+    {
+      if( nuclides[order[k]] == nuclides[i] )
+      {
+        rows.push_back( order[k] );
+        now_total += now_atoms[order[k]];
+      }
+    }
+
+    // Subtract what the already-solved rows - which by construction include every ancestor of i -
+    //  grow into i by now.
+    double from_ancestors = 0.0;
+    for( size_t k = 0; k < nnuc; ++k )
+    {
+      if( solved[k] )
+        from_ancestors += forward[i][k] * past_atoms[k];
+    }
+
+    const double residual = now_total - from_ancestors;
+    const double diagonal = forward[i][i];
+    double past_total = 0.0;
+
+    // Past enough half-lives a nuclide's own past amount stops being recoverable from today's
+    //  measurement: the diagonal underflows to exactly zero (Ba137m over 48 h), or gets so small
+    //  that dividing by it amplifies the measurement - and its noise - without bound (at 48 h Pr144
+    //  has a diagonal of 7E-51, which would turn a real 1.4E-03 uCi/m2 into 2E+47 uCi/m2).  Both
+    //  are the same situation, so treat them the same; SandiaDecay draws this same line at ~47
+    //  half-lives in NuclideMixture::addAgedNuclideByNumAtoms.  The past amount is left at zero.
+    const bool decayed_away = (diagonal < sm_min_back_decay_surviving_fraction);
+
+    // A negative residual means the ancestors alone already over-produce i; when clamping, no
+    //  (non-negative) past amount of i can fix that, so it stays at zero.
+    if( !decayed_away && (!clamp_negative || (residual > 0.0)) )
+      past_total = residual / diagonal;
+
+    for( const size_t r : rows )
+    {
+      // Shared in proportion to the present amounts; with nothing present now the (unclamped,
+      //  so possibly non-zero) past amount is shared equally, to keep the solution linear.  (When
+      //  clamping, nothing present means a past amount of zero anyway.)
+      if( now_total > 0.0 )
+        past_atoms[r] = past_total * now_atoms[r] / now_total;
+      else
+        past_atoms[r] = past_total / static_cast<double>( rows.size() );
+      solved[r] = true;
+
+      sol.solve_order.push_back( r );
+      sol.status[r] = decayed_away ? PastActivityStatus::DecayedAway : PastActivityStatus::Solved;
+      sol.surviving_fraction[r] = diagonal;
+      sol.now_atoms_total[r] = now_total;
+      sol.from_ancestors_atoms[r] = from_ancestors;
+    }
+  }//for( each nuclide, ancestors first )
+
+  // Back to activities.
+  sol.past_activities.assign( nnuc, 0.0 );
+  for( size_t i = 0; i < nnuc; ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = nuclides[i];
+    if( nuc && !nuc->isStable() )
+      sol.past_activities[i] = past_atoms[i] * nuc->decayConstant();
+  }
+
+  // A decayed-away nuclide's unknown past amount would have grown into whatever it feeds.
+  for( size_t k = 0; k < nnuc; ++k )
+  {
+    if( sol.status[k] != PastActivityStatus::DecayedAway )
+      continue;
+
+    for( size_t i = 0; i < nnuc; ++i )
+    {
+      if( (nuclides[i] != nuclides[k]) && (forward[i][k] > 0.0) )
+        sol.depends_on_decayed_away[i] = true;
+    }
+  }//for( each decayed-away row )
+
+  return sol;
+}//solve_past_activities(...)
+
+
 
 /** The grouped/long-format half of #decay, for input that carries locations.
 

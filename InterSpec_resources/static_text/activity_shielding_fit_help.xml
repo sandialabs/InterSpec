@@ -353,6 +353,64 @@ Further detail about each peak, including these statistics, is available in the 
    an increase in computation time, and it is not usually necassary for life-times much
    greater than the measurement interval.
   </li>
+  <li><b>Back decay</b>: Also quotes the activities at another time, usually earlier than the
+   measurement &mdash; for example the end of an irradiation, the time of a release, or the time
+   of another measurement of the same source &mdash; so results can be compared at a common time.
+   The time is entered either as a duration before the start of the measurement (e.g.,
+   <code>3.5 d</code>), or as a date and time (e.g., <code>2026-01-31 14:30</code>, in the same time
+   zone as the spectrum file's start time); a time after the measurement decays the activities
+   forward.  The fit itself is not changed: each nuclide's card shows its activity at the reference
+   time as <em>act(T<sub>ref</sub>)</em> (hover over it for the reference time and the number of
+   half-lives), and the calculation log and reports, including batch summaries, list them.
+   <br />
+   Each nuclide's activity is its own share, as for the fit activity: for a nuclide that is also
+   produced by the decay of another nuclide being fit (e.g., I-132 from Te-132, or Tc-99m from
+   Mo-99), the in-growth from that parent is not included.  If the parent's age is shorter than the
+   back-decay time, the parent is taken as pure at the reference time, and the progeny that has
+   grown in since then is subtracted, rather than being scaled back up with the progeny's own
+   (shorter) half-life &mdash; so for a fission product release, using the release as the reference
+   time gives the progeny's own, independently produced, activity at the release.  With
+   <b>Interference correct</b> unchecked, each fit activity is all of that nuclide's activity, so the
+   other nuclides being fit are always taken as pure at the reference time (or, for a time after the
+   measurement, at the measurement), and the in-growth between the two times is subtracted (or
+   added).  A nuclide whose
+   activity at the reference time has no measurable effect on the measurement (more than about 47
+   half-lives back) is shown as not determinable, as is any nuclide being fit that it feeds; the
+   other nuclides are still computed.  Uncertainties are propagated from the fit uncertainties,
+   neglecting correlations between the nuclides.
+   <br />
+   <b>Example:</b> a release leaves 1000 Bq of Ba-140 (half-life 12.75 d) and, from its own fission
+   yield, 300 Bq of La-140 (half-life 1.68 d), and is measured 5 days later.  At the measurement there
+   is 762.0 Bq of Ba-140 and 769.5 Bq of La-140: 38.1 Bq left of the original 300 Bq, and 731.5 Bq
+   grown in from the Ba-140.  Back-decaying the measured La-140 on its own would give
+   769.5&nbsp;&times;&nbsp;7.88&nbsp;=&nbsp;6066&nbsp;Bq (7.88 being 2<sup>5&nbsp;d&nbsp;/&nbsp;1.68&nbsp;d</sup>),
+   twenty times too much, as the in-grown La-140 is scaled up with La-140's half-life.  Instead,
+   back-decaying 5 days gives:
+   <table class="BorderedHelpTable" style="margin: 6px auto;">
+     <tr><th>Fit setting</th><th>Fit activities<br />Ba-140 / La-140</th><th>Back-decayed<br />Ba-140 / La-140</th></tr>
+     <tr><td><b>Interference correct</b>, Ba-140 age 5 d</td><td>762.0 / 38.1 Bq</td>
+         <td>1000 / 300 Bq: each just scaled, as the Ba-140 source already holds the La-140 it grew</td></tr>
+     <tr><td><b>Interference correct</b>, Ba-140 age 0 (or any age up to 5 d)</td><td>762.0 / 769.5 Bq</td>
+         <td>1000 / 300 Bq: Ba-140 is taken as pure at the reference time, and the 731.5 Bq it grew is
+         subtracted: (769.5&nbsp;&minus;&nbsp;731.5)&nbsp;&times;&nbsp;7.88</td></tr>
+     <tr><td><b>Interference correct</b> unchecked (any Ba-140 age)</td><td>762.0 / 769.5 Bq</td>
+         <td>1000 / 300 Bq: the total La-140 at the reference time</td></tr>
+   </table>
+   If instead the Ba-140 had been made 20 days before the measurement (15 days before the reference
+   time), along with 50 Bq of other La-140, the La-140 the Ba-140 holds would stay part of the Ba-140,
+   and the La-140 would simply be 50&nbsp;&times;&nbsp;7.88&nbsp;=&nbsp;394&nbsp;Bq; with
+   <b>Interference correct</b> unchecked it would be the total La-140 at the reference time,
+   1540&nbsp;Bq.  If there had been no La-140 of its own, and the fit's La-140 came out 3% low
+   (709.5&nbsp;Bq), it would be (709.5&nbsp;&minus;&nbsp;731.5)&nbsp;&times;&nbsp;7.88&nbsp;&asymp;&nbsp;&minus;173&nbsp;Bq:
+   shown as is (not set to zero), with a note of how many standard deviations it is from zero.
+   And back-decaying 90 days, La-140 (54 half-lives) is not determinable, while Ba-140 (7 half-lives)
+   still is: 101,500 Bq.
+   <br />
+   While back decay is used, a footer under the nuclides gives the reference time, and its
+   <b>Show Decay</b> link opens the <em>Nuclide Decay Info</em> tool with each nuclide's activity, and
+   age, at the reference time, so the chart decays them through the measurement (to three times the
+   back-decay time).
+  </li>
   <li><b>Det. eff. uncertainty</b>: Some detector response functions carry an estimate of
    how uncertain their efficiency is, and that uncertainty is usually <em>correlated</em>
    across energy (if the detector is a few percent more efficient than the curve says, it

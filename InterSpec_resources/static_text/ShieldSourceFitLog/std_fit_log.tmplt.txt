@@ -121,6 +121,31 @@ Chi2 = {{ printCompact(FitChi2,4) }} for {{ NumDof }} degrees of freedom{% if ex
 ## endif
 ## endif
 ## endif
+## if exists("BackDecay") and exists("Sources")
+
+## if BackDecay.HasError
+Back-decay could not be done: {{ BackDecay.Error }}
+## else
+Activities back-decayed to {% if BackDecay.RefTimeIsValid %}{{ BackDecay.RefTime }}, {% endif %}{{ BackDecay.TimeBeforeMeas }} {% if BackDecay.IsAfterMeas %}after{% else %}before{% endif %}{{ " the measurement start" }}{% if BackDecay.MeasStartTimeIsValid %}{{ " (" }}{{ BackDecay.MeasStartTime }}){% endif %}:
+## for src in Sources
+## if existsIn(src,"HasBackDecay")
+## if src.BackDecayIsValid
+    {{ src.Nuclide }}: {{ src.BackDecayActivity }}{% if src.BackDecayHasUncert %}{{ " +- " }}{{ src.BackDecayActivityUncert }}{% endif %}{% if existsIn(src,"BackDecayTraceDisplayActivity") %}{{ " (" }}{{ src.BackDecayTraceDisplayActivity }}){% endif %}, {{ src.BackDecayHalfLivesStr }} half-lives from the activity at measurement of {{ src.Activity }}.
+## if src.BackDecayHasNote
+      {{ src.BackDecayNote }}
+## endif
+## else
+    {{ src.Nuclide }}: {{ src.BackDecayNote }}
+## endif
+## endif
+## endfor
+## if BackDecay.HasWarnings
+## for warning in BackDecay.Warnings
+    {{ warning }}
+## endfor
+## endif
+## endif
+## endif
 ## if exists("NotFitPeaks")
 
 Exemplar peaks that could not be fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}, and their detection limits{% endif %}:

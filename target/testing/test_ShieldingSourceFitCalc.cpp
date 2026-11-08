@@ -537,8 +537,22 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     //  rather than silently reverting a user's choice on reload.
     test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 5 );
 
+    // Back-decay: unused (nothing serialized), or a duration and/or a date/time in either mode.
+    if( rand() % 3 )
+    {
+      test.back_decay.enabled = (rand() % 2);
+      test.back_decay.mode = (rand() % 2) ? ShieldingSourceFitCalc::BackDecaySpec::Mode::DateTime
+                                          : ShieldingSourceFitCalc::BackDecaySpec::Mode::DurationBeforeMeas;
+      if( rand() % 2 )
+        test.back_decay.duration = ((1.0E7*rand()) / RAND_MAX) * PhysicalUnits::second;
+      if( rand() % 2 )
+        test.back_decay.date = SpecUtils::time_from_string( "2021-03-04T05:06:07" )
+                                 + std::chrono::seconds( rand() % 100000 );
+    }//if( use back-decay )
+
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
+    BOOST_CHECK( (doc.first_node("BackDecay") != nullptr) == !test.back_decay.is_default() );
 
     ShieldingSourceFitCalc::ShieldingSourceFitOptions from_xml;
     BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( &doc ) );
@@ -5296,6 +5310,90 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
       cout << "\t" << msg << endl;
   }//for( const string n42_filename : files )
 }//BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
+
+
+/** The Activity/Shielding GUI's "Back decay" option: the values it shows for the model, and that it
+ is carried through the GUI's state (and so undo/redo, saving, and the XML).
+ */
+BOOST_AUTO_TEST_CASE( BackDecayGuiRoundTrip )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  // The in-situ exemplar: Br82, Na24 and K42, with a start time of 2020-01-01T00:00:00.
+  const string path = SpecUtils::append_path( g_test_file_dir, "ActShieldBackDecay/exemplar.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "No file '" << path << "'" );
+
+  ShieldingSourceFitCalc::BackDecaySpec spec;
+  spec.enabled = true;
+  spec.mode = ShieldingSourceFitCalc::BackDecaySpec::Mode::DateTime;
+  spec.date = SpecUtils::time_from_string( "2019-12-30T00:00:00" );
+  spec.duration = 3.0*PhysicalUnits::day;  //kept, though not the mode in use
+  const double dt = 2.0*PhysicalUnits::day;
+
+  ShieldingSourceDisplay::ShieldingSourceDisplayState saved;
+  {
+    InterSpecTestFixture fixture;
+    InterSpec * const interspec = fixture.m_interspec;
+    interspec->userOpenFileFromFilesystem( path, path );
+    BOOST_REQUIRE( interspec->measurment( SpecUtils::SpectrumType::Foreground ) );
+
+    ShieldingSourceDisplay * const gui = interspec->shieldingSourceFit();
+    BOOST_REQUIRE( gui );
+
+    // Not used: nothing computed, and nothing in the state.
+    BOOST_CHECK( !gui->currentBackDecayResults() );
+    BOOST_REQUIRE( gui->serialize().config );
+    BOOST_CHECK( gui->serialize().config->options.back_decay.is_default() );
+
+    gui->setBackDecaySpec( spec );
+
+    const shared_ptr<const ShieldingSourceFitCalc::BackDecayResults> results = gui->currentBackDecayResults();
+    BOOST_REQUIRE( results );
+    BOOST_REQUIRE_MESSAGE( results->error.empty(), results->error );
+    BOOST_CHECK_CLOSE( results->time_before_meas, dt, 1.0E-8 );
+    BOOST_REQUIRE( !results->sources.empty() );
+    for( const ShieldingSourceFitCalc::BackDecaySourceResult &src : results->sources )
+    {
+      BOOST_REQUIRE( src.nuclide );
+      BOOST_CHECK( src.status == ShieldingSourceFitCalc::BackDecayStatus::Ok );
+      BOOST_CHECK_CLOSE( src.activity, src.activity_now*std::pow(2.0, dt/src.nuclide->halfLife), 1.0E-6 );
+    }
+
+    saved = gui->serialize();
+    BOOST_REQUIRE( saved.config );
+    BOOST_CHECK( saved.config->options.back_decay == spec );
+
+    // Written with the minor version that has back-decay.
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *node = nullptr;
+    BOOST_REQUIRE_NO_THROW( node = saved.serialize( &doc ) );
+    BOOST_REQUIRE( node );
+    BOOST_CHECK_EQUAL( SpecUtils::xml_value_str( node->first_attribute("version") ), "0.2" );
+    BOOST_CHECK( node->first_node("BackDecay") );
+  }
+
+  // Restored into a fresh session.
+  {
+    InterSpecTestFixture fixture;
+    InterSpec * const interspec = fixture.m_interspec;
+    interspec->userOpenFileFromFilesystem( path, path );
+    ShieldingSourceDisplay * const gui = interspec->shieldingSourceFit();
+    BOOST_REQUIRE( gui );
+    BOOST_CHECK( !gui->currentBackDecayResults() );
+
+    BOOST_REQUIRE_NO_THROW( gui->deSerialize( saved, Wt::WFlags<ShieldingSourceDisplay::DeserializeOptions>() ) );
+    BOOST_CHECK( gui->serialize().config->options.back_decay == spec );
+    BOOST_CHECK( gui->currentBackDecayResults() );
+
+    // And turned back off.
+    ShieldingSourceFitCalc::BackDecaySpec off = spec;
+    off.enabled = false;
+    gui->setBackDecaySpec( off );
+    BOOST_CHECK( !gui->currentBackDecayResults() );
+    BOOST_CHECK( !gui->serialize().config->options.back_decay.enabled );
+  }
+}//BOOST_AUTO_TEST_CASE( BackDecayGuiRoundTrip )
 
 
 BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )

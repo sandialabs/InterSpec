@@ -386,6 +386,7 @@ it does not exist in the payload.
 | `FixedGeometryDetector`        | bool    | The DRF has a fixed-geometry efficiency (no `Distance`/`Geometry`). |
 | `RawFitParameter.Values`       | array[number] | Raw parameter vector from the fitter (implementation-defined ordering — for diagnostics). |
 | `RawFitParameter.Errors`       | array[number] | Raw parameter uncertainties (paired with `.Values`). |
+| `BackDecay`                    | object  | The time the activities were back-decayed to, see §5.20. Only present when the "Back decay" option is used. |
 
 ### 5.2 `Detector`
 
@@ -471,6 +472,8 @@ it does not exist in the payload.
 | `FitOptions.AccountForDrfUncert`      | bool   |  | Legacy field, kept so older report templates keep working: true whenever `DrfUncertaintyMethod` is not `0`.  It does **not** distinguish the two non-zero states — prefer `DrfUncertaintyMethod`. |
 | `FitOptions.DrfUncertIncludeAssumed`  | bool   |  | Whether the method above also used an *assumed* efficiency uncertainty: one reported for a detector that states none of its own (e.g. every GADRAS detector).  When false only the geometry-model part of such a detector's uncertainty is used.  See `DetectorEff.UncertUsed` for what the fit actually used. |
 | `FitOptions.CorrectForCascadeSumming` | bool   |  | Cascade (true-coincidence) summing corrections applied to predicted counts. |
+| `FitOptions.BackDecayEnabled`         | bool   |  | The "Back decay" option is used (see §5.20). Only present (as `true`) when it is. |
+| `FitOptions.BackDecayDescription`     | string |  | What the back-decay time was entered as, e.g. `"3.5000 d before the measurement start"` or `"to 2019-12-28 12:00:00"`. Only present when `BackDecayEnabled`. |
 
 ### 5.4 `foreground` and `background`
 
@@ -665,7 +668,7 @@ structure is built by `BatchInfoLog::add_basic_src_details()` plus a per-source
 | `AgeSeconds`               | number  | s      | |
 | `AgeDays`                  | number  | d      | |
 | `AgeYears`                 | number  | y      | |
-| `AgeIsFittable`            | bool    |        | True if the nuclide's age is meaningfully variable (has decay daughters whose branching-ratios change with age). |
+| `AgeIsFittable`            | bool    |        | True if the nuclide's age is meaningfully variable (has decay progeny whose branching-ratios change with age). |
 | `AgeIsFit`                 | bool    |        | True if age was a free parameter. |
 | `AgeUncert`                | string  |        | Only present if `AgeIsFit`. |
 | `AgeUncertSeconds`         | number  | s      | Only present if `AgeIsFit`. |
@@ -705,6 +708,34 @@ structure is built by `BatchInfoLog::add_basic_src_details()` plus a per-source
 | `SelfAttenMassFrac`             | number | 0–1 | Mass fraction in the host layer. Only present if `IsSelfAttenSource`. |
 | `SelfAttenMassFracUncert`       | number | 0–1 | Mass-fraction uncertainty. Only present if `IsSelfAttenSource` and `SelfAttenIsVariableMassFrac`. |
 | `PeaksThisNucContributesTo`     | array[object] | | See §5.7. May be empty if no peaks were assigned to this nuclide. |
+
+**Back-decayed activity.** When the "Back decay" option is used (so the top-level `BackDecay`
+object, §5.20, is present), each `Sources[]` element also has its activity at the back-decay
+reference time.  This is the source's *own share*, the same split the fit uses for `Activity`: for a
+nuclide that is also fed by another fitted nuclide (e.g., I132 with Te132), in-growth from that
+parent is not included (with interference correction off, each fit activity is all of the
+nuclide's activity, and the other fitted nuclides are taken as pure at the reference time).  A nuclide too many half-lives from the reference time (about 47) can not be
+determined; check `BackDecayIsValid` before using the activity fields.
+
+| Field | Type | Units | Notes |
+|---|---|---|---|
+| `HasBackDecay`                     | bool   |     | Always `true` when present; guard with `existsIn(src,"HasBackDecay")`. |
+| `BackDecayIsValid`                 | bool   |     | The activity at the reference time was determined. |
+| `BackDecayStatus`                  | string |     | `"Ok"`, `"DecayedAway"` (too many half-lives back), or `"DependsOnUndetermined"` (fed by a fitted nuclide that is `DecayedAway`). |
+| `BackDecayNote`                    | string |     | Why it could not be determined, or any caveat (e.g. how in-growth from a fitted parent was handled, or that the value is negative); may be empty. |
+| `BackDecayHasNote`                 | bool   |     | `BackDecayNote` is non-empty. |
+| `BackDecayHalfLives`               | number |     | Half-lives of this nuclide from the reference time to the measurement start (negative if the reference time is after it). |
+| `BackDecayHalfLivesStr`            | string |     | The same, via `printCompact(...,4)`. |
+| `BackDecayHasFittedAncestor`       | bool   |     | Another fitted nuclide feeds this one, so they were solved together. |
+| `BackDecayActivity`                | string |     | Best-units activity at the reference time, with `ActivityPostFix`. Can be negative when in-growth from a fitted parent exceeds the fitted activity (see the note). Only present if `BackDecayIsValid`. |
+| `BackDecayActivity_bq`, `_kBq`, `_MBq`, `_GBq`, `_ci`, `_mCi`, `_uCi`, `_pCi` | number | | The same, in each unit. Only present if `BackDecayIsValid`. |
+| `BackDecayHasUncert`               | bool   |     | An uncertainty is available (always present). |
+| `BackDecayActivityUncert`          | string |     | Its uncertainty, propagated from the fit activity (and age) uncertainties - neglecting correlations between nuclides. Only present if `BackDecayHasUncert`. |
+| `BackDecayActivityUncert_bq`, ..., `_pCi` | number | | The same, in each unit. Only present if `BackDecayHasUncert`. |
+| `BackDecayActivityUncertPercent`   | string |     | Uncertainty as a percent of the magnitude of the activity. Only present if `BackDecayHasUncert`. |
+| `BackDecayFactor`                  | number |     | Activity at the reference time divided by `Activity`. Only present if `BackDecayIsValid`. |
+| `BackDecayFactorStr`               | string |     | The same, via `printCompact(...,5)`. |
+| `BackDecayTraceDisplayActivity`    | string |     | For trace sources, `TraceDisplayActivity` at the reference time (also `_bq`, ..., `_pCi`). Only present if `IsTraceSource` and `BackDecayIsValid`. |
 
 **Batch-only detection-limit rollup.** In a **batch** activity/shielding run, each `Sources[]`
 element additionally carries a per-nuclide Currie detection-limit summary (added by
@@ -1078,10 +1109,14 @@ but will be more when `--multi-sample-handling each` splits a file into per-samp
   "InterSpecCompileDate": "...",
   "InterSpecCompileDateIso": "...",
   "InterSpecExecutablePath": "...",
+  "AnyBackDecay": true,
   "D3_JS": "...", "SpectrumChart_JS": "...", "SpectrumChart_CSS": "...",
   "ShieldingSourceFitPlot_JS": "...", "ShieldingSourceFitPlot_CSS": "..."
 }
 ```
+
+`AnyBackDecay` is only present (as `true`) when at least one file has a `BackDecay` object (§5.20);
+the bundled summary templates use it to add their back-decayed-activity tables.
 
 A template that should work in both modes can dispatch with
 `{% if exists("Files") %} … {% else %} … {% endif %}` (the top-level object is
@@ -1304,6 +1339,51 @@ older templates keep rendering):
 > Worth surfacing in any report covering a volumetric source: flat-disk is the legacy far-field
 > approximation, so a silent fallback to it can bias a near-field (source close to the detector)
 > result.  `HasNote` being true is exactly the "something was not what you asked for" signal.
+
+### 5.20 `BackDecay`
+
+The time the activities were back-decayed (or decayed forward) to, when the "Back decay" option is
+used; absent otherwise.  The fit activities are at the measurement start (`foreground.StartTime`);
+each source's activity at this reference time is in its `Sources[]` element (§5.6).  The reference
+time is entered either as a duration before the measurement start, or as a date/time - in a batch
+run with a date/time, each file is back-decayed by its own time from its start to that date/time.
+
+```json
+"BackDecay": {
+  "Mode": "DateTime",
+  "HasError": false,
+  "Error": "",
+  "TimeBeforeMeas": "2.0000 d",
+  "TimeBeforeMeasSigned": "2.0000 d",
+  "TimeBeforeMeas_s": 172800,
+  "TimeBeforeMeas_days": 2,
+  "TimeBeforeMeas_years": 0.005476,
+  "IsAfterMeas": false,
+  "RefTimeIsValid": true,
+  "RefTime": "2019-12-30 00:00:00",
+  "RefTime_iso": "2019-12-30T00:00:00",
+  "MeasStartTimeIsValid": true,
+  "MeasStartTime": "2020-01-01 00:00:00",
+  "HasWarnings": false,
+  "Warnings": [],
+  "AnyCoupled": false,
+  "AnyUndetermined": false
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `Mode` | string | `"DurationBeforeMeas"` or `"DateTime"` - how the reference time was entered. |
+| `HasError` / `Error` | bool / string | Nothing could be back-decayed, e.g. a date/time was entered but the spectrum has no valid start time. The other fields are then not meaningful, and no `Sources[]` element has back-decay fields. |
+| `TimeBeforeMeas` | string | How far apart the reference time and the measurement start are (always positive; see `IsAfterMeas`). |
+| `TimeBeforeMeasSigned` | string | The same, but with a leading `-` when the reference time is after the measurement start. |
+| `TimeBeforeMeas_s`, `_days`, `_years` | number | Time from the reference time to the measurement start; negative when the reference time is after it. |
+| `IsAfterMeas` | bool | The reference time is after the measurement start (so activities were decayed forward). |
+| `RefTimeIsValid` / `RefTime` / `RefTime_iso` | bool / string / string | The reference date/time, as `"2019-12-30 00:00:00"` and in extended ISO format; empty if not known (a duration was entered, and the spectrum has no start time). |
+| `MeasStartTimeIsValid` / `MeasStartTime` | bool / string | The measurement start time the fit activities are at. |
+| `HasWarnings` / `Warnings` | bool / array[string] | Caveats on the result as a whole, e.g. that uncertainties of coupled nuclides neglect correlations. |
+| `AnyCoupled` | bool | Some fitted nuclide is fed by another fitted nuclide. |
+| `AnyUndetermined` | bool | Some nuclide's activity at the reference time could not be determined. |
 
 ## 6. JSON data model — batch peak-fit
 
@@ -1548,7 +1628,7 @@ continuum; `PeakIndexes[]` lists which `Peaks[]` entries do so.
 | `SourceType`             | string  |     | `"Nuclide"`, `"X-Ray"`, `"Reaction"`, or `""`. |
 | `SourceName`             | string  |     | Nuclide symbol, element name, or reaction string. |
 | `SourceGammaParent`      | string  |     | Parent nuclide in a decay-chain transition. Only present if applicable. |
-| `SourceGammaChild`       | string  |     | Daughter nuclide. Only present if applicable. |
+| `SourceGammaChild`       | string  |     | Progeny nuclide. Only present if applicable. |
 | `CoefficientValues`      | array[number] | | Raw peak coefficients (Mean, Sigma, Amplitude, …, skew parameters). |
 | `CoefficientUncerts`     | array[number] | | Paired with `CoefficientValues`. |
 | `CoefficientFit`         | array[bool]   | | Per-coefficient "was this fit?" |

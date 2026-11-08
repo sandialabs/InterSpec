@@ -211,7 +211,13 @@ rapidxml::xml_node<char> *ShieldingSourceDisplay::ShieldingSourceDisplayState::s
   rapidxml::xml_node<char> *base_node = doc->allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
   parent_node->append_node( base_node );
   
-  const std::string version_str = std::to_string( versionMajor ) + "." + std::to_string( versionMinor );
+  // For backward compatibility, only claim the version that added back-decay when it is actually in
+  //  the XML; otherwise the XML is identical to what the previous version wrote.
+  const bool uses_back_decay = config && !config->options.back_decay.is_default();
+  const int minor_version = uses_back_decay
+                ? std::max( versionMinor, ShieldingSourceDisplay::sm_xmlSerializationMinorVersion )
+                : std::min( versionMinor, ShieldingSourceDisplay::sm_preBackDecayMinorVersion );
+  const std::string version_str = std::to_string( versionMajor ) + "." + std::to_string( minor_version );
   char *version_value = doc->allocate_string( version_str.c_str() );
   rapidxml::xml_attribute<char> *version_attr = doc->allocate_attribute( "version", version_value );
   base_node->append_attribute( version_attr );
@@ -574,14 +580,33 @@ const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;
  - 20211031, Version 1: added "SourceType" node under the <Nuclide> to say whether its a point, intrinsic, or trace source.
                   added "Geometry" node under the "ShieldingSourceFit" node
  - 20230712, no version change: split out to SourceFitDef::sm_xmlSerializationMinorVersion.
+ - 20261107, Version 2: added the optional "BackDecay" node (see ShieldingSourceFitCalc::BackDecaySpec);
+                  version 1 is still written when that node is not present.
  */
-const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 1;
+const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 2;
+const int ShieldingSourceDisplay::sm_preBackDecayMinorVersion = 1;
 
 
 using GammaInteractionCalc::GeometryType;
 
 namespace
 {
+  /** Recomputes `results.back_decay` for back-decay setting `spec` (which is only applied if
+   `enabled`, i.e., checked with a valid value entered), so the calc log reflects the current
+   setting rather than the one the fit started with.  The caller must hold `results.m_mutex`. */
+  void sync_back_decay_results( ShieldingSourceFitCalc::ModelFitResults &results,
+                                const ShieldingSourceFitCalc::BackDecaySpec &spec,
+                                const bool enabled )
+  {
+    results.options.back_decay = spec;
+    results.options.back_decay.enabled = enabled;
+    results.back_decay.reset();
+    if( enabled && (results.successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
+      results.back_decay = ShieldingSourceFitCalc::compute_back_decay( results.fit_src_info, spec,
+                                      results.foreground_start_time,
+                                      results.options.multiple_nucs_contribute_to_peaks );
+  }//void sync_back_decay_results(...)
+
   /** If a distance WLineEdit has a number, but no distance units, will add a " cm" to the text value. */
   void make_sure_distance_units_present( Wt::WLineEdit *edit )
   {
@@ -3509,6 +3534,47 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_volEffMethodStatus = lineDiv->addNew<WText>();
   m_volEffMethodStatus->addStyleClass( "VolEffMethodStatus" );
 
+  // "Back decay": also quote the activities at another time (end of irradiation, a release, another
+  //  measurement, ...), entered as a duration before the measurement or as a date/time.  Does not
+  //  affect the fit - see ShieldingSourceFitCalc::BackDecaySpec.
+  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
+  lineDiv->addStyleClass( "FitOptionsRow BackDecayRow" );
+  m_backDecayCb = lineDiv->addNew<WCheckBox>( WString::tr("ssd-cb-back-decay") );
+  m_backDecayCb->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-back-decay"), showToolTips );
+  m_backDecayCb->checked().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+  m_backDecayCb->unChecked().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+
+  m_backDecayMode = lineDiv->addNew<WComboBox>();
+  m_backDecayMode->addStyleClass( "BackDecayMode" );
+  // Items must match the BackDecaySpec::Mode enum order (DurationBeforeMeas, DateTime).
+  m_backDecayMode->addItem( WString::tr("ssd-back-decay-mode-duration") );
+  m_backDecayMode->addItem( WString::tr("ssd-back-decay-mode-date") );
+  m_backDecayMode->setCurrentIndex( 0 );
+  m_backDecayMode->changed().connect( this, &ShieldingSourceDisplay::backDecayModeChanged );
+
+  m_backDecayEdit = lineDiv->addNew<WLineEdit>();
+  m_backDecayEdit->addStyleClass( "BackDecayEdit" );
+  m_backDecayEdit->setAutoComplete( false );
+  m_backDecayEdit->changed().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+  m_backDecayEdit->enterPressed().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+
+  // Plain text, as it may quote what the user typed.
+  m_backDecayStatus = lineDiv->addNew<WText>( WString(), TextFormat::Plain );
+  m_backDecayStatus->addStyleClass( "BackDecayStatus" );
+
+  // The nuclide cards show each activity at the reference time, computed from the model as it is.
+  m_nuclideDisplay->setBackDecayProvider( [this](){ return currentBackDecayResults(); } );
+
+  // A different foreground can have a different start time, which a reference date/time is relative to.
+  m_specViewer->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType type,
+                                std::shared_ptr<SpecMeas>, std::set<int>, std::vector<std::string> ){
+    if( (type == SpecUtils::SpectrumType::Foreground) && m_backDecaySpec.enabled )
+      updateBackDecayDisplay();
+  } );
+
+  updateBackDecayDisplay();
+
 
   WContainerWidget *detectorDiv = new WContainerWidget();
   WGridLayout *detectorLayout = detectorDiv->setLayout( std::make_unique<WGridLayout>() );
@@ -3916,6 +3982,11 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>(
                                     std::max( 0, m_volEffMethodCombo->currentIndex() ) );
 
+  // The last valid values entered; only enabled if what is entered now is valid, so a fit, save, or
+  //  batch run never uses a value the user is being told is invalid.
+  options.back_decay = m_backDecaySpec;
+  options.back_decay.enabled = (m_backDecaySpec.enabled && m_backDecayInputError.empty());
+
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
 
@@ -3923,6 +3994,11 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
 
 ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 {
+  // The nuclide cards ask us for back-decay values as they refresh (see currentBackDecayResults);
+  //  make sure they no longer can, as our members are destroyed before our child widgets are.
+  if( m_nuclideDisplay )
+    m_nuclideDisplay->setBackDecayProvider( nullptr );
+
   std::shared_future<void> fit_future;
   {//begin make sure calculation is cancelled
     std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
@@ -5395,7 +5471,11 @@ void ShieldingSourceDisplay::multiNucsPerPeakChanged()
   m_clusterWidth->setDisabled( !m_multiIsoPerPeak->isChecked() );
   if( m_clusterWidth->label() )
     m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
-  
+
+  // Whether a fitted nuclide's activity includes in-growth from other fitted sources changes.
+  if( m_backDecaySpec.enabled )
+    updateBackDecayDisplay();
+
   updateChi2Chart();
 }//void multiNucsPerPeakChanged()
 
@@ -5865,6 +5945,235 @@ void ShieldingSourceDisplay::volEffMethodChanged()
   updateVolEffMethodAvailability();
   updateChi2Chart();
 }//void volEffMethodChanged()
+
+
+void ShieldingSourceDisplay::backDecayInputChanged()
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  const BackDecaySpec before = m_backDecaySpec;
+  BackDecaySpec spec = m_backDecaySpec;
+  spec.enabled = m_backDecayCb->isChecked();
+  spec.mode = (m_backDecayMode->currentIndex() == 1) ? BackDecaySpec::Mode::DateTime
+                                                     : BackDecaySpec::Mode::DurationBeforeMeas;
+
+  // Read the entered value; one that can not be interpreted leaves the previous (valid) value.
+  m_backDecayInputError = WString();
+  const string txt = SpecUtils::trim_copy( m_backDecayEdit->text().toUTF8() );
+  if( txt.empty() )
+  {
+    if( spec.mode == BackDecaySpec::Mode::DateTime )
+      spec.date = SpecUtils::time_point_t{};
+    else
+      spec.duration = 0.0;
+    m_backDecayInputError = WString::tr( "ssd-back-decay-enter-value" );
+  }else if( spec.mode == BackDecaySpec::Mode::DurationBeforeMeas )
+  {
+    try
+    {
+      spec.duration = PhysicalUnitsLocalized::stringToTimeDuration( txt );
+    }catch( std::exception & )
+    {
+      m_backDecayInputError = WString::tr( "ssd-back-decay-err-duration" ).arg( txt );
+    }
+  }else
+  {
+    const SpecUtils::time_point_t date = SpecUtils::time_from_string( txt );
+    if( SpecUtils::is_special(date) )
+      m_backDecayInputError = WString::tr( "ssd-back-decay-err-date" ).arg( txt );
+    else
+      spec.date = date;
+  }//if( txt.empty() ) / else duration / else date
+
+  if( spec != before )
+  {
+    m_backDecaySpec = spec;
+    m_modifiedThisForeground = true;
+
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto set_to = []( const BackDecaySpec &value ){
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display )
+          display->setBackDecaySpec( value );
+      };
+      undoRedo->addUndoRedoStep( std::bind(set_to, before), std::bind(set_to, spec),
+                                 "Back-decay changed." );
+    }//if( undoRedo )
+  }//if( spec != before )
+
+  // Back-decay does not affect the fit, so no re-fit; just update what is shown.
+  updateBackDecayDisplay();
+}//void backDecayInputChanged()
+
+
+void ShieldingSourceDisplay::backDecayModeChanged()
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  // Show the value previously entered for the new mode, or else the equivalent of the value in the
+  //  other mode (e.g., the date/time a duration before the measurement corresponds to).
+  const shared_ptr<const SpecUtils::Measurement> fore
+                      = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const SpecUtils::time_point_t meas_start = fore ? fore->start_time() : SpecUtils::time_point_t{};
+
+  if( m_backDecayMode->currentIndex() == 1 )
+  {
+    SpecUtils::time_point_t date = m_backDecaySpec.date;
+    if( SpecUtils::is_special(date) )
+    {
+      BackDecaySpec from_duration = m_backDecaySpec;
+      from_duration.mode = BackDecaySpec::Mode::DurationBeforeMeas;
+      date = from_duration.reference_time( meas_start );
+    }//if( no date entered yet )
+
+    m_backDecayEdit->setText( WString::fromUTF8( ShieldingSourceFitCalc::back_decay_time_str(date) ) );
+  }else
+  {
+    double duration = m_backDecaySpec.duration;
+    if( (duration == 0.0) && !SpecUtils::is_special(m_backDecaySpec.date) && !SpecUtils::is_special(meas_start) )
+    {
+      BackDecaySpec from_date = m_backDecaySpec;
+      from_date.mode = BackDecaySpec::Mode::DateTime;
+      duration = from_date.time_before_meas( meas_start );
+    }//if( no duration entered yet )
+
+    m_backDecayEdit->setText( (duration == 0.0) ? WString()
+                                                : WString::fromUTF8( backDecayDurationText(duration) ) );
+  }//if( to date/time mode ) / else
+
+  backDecayInputChanged();
+}//void backDecayModeChanged()
+
+
+void ShieldingSourceDisplay::setBackDecaySpec( const ShieldingSourceFitCalc::BackDecaySpec &spec )
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  m_backDecaySpec = spec;
+  m_backDecayCb->setChecked( spec.enabled );
+
+  const bool is_date = (spec.mode == BackDecaySpec::Mode::DateTime);
+  m_backDecayMode->setCurrentIndex( is_date ? 1 : 0 );
+  if( is_date )
+    m_backDecayEdit->setText( WString::fromUTF8( ShieldingSourceFitCalc::back_decay_time_str(spec.date) ) );
+  else
+    m_backDecayEdit->setText( (spec.duration == 0.0) ? WString()
+                                                     : WString::fromUTF8( backDecayDurationText(spec.duration) ) );
+
+  m_backDecayInputError = WString();
+  if( m_backDecayEdit->text().empty() )
+    m_backDecayInputError = WString::tr( "ssd-back-decay-enter-value" );
+
+  updateBackDecayDisplay();
+}//void setBackDecaySpec( const ShieldingSourceFitCalc::BackDecaySpec &spec )
+
+
+std::string ShieldingSourceDisplay::backDecayDurationText( const double duration )
+{
+  const string txt = PhysicalUnitsLocalized::printToBestTimeUnits( fabs(duration), 6 );
+  const string::size_type sp = txt.find( ' ' );
+  string value = txt.substr( 0, sp );
+  const string unit = (sp == string::npos) ? string() : txt.substr( sp );
+  // (Very long times are printed with an exponent, whose zeros must be kept.)
+  if( (value.find( '.' ) != string::npos) && (value.find_first_of( "eE" ) == string::npos) )
+  {
+    value.erase( value.find_last_not_of( '0' ) + 1 );
+    if( !value.empty() && (value.back() == '.') )
+      value.pop_back();
+  }//if( value has a decimal point, and no exponent )
+
+  return string( (duration < 0.0) ? "-" : "" ) + value + unit;
+}//std::string backDecayDurationText( const double duration )
+
+
+std::shared_ptr<const ShieldingSourceFitCalc::BackDecayResults> ShieldingSourceDisplay::currentBackDecayResults() const
+{
+  if( !m_backDecaySpec.enabled || !m_backDecayInputError.empty() || !m_sourceModel )
+    return nullptr;
+
+  // (The model holds total activities, also for trace sources - see deSerializeShieldings.)
+  const vector<ShieldingSourceFitCalc::SourceFitDef> &sources = m_sourceModel->underlyingData();
+
+  const shared_ptr<const SpecUtils::Measurement> fore
+                      = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const SpecUtils::time_point_t meas_start = fore ? fore->start_time() : SpecUtils::time_point_t{};
+  const bool interference = m_multiIsoPerPeak ? m_multiIsoPerPeak->isChecked() : true;
+
+  return make_shared<const ShieldingSourceFitCalc::BackDecayResults>(
+           ShieldingSourceFitCalc::compute_back_decay( sources, m_backDecaySpec, meas_start, interference ) );
+}//currentBackDecayResults()
+
+
+void ShieldingSourceDisplay::updateBackDecayDisplay()
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  if( !m_backDecayCb || !m_backDecayMode || !m_backDecayEdit || !m_backDecayStatus )
+    return;  //Still being constructed
+
+  const bool enabled = m_backDecayCb->isChecked();
+  const bool is_date = (m_backDecayMode->currentIndex() == 1);
+  m_backDecayMode->setHidden( !enabled );
+  m_backDecayEdit->setHidden( !enabled );
+  m_backDecayEdit->setPlaceholderText( WString::tr( is_date ? "ssd-back-decay-ph-date"
+                                                            : "ssd-back-decay-ph-duration" ) );
+
+  // The status says what the entered value means - or what is wrong with it.
+  WString status;
+  bool is_error = false;
+  if( enabled && !m_backDecayInputError.empty() )
+  {
+    status = m_backDecayInputError;
+    is_error = true;
+  }else if( enabled )
+  {
+    const shared_ptr<const SpecUtils::Measurement> fore
+                        = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    const SpecUtils::time_point_t meas_start = fore ? fore->start_time() : SpecUtils::time_point_t{};
+
+    try
+    {
+      const double before_meas = m_backDecaySpec.time_before_meas( meas_start );
+      const WString span = WString::tr( (before_meas >= 0.0) ? "ssd-back-decay-before" : "ssd-back-decay-after" )
+                              .arg( backDecayDurationText( fabs(before_meas) ) );
+      // (In date/time mode this shows how the entered text was read.)
+      const string ref_str = ShieldingSourceFitCalc::back_decay_time_str( m_backDecaySpec.reference_time(meas_start) );
+      if( ref_str.empty() )
+        status = WString::tr( "ssd-back-decay-status-undated" ).arg( span );
+      else
+        status = WString::tr( "ssd-back-decay-status-dated" ).arg( ref_str ).arg( span );
+    }catch( std::exception & )
+    {
+      status = WString::tr( "ssd-back-decay-err-no-start" );
+      is_error = true;
+    }//try / catch
+  }//if( enabled && error ) / else if( enabled )
+
+  // The nuclides' footer shows the reference time, so on desktop the status is only needed for an
+  //  error (the footer is hidden then); on phones the options are on a tab of their own, away from it.
+  const bool is_phone = m_specViewer && m_specViewer->isPhone();
+  m_backDecayStatus->setHidden( !enabled || (!is_error && !is_phone) );
+  m_backDecayStatus->setText( status );
+  m_backDecayStatus->toggleStyleClass( "ErrorTxt", is_error );
+
+  // The nuclide cards' act(T_ref) - they ask currentBackDecayResults() as they refresh.
+  if( m_nuclideDisplay )
+    m_nuclideDisplay->reconcileCards();
+
+  // Keep the last fit's back-decay results (used by the calc log) in line with the setting.
+  //  (Never called while the results mutex is held: updateGuiWithModelFitResults, which holds it,
+  //  calls sync_back_decay_results directly.)
+  if( m_lastFitResults )
+  {
+    std::lock_guard<std::mutex> lock( m_lastFitResults->m_mutex );
+    sync_back_decay_results( *m_lastFitResults, m_backDecaySpec,
+                             (m_backDecaySpec.enabled && m_backDecayInputError.empty()) );
+  }//if( m_lastFitResults )
+
+  updatePhoneFitBar();
+}//void updateBackDecayDisplay()
 
 
 void ShieldingSourceDisplay::setVolEffMethodIndex( const int index )
@@ -8678,6 +8987,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   setVolEffMethodIndex( static_cast<int>( options.volumetric_eff_method ) );
   m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateVolEffMethodAvailability();
+  setBackDecaySpec( options.back_decay );
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"
@@ -9821,6 +10131,13 @@ void ShieldingSourceDisplay::showPhoneFitResults()
     table->elementAt(0,1)->addNew<WText>( WString::tr("ssd-phone-col-activity") );
     table->elementAt(0,2)->addNew<WText>( WString::tr("ssd-phone-col-age") );
 
+    // Activity at the back-decay reference time, when that option is in use.
+    bool show_back_decay = false;
+    for( const SourceFitNuclideDisplay::NucActivitySummary &s : sums )
+      show_back_decay |= !s.backDecayActivity.empty();
+    if( show_back_decay )
+      table->elementAt(0,3)->addNew<WText>( WString::tr("ssd-phone-col-act-tref") );
+
     int r = 1;
     for( const SourceFitNuclideDisplay::NucActivitySummary &s : sums )
     {
@@ -9839,6 +10156,13 @@ void ShieldingSourceDisplay::showPhoneFitResults()
 
       WText *age = table->elementAt(r,2)->addNew<WText>( WString::fromUTF8( s.age.empty() ? string("—") : s.age ) );
       age->addStyleClass( "SsdResultMono" );
+
+      if( show_back_decay )
+      {
+        const string bd = s.backDecayActivity.empty() ? string("—") : s.backDecayActivity;
+        WText *bdtxt = table->elementAt(r,3)->addNew<WText>( WString::fromUTF8(bd), TextFormat::Plain );
+        bdtxt->addStyleClass( "SsdResultMono" );
+      }//if( show_back_decay )
       ++r;
     }//for( const NucActivitySummary &s : sums )
   }//if( sums.empty() ) / else
@@ -10679,6 +11003,11 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   {
     clearFitMessage();
   }
+
+  // The fit computed its back-decay values with the setting it started with; make them match the
+  //  current setting (we already hold results->m_mutex, so must not call updateBackDecayDisplay()).
+  sync_back_decay_results( *results, m_backDecaySpec,
+                           (m_backDecaySpec.enabled && m_backDecayInputError.empty()) );
 
   // A successful fit means the showing results now match the model: clear the manual-mode
   //  "needs update" hint and refresh the button/pill to its idle state.
