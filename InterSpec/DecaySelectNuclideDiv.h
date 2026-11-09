@@ -62,8 +62,7 @@ struct NuclideSelectedInfo
   std::string activityStr; // for display purposes
 };//struct NuclideSelectedInfo
 
-//IsotopeNameFilterModel
-
+class DecaySelectNuclide;
 class SimpleIsotopeNameFilterModel;
 
 class SimpleIsotopeNameFilterModel : public  Wt::WAbstractItemModel

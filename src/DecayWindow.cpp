@@ -25,7 +25,7 @@
 
 #include "InterSpec_config.h"
 
-#include <math.h>
+#include <cmath>
 #include <memory>
 #include <iostream>
 
@@ -166,16 +166,8 @@ void DecayWindow::addNuclide( const int z, const int a, const int iso,
 {
   if( m_activityDiv )
   {
-    if (activityStr.empty())
-    {
-      activityStr = PhysicalUnits::printToBestActivityUnits(activity, 3, useCuries);
-    }else
-    {
-      assert((activity < 1.0E-6)
-        || (fabs(activity - PhysicalUnits::stringToActivity(activityStr)) < 0.001 * activity));
-    }
-
-    m_activityDiv->addNuclide( z, a, iso, activity, useCuries, age, activityStr);
+    // An empty, or mismatched, activityStr is formatted from the activity by addNuclide(...)
+    m_activityDiv->addNuclide( z, a, iso, activity, useCuries, age, activityStr );
     if( maxtime > 0.0 )
       m_activityDiv->setDecayChartTimeRange( maxtime );
   }//if( m_activityDiv )

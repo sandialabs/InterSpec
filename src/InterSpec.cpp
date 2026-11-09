@@ -9436,6 +9436,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
   if( m_decayInfoWindow )
   {
     initial_uri = m_decayInfoWindow->encodeStateToUrl();
+    m_decayInfoWindow->show(); //Brings it to the front
   }else
   {
     m_decayInfoWindow = AuxWindow::make<DecayWindow>( this );

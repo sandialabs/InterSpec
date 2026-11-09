@@ -52,7 +52,6 @@
   <message id="dad-yaxis-title-total-betas">ベータ線/秒</message>
   <message id="dad-hdr-total-alphas">総アルファ線</message>
   <message id="dad-yaxis-title-total-alphas">アルファ線/秒</message>
-  <message id="dad-chart-click-more-info">詳細情報をクリック - T0後{1} {2}で我々は持っています:</message>
 
   <message id="dcc-window-title-decay-chain">{1} 崩壊連鎖</message>
   <message id="dcc-window-title-decay-through">{1}を通る崩壊</message>

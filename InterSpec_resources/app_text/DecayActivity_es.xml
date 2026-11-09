@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">Betas/segundo</message>
   <message id="dad-hdr-total-alphas">Alfas totales</message>
   <message id="dad-yaxis-title-total-alphas">Alfas/segundo</message>
-  <message id="dad-chart-click-more-info">Hacer clic para más información - {1} {2} después de T0 tenemos:</message>
 
   <message id="dcc-window-title-decay-chain">Cadena de desintegración {1}</message>
   <message id="dcc-window-title-decay-through">Se desintegra a través de {1}</message>

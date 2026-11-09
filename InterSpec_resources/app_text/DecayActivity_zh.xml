@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">贝塔/秒</message>
   <message id="dad-hdr-total-alphas">总阿尔法</message>
   <message id="dad-yaxis-title-total-alphas">阿尔法/秒</message>
-  <message id="dad-chart-click-more-info">点击了解更多信息 - 在T0后{1} {2}我们有：</message>
 
   <message id="dcc-window-title-decay-chain">{1}衰变链</message>
   <message id="dcc-window-title-decay-through">通过{1}衰变</message>

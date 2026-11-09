@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">Béta/másodperc</message>
   <message id="dad-hdr-total-alphas">Összes alfa</message>
   <message id="dad-yaxis-title-total-alphas">Alfa/másodperc</message>
-  <message id="dad-chart-click-more-info">Kattintson a részletekért - {1} {2} a T0 után:</message>
 
   <message id="dcc-window-title-decay-chain">{1} bomlási lánc</message>
   <message id="dcc-window-title-decay-through">Bomlás {1}-en keresztül</message>

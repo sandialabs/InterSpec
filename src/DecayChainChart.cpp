@@ -66,7 +66,6 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
 #include "InterSpec/UserPreferences.h"
-#include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -77,20 +76,19 @@ using namespace Wt;
 
 namespace
 {
-  const char *productname( const SandiaDecay::ProductType &type )
+  Wt::WString productname( const SandiaDecay::ProductType &type )
   {
     switch( type )
     {
-      case SandiaDecay::AlphaParticle:           return "alpha";            break;
-      case SandiaDecay::CaptureElectronParticle: return "electron capture"; break;
-      case SandiaDecay::BetaParticle:            return "beta";             break;
-      case SandiaDecay::GammaParticle:           return "gamma";            break;
-      case SandiaDecay::PositronParticle:        return "positron";         break;
-      case SandiaDecay::XrayParticle:            return "xray";             break;
-      default:                                   return "unknown";          break;
+      case SandiaDecay::AlphaParticle:           return Wt::WString::tr( "dcc-particle-alpha" );
+      case SandiaDecay::CaptureElectronParticle: return Wt::WString::tr( "dcc-particle-ec" );
+      case SandiaDecay::BetaParticle:            return Wt::WString::tr( "dcc-particle-beta" );
+      case SandiaDecay::GammaParticle:           return Wt::WString::tr( "dcc-particle-gamma" );
+      case SandiaDecay::PositronParticle:        return Wt::WString::tr( "dcc-particle-positron" );
+      case SandiaDecay::XrayParticle:            return Wt::WString::tr( "dcc-particle-xray" );
     }//switch( par.type )
     
-    return "";
+    return Wt::WString::tr( "dcc-particle-unknown" );
   }//productname(...)
   
   
@@ -357,7 +355,6 @@ pair<Wt::Core::observing_ptr<AuxWindow>, DecayChainChart *>
   assert( viewer );
   const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", viewer );
 
-  viewer->colorThemeChanged();
   viewer->colorThemeChanged().connect( chart, &DecayChainChart::colorThemeChanged );
 
   chart->setNuclide( nuc, !useBq, type );
@@ -701,12 +698,6 @@ void DecayChainChart::showDecaysThrough( const std::string nuc )
 }//void showDecaysThrough( const std::string nuc )
 
 
-const SandiaDecay::Nuclide *DecayChainChart::nuclide()
-{
-  return m_nuclide;
-}
-
-
 void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames )
 {
   vector<string> isotopenames;
@@ -794,9 +785,6 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   
   deleteMoreInfoDialog();
   
-  const double ww = 0.8*interspec->renderedWidth();
-  const double wh = 0.65*interspec->renderedHeight();
-  
   Wt::WFlags<AuxWindowProperties> windowProp
   = AuxWindowProperties::IsModal
   | AuxWindowProperties::DisableCollapse
@@ -807,8 +795,18 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   DecayChainChart *w = m_moreInfoDialog->stretcher()->addWidget( std::make_unique<DecayChainChart>(), 0, 0 );
   w->setNuclide( nuclide, m_useCurie, DecayChainChart::DecayChainType::DecayThrough );
   
-  m_moreInfoDialog->resizeWindow( std::max( 800, static_cast<int>(std::min(ww,1.3*wh) ) ), std::max( 600, static_cast<int>(wh) ) );
-  
+  // Size relative to the screen (a fixed minimum would not fit on a phone), when we know its size.
+  const int screenw = interspec->renderedWidth();
+  const int screenh = interspec->renderedHeight();
+  if( (screenw > 100) && (screenh > 100) )
+  {
+    const double wh = 0.65*screenh;
+    const double ww = std::min( 0.8*screenw, 1.3*wh );
+    m_moreInfoDialog->resizeWindow( static_cast<int>(ww), static_cast<int>(wh) );
+  }else
+  {
+    m_moreInfoDialog->resizeWindow( 800, 600 );
+  }
   
   m_moreInfoDialog->rejectWhenEscapePressed();
   m_moreInfoDialog->finished().connect( this, &DecayChainChart::deleteMoreInfoDialog );
@@ -817,6 +815,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   
   
   m_moreInfoDialog->show();
+  m_moreInfoDialog->resizeToFitOnScreen();
   m_moreInfoDialog->centerWindowHeavyHanded();
 }//void showPossibleParents(...)
 

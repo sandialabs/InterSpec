@@ -604,6 +604,12 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   
   /// Start color theme support - this code is largely a copy of DecayActivityChart - so if you improve here, improve there
   /// TODO: should refactor into a common base class to support color theme
+  /// TODO: this has the problems fixed in DecayActivityChart::paint (2026-11): the fills below are
+  ///       painted *after* the base paint, so a theme with a chart background (or margin) color
+  ///       paints over the curves (the base paint already fills the plot area with `background()`);
+  ///       and with a null `rectangle` (the usual case) the margin strips are sized from it, so are
+  ///       zero/negative.  Fix as there: fill the margins first, sized from `painter.window()`
+  ///       when `rectangle` is null, then call the base paint, and drop the post-paint fills.
   const double height = painter.window().height();
   const double width = painter.window().width();
   

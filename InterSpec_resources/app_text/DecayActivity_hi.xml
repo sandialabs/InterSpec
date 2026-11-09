@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">बीटा/सेकंड</message>
   <message id="dad-hdr-total-alphas">कुल अल्फा</message>
   <message id="dad-yaxis-title-total-alphas">अल्फा/सेकंड</message>
-  <message id="dad-chart-click-more-info">अधिक जानकारी के लिए क्लिक करें - T0 के {1} {2} बाद हमारे पास है:</message>
 
   <message id="dcc-window-title-decay-chain">{1} क्षय श्रृंखला</message>
   <message id="dcc-window-title-decay-through">{1} के माध्यम से क्षय</message>

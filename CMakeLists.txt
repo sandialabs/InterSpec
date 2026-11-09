@@ -401,6 +401,7 @@ set(sources
     src/UnitsConverterTool.cpp
     src/DecayWindow.cpp
     src/DecayActivityDiv.cpp
+    src/DecayActivityCalc.cpp
     src/DecayBatchCalc.cpp
     src/DecayBatchCalcWidget.cpp
     src/DecayChainChart.cpp
@@ -564,6 +565,7 @@ set(headers
     InterSpec/UnitsConverterTool.h
     InterSpec/DecayWindow.h
     InterSpec/DecayActivityDiv.h
+    InterSpec/DecayActivityCalc.h
     InterSpec/DecayBatchCalc.h
     InterSpec/DecayBatchCalcWidget.h
     InterSpec/DecayChainChart.h
