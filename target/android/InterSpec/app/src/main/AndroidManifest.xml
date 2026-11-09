@@ -85,6 +85,11 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:pathSuffix=".tka" />
                 <data android:pathSuffix=".mca" />
                 <data android:pathSuffix=".lzs" />
+                <!-- Detector efficiency files (ISOCS, ANGLE), for the Detector Efficiency dialog -->
+                <data android:pathSuffix=".par" />
+                <data android:pathSuffix=".ecc" />
+                <data android:pathSuffix=".outx" />
+                <data android:pathSuffix=".detx" />
 
                 <!-- API 21-30 fallback: regex pathPattern (leading "/" required; "\\." escapes a
                      literal dot in XML).  Generated per extension. -->
@@ -99,6 +104,10 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:pathPattern="/.*\\.tka" />
                 <data android:pathPattern="/.*\\.mca" />
                 <data android:pathPattern="/.*\\.lzs" />
+                <data android:pathPattern="/.*\\.par" />
+                <data android:pathPattern="/.*\\.ecc" />
+                <data android:pathPattern="/.*\\.outx" />
+                <data android:pathPattern="/.*\\.detx" />
             </intent-filter>
 
 
@@ -119,11 +128,13 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:pathSuffix=".csv" />
                 <data android:pathSuffix=".xml" />
                 <data android:pathSuffix=".zip" />
+                <data android:pathSuffix=".tsv" />
 
                 <data android:pathPattern="/.*\\.txt" />
                 <data android:pathPattern="/.*\\.csv" />
                 <data android:pathPattern="/.*\\.xml" />
                 <data android:pathPattern="/.*\\.zip" />
+                <data android:pathPattern="/.*\\.tsv" />
             </intent-filter>
 <!--
             <intent-filter android:label="InterSpec peak detector response">

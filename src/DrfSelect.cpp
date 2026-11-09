@@ -24,7 +24,10 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <set>
 #include <array>
+#include <mutex>
+#include <filesystem>
 #include <regex>
 #include <chrono>
 #include <memory>
@@ -43,6 +46,7 @@
 #include <Wt/WText.h>
 #include <Wt/WBreak.h>
 #include <Wt/WLabel.h>
+#include <Wt/WTimer.h>
 #include <Wt/WTable.h>
 #include <Wt/WSignal.h>
 #include <Wt/WServer.h>
@@ -51,6 +55,7 @@
 #include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
 #include <Wt/WLineEdit.h>
+#include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WIOService.h>
 #include <Wt/WTableCell.h>
@@ -82,7 +87,12 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/DrfChart.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfLibrary.h"
+#include "InterSpec/WidgetUtils.h"
+#include "InterSpec/DrfLibraryWidgets.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/CeeLoUtils.h"
@@ -100,10 +110,8 @@
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/DrfImportWidget.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
-#include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorEfficiency.h"
@@ -114,6 +122,14 @@
 
 #if( USE_QR_CODES )
 #include "InterSpec/QrCode.h"
+#endif
+
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
+#include "InterSpec/DirectorySelector.h"
+#endif
+
+#if( BUILD_AS_OSX_APP )
+#include "target/macos/macOsUtils.h"
 #endif
 
 // The regex in GCC 4.8.x does not have working regex
@@ -134,82 +150,6 @@ using SpecUtils::DetectorType;
 
 namespace
 {
-  /** Select `item` when the click landed on the item's `<li>` but outside its `<a>`.
-   `WMenu::select()` emits `triggered()`/`itemSelected()` itself when the index changes, and nothing
-   when it does not - so no explicit emit here (that would double-fire on an anchor click).
-   */
-  void right_select_item( WMenu *menu, WMenuItem *item )
-  {
-    menu->select( item );
-  }
-  
-  class UtcToLocalTimeDelegate : public Wt::WItemDelegate
-  {
-    int64_t m_now;
-    std::chrono::minutes m_timeZoneOffset;
-  public:
-    UtcToLocalTimeDelegate()
-    : WItemDelegate()
-    {
-      m_now = std::time(nullptr);
-      if( wApp )
-        m_timeZoneOffset = wApp->environment().timeZoneOffset();
-    }
-    virtual ~UtcToLocalTimeDelegate(){}
-    virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
-                                const Wt::WModelIndex &index,
-                                Wt::WFlags<Wt::ViewItemRenderFlag> flags ) override
-    {
-      if( flags.test(Wt::ViewItemRenderFlag::Editing) )
-        throw runtime_error( "UtcToLocalTimeDelegate not for editing" );
-
-      if( !flags.test(Wt::ViewItemRenderFlag::Editing) )
-      {
-        WText *text = dynamic_cast<WText *>( widget );
-
-        std::unique_ptr<WText> newtext;
-        if( !text )
-        {
-          newtext = std::make_unique<WText>();
-          text = newtext.get();
-        }
-
-        int64_t val;
-        try
-        {
-          val = Wt::cpp17::any_cast<int64_t>( index.data() );
-          string valstr;
-          if( val > 0 )
-          {
-            SpecUtils::time_point_t ptt = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::from_time_t( time_t(val) ) );
-            ptt += m_timeZoneOffset;
-            valstr = SpecUtils::to_common_string(ptt, true);
-          }
-
-          text->setText( WString::fromUTF8( valstr ) );
-        }catch( std::exception &e )
-        {
-          cerr << "UtcToLocalTimeDelegate caught: " << e.what() << endl;
-          text->setText( "" );
-          return newtext;
-        }//try / catch
-
-        if( newtext )
-        {
-          newtext->setStyleClass( asString( index.data(Wt::ItemDataRole::StyleClass) ) );
-          if( flags.test(Wt::ViewItemRenderFlag::Selected) )
-            newtext->addStyleClass( "Wt-selected" );
-          return newtext;
-        }
-      }//if( !flags.test(Wt::ViewItemRenderFlag::Editing) )
-
-      widget->setStyleClass( asString( index.data(Wt::ItemDataRole::StyleClass) ) );
-      if( flags.test(Wt::ViewItemRenderFlag::Selected) )
-        widget->addStyleClass( "Wt-selected" );
-
-      return nullptr;
-    }
-  };//class UtcToLocalTimeDelegate
   
   
   /** A struct to hold the info a user may copy/paste into formula field. */
@@ -587,1531 +527,21 @@ void check_url_serialization( std::shared_ptr<const DetectorPeakResponse> drf )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
 */
 
-class DrfDownloadResource : public Wt::WResource
-{
-  DrfSelect * const m_drfSelect;
-  Wt::WApplication *m_app;
-  
-public:
-  DrfDownloadResource( DrfSelect *drfSelect )
-  : WResource(),
-    m_drfSelect( drfSelect ),
-    m_app( WApplication::instance() )
-  {
-    assert( m_app );
-    assert( m_drfSelect );
-
-    // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
-    //  default `WResource::handle` unlocks before invoking us, so the session thread can be
-    //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
-    //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
-    //  in handleRequest already spanned the whole body, so this only moves it earlier.
-    setTakesUpdateLock( true );
-  }
-  
-  virtual ~DrfDownloadResource()
-  {
-    beingDeleted();
-  }
-  
-  virtual void handleRequest( const Wt::Http::Request &request,
-                             Wt::Http::Response &response )
-  {
-    WApplication::UpdateLock lock( m_app );
-    
-    if( !lock )
-    {
-      log("error") << "Failed to WApplication::UpdateLock in DrfDownloadResource.";
-      
-      response.out() << "Error grabbing application lock to form DrfDownloadResource resource;"
-                        " please report to InterSpec@sandia.gov.";
-      response.setStatus(500);
-      assert( 0 );
-      
-      return;
-    }//if( !lock )
-    
-    if( !m_drfSelect )
-      return;
-    
-    std::shared_ptr<DetectorPeakResponse> det = m_drfSelect->detector();
-    if( !det || !det->isValid() )
-      return;
-    
-    string name = det->name();
-    if( !name.empty() )
-      name += ".";
-    name += "drf.xml";
-    
-    //Remove bad filename characters
-    const string notallowed = "\\/:?\"<>|*";
-    for( auto it = begin(name) ; it < end(name) ; ++it )
-    {
-      if( notallowed.find(*it) != string::npos )
-        *it = '_';
-    }
-    
-    suggestFileName( name, ContentDisposition::Attachment );
-    response.setMimeType( "application/octet-stream" );
-    
-    try
-    {
-      rapidxml::xml_document<char> doc;
-      det->toXml( &doc, &doc );
-      rapidxml::print( response.out(), doc, 0 );
-    }catch( std::exception &e )
-    {
-      log("error") << "Failed to to writ XML for DRF: " << e.what();
-      
-      response.out() << "Error creating DRF XML.";
-      response.setStatus(500);
-      return;
-    }
-  }
-};//class DrfDownloadResource
 
 }//namespace
 
 
-class RelEffFile;
 
-enum class MatchDetectorStatus
-{
-  NotInited,
-  Match,
-  NoMatch
-};//
 
-
-/** This class represents potentially many CSV or TSV relative efficiency
-    detector response files (that each may have multiple DRFs).
-    Looks in the InterSpec::writableDataDirectory() and InterSpec::staticDataDirectory() directories for TSVs/CSVs
-    This widget allows users to add or remove files.
- */
-class RelEffDetSelect : public Wt::WContainerWidget
-{
-  friend class RelEffFile;
-  
-protected:
-  InterSpec *m_interspec;
-  DrfSelect *m_drfSelect;
-  WContainerWidget *m_files; //holds the RelEffFile objects..
-  
-public:
-  RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit );
-  
-  virtual ~RelEffDetSelect(){}
-  
-  void userSelectedRelEffDetSelect();
-  
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  void addFile();
-#endif
-  
-  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
-  
-  void detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det );
-  
-  void docreate();
-  
-  //Attempts to do a defered rednering, but it looks like thisisnt actually
-  //  the case
-  virtual void load();
-};//class RelEffDetSelect
-
-
-/** Represents a single CSV/TSV DRF file, which may have multiple DRFs.
- */
-class RelEffFile : public Wt::WContainerWidget
-{
-  void init();
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  void handleUserAskedRemove();
-#endif
-  
-  std::string m_existingFilePath; //Will be non-empty only if constructor with a path name is used, or user has asked to save the file for later
-  WFileUpload *m_fileUpload; //Will be nullptr if constructor with a string is used
-
-  RelEffDetSelect *m_relEffDetSelect;
-  DrfSelect *m_drfSelect;
-  
-  Wt::WText *m_credits;
-  Wt::WComboBox *m_detectorSelect;
-  std::vector<std::shared_ptr<DetectorPeakResponse> > m_responses;
-  
-public:
-  /** Constructor to point to an existing file on disk. */
-  RelEffFile( std::string file,
-             RelEffDetSelect *parentSelect,
-             DrfSelect *drfSelect );
-
-  /** Constructor that will create a file upload area for user to upload a file */
-  RelEffFile( RelEffDetSelect *parentSelect,
-             DrfSelect *drfSelect );
-
-  
-  ~RelEffFile(){}
-  
-  void selectNone();
-  
-  void detectorSelectCallback();
-  
-  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
-  
-  void initDetectors();
-  void detectorSelected( const int index );
-  
-  void handleFileUpload();
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  void handleSaveFileForLater();
-#endif
-  
-  const std::vector<std::shared_ptr<DetectorPeakResponse> > &availableDrfs();
-};//class RelEffFile
-
-
-class GadrasDirectory : public Wt::WContainerWidget
-{
-  friend class GadrasDetSelect;
-
-protected:
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  std::string m_directory;
-#else
-  WLineEdit *m_directoryEdit;
-  WPushButton *m_setDirectoryButton;
-#endif
-  GadrasDetSelect *m_parent;
-  DrfSelect *m_drfSelect;
-
-  Wt::WComboBox *m_detectorSelect;
-  std::vector<std::shared_ptr<DetectorPeakResponse> > m_responses;
-
-  Wt::WText *m_msg;
-  Wt::WPushButton *m_deleteBtn;
-
-public:
-  GadrasDirectory( std::string dorectory, GadrasDetSelect *parentSelect,
-                   DrfSelect *drfSelect );
-  
-  
-  ~GadrasDirectory(){}
-  
-  std::string directory();
-  
-  void selectNone();
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  void dirPathChanged();
-#endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  
-  void detectorSelectCallback();
-  
-  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
-  
-  //parseDetector() returns null on error
-  static std::shared_ptr<DetectorPeakResponse> parseDetector( const string directory );
-  static vector<string> recursive_list_gadras_drfs( const string &sourcedir );
-  
-  void initDetectors();
-  void detectorSelected( const int index );
-};//class GadrasDirectory
-
-
-/** Handles selecting a GADRAS DRF
- */
-class GadrasDetSelect : public Wt::WContainerWidget
-{
-protected:
-  InterSpec *m_interspec;
-  DrfSelect *m_drfSelect;
-  
-  WContainerWidget *m_directories; //holds the GadrasDirectory objects..
-  
-public:
-  GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit );
-  
-  virtual ~GadrasDetSelect(){}
-  
-  MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det );
-  
-  std::shared_ptr<DetectorPeakResponse> selectedDetector();
-  
-  void addDirectory();
-  
-  void removeDirectory( GadrasDirectory *dirWidget );
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  void saveFilePathToUserPreferences();
-#endif
-  
-  void detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det );
-  
-  void docreate();
-  
-  //Attempts to do a defered rednering, (not actually verified)
-  virtual void load();
-};//class GadrasDetSelect
-
-
-////////////////////////////////////////////////////////////////////////////////
-//////////////////   Begin RelEffFile implementation   /////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-
-
-RelEffFile::RelEffFile( std::string file,
-                       RelEffDetSelect *parentSelect,
-                       DrfSelect *drfSelect )
-: WContainerWidget(),
-  m_existingFilePath( file ),
-  m_fileUpload( nullptr ),
-  m_relEffDetSelect( parentSelect ),
-  m_drfSelect( drfSelect ),
-  m_credits( nullptr )
-{
-  init();
-}//RelEffFile
-
-
-RelEffFile::RelEffFile( RelEffDetSelect *parentSelect,
-                        DrfSelect *drfSelect )
-: WContainerWidget(),
-m_existingFilePath(),
-m_fileUpload( nullptr ),
-m_relEffDetSelect( parentSelect ),
-m_drfSelect( drfSelect ),
-m_credits( nullptr )
-{
-  init();
-}//RelEffFile
-
-
-void RelEffFile::init()
-{
-  addStyleClass( "RelEffFile" );
-  
-  WContainerWidget *topdiv = addNew<WContainerWidget>();
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  WPushButton *closeIcon = topdiv->addNew<WPushButton>();
-  closeIcon->addStyleClass( "closeicon-wtdefault" );
-  closeIcon->setToolTip( WString::tr("ref-tt-remove-drf-file") );
-  //closeIcon->setAttributeValue( "style", "position: relative; top: 3px; right: 3px;" + closeIcon->attributeValue("style") );
-  closeIcon->clicked().connect( this, &RelEffFile::handleUserAskedRemove );
-#endif
-
-  if( m_existingFilePath.size() )
-  {
-    string user_data_dir;
-    try
-    {
-      if( !SpecUtils::is_absolute_path(m_existingFilePath)
-          && !SpecUtils::is_file(m_existingFilePath) )
-      {
-        m_existingFilePath = complete_drf_path( m_existingFilePath );
-      }
-    }catch( std::exception & )
-    {
-    }
-
-    string filename = SpecUtils::filename( m_existingFilePath );
-    WText *filenameDisplay = topdiv->addNew<WText>( WString::fromUTF8(filename) );
-    filenameDisplay->addStyleClass( "RelEffFixedPath" );
-  }else
-  {
-    m_fileUpload = topdiv->addNew<WFileUpload>();
-    m_fileUpload->setInline( false );
-    m_fileUpload->uploaded().connect( this, &RelEffFile::handleFileUpload );
-    m_fileUpload->fileTooLarge().connect( this, []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
-    m_fileUpload->changed().connect( m_fileUpload, &WFileUpload::upload );
-  }//if( m_existingFilePath.size() )
-
-
-  WContainerWidget *bottomDiv = addNew<WContainerWidget>();
-
-  m_detectorSelect = bottomDiv->addNew<WComboBox>();
-  m_detectorSelect->setInline( false );
-  m_detectorSelect->setMaximumSize( WLength(90,WLength::Unit::Percentage), WLength::Auto );
-  m_detectorSelect->setNoSelectionEnabled( true );
-  m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
-
-
-  m_credits = bottomDiv->addNew<WText>( WString(""), Wt::TextFormat::XHTML );
-  m_credits->setInline( false );
-  m_credits->addStyleClass( "RelEffFileCredits" );
-  
-  initDetectors();
-}//void RelEffFile::init()
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-void RelEffFile::handleUserAskedRemove()
-{
-  if( m_existingFilePath.empty() )
-  {
-    // The parent container (`m_files` of RelEffDetSelect) owns this widget via
-    //  `addNew<RelEffFile>`; in Wt4 we must not `delete this` or the parent's
-    //  unique_ptr would double-free. `removeFromParent()` returns a unique_ptr
-    //  whose destruction here properly destroys this widget.
-    removeFromParent();
-    return;
-  }
-  
-  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-remove-drf-window-title"),
-                                          WString::tr("ref-remove-drf-window-txt") );
-  
-  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
-  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
-  
-  string filepath = m_existingFilePath;
-  // Only remove this entry on confirmation (Yes), not unconditionally below.  Connect to `this` so
-  //  the handler auto-disconnects if this widget is destroyed before the dialog is answered.
-  yes->clicked().connect( this, [this, filepath](){
-    
-    string pathToDel = SpecUtils::lexically_normalize_path(filepath);
-    
-    if( !SpecUtils::is_absolute_path(pathToDel) )
-    {
-      passMessage( "Error removing TSV or CSV relative-efficiency DRF file - not an absolute path.",
-                  WarningWidget::WarningMsgHigh );
-      return;
-    }
-    
-    
-    try
-    {
-      const string userDir = InterSpec::writableDataDirectory();
-      if( !SpecUtils::starts_with(pathToDel, userDir.c_str()) )
-        throw runtime_error( "Not in users data path." );
-    }catch( std::exception &e )
-    {
-      passMessage( "Error removing TSV or CSV relative-efficiency DRF file - file path is in unexpected base.",
-                  WarningWidget::WarningMsgHigh );
-      return;
-    }//
-    
-    
-    try
-    {
-      boost::filesystem::remove(pathToDel);
-      cout << "Removed '" << filepath << "'" << endl;
-    }catch( std::exception &e )
-    {
-      cerr << "Error removing file '" << filepath << "': " << e.what() << endl;
-      passMessage( "Error removing TSV or CSV relative-efficiency DRF file - invalid path.",
-                  WarningWidget::WarningMsgHigh );
-      return;
-    }
-    
-    
-    passMessage( WString::tr("ref-file-removed-toast").arg(SpecUtils::filename(pathToDel)),
-                WarningWidget::WarningMsgInfo );
-
-    // Confirmed: remove this entry.  Parent owns us; removeFromParent() returns the owning
-    //  unique_ptr that destroys this widget (must be the last statement - `this` is gone after).
-    removeFromParent();
-  } );
-}//void RelEffFile::handleUserAskedRemove()
-
-void RelEffFile::handleSaveFileForLater()
-{
-  if( !m_fileUpload )
-  {
-    assert( 0 ); //shouldnt ever happen
-    return;
-  }
-  
-  if( m_fileUpload->empty() || m_responses.empty() )
-  {
-    passMessage( "No valid file available for saving.", WarningWidget::WarningMsgHigh );
-    return;
-  }
-  
-  const string spoolPath = m_fileUpload->spoolFileName();
-  const string displayName = m_fileUpload->clientFileName().toUTF8();
-  
-  try
-  {
-    std::string datadir = InterSpec::writableDataDirectory();
-    if( datadir.empty() )
-      throw runtime_error( "Writable data directory not set." );
-    
-    datadir = SpecUtils::append_path( datadir, "drfs" );
-    
-    if( SpecUtils::create_directory(datadir) == 0 ) //-1 means already existed, 1 means created
-      throw runtime_error( "Could not create 'drfs' directory in app data directory." );
-    
-    //displayName
-    string filename = SpecUtils::filename( displayName );
-    const string orig_extension = SpecUtils::file_extension( filename );
-    assert( orig_extension.size() <= filename.size() );
-    
-    if( orig_extension.size() )
-      filename = filename.substr( 0, filename.size() - orig_extension.size() );
-    
-    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    now += wApp->environment().timeZoneOffset();
-    string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
-    const string::size_type pos = timestr.find( ' ' );
-    //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
-    //string::size_type pos = timestr.find( 'T' );
-    if( pos != string::npos )
-      timestr = timestr.substr(0,pos);
-    SpecUtils::ireplace_all( timestr, "-", "_" );
-    
-    filename += "_" + timestr + orig_extension;
-    const string outputname = SpecUtils::append_path( datadir, filename );
-    
-    boost::filesystem::copy( spoolPath, outputname );
-    
-    m_existingFilePath = outputname;
-    
-    passMessage( WString::tr("ref-file-saved-for-later").arg(filename),
-                WarningWidget::WarningMsgInfo );
-  }catch( std::exception &e )
-  {
-    // Dont ever expect to really get here.
-    cerr << "RelEffFile::handleSaveFileForLater(): Caught exception trying to save '"
-         << displayName << "' from '" << spoolPath << "'." << endl;
-    passMessage( WString::tr("ref-err-saving-drf-file"), WarningWidget::WarningMsgHigh );
-  }//try / catch
-}//void handleSaveFileForLater();
-#endif  //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-
-
-void RelEffFile::handleFileUpload()
-{
-  selectNone();
-
-  initDetectors();
-  
-  if( m_responses.empty() )
-  {
-    passMessage( WString::tr("ref-err-invalid-csv-drf"), WarningWidget::WarningMsgHigh );
-    return;
-  }//if( invalid file )
-  
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-save-drf-window-title"),
-                                WString::tr("ref-save-drf-window-txt") );
-  
-  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
-  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
-  yes->clicked().connect( this, &RelEffFile::handleSaveFileForLater );
-#endif
-}//void handleFileUpload()
-
-
-
-void RelEffFile::selectNone()
-{
-  if( m_detectorSelect && m_detectorSelect->count() )
-    m_detectorSelect->setCurrentIndex( 0 );
-}//void selectNone()
-
-
-void RelEffFile::detectorSelectCallback()
-{
-  std::shared_ptr<DetectorPeakResponse> det;
- 
-  const int index = m_detectorSelect->currentIndex();
-  
-  //Item at index 0 is always a non-detector.
-  if( index > 0 && (index-1) < m_responses.size() )
-    det = m_responses[index-1];
-  
-  if( m_relEffDetSelect )
-    m_relEffDetSelect->detectorSelected( this, det );
-  
-  if( m_drfSelect )
-  {
-    m_drfSelect->setDetector( det );
-    m_drfSelect->emitChangedSignal();
-  }//if( m_drfSelect )
-}//void detectorSelectCallback()
-
-
-MatchDetectorStatus RelEffFile::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-{
-  if( !det )
-  {
-    m_detectorSelect->setCurrentIndex( 0 );
-    return MatchDetectorStatus::NoMatch;
-  }//if( !det )
-  
-  for( size_t i = 0; i < m_responses.size(); ++i )
-  {
-    if( m_responses[i]->hashValue() == det->hashValue() )
-    {
-      m_detectorSelect->setCurrentIndex( static_cast<int>(i) + 1 );
-      return MatchDetectorStatus::Match;
-    }
-  }//for( size_t i = 0; i < m_responses.size(); ++i )
-    
-  m_detectorSelect->setCurrentIndex( 0 );
-  
-  if( m_detectorSelect->count() <= 1 )
-    return MatchDetectorStatus::NotInited;
-  
-  return MatchDetectorStatus::NoMatch;
-}//void trySelectDetector(...)
-
-
-void RelEffFile::initDetectors()
-{
-  m_responses.clear();
-  m_credits->setText( "" );
-  while( m_detectorSelect->count() )
-    m_detectorSelect->removeItem( 0 );
-  
-  vector<string> credits;
-  string pathstr;
-  
-  if( m_fileUpload )
-  {
-    if( m_fileUpload->empty() )
-    {
-      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-dont-use-drf-in-file") ) );
-      m_detectorSelect->setCurrentIndex( 0 );
-      m_detectorSelect->hide();
-      m_credits->setText( WString::tr("ref-upload-csv-file") );
-      
-      return;
-    }//if( m_fileUpload->empty() )
-    
-    pathstr = m_fileUpload->spoolFileName();
-  }else
-  {
-    pathstr = m_existingFilePath;
-  }
-
-#ifdef _WIN32
-  const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(pathstr);
-  std::ifstream input( wpathstr.c_str(), ios::in | ios::binary );
-#else
-  std::ifstream input( pathstr.c_str(), ios::in | ios::binary );
-#endif
-  
-  const bool file_opened = input.is_open();
-  
-  if( file_opened )
-  {
-    DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, m_responses );
-    
-//#if( PERFORM_DEVELOPER_CHECKS )
-//    for( auto drf : m_responses )
-//      check_url_serialization( drf );
-//#endif
-    
-    if( m_responses.empty() )
-    {
-      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-dont-use-drf-in-file") ) );
-      m_detectorSelect->hide();
-    }else
-    {
-      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-select-det-from-file") ) );
-      m_detectorSelect->show();
-    }
-    
-    if( m_responses.empty() )
-      credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-no-drfs-in-file") ).toUTF8() );
-    
-    for( const auto &det : m_responses )
-      m_detectorSelect->addItem( det->name() );
-  }else
-  {
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-    credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-no-rel-eff-drfs-in-file") ).toUTF8() );
-#else
-    credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-couldnt-open-drf-file") ).toUTF8() );
-#endif
-    m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-no-drfs-available") ) );
-    m_detectorSelect->hide();
-  }//if( file_opened )
-  
-  if( file_opened && m_responses.empty() )
-    credits.push_back( WString::tr("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-file-has-no-drfs") ).toUTF8() );
-  
-  string creditHtml;
-  for( string credit : credits )
-  {
-    WString c = WString::fromUTF8(credit);
-    Wt::Utils::removeScript(c);
-    creditHtml += "<div>" + c.toUTF8() + "</div>";
-  }
-  
-  m_credits->setText( creditHtml );
-  
-  // Call DrfSelect::detectorsWereInited() since we may be updating from a worker thread;
-  //  the main thread will call later anyway.
-  m_drfSelect->detectorsWereInited();
-  
-  m_detectorSelect->setCurrentIndex( 0 );
-}//initDetectors()
-
-
-
-void RelEffFile::detectorSelected( const int index )
-{
-  std::shared_ptr<DetectorPeakResponse> det;
-  if( index > 0 )
-    det = m_responses.at( index - 1 );
-  
-  if( !m_drfSelect )
-    return;
-  
-  m_drfSelect->setDetector( det );
-  m_drfSelect->emitChangedSignal();
-}//void detectorSelected( const int index )
-
-
-
-
-
-const std::vector<std::shared_ptr<DetectorPeakResponse> > &RelEffFile::availableDrfs()
-{
-  return m_responses;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-///////////////////   End RelEffFile implementation   //////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////   Begin RelEffDetSelect implementation   //////////////////////
-////////////////////////////////////////////////////////////////////////////////
-RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit )
-    : WContainerWidget(),
-      m_interspec( interspec ),
-      m_drfSelect( detedit ),
-      m_files( nullptr )
-{
-}
-
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-void RelEffDetSelect::addFile()
-{
-  if( m_files )
-    m_files->addNew<RelEffFile>( this, m_drfSelect );
-}//void addFile()
-
-
-#endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
-
-
-void RelEffDetSelect::detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det )
-{
-  if( !m_files || !file )
-    return;
-  
-  for( WWidget *w : m_files->children() )
-  {
-    auto child = dynamic_cast<RelEffFile *>(w);
-    if( child && (child != file) )
-      child->selectNone();
-  }//for( WWidget *w : m_files->children() )
-}//void detectorSelected( RelEffFile *file, std::shared_ptr<DetectorPeakResponse> det );
-
-
-void RelEffDetSelect::userSelectedRelEffDetSelect()
-{
-  
-}//void userSelectedRelEffDetSelect()
-
-
-MatchDetectorStatus RelEffDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-{
-  docreate();
-  
-  if( !m_files )
-    return MatchDetectorStatus::NoMatch;
-  
-  auto children = m_files->children();
-  
-  bool anyNotInitied = false, found = false;
-  for( auto w : children )
-  {
-    auto child = dynamic_cast<RelEffFile *>( w );
-    if( !child )
-      continue;
-    
-    if( found )
-    {
-      child->selectNone();
-    }else
-    {
-      const MatchDetectorStatus status = child->trySelectDetector(det);
-      found = (status == MatchDetectorStatus::Match);
-      anyNotInitied |= (status == MatchDetectorStatus::NotInited);
-    }
-  }//for( size_t i = 0; i < children.size(); ++i )
-  
-  if( found )
-    return MatchDetectorStatus::Match;
-  
-  return anyNotInitied ? MatchDetectorStatus::NotInited : MatchDetectorStatus::NoMatch;
-}//void trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-
-
-void RelEffDetSelect::docreate()
-{
-  if( m_files )
-    return;
-  
-  addStyleClass( "DrfSelectArea" );
-  
-  m_files = addNew<WContainerWidget>();
-  m_files->addStyleClass( "DrfSelectAreaFiles" );
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  WContainerWidget *holder = addNew<WContainerWidget>();
-  holder->addStyleClass( "DrfSelectAreaFooter" );
-  //holder->setToolTip( WString::tr("reds-tt-add-drf-btn") );
-  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  HelpSystem::attachToolTipOn( holder, WString::tr("reds-tt-add-drf-btn"),
-                              showToolTips );
-
-  WPushButton *addIcon = holder->addNew<WPushButton>();
-  addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
-  addIcon->clicked().connect( this, &RelEffDetSelect::addFile );
-#endif
-  
-  vector<string> user_data_paths = DrfSelect::potential_rel_eff_det_files();
-  
-  size_t num_user = 0;
-  for( const string &path : user_data_paths )
-  {
-    RelEffFile *f = m_files->addNew<RelEffFile>( path, this, m_drfSelect );
-
-    //We'll remove the widget if the DRF is invalid, or make it so path cant be changed for valid
-    //  files (this then doesnt provide any feedback to the user that a DRF they placed in their
-    //  data directory is invalid, but I'm not sure if dealing with that here would be a net
-    //  improvement vs the alternative of possibly showing lots of files not intended to be DRF
-    //  files)
-    //
-    const vector<shared_ptr<DetectorPeakResponse>> drfs = f->availableDrfs();
-    if( drfs.empty() )
-    {
-      // removeWidget returns unique_ptr which goes out of scope, deleting the widget
-      m_files->removeWidget( f );
-    }else
-    {
-      num_user += 1;
-    }
-  }//for( const string &path : user_data_paths )
-  
-  if( !num_user )
-  {
-    m_files->addNew<RelEffFile>( this, m_drfSelect );
-  }
-}//void docreate()
-
-
-// Attempts to do a defered rendering.  Note that if trySelectDetector(...) has
-//  already been called, then so will have docreate().
-void RelEffDetSelect::load()
-{
-  if( !loaded() )
-    docreate();
-  WContainerWidget::load();
-}//void load()
-////////////////////////////////////////////////////////////////////////////////
-/////////////////   End RelEffDetSelect implementation   ///////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////   Begin GadrasDetSelect implementation   //////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-
-///************************ Begin Need to implement for GADRAS **************/////
-GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit )
-  : WContainerWidget(),
-    m_interspec( interspec ),
-    m_drfSelect( detedit ),
-    m_directories( nullptr )
-{
-  //GADRAS-DRF URL: https://rsicc.ornl.gov/codes/psr/psr6/psr-610.html
-}
-
-
-void GadrasDetSelect::load()
-{
-  if( !loaded() )
-    docreate();
-  WContainerWidget::load();
-}//void load()
-
-
-void GadrasDetSelect::docreate()
-{
-  if( m_directories )
-    return;
-  
-  addStyleClass( "DrfSelectArea" );
-  
-  m_directories = addNew<WContainerWidget>();
-  m_directories->addStyleClass( "DrfSelectAreaFiles" );
-
-  //Need to point the GUI to the appropriate directory, and implement to an `ls` to find detctors with both Detcotr.dat and Efficy.csv.
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
-
-  WContainerWidget *footer = addNew<WContainerWidget>();
-  footer->addStyleClass( "DrfSelectAreaFooter" );
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  //footer->setToolTip( WString::tr("reds-tt-add-dir") );
-  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  HelpSystem::attachToolTipOn( footer, WString::tr("reds-tt-add-dir"), showToolTips );
-
-  WPushButton *addIcon = footer->addNew<WPushButton>();
-  addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
-  addIcon->clicked().connect( this, &GadrasDetSelect::addDirectory );
-#endif
-
-  vector<string> paths = DrfSelect::potential_gadras_det_dirs( m_interspec );
-
-  for( const string &path : paths )
-  {
-    auto dir = m_directories->addNew<GadrasDirectory>( path, this, m_drfSelect );
-
-    if( path.find("GenericGadrasDetectors") != string::npos )
-    {
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-      dir->m_directoryEdit->disable();
-      dir->m_setDirectoryButton->hide();
-      dir->m_deleteBtn->hide();
-#endif
-    }
-
-#if( !defined(WIN32) )
-    if( SpecUtils::istarts_with( path, "C:\\" ) )
-      dir->hide();
-#endif
-  }
-
-#if( IOS )
-  const char *gadrasToolTip_key = "reds-gadras-drf-info-ios";
-#else
-  const char *gadrasToolTip_key = "reds-gadras-drf-info";
-#endif
-
-  WText *useInfo = footer->addNew<WText>( WString::tr(gadrasToolTip_key) );
-  useInfo->setStyleClass("DrfTypeDescrip");
-}//void docreate()
-
-
-
-MatchDetectorStatus GadrasDetSelect::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-{
-  docreate();  //We need to initialize the widget in order for m_directories to be true
-  
-  if( !m_directories )
-    return MatchDetectorStatus::NoMatch;
-  
-  if( !det || det->name().empty() )
-  {
-    for( auto w : m_directories->children() )
-    {
-      GadrasDirectory *d = dynamic_cast<GadrasDirectory *>( w );
-      if( !d )
-        continue;  //shouldnt ever happen, but JIC
-      d->m_detectorSelect->setCurrentIndex( -1 );
-    }//for( auto w : m_directories->children() )
-    
-    return MatchDetectorStatus::NoMatch;
-  }//if( !det || det->name().empty() )
-  
-  for( auto w : m_directories->children() )
-  {
-    GadrasDirectory *d = dynamic_cast<GadrasDirectory *>( w );
-    if( !d )
-      continue;  //shouldnt ever happen, but JIC
-    
-    for( size_t i = 0; i < d->m_responses.size(); ++i )
-    {
-      auto response = d->m_responses[i];
-      
-      if( (response == det) || (det->hashValue() == response->hashValue()) )
-      {
-        d->m_detectorSelect->setCurrentIndex( static_cast<int>(i) + 1 );
-        return MatchDetectorStatus::Match;
-      }
-    }//for( size_t i = 0; i < d->m_responses.size(); ++i )
-    
-    d->m_detectorSelect->setCurrentIndex( 0 );
-  }//for( auto w : m_directories->children() )
-  
-  return MatchDetectorStatus::NoMatch;
-}//MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-
-
-std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
-{
-  if( !m_directories )
-    return nullptr;
-  
-  for( auto w : m_directories->children() )
-  {
-    GadrasDirectory *d = dynamic_cast<GadrasDirectory *>( w );
-    const int currentIndex = d ? d->m_detectorSelect->currentIndex() : -1;
-    if( currentIndex >= 1 )
-    {
-      try
-      {
-        std::shared_ptr<WAbstractItemModel> m = d->m_detectorSelect->model();
-        const string p = Wt::cpp17::any_cast<std::string>( m->data( currentIndex, 0, Wt::ItemDataRole::User ) );
-        auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p, true );
-
-        // A directory with no Efficiency.csv gives a geometry with no
-        //  sensitivity.  Handing that back would install a detector that cannot
-        //  answer an efficiency query, so instead start the Monte-Carlo
-        //  characterization that can give it one - the same place the ANGLE
-        //  "generic detector" import lands.
-        if( !answer->isValid() )
-        {
-          m_drfSelect->startGadrasGeometryImport( p, answer );
-          return nullptr;
-        }
-
-        if( p.find("GenericGadrasDetectors") != string::npos )
-          answer->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
-        else
-          answer->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedGadrasDrf );
-        
-        return answer;
-      }catch( std::exception &e )
-      {
-        passMessage( WString::tr("reds-failed-parse-gadras-det").arg(e.what()),
-                    WarningWidget::WarningMsgHigh );
-      }//try / catch
-    }//if( user has selected an index )
-  }//for( auto w : m_directories->children() )
-  
-  return nullptr;
-}//std::shared_ptr<DetectorPeakResponse> selectedDetector()
-
-
-void GadrasDetSelect::addDirectory()
-{
-  if( m_directories )
-    m_directories->addNew<GadrasDirectory>( "", this, m_drfSelect );
-}//void addDirectory()
-
-
-void GadrasDetSelect::removeDirectory( GadrasDirectory *dirWidget )
-{
-  if( !m_directories || !dirWidget )
-    return;
-  
-  for( WWidget *w : m_directories->children() )
-  {
-    if( dynamic_cast<GadrasDirectory *>(w) == dirWidget )
-    {
-      // Wt4: m_directories owns this child via a unique_ptr - `delete w` would double-free.
-      m_directories->removeWidget( w );
-      break;
-    }
-  }//for( WWidget *w : m_files->children() )
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  saveFilePathToUserPreferences();
-#endif
-}//void removeDirectory( GadrasDirectory *dirWidget )
-
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-void GadrasDetSelect::saveFilePathToUserPreferences()
-{
-  if( !m_directories )
-    return;
-  
-  string dirs;
-  for( WWidget *w : m_directories->children() )
-  {
-    auto d = dynamic_cast<GadrasDirectory *>(w);
-    if( !d )
-      continue;
-    const string p = d->m_directoryEdit->text().toUTF8();
-    dirs += ((dirs.size() && !p.empty()) ? ";" : "") + p;
-  }//for( WWidget *w : m_directories->children() )
-  
-  try
-  {
-    UserPreferences::setPreferenceValue( "GadrasDRFPath", dirs, m_interspec );
-  }catch( std::exception &e )
-  {
-    passMessage( WString::tr("reds-err-saving-gad-path").arg(e.what()), WarningWidget::WarningMsgHigh );
-  }
-}//void saveFilePathToUserPreferences()
-#endif
-
-
-void GadrasDetSelect::detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det )
-{
-  if( !m_directories || !dir )
-    return;
-  
-  for( WWidget *w : m_directories->children() )
-  {
-    auto child = dynamic_cast<GadrasDirectory *>(w);
-    if( child && (child != dir) )
-      child->selectNone();
-  }//for( WWidget *w : m_files->children() )
-}//void detectorSelected( GadrasDirectory *dir, std::shared_ptr<DetectorPeakResponse> det )
-
-
-GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parentSelect,
-                                   DrfSelect *drfSelect )
-: WContainerWidget(),
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  m_directory( directory ),
-#else
-  m_directoryEdit( nullptr ),
-  m_setDirectoryButton( nullptr ),
-#endif
-  m_parent( parentSelect ),
-  m_drfSelect( drfSelect ),
-  m_detectorSelect( nullptr ),
-  m_msg( nullptr ),
-  m_deleteBtn( nullptr )
-{
-  setObjectName( "GadDir" + Wt::WRandom::generateId() );
-  
-  addStyleClass( "RelEffFile" );
-  
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-#else
-  // (m_directoryEdit is created further below; setting its attribute here was a null-pointer deref.)
-  auto interspec = InterSpec::instance();
-  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
-  
-  
-  WContainerWidget *topdiv = addNew<WContainerWidget>();
-  m_deleteBtn = topdiv->addNew<WPushButton>();
-  m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
-  //m_deleteBtn->setToolTip( WString::tr("reds-tt-remove-gad-dir") );
-  HelpSystem::attachToolTipOn( m_deleteBtn, WString::tr("reds-tt-remove-gad-dir"),
-                              showToolTips );
-
-  m_deleteBtn->clicked().connect( this, [parentSelect, this](){ parentSelect->removeDirectory( this ); } );
-  
-  
-//If we wanted to actually select directories, could do similar to file query widget... which webkitdirectory no longer seems to work, so see file query widget use of electrons dialog
-//#if( BUILD_AS_ELECTRON_APP )
-//  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
-//  const string uploadname = id() + "PathPicker";
-//  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
-  
-//  WText *uploadtext = new WText( uploadhtml, XHTMLUnsafeText );
-//  linelayout->addWidget( uploadtext, 0, 1 );
-  
-  //TODO: put in error handling!
-//  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
-//                     "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
-//                     "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
-//                     "};"
-//                     );
-  //m_pathSelectedSignal->connect( [this]( std::string a1 ){ newElectronPathSelected( a1 ); } );
-//#elif( BUILD_AS_OSX_APP )
-//  see usage of macOsUtils::showFilePicker(...)
-//  m_baseLocation = new WFileUpload();
-//  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
-//  linelayout->addWidget( m_baseLocation, 0, 1 );
-//#else
-  
-  //TODO: Check if 'directory' is a subdirectory of InterSpec::writableDataDirectory()
-  //and if so replace the beggingin of directory with {DataDir}/... and make it
-  //  so the edit cant be changed and set button is hidden, and then deal with
-  //  in GadrasDirectory::directory()
-/*
-  bool isInDataDir = false;
-  string dirCononical = directory;
-  string appDataDir = InterSpec::writableDataDirectory();
-  if( SpecUtils::make_canonical_path(appDataDir)
-     && SpecUtils::make_canonical_path(dirCononical)
-     && appDataDir.size()>2 && dirCononical.size()>2 )
-  {
-    while( !isInDataDir && (dirCononical.size()+1) >= appDataDir.size() )
-    {
-      if( dirCononical == appDataDir )
-      {
-        isInDataDir = true;
-        dirCononical = directory;
-        SpecUtils::make_canonical_path(dirCononical);
-        dirCononical = fs_relative( appDataDir, dirCononical );
-        dirCononical = SpecUtils::append_path( "{AppDataDir}", dirCononical );
-      }else
-      {
-        dirCononical = SpecUtils::parent_path(dirCononical);
-        SpecUtils::make_canonical_path( dirCononical ); //to make sure we get ending / or \ right
-      }
-    }
-  }
-*/
-  
-  
-/*
- ToDo: custonize path picking for electron...
-#if( BUILD_AS_ELECTRON_APP )
-  m_pathSelectedSignal.reset( new Wt::JSignal<std::string>( this, "BaseDirSelected", false ) );
-  
-  const string uploadname = id() + "PathPicker";
-  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
-  
-  WText *uploadtext = new WText( uploadhtml, XHTMLUnsafeText );
-  linelayout->addWidget( uploadtext, 0, 1 );
-  
-  //TODO: put in error handling!
-  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
-                     "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
-                     "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
-                     "};"
-                     );
-  m_pathSelectedSignal->connect( [this]( std::string a1 ){ newElectronPathSelected( a1 ); } );
-#elif( BUILD_AS_OSX_APP )
- //For macOS dont saved picked directory to preferences in DB as sandboxing will mess this up.
- 
- ... use similar to above for electron, but call below inseadt of Electron stuff
- macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
-                            canChooseFiles, canChooseDirectories, allowsMultipleSelection,
-                            on_select_callback );
- 
-  //m_baseLocation = new WFileUpload();
-  //m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
-  //linelayout->addWidget( m_baseLocation, 0, 1 );
-#else
-*/
-  
-  string user_data_dir;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  try
-  {
-    user_data_dir = InterSpec::writableDataDirectory();
-  }catch( std::exception & )
-  {
-  }
-#endif
-  
-  if( !user_data_dir.empty() )
-  {
-    const string data_norm = SpecUtils::lexically_normalize_path( user_data_dir );
-    const string file_norm = SpecUtils::lexically_normalize_path( directory );
-    const string drf_norm = SpecUtils::append_path( data_norm, "drfs" );
-    
-    if( SpecUtils::istarts_with(file_norm, drf_norm) )
-    {
-      const string relpath = SpecUtils::fs_relative( drf_norm, directory );
-      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
-        directory = relpath;
-    }else if( SpecUtils::istarts_with(file_norm, data_norm) )
-    {
-      const string relpath = SpecUtils::fs_relative( user_data_dir, directory );
-      if( (relpath.size() >= 2) && !SpecUtils::istarts_with(relpath, "..") )
-        directory = relpath;
-    }
-  }//if( !user_data_dir.empty() )
-  
-  
-  m_directoryEdit = topdiv->addNew<WLineEdit>( Wt::WString::fromUTF8(directory) );
-  m_directoryEdit->setTextSize( 48 );
-  m_directoryEdit->setAttributeValue( "ondragstart", "return false" ); // moved from top of ctor (was a null deref)
-
-#if( BUILD_AS_OSX_APP || IOS )
-  m_directoryEdit->setAttributeValue( "autocorrect", "off" );
-  m_directoryEdit->setAttributeValue( "spellcheck", "off" );
-#endif
-
-  m_setDirectoryButton = topdiv->addNew<WPushButton>( WString::tr("ds-set-btn") );
-  m_setDirectoryButton->setMargin( 5, Wt::Side::Left );
-  m_setDirectoryButton->disable();
-  //m_setDirectoryButton->setToolTip( WString::tr("reds-tt-gad-set-dir") );
-  HelpSystem::attachToolTipOn( m_setDirectoryButton, WString::tr("reds-tt-gad-set-dir"),
-                              showToolTips );
-
-  m_setDirectoryButton->clicked().connect( this, &GadrasDirectory::dirPathChanged );
-  
-  //m_fileEdit->changed().connect( m_setFileButton, &WPushButton::enable );
-  m_directoryEdit->textInput().connect( m_setDirectoryButton, &WPushButton::enable );
-  m_directoryEdit->enterPressed().connect( this, &GadrasDirectory::dirPathChanged );
-#endif
-  
-  WContainerWidget *bottomDiv = addNew<WContainerWidget>();
-
-  m_detectorSelect = bottomDiv->addNew<WComboBox>();
-  m_detectorSelect->setNoSelectionEnabled( true );
-  m_detectorSelect->activated().connect( this, &GadrasDirectory::detectorSelectCallback );
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  m_directoryEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
-#endif
-
-  m_msg = bottomDiv->addNew<WText>();
-  m_msg->setInline( false );
-  
-  initDetectors();
-}//GadrasDirectory constructor
-
-
-std::string GadrasDirectory::directory()
-{
-#if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-  return find_valid_path( m_directory, true );
-#else
-  return find_valid_path( m_directoryEdit->text().toUTF8(), true );
-#endif
-}
-
-
-void GadrasDirectory::selectNone()
-{
-  if( m_detectorSelect->count() )
-    m_detectorSelect->setCurrentIndex( 0 );
-}
-
-
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-void GadrasDirectory::dirPathChanged()
-{
-  m_parent->saveFilePathToUserPreferences();
-  
-  initDetectors();
-  
-  m_setDirectoryButton->disable();
-  m_detectorSelect->enable();
-}//void dirPathChanged()
-#endif  //#if( !BUILD_FOR_WEB_DEPLOYMENT )
-
-
-void GadrasDirectory::detectorSelectCallback()
-{
-  std::shared_ptr<DetectorPeakResponse> det;
-  
-  const int index = m_detectorSelect->currentIndex();
-  
-  //Item at index 0 is always a non-detector.
-  if( index > 0 && (index-1) < m_responses.size() )
-    det = m_responses[index-1];
-  
-  if( m_parent )
-    m_parent->detectorSelected( this, det );
-  
-  m_drfSelect->setDetector( det );
-  m_drfSelect->emitChangedSignal();
-}//void detectorSelectCallback()
-
-  
-MatchDetectorStatus GadrasDirectory::trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-{
-  if( !det )
-  {
-    m_detectorSelect->setCurrentIndex( 0 );
-    return MatchDetectorStatus::NoMatch;
-  }//if( !det )
-  
-  for( size_t i = 0; i < m_responses.size(); ++i )
-  {
-    if( m_responses[i]->hashValue() == det->hashValue() )
-    {
-      m_detectorSelect->setCurrentIndex( static_cast<int>(i) + 1 );
-      return MatchDetectorStatus::Match;
-    }
-  }//for( size_t i = 0; i < m_responses.size(); ++i )
-  
-  m_detectorSelect->setCurrentIndex( 0 );
-  
-  if( m_detectorSelect->count() < 2 )
-    return MatchDetectorStatus::NotInited;
-  
-  return MatchDetectorStatus::NoMatch;
-}//MatchDetectorStatus trySelectDetector( std::shared_ptr<DetectorPeakResponse> det )
-
-
-//parseDetector() returns null on error
-std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string path )
-{
-  try
-  {
-    const string name = SpecUtils::filename( path );
-    auto drf = make_shared<DetectorPeakResponse>( name, "" );
-    drf->fromGadrasDirectory( path, true /*allow a missing Efficiency.csv*/ );
-
-    // Without an Efficiency.csv the DRF carries a geometry but no efficiency, so
-    //  say so in the list: picking it starts a Monte-Carlo characterization
-    //  rather than handing over a finished detector.
-    if( !drf->isValid() )
-      drf->setName( name + " " + WString::tr("reds-gadras-geometry-only").toUTF8() );
-    
-//#if( PERFORM_DEVELOPER_CHECKS )
-//    check_url_serialization( drf );
-//#endif
-    
-    return drf;
-  }catch( std::exception &e )
-  {
-    cerr << "GadrasDirectory::parseDetector() caught: " << e.what() << endl;
-  }
- 
-  return nullptr;
-}//shared_ptr<DetectorPeakResponse> parseDetector( const string directory )
-
-
-vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &sourcedir )
-{
-  return DrfSelect::recursive_list_gadras_drfs( sourcedir );
-}//vector<string> recursive_list_gadras_drfs( const string &sourcedir )
-
-
-void GadrasDirectory::initDetectors()
-{
-  m_detectorSelect->clear();
-  m_responses.clear();
-  
-  m_msg->setText( "" );
-  m_msg->hide();
-  
-  string basedir = directory();
-  
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
-  basedir = complete_drf_dir_path( basedir );
-#endif
-  
-  
-  if( !SpecUtils::is_directory( basedir ) )
-  {
-    m_msg->setText( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("reds-err-not-valid-dir") ) );
-    m_msg->show();
-    m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("reds-invalid-dir") ) );
-    m_detectorSelect->setCurrentIndex( 0 );
-    m_detectorSelect->disable();
-    return;
-  }//if( !SpecUtils::is_directory( basedir ) )
-  
-  m_detectorSelect->disable();
-  this->disable();
-  
-  
-  const std::string objname = objectName();
-  const std::string sessid = wApp->sessionId();
-  
-  auto updategui = [this,objname]( std::vector<std::shared_ptr<DetectorPeakResponse> > drfs ){
-    
-    //Lets make sure this widget hasnt been deleted, by looking for it in the DOM
-    WWidget *w = wApp->findWidget(objname);
-    if( !w )
-    {
-      cerr << "Couldnt find widget '" << objname << "' in the DOM." << endl;
-      return;
-    }
-    
-    //cout << "Found widget '" << objname << "' in the DOM!" << endl;
-    
-    for( auto drf : drfs )
-    {
-      if( drf )
-        m_responses.push_back( drf );
-    }
-    
-    if( m_responses.empty() )
-    {
-      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("reds-no-drf-in-dir") ) );
-      m_detectorSelect->disable();
-    }else
-    {
-      m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-select-det-from-file") ) );
-      m_detectorSelect->enable();
-    }
-    
-    std::sort( begin(m_responses), end(m_responses),
-               []( const shared_ptr<DetectorPeakResponse> &lhs,
-                   const shared_ptr<DetectorPeakResponse> &rhs ) -> bool {
-     if( !lhs || !rhs )
-       return false;
-      return lhs->name() < rhs->name();
-    } );
-    
-    
-    for( const auto drf : m_responses )
-      m_detectorSelect->addItem( drf->name() );
-    m_detectorSelect->setCurrentIndex( 0 );
-    
-    if( m_responses.empty() )
-    {
-      m_msg->setText( WString("<span class=\"ErrorTxt\">{1}</span>").arg("reds-recursive-no-drfs-in-dir") );
-      m_msg->show();
-    }else
-    {
-      m_detectorSelect->enable();
-    }
-    
-    this->enable();
-    
-    // Call DrfSelect::detectorsWereInited() since we are updating from a worker thread;
-    //  the main thread will check, and fail if m_detector is a GADRAS detector,
-    //  before we get here.
-    m_drfSelect->detectorsWereInited();
-    
-    wApp->triggerUpdate();
-  };//updategui lambda
-  
-  auto searchpaths = [basedir, objname, sessid, updategui](){
-    const vector<string> dirs = recursive_list_gadras_drfs( basedir );
-    std::vector<std::shared_ptr<DetectorPeakResponse> > dets( dirs.size(), nullptr );
-    
-    SpecUtilsAsync::ThreadPool pool;
-    for( size_t i = 0; i < dirs.size(); ++i )
-      pool.post( [i,&dets,&dirs](){ dets[i] = GadrasDirectory::parseDetector( dirs[i] ); } );
-    pool.join();
-    
-    //for( const auto &d : dirs )
-    //{
-    //  auto drf = parseDetector( d );
-    //  if( drf )
-    //    m_responses.push_back( drf );
-    //}
-    //end section that should be done off the main thread
-    
-    Wt::WServer *server = Wt::WServer::instance();
-    if( server )
-      server->post(sessid, std::bind( [updategui,dets](){ updategui(dets); } ) );
-  };//searchpaths lamda
-  
-  
-  Wt::WServer *server = Wt::WServer::instance();
-  Wt::WIOService &io = server->ioService();
-  io.boost::asio::io_service::post( searchpaths );
-}//void initDetectors()
-
-
-void GadrasDirectory::detectorSelected( const int index )
-{
-  std::shared_ptr<DetectorPeakResponse> det;
-  if( index > 0 )
-    det = m_responses.at( index - 1 );
-  
-  m_drfSelect->setDetector( det );
-  m_drfSelect->emitChangedSignal();
-}//void detectorSelected( const int index )
-
-
-
-
-
-DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
-                                  SpectraFileModel *fileModel )
+DetectorDisplay::DetectorDisplay( InterSpec *specViewer )
   : WContainerWidget(),
     m_genericIcon( nullptr ),
     m_drfIcon( nullptr ),
     m_text( nullptr ),
-    m_interspec( specViewer ),
-    m_fileModel( fileModel )
+    m_interspec( specViewer )
 {
+  assert( specViewer );
+
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
 
   HelpSystem::attachToolTipOn( this, WString::tr("app-tt-det-disp"), showToolTips ); //"app-tt-det-disp" defined in InterSpec.xml localisation, so we dont need to load DrfSelect.xml for this widget
@@ -2119,7 +549,10 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   // The icon says "detector", so there is no "Detector:" label on screen - only for screen readers.
+  //  A button for the keyboard too: focusable, and Enter / Space open the dialog.
   setAttributeValue( "role", "button" );
+  setAttributeValue( "tabindex", "0" );
+  keyWentDown().connect( "function(s,e){ if( (e.key === 'Enter') || (e.key === ' ') ){ e.preventDefault(); s.click(); } }" );
 
   m_genericIcon = addNew<WContainerWidget>();
   m_genericIcon->setInline( true );
@@ -2142,11 +575,6 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
 
   clicked().connect( this, &DetectorDisplay::editDetector );
 }//DetectorDisplay constructor
-
-
-DetectorDisplay::~DetectorDisplay()
-{
-} //~DetectorDisplay()
 
 
 std::shared_ptr<DetectorPeakResponse> DetectorDisplay::detector()
@@ -2185,800 +613,9 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
 void DetectorDisplay::editDetector()
 {
-  if( m_interspec )
-    m_interspec->showDrfSelectWindow();
+  m_interspec->showDrfSelectWindow();
 }//void editDetector()
 
-
-std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
-{
-  return m_detector;
-} //std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
-
-DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
-                InterSpec *specViewer,
-                SpectraFileModel *fileModel,
-                AuxWindow *auxWindow )
-  : WContainerWidget(),
-    m_footer( nullptr ),
-    m_interspec( specViewer ),
-    m_fileModel( fileModel ),
-    m_chart( 0 ),
-    m_drfContentChips( nullptr ),
-    m_detector( currentDet ),
-    m_gui_select_matches_det( false ),
-    m_importWidget( nullptr ),
-    m_importMenuItem( nullptr ),
-    m_acceptButton( nullptr ),
-    m_cancelButton( nullptr ),
-    m_noDrfButton( nullptr ),
-    m_xmlDownload( nullptr ),
-    m_detectorManualFunctionName( nullptr ),
-    m_detectorManualFunctionText( nullptr ),
-    m_detectorManualDescription( nullptr ),
-    m_eqnEnergyGroup( nullptr ),  //will be created as shared_ptr in constructor body
-    m_drfType( nullptr ),
-    m_detectorManualDiameterLabel( nullptr ),
-    m_detectorManualDiameterText( nullptr ),
-    m_detectorManualSetbackText( nullptr ),
-    m_detectorManualDistText( nullptr ),
-    m_detectorManualDistLabel( nullptr ),
-    m_detectorManualMinEnergy( nullptr ),
-    m_detectorManualMaxEnergy( nullptr ),
-    m_manualSetButton( nullptr ),
-    m_gadrasDetSelect( nullptr ),
-    m_relEffSelect( nullptr ),
-    m_drfTypeMenu( nullptr ),
-    m_drfTypeStack( nullptr ),
-    m_deleteButton( nullptr ),
-    m_DBtable( nullptr ),
-    m_model( nullptr ),
-    m_defaultForSerialNumber( nullptr ),
-    m_defaultForDetectorModel( nullptr )
-{
-  wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
-  m_interspec->useMessageResourceBundle( "DrfSelect" );
-  
-  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
-  
-  WGridLayout *mainLayout = setLayout( std::make_unique<WGridLayout>() );
-  mainLayout->setContentsMargins(0, 0, 0, 0);
-  mainLayout->setHorizontalSpacing( 0 );
-  
-#if( IOS )
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-  if( app )
-  {
-    float safeAreas[4] = { 0.0f };
-    InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
-    app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
-    if( safeAreas[3] > 1 )
-      setPadding( WLength(safeAreas[3], WLength::Unit::Pixel), Side::Left );
-  }//if( app )
-#endif
-  
-  const bool is_mobile = (!specViewer || specViewer->isMobile());
-  const bool is_phone = (!specViewer || specViewer->isMobile());
-  int w = m_interspec->renderedWidth();
-  int h = m_interspec->renderedHeight();
-  if( is_mobile && (w < 100) )
-  {
-    w = wApp->environment().screenWidth();
-    h = wApp->environment().screenHeight();
-  }
-  const bool narrow_layout = (is_phone && ((w > 100) && (w < 600)));
-  if( narrow_layout )
-    addStyleClass( "DrfSelectNarrow" );
-  
-  mainLayout->setVerticalSpacing( (is_mobile && !narrow_layout) ? 15 : 5 ); //so the chart resizer handle will show up
-  
-  specViewer->detectorChanged().connect( this, &DrfSelect::setDetector );
-  specViewer->detectorModified().connect( this, &DrfSelect::setDetector );
-
-  if( currentDet )
-  {
-    m_originalDetectorCopy.reset( new DetectorPeakResponse() );
-    (*m_originalDetectorCopy) = (*currentDet);
-    m_originalDetector = currentDet;
-    m_previousDetectorDef = *currentDet;
-  }//if( currentDet )
-
-  m_previousEmmittedDetector = m_detector;
-  
-  {
-    auto chartOwned = std::make_unique<DrfChart>();
-    m_chart = chartOwned.get();
-    if( is_phone )
-    {
-      const double chart_width = narrow_layout ? std::min( std::max( 100.0, w - 40.0 ), 450.0 ) : 325;
-      const double chart_height = chart_width * 125.0/325.0;
-      m_chart->resize( chart_width, chart_height );
-      mainLayout->addWidget( std::move(chartOwned), 0, 0, AlignmentFlag::Center );
-    }else
-    {
-      mainLayout->addWidget( std::move(chartOwned), 0, 0 );
-    }//if( we are on a phone ) / else
-  }
-
-  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
-  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
-  distValidator->setInvalidBlankText( "0.0 cm" );
-  distValidator->setMandatory( true );
-  
-  // Compact summary "chips" of what the current DRF contains (FWHM,
-  //  uncertainties, MC parameterization, ...) - see updateDrfContentSummary().
-  {
-    auto chipsOwned = std::make_unique<WContainerWidget>();
-    m_drfContentChips = chipsOwned.get();
-    m_drfContentChips->addStyleClass( "DrfContentChips" );
-    mainLayout->addWidget( std::move(chipsOwned), 1, 0 );
-  }
-
-  WContainerWidget *lowerContent = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
-
-  WGridLayout *lowerLayout = lowerContent->setLayout( std::make_unique<WGridLayout>() );
-  lowerLayout->setContentsMargins( 0, 2, 0, 0 );
-
-  //Pre-size the lower content to accommodate the tallest DRF type ("Formula"),
-  //  so everything wont change size when the user selects the different types.
-  //  Although, as it stands now if you add a bunch of paths to GADRAS/Rel. Eff.
-  //  you can make its content larger than the 190 px.
-  //ToDo: improve the sizing of this layout to not have hardcoded sizes!
-  lowerContent->resize( WLength::Auto, WLength(190,WLength::Unit::Pixel) );
-
-  {
-    auto stackOwned = std::make_unique<Wt::WStackedWidget>();
-    m_drfTypeStack = stackOwned.get();
-    m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
-
-    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
-    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
-    //  worked).  Set it through the API so we win on specificity, else content taller than the
-    //  container is clipped with no scrollbar.
-    m_drfTypeStack->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
-
-    auto menuOwned = std::make_unique<WMenu>( m_drfTypeStack );
-    m_drfTypeMenu = menuOwned.get();
-
-    auto menuHolderOwned = std::make_unique<WContainerWidget>();
-    WContainerWidget *menuHolder = menuHolderOwned.get();
-    menuHolder->addWidget( std::move(menuOwned) );
-
-    if( narrow_layout )
-    {
-      m_drfTypeMenu->addStyleClass( "VerticalNavMenu HorizontalMenu HeavyNavMenu DetEditMenuHorizontal" );
-      menuHolder->setOverflow( Overflow::Auto, Wt::Orientation::Horizontal );
-      menuHolder->setOverflow( Overflow::Hidden, Wt::Orientation::Vertical );
-
-      lowerLayout->addWidget( std::move(menuHolderOwned), 0, 0 );
-      lowerLayout->addWidget( std::move(stackOwned), 1, 0 );
-      lowerLayout->setRowStretch( 1, 1 );
-    }else
-    {
-      m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
-      menuHolder->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
-      menuHolder->setOverflow( Overflow::Hidden, Wt::Orientation::Horizontal );
-
-      lowerLayout->addWidget( std::move(menuHolderOwned), 0, 0, 2, 1 );
-      lowerLayout->addWidget( std::move(stackOwned), 0, 1 );
-      lowerLayout->setColumnStretch( 1, 1 );
-    }
-  }
-  
-  
-  
-  WContainerWidget *defaultOptions = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 3, 0 );
-  //lowerLayout->addWidget( defaultOptions, 1, 1 );
-
-  mainLayout->setRowResizable( 0, true, WLength(is_phone ? 125 : 250, WLength::Unit::Pixel) );
-
-  mainLayout->setRowStretch( 2, 1 );
-  
-  
-  //-------------------------------------
-  //--- 1)  GADRAS
-  //-------------------------------------
-  
-  auto gadrasDetSelectOwned = std::make_unique<GadrasDetSelect>( m_interspec, this );
-  m_gadrasDetSelect = gadrasDetSelectOwned.get();
-
-  //-------------------------------------
-  //--- 2)  Relative Efficiencies
-  //-------------------------------------
-
-  auto relEffSelectOwned = std::make_unique<RelEffDetSelect>( m_interspec, this );
-  m_relEffSelect = relEffSelectOwned.get();
-
-  //-------------------------------------
-  //--- 3)  Import
-  //-------------------------------------
-
-  // Not given the current detector: this tab is for bringing in a new one.
-  auto importWidgetOwned = std::make_unique<DrfImportWidget>( DrfImportWidget::Host::ImportTab );
-  m_importWidget = importWidgetOwned.get();
-  m_importWidget->changed().connect( this, &DrfSelect::handleImportChanged );
-  m_importWidget->characterizeRequested().connect( this, &DrfSelect::openModifyWindow );
-
-
-  //-------------------------------------
-  //--- 4)  Manual
-  //-------------------------------------
-
-  const char *const diamtxt = "2.2 cm";
-    
-  auto formulaDivOwned = std::make_unique<WContainerWidget>();
-  WContainerWidget *formulaDiv = formulaDivOwned.get();
-  WString nameLabel = narrow_layout ? WString::tr("ds-manual-det-desc-label") : WString::tr("ds-manual-det-desc");
-
-  WText *selfDefineLabel = formulaDiv->addNew<WText>( nameLabel );
-  selfDefineLabel->setInline( false );
-  selfDefineLabel->setStyleClass("DetectorLabel");
-
-  WTable *formulaTable = formulaDiv->addNew<WTable>();
-  formulaTable->addStyleClass( "FormulaDrfTbl" );
-  WTableCell *cell = formulaTable->elementAt( 0, 0 );
-  WLabel *label = cell->addNew<WLabel>( WString::tr("ds-manual-det-name-label") );
-  if( narrow_layout )
-  {
-    cell = formulaTable->elementAt( 1, 0 );
-    cell->setColumnSpan( 2 );
-  }else
-  {
-    cell = formulaTable->elementAt( 0, 1 );
-  }
-  m_detectorManualFunctionName = cell->addNew<WLineEdit>();
-  label->setBuddy( m_detectorManualFunctionName );
-
-  m_detectorManualFunctionName->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorManualFunctionName->setAttributeValue( "autocorrect", "off" );
-  m_detectorManualFunctionName->setAttributeValue( "spellcheck", "off" );
-#endif
-  
-  m_detectorManualFunctionName->setStyleClass("DrfSelectFunctionalFormText");
-  m_detectorManualFunctionName->setText( WString::tr("app-default-manual-det-name") );
-  m_detectorManualFunctionName->setPlaceholderText( WString::tr("ds-manual-det-name-empty-txt") );
-  m_detectorManualFunctionName->setInline(false);
-  //m_detectorManualFunctionName->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualFunctionName->textInput().connect(this, [this](){ verifyManualDefinition(); });
-
-  if( narrow_layout )
-  {
-    m_detectorManualFunctionName->setWidth( WLength(w - 65,WLength::Unit::Pixel) );
-    m_detectorManualFunctionName->setMargin( WLength::Auto, Wt::Side::Left );
-  }
-  
-  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  label = cell->addNew<WLabel>( WString::tr("ds-manual-function-label") );
-  if( narrow_layout )
-  {
-    cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-    cell->setColumnSpan( 2 );
-  }else
-  {
-    cell = formulaTable->elementAt( cell->row(), 1 );
-  }
-  cell->setRowSpan( 2 );
-  m_detectorManualFunctionText = cell->addNew<WTextArea>();
-  //m_detectorManualFunctionText->setColumns(60);
-  label->setBuddy( m_detectorManualFunctionText );
-  
-  m_detectorManualFunctionText->setRows(3);
-  m_detectorManualFunctionText->setStyleClass("DrfSelectFunctionalFormText");
-  //m_detectorManualFunctionText->setText( WString::tr("ds-manual-det-empty-fcn") );
-  m_detectorManualFunctionText->setPlaceholderText( WString::tr("ds-manual-det-empty-fcn") );
-  m_detectorManualFunctionText->setInline(false);
-  //m_detectorManualFunctionText->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualFunctionText->textInput().connect(this, [this](){ verifyManualDefinition(); });
-  
-  if( narrow_layout )
-  {
-    m_detectorManualFunctionText->setWidth( WLength(w - 65,WLength::Unit::Pixel) );
-    m_detectorManualFunctionText->setMargin( WLength::Auto, Wt::Side::Left );
-  }
-  
-  if( narrow_layout )
-    cell = formulaTable->elementAt( cell->row() + 2, 0 );
-  else
-    cell = formulaTable->elementAt( cell->row() + 1, 0 );
-  
-  Wt::WContainerWidget *energyContainer = cell->addNew<Wt::WContainerWidget>();
-  energyContainer->setMargin( 6, Wt::Side::Top );
-  m_eqnEnergyGroup = std::make_shared<WButtonGroup>();
-  WRadioButton *button = energyContainer->addNew<WRadioButton>( WString::fromUTF8("keV") );
-  m_eqnEnergyGroup->addButton( button, 0 );
-  button = energyContainer->addNew<WRadioButton>( WString::fromUTF8("MeV") );
-  button->setMargin( 5, Wt::Side::Left );
-  m_eqnEnergyGroup->addButton( button, 1 );
-  m_eqnEnergyGroup->checkedChanged().connect(this, [this](){ verifyManualDefinition(); });
-  m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
-    
-  HelpSystem::attachToolTipOn( energyContainer, WString::tr("ds-tt-manual-energy-unit"),
-                              showToolTips );
-
-  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  
-  WString descLabel = narrow_layout ? WString::tr("ds-description-label") : WString::tr("Description");
-  
-  label = cell->addNew<WLabel>( descLabel );
-  if( narrow_layout )
-  {
-    cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-    cell->setColumnSpan( 2 );
-  }else
-  {
-    cell = formulaTable->elementAt( cell->row(), 1 );
-  }
-  m_detectorManualDescription = cell->addNew<WLineEdit>();
-  label->setBuddy( m_detectorManualDescription );
-  if( narrow_layout )
-  {
-    m_detectorManualDescription->setWidth( WLength(w - 65,WLength::Unit::Pixel) );
-    m_detectorManualDescription->setMargin( WLength::Auto, Wt::Side::Left );
-    m_detectorManualDescription->setInline( false );
-  }else
-  {
-    m_detectorManualDescription->setWidth( WLength(100,WLength::Unit::Percentage) );
-  }
-  m_detectorManualDescription->setPlaceholderText( WString::tr("ds-tt-manual-desc") );
-  m_detectorManualDescription->changed().connect(this, [this](){ verifyManualDefinition(); });
-  
-  m_detectorManualDescription->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorManualDescription->setAttributeValue( "autocorrect", "off" );
-  m_detectorManualDescription->setAttributeValue( "spellcheck", "off" );
-#endif
-  
-  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  m_detectorManualDiameterLabel = cell->addNew<WLabel>( WString::tr("ds-manual-det-diam-label") );
-  cell = formulaTable->elementAt( cell->row(), 1 );
-  m_detectorManualDiameterText = cell->addNew<WLineEdit>();
-  m_detectorManualDiameterLabel->setBuddy( m_detectorManualDiameterText );
-  m_detectorManualDiameterText->setValidator( distValidator );
-  //m_detectorManualDiameterText->setText( diamtxt );
-  m_detectorManualDiameterText->setPlaceholderText( diamtxt );
-  m_detectorManualDiameterText->setValidator( distValidator );
-  m_detectorManualDiameterText->blurred().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualDiameterText->enterPressed().connect(this, [this](){ verifyManualDefinition(); });
-  //m_detectorManualDiameterText->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualDiameterText->textInput().connect(this, [this](){ verifyManualDefinition(); });
-  
-  
-  m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorManualDiameterText->setAttributeValue( "autocorrect", "off" );
-  m_detectorManualDiameterText->setAttributeValue( "spellcheck", "off" );
-#endif
-
-  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  WLabel *manualSetbackLabel = cell->addNew<WLabel>( WString::tr("ds-manual-det-setback-label") );
-  cell = formulaTable->elementAt( cell->row(), 1 );
-  m_detectorManualSetbackText = cell->addNew<WLineEdit>();
-  manualSetbackLabel->setBuddy( m_detectorManualSetbackText );
-  m_detectorManualSetbackText->setValidator( distValidator );
-  m_detectorManualSetbackText->setPlaceholderText( "0 cm" );
-  m_detectorManualSetbackText->blurred().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualSetbackText->enterPressed().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualSetbackText->textInput().connect(this, [this](){ verifyManualDefinition(); });
-
-  m_detectorManualSetbackText->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorManualSetbackText->setAttributeValue( "autocorrect", "off" );
-  m_detectorManualSetbackText->setAttributeValue( "spellcheck", "off" );
-#endif
-
-
-  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  label = cell->addNew<WLabel>( WString::tr("ds-energy-range") );
-
-  cell = formulaTable->elementAt( cell->row(), 1 );
-  label = cell->addNew<WLabel>( WString::tr("Min.") );
-  m_detectorManualMinEnergy = cell->addNew<NativeFloatSpinBox>();
-  m_detectorManualMinEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
-  m_detectorManualMinEnergy->setRange( 0, 15000 );
-  m_detectorManualMinEnergy->setSpinnerHidden( true );
-  m_detectorManualMinEnergy->setWidth( WLength(9,Wt::WLength::Unit::FontEx) );
-  m_detectorManualMinEnergy->setText( "" );
-  label->setBuddy( m_detectorManualMinEnergy );
-  m_detectorManualMinEnergy->valueChanged().connect(this, [this](){ verifyManualDefinition(); });
-  
-  if( narrow_layout )
-    cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
-    
-  label = cell->addNew<WLabel>( WString::tr("Max.") );
-  if( !narrow_layout )
-    label->setMargin( 20, Wt::Side::Left );
-  m_detectorManualMaxEnergy = cell->addNew<NativeFloatSpinBox>();
-  m_detectorManualMaxEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
-  m_detectorManualMaxEnergy->setRange( 0, 15000 );
-  m_detectorManualMaxEnergy->setSpinnerHidden( true );
-  m_detectorManualMaxEnergy->setWidth( WLength(9,Wt::WLength::Unit::FontEx) );
-  m_detectorManualMaxEnergy->setText( "" );
-  label->setBuddy( m_detectorManualMaxEnergy );
-  if( !narrow_layout )
-  {
-    label = cell->addNew<WLabel>( WString::fromUTF8("(keV)") );
-    label->setMargin( 10, Wt::Side::Left );
-  }
-
-  m_detectorManualMaxEnergy->valueChanged().connect(this, [this](){ verifyManualDefinition(); });
-
-
-  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  cell->setColumnSpan( 2 );
-  m_drfType = cell->addNew<WComboBox>();
-  m_drfType->addItem( WString::tr("ds-intrinsic-eff") );
-  m_drfType->addItem( WString::tr("ds-abs-eff") );
-  m_drfType->addItem( WString::tr("ds-fixed-geom-total") );
-  m_drfType->addItem( WString::tr("ds-fixed-geom-cm2") );
-  m_drfType->addItem( WString::tr("ds-fixed-geom-m2") );
-  m_drfType->addItem( WString::tr("ds-fixed-geom-gram") );
-  //m_drfType->setToolTip( WString::tr("ds-tt-manual-drf-type") );
-  HelpSystem::attachToolTipOn( m_drfType, WString::tr("ds-tt-manual-drf-type"), showToolTips );
-  
-  
-  m_drfType->setCurrentIndex( 0 );
-  m_drfType->activated().connect( this, &DrfSelect::verifyManualDefinition );
-  
-  if( narrow_layout )
-    cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  m_detectorManualDistLabel = cell->addNew<WLabel>( WString::tr("ds-dist-label") );
-  m_detectorManualDistLabel->setMargin( 10, Wt::Side::Left );
-
-  if( narrow_layout )
-    cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
-  m_detectorManualDistText = cell->addNew<Wt::WLineEdit>();
-  m_detectorManualDistText->setValidator( distValidator );
-  m_detectorManualDistText->setPlaceholderText("1 m");
-  if( !narrow_layout )
-    m_detectorManualDistText->setHiddenKeepsGeometry( true );
-  m_detectorManualDistLabel->hide();
-  m_detectorManualDistText->hide();
-  //m_detectorManualDistText->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
-  m_detectorManualDistText->textInput().connect(this, [this](){ verifyManualDefinition(); });
-  
-  
-  if( narrow_layout )
-    cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
-  m_manualSetButton = cell->addNew<WPushButton>( WString::tr("ds-set-btn") );
-  //m_manualSetButton->setInline(false);
-  m_manualSetButton->setFloatSide( Wt::Side::Right );
-  //selfDefineLayout->setColumnStretch( 1, 1 );
-  m_manualSetButton->clicked().connect( this, [this](){ setFormulaDefineDetector(); } );
-    
-  //-------------------------------------
-  //--- 5)  Recent
-  //-------------------------------------
-  auto recentDivOwned = std::make_unique<WContainerWidget>();
-  WContainerWidget *recentDiv = recentDivOwned.get();
-  WGridLayout *recentDivLayout = recentDiv->setLayout( std::make_unique<WGridLayout>() );
-  recentDivLayout->setContentsMargins( 0, 0, 0, 0 );
-
-  const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
-  
-  {
-    auto tblOwned = std::make_unique<RowStretchTreeView>();
-    m_DBtable = tblOwned.get();
-    recentDivLayout->addWidget( std::move(tblOwned), 0, 0, 1, 3 );
-  }
-  m_DBtable->setRootIsDecorated	(	false ); //makes the tree look like a table! :)
-  
-  m_DBtable->addStyleClass( "DbSpecFileSelectTable" );
-  
-  //We have to create a independant Dbo::Session for this class since the
-  //  m_viewer->m_user.session() could be used in other threads, messing
-  //  things up (Dbo::Session is not thread safe).
-  m_sql.reset( new DataBaseUtils::DbSession( *m_interspec->sql() ) );
-  const auto userid = user.id();  //captured by filter lambda below
-
-  {
-    auto modelOwned = std::make_shared<Dbo::QueryModel<Dbo::ptr<DetectorPeakResponse>>>();
-    m_model = modelOwned.get();
-
-    m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                             .where( "InterSpecUser_id = ? ").bind( userid )
-                             .orderBy( "-1*m_lastUsedUtc" )
-                      );
-
-    /*  ToDo: - add column for when was last used, but give time in how long ago (remove diameter column)
-              - Add bullets or dropdown to allow filtering by "All", "Uploaded", "Entered Formula", "Made From Data"
-     */
-
-    m_model->addColumn( "m_name" );
-    m_model->addColumn( "m_description" );
-    m_model->addColumn( "m_lastUsedUtc" );
-
-    m_model->setHeaderData( 0, Wt::Orientation::Horizontal, WString::tr("Name"), ItemDataRole::Display );
-    m_DBtable->setColumnWidth( 0, 200 );
-    m_model->setHeaderData( 1, Wt::Orientation::Horizontal, WString::tr("Description"), ItemDataRole::Display );
-    m_DBtable->setColumnWidth( 1, 150 );
-    m_model->setHeaderData( 2, Wt::Orientation::Horizontal, WString::tr("ds-last-used"), ItemDataRole::Display );
-    m_DBtable->setColumnWidth( 2, 150 );
-
-    m_DBtable->setItemDelegateForColumn( 2, std::make_shared<UtcToLocalTimeDelegate>() );
-    m_DBtable->setModel( modelOwned );
-    m_DBtable->setAlternatingRowColors( true );
-    m_DBtable->setSelectionMode( SelectionMode::Single );
-  }
-  
-  for( int col = 0; col < m_model->columnCount(); ++col )
-  {
-    m_DBtable->setColumnHidden( col, false );
-    m_DBtable->setSortingEnabled( col, true );
-  }//for( int col = 0; col < model->columnCount(); ++col )
-  
-  m_DBtable->selectionChanged().connect( this, &DrfSelect::dbTableSelectionChanged );
-
-  {
-    auto delBtnOwned = std::make_unique<WPushButton>( WString::tr("Delete") );
-    m_deleteButton = delBtnOwned.get();
-    m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
-    m_deleteButton->setDefault(true);
-    m_deleteButton->disable();
-    m_deleteButton->clicked().connect( this, &DrfSelect::deleteDBTableSelected );
-    recentDivLayout->addWidget( std::move(delBtnOwned), 1, 0, AlignmentFlag::Left );
-  }
-
-  WComboBox *filter = nullptr;
-  {
-    auto filterOwned = std::make_unique<WComboBox>();
-    filter = filterOwned.get();
-  filter->addItem( WString::tr("ds-det-type-filter-all") );
-  filter->addItem( WString::tr("ds-det-type-filter-uploaded") );
-  filter->addItem( WString::tr("ds-det-type-filter-formula") );
-  filter->addItem( WString::tr("ds-det-type-filter-data") );
-  filter->addItem( WString::tr("ds-det-type-filter-N42") );
-  filter->setCurrentIndex( 0 );
-  
-  filter->changed().connect( this, [filter,this,userid](){
-    m_DBtable->setSelectedIndexes( WModelIndexSet() );
-    m_deleteButton->disable();
-    
-    if( filter->currentIndex() == 0 ) //"All"
-    {
-      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? ").bind( userid ), true );
-    }else if( filter->currentIndex() == 1 ) //"Uploaded"
-    {
-      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND (m_efficiencySource = ? OR m_efficiencySource = ?)")
-                        .bind( userid )
-                        .bind( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf )
-                        .bind( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf ) , true );
-    }else if( filter->currentIndex() == 2 ) //"Entered Formula"
-    {
-      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
-                        .bind( userid )
-                        .bind( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf ) , true );
-    }else if( filter->currentIndex() == 3 )
-    {
-      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
-                        .bind( userid )
-                        .bind( DetectorPeakResponse::DrfSource::UserCreatedDrf ) , true );
-    }else if( filter->currentIndex() == 4 )
-    {
-      m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                        .where( "InterSpecUser_id = ? AND m_efficiencySource = ?")
-                        .bind( userid )
-                        .bind( DetectorPeakResponse::DrfSource::FromSpectrumFileDrf ) , true );
-    }else
-    {
-      return; //shouldnt happen
-    }
-    
-    m_DBtable->sortByColumn( 2, Wt::SortOrder::Descending );
-  } );
-
-    auto showLabelOwned = std::make_unique<WLabel>( WString::tr("ds-show-label") );
-    WLabel *showLabel = showLabelOwned.get();
-    showLabel->setBuddy( filter );
-    recentDivLayout->addWidget( std::move(showLabelOwned), 1, 1,
-                                AlignmentFlag::Right | AlignmentFlag::Middle );
-    recentDivLayout->addWidget( std::move(filterOwned), 1, 2, AlignmentFlag::Middle );
-  }//end filter/delete button block
-
-  recentDivLayout->setRowStretch( 0, 1 );
-  //recentDiv->setOverflow(Wt::Overflow::Hidden);
-  //recentDiv->setMaximumSize( WLength::Auto, 180 );
-  recentDiv->setHeight( WLength( 100, WLength::Unit::Percentage ) );
-  m_DBtable->sortByColumn( 2, Wt::SortOrder::Descending );
-
-  //--------------------------------------------------------------------------------
-
-  WMenuItem *item = m_drfTypeMenu->addItem( WString::tr("ds-mi-gadras"), std::move(gadrasDetSelectOwned) );
-  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
-
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-rel-eff"), std::move(relEffSelectOwned) );
-  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
-
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), std::move(importWidgetOwned) );
-  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
-  m_importMenuItem = item;
-
-  // Other tabs change the detector, so coming back to "Import" makes its detector current again.
-  m_drfTypeMenu->itemSelected().connect( this, [this]( WMenuItem *selected ){
-    if( selected == m_importMenuItem )
-      handleImportChanged();
-  } );
-
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), std::move(formulaDivOwned) );
-  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
-
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-previous"), std::move(recentDivOwned) );
-  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
-  
-  //m_drfTypeStack->setHeight( WLength(185.0) );
-  
-  
-  auto meas = specViewer->measurment( SpecUtils::SpectrumType::Foreground );
-  
-  if( meas && !meas->instrument_id().empty() )
-  {
-    // Hack to keep checkboxes visible
-    if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
-      defaultOptions->addStyleClass( "DrfDefaultOptions" );
-    
-    m_defaultForSerialNumber = defaultOptions->addNew<WCheckBox>( WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() ) );
-    m_defaultForSerialNumber->setInline( false );
-    //mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
-  }//if( have serial number )
-  
-  if( meas && (meas->detector_type()!=DetectorType::Unknown || !meas->instrument_model().empty()) )
-  {
-    string model;
-    if( meas->detector_type() == DetectorType::Unknown )
-      model = meas->instrument_model();
-    else
-      model = detectorTypeToString( meas->detector_type() );
-    
-    // Hack to keep checkboxes visible
-    if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
-      defaultOptions->addStyleClass( "DrfDefaultOptions" );
-    
-    m_defaultForDetectorModel = defaultOptions->addNew<WCheckBox>( WString::tr("ds-use-for-model-cb").arg(model) );
-    m_defaultForDetectorModel->setInline( false );
-    //mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
-  }//if( have
-  
-  WContainerWidget *secondFooter = nullptr;
-  if( auxWindow )
-  {
-    m_footer = auxWindow->footer();
-    if( narrow_layout )
-    {
-      secondFooter = mainLayout->addWidget( std::make_unique<WContainerWidget>(),
-                                            mainLayout->rowCount(), 0, 1, 2 );
-      secondFooter->addStyleClass( "DetEditNarrowSecondFooter" );
-    }else
-    {
-      secondFooter = m_footer;
-    }
-  }else
-  {
-    m_footer = mainLayout->addWidget( std::make_unique<WContainerWidget>(),
-                                      mainLayout->rowCount(), 0, 1, 2 );
-    secondFooter = m_footer;
-  }
-  
-  AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
-  
-  // Add cancel button first on phones, so it will stay all the way to the left
-  if( auxWindow && auxWindow->isPhone() )
-    m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
-  
-  auto xmlResource = std::make_shared<DrfDownloadResource>( this );
-#if( BUILD_AS_OSX_APP || IOS )
-  {
-    WLink lnk( xmlResource );
-    lnk.setTarget( LinkTarget::NewWindow );
-    m_xmlDownload = secondFooter->addNew<WAnchor>( lnk );
-    m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
-  }
-#else
-  {
-    WLink lnk( xmlResource );
-    lnk.setTarget( LinkTarget::NewWindow );
-    m_xmlDownload = secondFooter->addNew<WPushButton>();
-    m_xmlDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
-    m_xmlDownload->setLink( lnk );
-    m_xmlDownload->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
-  }
-#endif
-  
-  m_xmlDownload->setText( "XML" );
-  m_xmlDownload->setHidden( !m_detector || !m_detector->isValid() );
-  
-#if( USE_QR_CODES )
-  WPushButton *qr_btn = secondFooter->addNew<WPushButton>();
-  qr_btn->setText( WString::tr("QR Code") );
-  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
-  qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
-  
-  qr_btn->clicked().connect( this, [this](){
-
-    if( !m_detector || !m_detector->isValid() )
-    {
-      passMessage( WString::tr("ds-no-drf-loaded"), WarningWidget::WarningMsgHigh );
-      return;
-    }
-
-    try
-    {
-      const string url = m_detector->toAppUrlQr();
-      SimpleDialog *dialog = QrCode::displayTxtAsQrCode( url, WString::fromUTF8(m_detector->name()),
-                                 WString::fromUTF8(m_detector->description()) );
-
-      // The URL carries the detector's shape, but a Monte-Carlo response is ~17 KB deflated - far
-      //  past any QR code - so say so rather than letting the recipient believe they received the
-      //  characterized detector.
-      if( dialog && m_detector->ceeloResponse() )
-      {
-        WText *note = dialog->contents()->addNew<WText>(
-                 WString::tr( m_detector->hasImportedGrid() ? "ds-qr-no-grid-note" : "ds-qr-no-mc-note" ) );
-        note->addStyleClass( "DrfQrNoMcNote" );
-        note->setInline( false );
-      }
-    }catch( std::exception &e )
-    {
-      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
-    }
-  } );
-#endif //USE_QR_CODES
-  
-  m_noDrfButton = secondFooter->addNew<WPushButton>( WString::tr("ds-no-det-btn") );
-  m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
-  if( specViewer && !specViewer->isPhone() )
-    m_noDrfButton->addStyleClass( "NoDrfBtn" );
-  
-  // A single "Modify..." button opens a dialog consolidating FWHM fitting,
-  //  geometry + Monte-Carlo characterization, renaming, and baseline
-  //  efficiency uncertainty (these used to be separate footer buttons that
-  //  overflowed).
-  WPushButton *modify = secondFooter->addNew<WPushButton>( WString::tr("ds-modify-btn") );
-  if( specViewer && !specViewer->isPhone() )
-    modify->addStyleClass( "NoDrfBtn" );
-  modify->clicked().connect( this, &DrfSelect::handleModifyRequested );
-
-  if( auxWindow && !auxWindow->isPhone() )
-  {
-    m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
-  }else if( !auxWindow )
-  {
-    m_cancelButton = m_footer->insertWidget( m_footer->count(),
-                                             std::make_unique<WPushButton>( WString::tr("Close") ) );
-  }
-  
-  m_cancelButton->clicked().connect( this, &DrfSelect::cancelAndFinish );
-
-  
-  if( specViewer && !specViewer->isPhone() )
-  {
-    m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Accept") );
-    WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
-    m_acceptButton->setFloatSide( Wt::Side::Right );
-
-    m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
-    HelpSystem::attachToolTipOn( m_cancelButton, WString::tr("ds-tt-cancel"), showToolTips );
-
-    m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
-    HelpSystem::attachToolTipOn( m_acceptButton, WString::tr("ds-tt-accept"), showToolTips );
-  }else
-  {
-    m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("ds-use-det-btn") );
-    WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
-    m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
-  }//if( isMobile() ) / else
-  
-  m_acceptButton->clicked().connect( this, &DrfSelect::acceptAndFinish );
-  if( !currentDet || !currentDet->isValid() )
-    setAcceptButtonEnabled( false );
-  
-  m_drfTypeMenu->select( 0 );
-  
-  setGuiToCurrentDetector();
-}//DrfSelect constructor
 
 
 void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> inputdrfs,
@@ -3193,30 +830,37 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     auto sql = interspec->sql();
     const Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( drf, user.id(), sql );
+
+    const shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<DetectorPeakResponse> prev = meas ? meas->detector() : nullptr;
     interspec->detectorChanged().emit( drf ); //This loads it to the foreground spectrum file
+
+    // Through InterSpec::instance(), as for "Use" in the Detector Efficiency dialog
+    UndoRedoManager * const undoManager = interspec->undoRedoManager();
+    if( (prev != drf) && undoManager && undoManager->canAddUndoRedoNow() )
+    {
+      undoManager->addUndoRedoStep( [prev](){
+        InterSpec * const viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( prev );
+      }, [drf](){
+        InterSpec * const viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( drf );
+      }, "Change DRF" );
+    }//if( undoManager )
       
     if( saveCb && saveCb->isChecked() && !!saveDrfsCallBack )
       saveDrfsCallBack();
-    
-    
-    auto meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-    
-    
-    if( meas && drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
+
+    // On this (the session) thread: copying the `Dbo::ptr` user is not thread safe.
+    for( const pair<WCheckBox *,UseDrfPref::UseDrfType> &cb
+          : { make_pair( defaultForSerialNumber, UseDrfPref::UseDrfType::UseDetectorSerialNumber ),
+              make_pair( defaultForDetectorModel, UseDrfPref::UseDrfType::UseDetectorModelName ) } )
     {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
-      } ) );
-    }//if( m_defaultForSerialNumber and is checked )
-    
-    if( meas && drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
-      } ) );
-    }//if( m_defaultForDetectorModel and is checked )
+      if( meas && cb.first && cb.first->isChecked() )
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, cb.second, meas );
+    }//for( both "use as default" checkboxes )
     
     // Last, so any follow-up the caller offers is on top of a detector already in use and saved.
     if( hooks.afterAccept )
@@ -3456,52 +1100,6 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
 }//void DrfSelect::handle_app_url_drf( const std::string &url_query )
 
 
-void DrfSelect::setAcceptButtonEnabled( const bool enable )
-{
-  m_acceptButton->setEnabled( enable );
-  m_noDrfButton->setHidden( !m_detector );
-  m_xmlDownload->setHidden( !m_detector );
-  if( m_defaultForSerialNumber )
-    m_defaultForSerialNumber->setEnabled( enable );
-  if( m_defaultForDetectorModel )
-    m_defaultForDetectorModel->setEnabled( enable );
-}
-
-
-void DrfSelect::handleFitFwhmRequested()
-{
-  const bool use_auto_fit_peaks_too = true;
-  MakeFwhmForDrfWindow *tool = m_interspec->fwhmFromForegroundWindow( use_auto_fit_peaks_too );
-}//void handleFitFwhmRequested()
-
-
-void DrfSelect::handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
-{
-  if( drf )
-    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
-  done().emit();
-}//void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
-
-
-void DrfSelect::handleMcResponseRequested()
-{
-  m_interspec->showMcResponseWindow( m_detector );
-}//void handleMcResponseRequested()
-
-
-void DrfSelect::handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf )
-{
-  if( drf )
-    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
-  done().emit();
-}//void handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf )
-
-
-void DrfSelect::handleModifyRequested()
-{
-  openModifyWindow();
-}//void handleModifyRequested()
-
 
 namespace
 {
@@ -3548,879 +1146,6 @@ void DrfSelect::programmaticallyCloseModifyWindow()
   AuxWindow::deleteAuxWindow( window );
 }//void programmaticallyCloseModifyWindow()
 
-
-void DrfSelect::openModifyWindow()
-{
-  if( m_modifyWindow )
-  {
-    m_modifyWindow->show();
-    m_modifyWindow->centerWindowHeavyHanded();
-    return;
-  }
-
-  // On the "Import" tab, Modify is for the file being imported - including a geometry-only one
-  //  (e.g., a lone Detector.dat), which is characterized there.
-  shared_ptr<DetectorPeakResponse> seed = m_detector;
-  if( m_drfTypeMenu->currentItem() == m_importMenuItem )
-  {
-    if( m_importWidget->candidate() )
-      seed = m_importWidget->candidate();
-    else if( m_importWidget->characterizationSeed() )
-      seed = m_importWidget->characterizationSeed();
-  }
-
-  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, seed );
-
-  // Hide the Modify window BEFORE handling its result: handleModifyFinished accepts this dialog,
-  //  which closes it and (in ~DrfSelect) tears the Modify window down - the same order the
-  //  standalone FWHM / MC tools use in InterSpec::fwhmFromForegroundWindow / showMcResponseWindow.
-  m_modifyWindow->tool()->updatedDrf().connect( m_modifyWindow.get(), &AuxWindow::hide );
-  m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
-  m_modifyWindow->finished().connect( this, [this](){
-    if( !m_modifyWindow )
-      return;
-
-    AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
-    assert( !m_modifyWindow );
-
-    UndoRedoManager *undoRedo = m_interspec->undoRedoManager();
-    if( undoRedo && undoRedo->canAddUndoRedoNow() )
-    {
-      undoRedo->addUndoRedoStep( [](){ reopenDrfSelectModifyWindow(); },
-                                 [](){ closeDrfSelectModifyWindow(); },
-                                 "Close modify-DRF tool" );
-    }//if( undoRedo )
-  } );
-
-  UndoRedoManager *undoRedo = m_interspec->undoRedoManager();
-  if( undoRedo && undoRedo->canAddUndoRedoNow() )
-  {
-    undoRedo->addUndoRedoStep( [](){ closeDrfSelectModifyWindow(); },
-                               [](){ reopenDrfSelectModifyWindow(); },
-                               "Show modify-DRF tool" );
-  }//if( undoRedo )
-}//void openModifyWindow(...)
-
-
-void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
-{
-  if( !drf )
-    return;
-
-  // Make the modified DRF this dialog's detector, then accept exactly as pressing Accept would:
-  //  recorded under "Previous", applied to the session (with its undo/redo step), and this dialog
-  //  closed.  Having to press Accept a second time - with the built-in detector list visibly
-  //  de-selected, since the modified detector is no longer that entry - read as the edit being lost.
-  setDetector( drf );
-  updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql, true );  //so a removed icon stays removed
-  acceptAndFinish();
-}//void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
-
-
-void DrfSelect::handleImportChanged()
-{
-  // A slow import (a .par grid) can finish after the user has moved to another tab; it is picked
-  //  up when they come back.
-  if( m_drfTypeMenu->currentItem() != m_importMenuItem )
-    return;
-
-  const shared_ptr<DetectorPeakResponse> candidate = m_importWidget->candidate();
-  if( candidate )
-  {
-    m_detector = candidate;
-    m_gui_select_matches_det = true;
-    setAcceptButtonEnabled( true );
-    updateDrfContentSummary();
-    updateChart();
-    emitChangedSignal();
-  }else if( m_importWidget->hasFile() )
-  {
-    // An incomplete import (e.g., waiting on its companion file) can't be accepted, and leaves
-    //  the detector in use - m_detector - alone, so closing the dialog doesn't change it.
-    setAcceptButtonEnabled( false );
-    if( m_drfContentChips )
-      m_drfContentChips->clear();
-    m_chart->updateChart( nullptr );
-  }
-}//void handleImportChanged()
-
-
-void DrfSelect::updateDrfContentSummary()
-{
-  if( !m_drfContentChips )
-    return;
-
-  m_drfContentChips->clear();
-
-  const shared_ptr<DetectorPeakResponse> &det = m_detector;
-  if( !det || !det->isValid() )
-    return;
-
-  auto add_chip = [this]( const WString &txt, const WString &tooltip,
-                          const bool present ){
-    WText *chip = m_drfContentChips->addNew<WText>( txt );
-    chip->addStyleClass( present ? "DrfChip" : "DrfChip DrfChipAbsent" );
-    if( !tooltip.empty() )
-      HelpSystem::attachToolTipOn( chip, tooltip, true );
-  };
-
-  //Geometry interpretation
-  const bool fixed_geom = det->isFixedGeometry();
-  add_chip( WString::tr( fixed_geom ? "ds-chip-fixed-geom" : "ds-chip-far-field" ),
-            WString::tr( fixed_geom ? "ds-chip-tt-fixed-geom" : "ds-chip-tt-far-field" ),
-            true );
-
-  //FWHM info
-  add_chip( WString::tr("ds-chip-fwhm"), WString::tr("ds-chip-tt-fwhm"),
-            det->hasResolutionInfo() );
-
-  // Efficiency uncertainty: whether this detector actually reports one, asked the way the
-  //  activity/shielding fit asks (DrfModifyCalc::uncertSummary -> efficiencyFracCovariance), not by
-  //  looking at one of the three stores.  Reading `efficiencyUncert()` was wrong in both directions:
-  //  blank for a response-bearing detector that reports several percent, and present for an equation
-  //  DRF whose stored node covariance no query uses.  The tooltip carries the data/model split.
-  {
-    const DrfModifyCalc::UncertSummary summary = DrfModifyCalc::uncertSummary( *det );
-    const bool have_uncert = (summary.valid && (summary.total > 0.0));
-
-    WString tooltip = WString::tr("ds-chip-tt-uncert");
-    if( have_uncert )
-    {
-      char energy[32], total[32], data[32], model[32];
-      snprintf( energy, sizeof(energy), "%.1f", summary.energy );
-      snprintf( total, sizeof(total), "%.2g", 100.0*summary.total );
-      snprintf( data, sizeof(data), "%.2g", 100.0*summary.data );
-      snprintf( model, sizeof(model), "%.2g", 100.0*summary.model );
-
-      const char *id = "ds-chip-tt-uncert-data";
-      if( summary.dataIsAssumed )
-        id = "ds-chip-tt-uncert-assumed";
-      else if( summary.model > 0.0 )
-        id = "ds-chip-tt-uncert-split";
-
-      tooltip = WString::tr( id ).arg( energy ).arg( total );
-      if( summary.model > 0.0 || summary.dataIsAssumed )
-        tooltip = tooltip.arg( data ).arg( model );
-    }//if( have_uncert )
-
-    add_chip( WString::tr("ds-chip-uncert"), tooltip, have_uncert );
-  }
-
-  //Total efficiency (cascade summing input).  Must use the same predicate the
-  //  cascade-summing code gates on (CascadeSummingCalc::drfHasNeededInfo), not
-  //  hasTotalEfficiency() - that one is true only for the LEGACY total-efficiency
-  //  curve, so a DRF whose total comes from an attached MC response would be shown
-  //  as lacking one while cascade summing was in fact available.
-  const bool has_tot_eff = det->hasAnyTotalEfficiencyInfo();
-  const bool has_grid = det->hasImportedGrid();
-  add_chip( WString::tr("ds-chip-total-eff"),
-            WString::tr( !has_tot_eff        ? "ds-chip-tt-total-eff"
-                         : det->hasTotalEfficiency() ? "ds-chip-tt-total-eff-curve"
-                         : has_grid ? "ds-chip-tt-total-eff-grid"
-                                    : "ds-chip-tt-total-eff-mc" ),
-            has_tot_eff );
-
-  // The instrument's picture, if it carries one (most DRFs do not, so there is no "absent" chip).
-  const shared_ptr<const DrfAppearance> look = det->appearance();
-  if( look )
-  {
-    WString label = WString::tr("ds-chip-appearance-icon");
-    array<double,6> bounds;
-    if( look->model_bounds_m( bounds ) )
-    {
-      char length[32], width[32], height[32];
-      snprintf( length, sizeof(length), "%.1f", 100.0*(bounds[5] - bounds[2]) );
-      snprintf( width, sizeof(width), "%.1f", 100.0*(bounds[3] - bounds[0]) );
-      snprintf( height, sizeof(height), "%.1f", 100.0*(bounds[4] - bounds[1]) );
-      label = WString::tr("ds-chip-appearance-model").arg( length ).arg( width ).arg( height );
-    }else if( look->icon_svg.empty() )
-    {
-      label = WString::tr("ds-chip-appearance-model-only");
-    }
-
-    // The icon markup is built from numbers and base64 only (see DrfAppearance::icon_html), and the
-    //  label is our own text, so this is safe as UnsafeXHTML - which the icon's data URI needs.
-    WText *chip = m_drfContentChips->addNew<WText>( WString::fromUTF8( look->icon_html( 12.0, 24.0 ) + " " )
-                                                    + label, TextFormat::UnsafeXHTML );
-    chip->addStyleClass( "DrfChip DrfAppearanceChip" );
-    HelpSystem::attachToolTipOn( chip, WString::tr("ds-chip-tt-appearance"), true );
-  }//if( look )
-
-  //Raw measured points (provenance / grounding input)
-  const shared_ptr<const MeasuredDrfPoints> points = det->measuredPoints();
-  add_chip( WString::tr("ds-chip-points"), WString::tr("ds-chip-tt-points"),
-            (points && !points->empty()) );
-
-  //Monte-Carlo parameterized response
-  const shared_ptr<const ceelo::DetectorResponse> mc = det->ceeloResponse();
-  if( mc && has_grid )
-  {
-    // A detector-characterization file's own efficiency, not a Monte Carlo of ours: neither the
-    //  "MC response" nor the (absent) "grounded" chip describes it.
-    WString tip = WString::tr( det->geometryModifiedFromImport() ? "ds-chip-tt-grid-geom-edited"
-                                                                 : "ds-chip-tt-grid" )
-                    .arg( mc->provenance.valid_e_min_keV )
-                    .arg( mc->provenance.valid_e_max_keV );
-    add_chip( WString::tr("ds-chip-grid"), tip, true );
-  }else if( mc )
-  {
-    WString tip = WString::tr("ds-chip-tt-mc")
-                    .arg( ceelo::to_string( mc->provenance.profile ) )
-                    .arg( mc->provenance.valid_e_min_keV )
-                    .arg( mc->provenance.valid_e_max_keV );
-
-    // The Monte-Carlo choices it was generated with (a no-MC transfer has none).
-    const ceelo::ResponseProvenance &prov = mc->provenance;
-    if( prov.method != ceelo::ProductionMethod::CurveTransfer )
-    {
-      const bool balanced = (prov.precision_profile == ceelo::PrecisionProfile::RelaxMild);
-      tip += WString::tr( balanced ? "ds-chip-tt-mc-precision-balanced" : "ds-chip-tt-mc-precision" )
-               .arg( SpecUtils::printCompact( 100.0*prov.node_fep_precision, 3 ) + "%" );
-    }
-
-    if( prov.method == ceelo::ProductionMethod::FullMc )
-    {
-      // Responses saved before the level was recorded still show whether they reach behind the face.
-      const bool covered = !mc->eta_fep.cos_thetas.empty() && (mc->eta_fep.cos_thetas.front() < 0.0);
-      const char *back_key = covered ? "ds-chip-tt-mc-back-yes" : "ds-chip-tt-mc-back-none";
-      if( prov.back_coverage == ceelo::BackCoverage::Coarse )
-        back_key = "ds-chip-tt-mc-back-coarse";
-      else if( prov.back_coverage == ceelo::BackCoverage::Fine )
-        back_key = "ds-chip-tt-mc-back-fine";
-      tip += WString::tr( back_key );
-    }//if( full MC )
-
-    add_chip( WString::tr("ds-chip-mc"), tip, true );
-
-    // Efficiency-transfer response (quick MC backbone, or anchored on a
-    //  measured curve): geometry-correct by kernel ratio, with the honest
-    //  off-axis/near sigma envelope attached; full MC remains the upgrade.
-    if( mc->model_transfer.has_value() )
-    {
-      // CeeLo quotes its floor from the crystal-face origin; the user is told a face distance.
-      const string min_dist = PhysicalUnits::printToBestLengthUnits(
-                  CeeLoUtils::faceDistanceFromCrystalOrigin( mc->descriptor, mc->provenance.min_distance_cm )
-                  * PhysicalUnits::cm );
-      WString transfer_tip = WString::tr("ds-chip-tt-transfer")
-                              .arg( mc->provenance.valid_e_min_keV )
-                              .arg( mc->provenance.valid_e_max_keV )
-                              .arg( min_dist );
-      add_chip( WString::tr("ds-chip-transfer"), transfer_tip, true );
-    }//if( a transfer response )
-
-    const bool grounded = !mc->grounding.empty();
-    const bool curve_derived = grounded && mc->grounding.curve_derived;
-    if( grounded )
-      add_chip( WString::tr( curve_derived ? "ds-chip-grounded-curve" : "ds-chip-grounded" ),
-                WString::tr("ds-chip-tt-grounded"), true );
-    else if( !mc->model_transfer.has_value() )
-      add_chip( WString::tr("ds-chip-grounded"), WString::tr("ds-chip-tt-grounded"), false );
-    //(a transfer response IS its anchor - an absent "grounded" chip would only confuse)
-  }else
-  {
-    add_chip( WString::tr("ds-chip-mc"), WString::tr("ds-chip-tt-no-mc"), false );
-  }//if( mc ) / else
-}//void updateDrfContentSummary()
-
-
-void DrfSelect::deleteDBTableSelected()
-{
-  WModelIndexSet indices = m_DBtable->selectedIndexes();
-  if( !indices.size() )
-  {
-    m_deleteButton->disable();
-    return;
-  }//if( !indices.size() )
-  
-  WModelIndex index = *indices.begin();
-  DataBaseUtils::DbTransaction transaction( *m_sql );
-  Dbo::ptr<DetectorPeakResponse> dbfile = m_model->stableResultRow( index.row() );
-  dbfile.remove();
-  transaction.commit();
-  m_model->reload();
-} //deleteDBTableSelected
-
-// Grabs the detector if selected in DB table
-void DrfSelect::dbTableSelectionChanged()
-{
-  if( m_DBtable->selectedIndexes().size() )
-    m_deleteButton->enable();
-  
-  bool failed = false;
-  std::shared_ptr<DetectorPeakResponse> det;
-
-  try
-  {
-    if( !m_model  )
-      return;
-    
-    const WModelIndexSet indices = m_DBtable->selectedIndexes();
-    
-    if( indices.empty() )
-    {
-      m_deleteButton->disable();
-      return;
-    }//if( !indices.empty() )
-    
-    m_deleteButton->enable();
-    const WModelIndex index = *indices.begin();
-    Dbo::ptr<DetectorPeakResponse> dbfile = m_model->stableResultRow( index.row() );
-    det = std::shared_ptr<DetectorPeakResponse>(new DetectorPeakResponse(*dbfile));
-  }catch(...)
-  {
-    failed = true;
-    passMessage( "Error getting from DetectorPeakResponse table", WarningWidget::WarningMsgHigh );
-  }//try / catch
-  
-  m_detector = det;
-  m_gui_select_matches_det = true;
-  setAcceptButtonEnabled( !failed );
-  updateDrfContentSummary();
-  emitChangedSignal();
-}//void dbTableSelectionChanged()
-
-void DrfSelect::setGuiToCurrentDetector()
-{
-  //----initialize
-
-  updateDrfContentSummary();
-
-  if( !m_detector )
-  {
-    //m_drfTypeMenu->select( 0 );
-  }else
-  {
-    switch( m_detector->drfSource() )
-    {
-      case DetectorPeakResponse::DefaultGadrasDrf:
-      case DetectorPeakResponse::UserAddedGadrasDrf:
-      {
-        m_drfTypeMenu->select( 0 );
-        
-        const MatchDetectorStatus status = m_gadrasDetSelect->trySelectDetector( m_detector );
-        
-        m_gui_select_matches_det = (status == MatchDetectorStatus::Match);
-        break;
-      }
-      
-      case DetectorPeakResponse::UserAddedRelativeEfficiencyDrf:
-      case DetectorPeakResponse::DefaultRelativeEfficiencyDrf:
-      {
-        m_drfTypeMenu->select( 1 );
-        const MatchDetectorStatus status = m_relEffSelect->trySelectDetector( m_detector );
-        
-        m_gui_select_matches_det = (status == MatchDetectorStatus::Match);
-        break;
-      }
-        
-      case DetectorPeakResponse::UserSpecifiedFormulaDrf:
-      {
-        m_drfTypeMenu->select( 3 );
-        m_detectorManualFunctionName->setText( m_detector->name() );
-        m_detectorManualFunctionText->setText( m_detector->efficiencyFormula() );
-        m_detectorManualDescription->setText( m_detector->description() );
-        const float diam = m_detector->detectorDiameter();
-        const string diamstr = PhysicalUnits::printToBestLengthUnits( diam );
-        m_detectorManualDiameterText->setText( diamstr );
-        if( m_detector->detectorSetback() > 0.0 )
-          m_detectorManualSetbackText->setText( PhysicalUnits::printToBestLengthUnits(m_detector->detectorSetback()) );
-        const float units = m_detector->efficiencyEnergyUnits();
-        int energygrp = 0;
-        if( fabs(PhysicalUnits::MeV-units) < fabs(PhysicalUnits::keV-units) )
-          energygrp = 1;
-        m_eqnEnergyGroup->setSelectedButtonIndex( energygrp );
-        m_drfType->setCurrentIndex( 0 );
-        
-        m_gui_select_matches_det = true;
-        break;
-      }//case kUserEfficiencyEquationSpecified:
-        
-      // The "Import" tab is for bringing in a new detector, so imported ones are found under
-      //  "Previous".
-      case DetectorPeakResponse::UserImportedIntrisicEfficiencyDrf:
-      case DetectorPeakResponse::GadrasDetectorDatOnly:
-      case DetectorPeakResponse::CharacterizationParFile:
-      case DetectorPeakResponse::UnknownDrfSource:
-      case DetectorPeakResponse::UserImportedGadrasDrf:
-      case DetectorPeakResponse::UserCreatedDrf:
-      case DetectorPeakResponse::IsocsEcc:
-      case DetectorPeakResponse::AngleOutx:
-      case DetectorPeakResponse::UserImportedEfficiencyCsvDrf:
-      case DetectorPeakResponse::FromSpectrumFileDrf:
-      {
-        m_drfTypeMenu->select( 4 );
-        try
-        {
-          const double start_time = SpecUtils::get_wall_time();
-          for( int row = 0; row < m_model->rowCount(); ++row )
-          {
-            Wt::Dbo::ptr<DetectorPeakResponse> drf = m_model->resultRow(row);
-            if( drf && (drf->hashValue() == m_detector->hashValue()) )
-            {
-              WModelIndexSet indexset;
-              indexset.insert( m_model->index(row,0) );
-              m_DBtable->setSelectedIndexes( indexset );
-              m_gui_select_matches_det = true;
-              break;
-            }
-            
-            //On a quick test, it took about 25ms when the very first row
-            //  matched the detector; even if we loop through all rows, it
-            //  takes about the same amount of time
-            const double now_time = SpecUtils::get_wall_time();
-            if( (now_time-start_time) > 0.25 )
-              break;
-          }//for( loop over previous DRFs )
-        }catch( std::exception &e )
-        {
-          cerr << "Caught exception trying to select previous DRF from database to select for the GUI: " << e.what() << endl;
-        }//try / catch
-        break;
-      }
-    };//switch( m_detector->drfSource() )
-  }//if( m_detector == NULL ) / else
-  
-  selectButton( m_drfTypeStack, m_drfTypeMenu, false );
-}// setGuiToCurrentDetector()
-
-
-void DrfSelect::detectorsWereInited()
-{
-  // If we try to set the GUI state to match m_detector, it may cause the tab on the left
-  //  (i.e., "GADRAS", "Rel. Eff.", "Import", etc) to be changed, which may be overiding
-  //  what the user wants.
-  if( !m_gui_select_matches_det )
-    setGuiToCurrentDetector();
-}//void detectorsWereInited();
-
-
-DrfSelect::~DrfSelect()
-{
-  // The "Modify Detector Response" window is ours (AuxWindow::make gives ownership to wApp, and we
-  //  only hold an observing_ptr), so it has to be taken down by name here - otherwise closing
-  //  Detector Select leaves an orphaned Modify window whose Accept silently does nothing.
-  //  deleteAuxWindow() defers the finished() re-emit, and that connection is tracked to `this`, so
-  //  it is dropped before the deferred emit could reach a destroyed DrfSelect.
-  if( m_modifyWindow )
-    AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
-  assert( !m_modifyWindow );
-} //~DrfSelect()
-
-
-void DrfSelect::setDetector( std::shared_ptr<DetectorPeakResponse> det )
-{
-  if( m_detector != det )
-  {
-    m_detector = det;
-    m_gui_select_matches_det = false;
-    setGuiToCurrentDetector();
-  }
-}//void setDetector( std::shared_ptr<DetectorPeakResponse> det )
-
-
-void DrfSelect::verifyManualDefinition()
-{ //if we change anything in the text fields, we should disable Accept
-  setAcceptButtonEnabled( false );
-  
-  bool valid = true;
-  float lowerEnergy = 0.0f, upperEnergy = 0.0f;
-  
-  if( !m_detectorManualMinEnergy->text().empty()
-     && (m_detectorManualMinEnergy->validate() == WValidator::State::Valid) )
-  {
-    lowerEnergy = m_detectorManualMinEnergy->value();
-  }else if( !m_detectorManualMinEnergy->text().empty() )
-  {
-    valid = false;
-  }
-  
-  if( !m_detectorManualMaxEnergy->text().empty()
-     && (m_detectorManualMaxEnergy->validate() == WValidator::State::Valid) )
-  {
-    upperEnergy = m_detectorManualMaxEnergy->value();
-  }else if( !m_detectorManualMaxEnergy->text().empty() )
-  {
-    valid = false;
-  }
-  
-  
-  string fcn_txt = m_detectorManualFunctionText->text().toUTF8();
-  
-  const CoefToFormulaInfo coef_formula_info = check_if_coef_for_formula( fcn_txt );
-  if( coef_formula_info.m_valid_coefficients )
-  {
-    fcn_txt = coef_formula_info.m_fcn;
-    
-    if( coef_formula_info.m_energy_units == PhysicalUnits::keV )
-      m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
-    else if( coef_formula_info.m_energy_units == PhysicalUnits::MeV )
-      m_eqnEnergyGroup->setSelectedButtonIndex( 1 );
-    
-    if( coef_formula_info.m_upper_energy > coef_formula_info.m_lower_energy )
-    {
-      if( m_detectorManualMinEnergy->text().empty() )
-        m_detectorManualMinEnergy->setValue( coef_formula_info.m_lower_energy );
-      
-      if( m_detectorManualMaxEnergy->text().empty() )
-        m_detectorManualMaxEnergy->setValue( coef_formula_info.m_upper_energy );
-    }//if( coef_formula_info.m_upper_energy > coef_formula_info.m_lower_energy )
-    
-    if( !coef_formula_info.m_det_diam.empty()
-       && (m_detectorManualDiameterText->text().empty()
-           || (m_detectorManualDiameterText->text().toUTF8() == "2.2 cm") ) )
-    {
-      m_detectorManualDiameterText->setText( coef_formula_info.m_det_diam );
-    }
-    
-    if( !coef_formula_info.m_source_to_face_distance.empty()
-       && (m_detectorManualDistText->isHidden() || m_detectorManualDistText->text().empty() )
-       && !coef_formula_info.m_fixed_geom )
-    {
-      m_drfType->setCurrentIndex( 1 );
-      m_detectorManualDistText->setText( coef_formula_info.m_source_to_face_distance );
-    }
-
-    if( !coef_formula_info.m_detector_setback.empty() && m_detectorManualSetbackText->text().empty()
-       && !coef_formula_info.m_fixed_geom )
-      m_detectorManualSetbackText->setText( coef_formula_info.m_detector_setback );
-    
-    const WString &pre_det_wname = m_detectorManualFunctionName->text();
-    const string prev_det_name = pre_det_wname.toUTF8();
-    
-    
-    if( !coef_formula_info.m_det_name.empty()
-       && (prev_det_name.empty() || (pre_det_wname.key() == "app-default-manual-det-name")) )
-    {
-      m_detectorManualFunctionName->setText( coef_formula_info.m_det_name );
-    }
-    
-    if( coef_formula_info.m_fixed_geom )
-      m_drfType->setCurrentIndex( 3 ); //Act/cm2
-  }//if( user_entered_coefs )
-  
-  const bool is_intrinsic = (m_drfType->currentIndex() == 0);
-  const bool is_absolute = (m_drfType->currentIndex() == 1);
-  const bool is_fixed_geom = (m_drfType->currentIndex() >= 2);
-  
-  assert( (static_cast<int>(is_intrinsic)
-           + static_cast<int>(is_absolute)
-           + static_cast<int>(is_fixed_geom)) == 1 );
-  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-  switch( m_drfType->currentIndex() )
-  {
-    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
-    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
-    case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
-    case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
-    case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
-    case 5:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
-    default:
-      assert( 0 );
-      break;
-  }//switch( m_drfType->currentIndex() )
-  
-  m_detectorManualDistLabel->setHidden( is_intrinsic || is_fixed_geom );
-  m_detectorManualDistText->setHidden( is_intrinsic || is_fixed_geom );
-  m_detectorManualDiameterText->setHidden( is_fixed_geom );
-  m_detectorManualDiameterLabel->setHidden( is_fixed_geom );
-  m_detectorManualSetbackText->setHidden( is_fixed_geom );
-  
-  if( is_absolute )
-  {
-    if( m_detectorManualDistText->text().empty()
-       || (m_detectorManualDistText->validate() != WValidator::State::Valid) )
-      valid = false;
-  }//if( is_absolute )
-  
-  if( !is_fixed_geom && (m_detectorManualDiameterText->validate() != WValidator::State::Valid) )
-    valid = false;
-  
-  
-  double det_diam = 5.08*PhysicalUnits::cm;
-  
-  try
-  {
-    const string diamtxt = m_detectorManualDiameterText->text().toUTF8();
-    det_diam = PhysicalUnits::stringToDistance( diamtxt );
-  }catch( std::exception & )
-  {
-    if( is_fixed_geom )
-      det_diam = 0.0;
-    else
-      valid = false;
-  }
-  
-  if( is_absolute )
-  {
-    double dist = 1*PhysicalUnits::meter;
-    try
-    {
-      const string disttxt = m_detectorManualDistText->text().narrow();
-      dist = static_cast<float>( PhysicalUnits::stringToDistance( disttxt ) );
-      if( dist < 0.001*PhysicalUnits::cm )
-        throw exception();
-    }catch( std::exception & )
-    {
-      valid = false;
-      if( !m_detectorManualDistText->hasStyleClass( "Wt-invalid" ) )
-        m_detectorManualDistText->addStyleClass( "Wt-invalid" );
-    }//try / catch
-    
-    double manual_setback = 0.0;
-    try
-    {
-      manual_setback = PhysicalUnits::stringToDistance( m_detectorManualSetbackText->text().toUTF8() );
-      if( manual_setback < 0.0 )
-        manual_setback = 0.0;
-    }catch( std::exception & )
-    {
-    }
-
-    const double gfactor = DetectorPeakResponse::fractionalSolidAngle( det_diam, dist + manual_setback );
-    if( !fcn_txt.empty() )
-      fcn_txt = std::to_string(1.0/gfactor) + "*(" + fcn_txt + ")";
-  }//if( absolute eff )
-
-  const float energyUnits = static_cast<float>( m_eqnEnergyGroup->checkedId()==0
-                                               ? PhysicalUnits::keV : PhysicalUnits::MeV);
-  
-  if( upperEnergy <= lowerEnergy )
-    lowerEnergy = upperEnergy = 0.0f;
-
-  try
-  {
-    if( fcn_txt.empty() )
-      throw exception();
-    
-    DetectorPeakResponse detec( "temp", "temp " );
-    detec.setIntrinsicEfficiencyFormula( fcn_txt, static_cast<float>(det_diam),
-                                        energyUnits, lowerEnergy, upperEnergy, geom_type );
-    
-    if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
-      m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
-  }catch( std::exception & )
-  {
-    valid = false;
-    if( m_detectorManualFunctionText->text().empty() )
-    {
-      if( m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
-        m_detectorManualFunctionText->removeStyleClass( "Wt-invalid" );
-    }else
-    {
-      if( !m_detectorManualFunctionText->hasStyleClass("Wt-invalid") )
-        m_detectorManualFunctionText->addStyleClass( "Wt-invalid" );
-    }
-  }//try / catch
-
-  m_manualSetButton->setEnabled( valid );
-}//verifyManualDefinition()
-
-
-void DrfSelect::setFormulaDefineDetector()
-{
-  string fcn = m_detectorManualFunctionText->text().narrow();
-  
-  float coef_units = 0.0;
-  const CoefToFormulaInfo coef_formula_info = check_if_coef_for_formula( fcn );
-  if( coef_formula_info.m_valid_coefficients )
-  {
-    fcn = coef_formula_info.m_fcn;
-    m_detectorManualFunctionText->setText( WString::fromUTF8(fcn) );
-  }//if( check_if_coef_for_formula(fcn, coef_units) )
-  
-  const string name = m_detectorManualFunctionName->text().toUTF8();
-  string descr = m_detectorManualDescription->text().toUTF8();
-  if( descr.empty() )
-  {
-    descr = "f(x)=" + fcn;
-    if( descr.size() > 25 )
-      descr = descr.substr( 0, 25 ) + "...";
-    m_detectorManualDescription->setText( descr );
-  }//if( descr.empty() )
-
-  const bool is_intrinsic = (m_drfType->currentIndex() == 0);
-  const bool is_absolute = (m_drfType->currentIndex() == 1);
-  const bool is_fixed_geom = (m_drfType->currentIndex() >= 2);
-  
-  assert( (static_cast<int>(is_intrinsic)
-           + static_cast<int>(is_absolute)
-           + static_cast<int>(is_fixed_geom)) == 1 );
-  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-  switch( m_drfType->currentIndex() )
-  {
-    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
-    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
-    case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
-    case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
-    case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
-    case 5:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram; break;
-    default:
-      assert( 0 );
-      break;
-  }//switch( m_drfType->currentIndex() )
-  
-  assert( (static_cast<int>(is_intrinsic)
-           + static_cast<int>(is_absolute)
-           + static_cast<int>(is_fixed_geom)) == 1 );
-  
-  
-  shared_ptr<DetectorPeakResponse> detec = make_shared<DetectorPeakResponse>( name, descr );
-  
-  try
-  {
-    const string diamtxt = m_detectorManualDiameterText->text().narrow();
-    double det_diam = 0.0;
-    try
-    {
-      det_diam = PhysicalUnits::stringToDistance( diamtxt );
-    }catch( std::exception &e )
-    {
-      if( !is_fixed_geom )
-        throw;
-    }
-    
-    if( !is_fixed_geom && (det_diam < (is_fixed_geom ? 0.0 : 0.0001)) )
-      throw runtime_error( WString::tr("ds-err-det-diam-pos").toUTF8() );
-    
-    if( is_absolute )
-    {
-      const string disttxt = m_detectorManualDistText->text().narrow();
-      const float dist = (float)PhysicalUnits::stringToDistance( disttxt );
-      if( dist < 0.0001f )
-        throw runtime_error( WString::tr("ds-err-det-dist-pos").toUTF8() );
-
-      double manual_setback = 0.0;
-      try
-      {
-        manual_setback = PhysicalUnits::stringToDistance( m_detectorManualSetbackText->text().toUTF8() );
-        if( manual_setback < 0.0 )
-          manual_setback = 0.0;
-      }catch( std::exception & )
-      {
-      }
-
-      const double gfactor = DetectorPeakResponse::fractionalSolidAngle(
-                                                              det_diam, dist + manual_setback );
-
-      fcn = std::to_string(1.0/gfactor) + "*(" + fcn + ")";
-    }//if( is_absolute )
-    
-    const float energyUnits
-              = static_cast<float>(m_eqnEnergyGroup->checkedId()==0
-                                    ? PhysicalUnits::keV : PhysicalUnits::MeV);
-    
-    float minEnergy = 0.0f, maxEnergy = 0.0f;
-    if( !m_detectorManualMinEnergy->text().empty()
-        && (m_detectorManualMinEnergy->validate() == WValidator::State::Valid) )
-      minEnergy = m_detectorManualMinEnergy->value();
-    
-    if( !m_detectorManualMaxEnergy->text().empty()
-        && (m_detectorManualMaxEnergy->validate() == WValidator::State::Valid) )
-      maxEnergy = m_detectorManualMaxEnergy->value();
-    
-    if( maxEnergy < minEnergy )
-    {
-      minEnergy = maxEnergy = 0.0f;
-      m_detectorManualMinEnergy->setValueText( "" );
-      m_detectorManualMaxEnergy->setValueText( "" );
-      passMessage( WString::tr("ds-warn-min-max-energy-swapped"), WarningWidget::WarningMsgHigh );
-    }//if( maxEnergy < minEnergy )
-    
-    if( m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
-      m_detectorManualDiameterText->removeStyleClass( "Wt-invalid" );
-    
-    try
-    {
-      detec->setIntrinsicEfficiencyFormula( fcn, det_diam, energyUnits,
-                                           minEnergy, maxEnergy, geom_type );
-    }catch( std::exception &e )
-    {
-      if( !fcn.empty() && !m_detectorManualDiameterText->hasStyleClass("Wt-invalid") )
-        m_detectorManualDiameterText->addStyleClass( "Wt-invalid" );
-      throw;
-    }
-    
-    detec->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
-
-    try
-    {
-      const double setback_val = PhysicalUnits::stringToDistance( m_detectorManualSetbackText->text().toUTF8() );
-      if( setback_val > 0.0 )
-        detec->setDetectorSetback( setback_val );
-    }catch( std::exception & )
-    {
-    }
-
-//#if( PERFORM_DEVELOPER_CHECKS )
-//    check_url_serialization( detec );
-//#endif
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgHigh );
-    setAcceptButtonEnabled( false );
-    m_manualSetButton->enable();
-    updateChart();
-    return;
-  }//try / catch
-  
-  m_manualSetButton->disable();
-  m_detector = detec;
-  m_gui_select_matches_det = true;
-  setAcceptButtonEnabled( true );
-
-  updateChart();
-  emitChangedSignal();
-}//setFormulaDefineDetector(const std::string fcn)
-
-
-
-// This calls the action to initialize the charts to whatever
-// is selected.  Each stack page should have something to update
-void DrfSelect::selectButton( WStackedWidget *stack,
-                                 WMenu *menu,
-                                 bool activateCallBack)
-{
-  //makes one of the stack visible
-  stack->setCurrentIndex( menu->currentIndex() );  //I think this is now not needed
-  
-  if( activateCallBack )
-  {
-    //clear the chart when we change, regardless
-    m_detector = nullptr;
-    m_gui_select_matches_det = false;
-    
-    switch( menu->currentIndex() )
-    {
-      case 0:
-        gadrasDetectorSelectCallback();
-        break;
-    
-      case 1:
-        relEffDetectorSelectCallback();
-        break;
-        
-      case 2:
-        handleImportChanged();
-        break;
-        
-      case 3:
-        setFormulaDefineDetector();
-        break;
-        
-      case 4:
-        dbTableSelectionChanged();
-        break;
-    } //switch
-  }//if( activateCallBack )
-  
-  updateChart();
-} //DrfSelect::selectButton(Wt::WStackedWidget * stack, int index)
-
-
-void DrfSelect::updateChart()
-{
-  m_chart->updateChart( m_detector );
-} //DrfSelect::updateChart()
 
 
 std::vector<std::string> DrfSelect::potential_rel_eff_det_files()
@@ -4601,62 +1326,6 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseInterSpecRelEffCsvFile( co
   return DetectorPeakResponse::parseInterSpecRelEffCsv( csvfile );
 }//parseInterSpecRelEffCsvFile(...)
 
-
-void DrfSelect::startGadrasGeometryImport( const std::string &directory,
-                                           std::shared_ptr<DetectorPeakResponse> seedDrf )
-{
-  const string datpath = SpecUtils::append_path( directory, "Detector.dat" );
-
-  shared_ptr<const ceelo::GeometryDescriptor> geometry;
-  vector<string> warnings;
-  try
-  {
-    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile( datpath );
-    geometry = make_shared<const ceelo::GeometryDescriptor>(
-                            CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
-  }catch( std::exception &e )
-  {
-    passMessage( WString::tr("ds-gadras-no-geometry").arg(e.what()),
-                 WarningWidget::WarningMsgHigh );
-    return;
-  }
-
-  if( !geometry )
-    return;
-
-  // Everything the file could not express - a coaxial bore it does not record, a
-  //  partial side shield, an efficiency scalar.  The user is about to be asked
-  //  to review this geometry, so these belong in front of them.
-  //  (English by design: CeeLoUtils is deliberately Wt-free.)
-  for( const string &warning : warnings )
-    passMessage( warning, WarningWidget::WarningMsgMedium );
-
-  if( seedDrf )
-  {
-    seedDrf->setGeometry( geometry );  //the DRF carries its own shape from here on
-    setDetector( seedDrf );
-  }
-
-  openModifyWindow();
-}//startGadrasGeometryImport(...)
-
-
-void DrfSelect::relEffDetectorSelectCallback()
-{
-  m_relEffSelect->userSelectedRelEffDetSelect();
-}//void relEffDetectorSelectCallback()
-
-
-void DrfSelect::gadrasDetectorSelectCallback()
-{
-  std::shared_ptr<DetectorPeakResponse> det = m_gadrasDetSelect->selectedDetector();
-
-  m_detector = det;
-  m_gui_select_matches_det = true;
-  setAcceptButtonEnabled( !!det );
-  
-  emitChangedSignal();
-}//void gadrasDetectorSelectCallback()
 
 
 void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakResponse> drf,
@@ -4884,110 +1553,6 @@ void DrfSelect::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> 
   
 }//void setUserPrefferedDetector(...)
 
-
-void DrfSelect::acceptAndFinish()
-{
-  updateLastUsedTimeOrAddToDb( m_detector, m_interspec->user().id(), m_sql );
-  
-  emitChangedSignal();
-  //emitModifiedSignal();
-  
-  auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  auto sql = m_interspec->sql();
-  const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
-  auto drf = m_detector;
-  
-  if( meas && drf && m_defaultForSerialNumber && m_defaultForSerialNumber->isChecked() )
-  {
-    UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-    WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-      DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
-    } ) );
-  }//if( m_defaultForSerialNumber and is checked )
-  
-  if( meas && drf && m_defaultForDetectorModel && m_defaultForDetectorModel->isChecked() )
-  {
-    UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-    WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-      DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
-    } ) );
-  }//if( m_defaultForDetectorModel and is checked )
-  
-  
-  done().emit();
-}//void acceptAndFinish()
-
-
-void DrfSelect::cancelAndFinish()
-{
-  m_detector = m_originalDetector;
-  if( m_detector && m_originalDetectorCopy )
-    (*m_detector) = (*m_originalDetectorCopy);
-
-  emitChangedSignal();
-  //emitModifiedSignal();
-  done().emit();
-}//void cancelAndFinish()
-
-
-void DrfSelect::finishWithNoDetector()
-{
-  m_detector.reset();
-  emitChangedSignal();
-  //emitModifiedSignal();
-  done().emit();
-}//void finishWithNoDetector()
-
-
-vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors( InterSpec *viewer )
-{
-  vector<pair<string,string>> answer;
-
-  //Look through paths specified in user prefernce 'GadrasDRFPath' and find
-  //  directoires containing both a 'Detector.dat' and 'Efficiency.csv' file.
-  
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
-#else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", viewer );
-#endif
-  
-  vector<string> paths;
-  SpecUtils::split( paths, drfpaths, "\r\n;" );
-  
-  for( std::string path : paths )
-  {
-    SpecUtils::trim( path );
-    const vector<string> csvs = SpecUtils::recursive_ls( path, "Efficiency.csv" ); //ending string is case-insensitive
-    
-    for( const std::string &csv : csvs )
-    {
-      const string parent = SpecUtils::parent_path(csv);
-      vector<string> files = SpecUtils::ls_files_in_directory(parent);
-      bool found_dat = false;
-      for( size_t i = 0; !found_dat && i < files.size(); ++i )
-        found_dat = SpecUtils::iends_with( files[i], "Detector.dat" );
-      if( found_dat )
-      {
-        try
-        {
-          //fs_relative probably shouldnt throw, but JIC.
-          //fs_relative( const std::string &from_path, const std::string &to_path )
-          string displayname = SpecUtils::fs_relative( path, parent );
-          if( displayname.empty() || displayname == "." )
-            displayname = SpecUtils::filename(parent);
-          
-          answer.push_back( make_pair(parent, displayname) );
-        }catch(...)
-        {
-        }
-      }//if( found_dat )
-    }
-  }//for( const std::string &path : paths )
-
-  return answer;
-}//vector<string> avaliableGadrasDetectors() const
 
 
 shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils::DetectorType type,
@@ -5314,6 +1879,14 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
 }//initARelEffDetector( int type )
 
 
+#if( BUILD_AS_OSX_APP )
+namespace
+{
+  void access_bookmarked_locations( const DrfLibrary::LocationSettings &settings );
+}
+#endif
+
+
 std::string DrfSelect::gadrasDrfSearchPaths( InterSpec *interspec )
 {
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -5321,7 +1894,37 @@ std::string DrfSelect::gadrasDrfSearchPaths( InterSpec *interspec )
   return SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
 #else
-  return UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+  string pref;
+  try
+  {
+    pref = UserPreferences::preferenceValue<string>( "DrfLibraryLocations", interspec );
+  }catch( std::exception & )
+  {
+  }
+
+  // The Library's locations have not been set up yet (the Detector Efficiency dialog does that
+  //  the first time it opens): the old preference.
+  if( pref.empty() )
+    return UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+
+  // The generic detectors always (they are the defaults for each detector type), and the other
+  //  GADRAS folders the Library shows.
+  const DrfLibrary::LocationSettings settings = DrfLibrary::parseLocationSettings( pref );
+#if( BUILD_AS_OSX_APP )
+  access_bookmarked_locations( settings );
+#endif
+
+  string paths;
+  for( const DrfLibrary::Location &loc
+                 : DrfLibrary::applyLocationSettings( DrfLibrary::standardLocations(), settings ) )
+  {
+    const bool generic = (loc.role == DrfLibrary::LocationRole::GenericGadras)
+                         || (loc.role == DrfLibrary::LocationRole::ExtraGadras);
+    const bool shown_gadras = loc.isFolder && !loc.hidden && (loc.formats & DrfLibrary::FormatGadras);
+    if( generic || shown_gadras )
+      paths += (paths.empty() ? "" : ";") + loc.path;
+  }
+  return paths;
 #endif
 }//std::string gadrasDrfSearchPaths( InterSpec *interspec )
 
@@ -5574,78 +2177,1119 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirector
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory()
 
 
-void DrfSelect::emitChangedSignal()
+
+// ---------------------------------------------------------------------------------------------
+//  DrfFormulaForm - Import › From a formula
+// ---------------------------------------------------------------------------------------------
+
+/** Defines a detector from an efficiency formula, or the coefficients of the standard
+ exp( c0 + c1*ln(x) + c2*ln(x)^2 + ... ) form, plus the crystal diameter.  Less common choices (an
+ absolute efficiency at a distance, fixed geometries, the energy range) are under "More options".
+ */
+class DrfFormulaForm : public Wt::WContainerWidget
 {
-  //Make sure this is a necessary signal to emit
-  if( m_previousEmmittedDetector == m_detector )
-    return;
-  
-  if( !m_detector && !m_previousDetectorDef.isValid() )
-    return;
-  
-  if( m_detector && ((*m_detector)==m_previousDetectorDef) )
-    return;
+public:
+  DrfFormulaForm();
 
-  const auto prev = m_previousEmmittedDetector;
-  const auto current = m_detector;
-  
-  //Now update m_previousDetectorDef and m_previousEmmittedDetector so we can
-  //  appropriately filter out unecessary signal emits in the future
-  if( m_detector )
-    m_previousDetectorDef = *m_detector;
-  else
-    m_previousDetectorDef.reset();
-  m_previousEmmittedDetector = m_detector;
+  /** The detector the form currently defines, or null if it does not define a valid one. */
+  std::shared_ptr<DetectorPeakResponse> candidate() const { return m_candidate; }
 
-  m_interspec->detectorChanged().emit( m_detector );
-  setAcceptButtonEnabled( !!m_detector );
-  
-  updateChart();
-  
-  
-  auto undo = [prev](){
-    InterSpec *viewer = InterSpec::instance();
-    
-    // This widget *should* (but as of 20230428, this looks broke) hear the
-    //  detectorChanged() signal, and update its state based on this; see
-    //  #DrfSelect::setDetector.
-    if( viewer )
-      viewer->detectorChanged().emit( prev );
-  };
-  
-  auto redo = [current](){
-    InterSpec *viewer = InterSpec::instance();
-    if( viewer )
-      viewer->detectorChanged().emit( current );
-  };
-  
-  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
-  if( undoManager )
-    undoManager->addUndoRedoStep( undo, redo, "Change DRF" );
-}//void emitChangedSignal()
+  /** Emitted whenever #candidate may have changed. */
+  Wt::Signal<> &changed() { return m_changed; }
+
+protected:
+  void setCoefficientMode( const bool coefs );
+  void update();
+
+  /** Builds the detector; throws with a message for the user if the inputs do not define one. */
+  std::shared_ptr<DetectorPeakResponse> build() const;
+
+  bool m_coefMode;
+  WLineEdit *m_name;
+  WPushButton *m_formulaBtn, *m_coefBtn;
+  WTextArea *m_text;
+  WText *m_hint, *m_check;
+  WRadioButton *m_kev, *m_mev;
+  std::shared_ptr<WButtonGroup> m_units;
+  WLineEdit *m_diameter, *m_setback, *m_description;
+  WPushButton *m_moreBtn;
+  WContainerWidget *m_more;
+  WComboBox *m_type;
+  WContainerWidget *m_distanceRow;
+  WLineEdit *m_distance, *m_minEnergy, *m_maxEnergy;
+
+  std::shared_ptr<DetectorPeakResponse> m_candidate;
+  Wt::Signal<> m_changed;
+};//class DrfFormulaForm
 
 
-/*
-void DrfSelect::emitModifiedSignal()
+namespace
 {
-  //Make sure this is a necessary signal to emit
-  if( !m_detector && !m_previousDetectorDef.isValid() )
-    return;
+  /** A labelled row of the formula form. */
+  WContainerWidget *form_row( WContainerWidget *parent, const WString &label, WFormWidget *buddy = nullptr )
+  {
+    WContainerWidget *row = parent->addNew<WContainerWidget>();
+    row->addStyleClass( "DrfFormRow" );
+    WLabel *lbl = row->addNew<WLabel>( label );
+    lbl->addStyleClass( "DrfFormLabel" );
+    if( buddy )
+      lbl->setBuddy( buddy );
+    return row;
+  }
 
-  if( m_detector && ((*m_detector)==m_previousDetectorDef) )
-    return;
+  void no_autocorrect( WFormWidget *w )
+  {
+    w->setAttributeValue( "autocorrect", "off" );
+    w->setAttributeValue( "spellcheck", "false" );
+  }
 
-  //Now update m_previousDetectorDef and m_previousEmmittedDetector so we can
-  //  appropriately filter out unecessary signal emits in the future
-  if( m_detector )
-    m_previousDetectorDef = *m_detector;
-  else
-    m_previousDetectorDef.reset();
-  m_previousEmmittedDetector = m_detector;
+  /** Parses an optional energy (keV) field: 0 if empty; throws if not a number. */
+  float optional_energy( const WLineEdit *edit )
+  {
+    const string txt = SpecUtils::trim_copy( edit->text().toUTF8() );
+    if( txt.empty() )
+      return 0.0f;
+    float value = 0.0f;
+    if( !SpecUtils::parse_float( txt.c_str(), txt.size(), value ) || (value < 0.0f) )
+      throw runtime_error( WString::tr("dsl-f-err-energy").toUTF8() );
+    return value;
+  }
+}//namespace
 
-  m_interspec->detectorChanged().emit( m_detector );
-}//void emitModifiedSignal()
-*/
+
+DrfFormulaForm::DrfFormulaForm()
+  : WContainerWidget(),
+    m_coefMode( false ),
+    m_name( nullptr ), m_formulaBtn( nullptr ), m_coefBtn( nullptr ), m_text( nullptr ),
+    m_hint( nullptr ), m_check( nullptr ), m_kev( nullptr ), m_mev( nullptr ), m_units(),
+    m_diameter( nullptr ), m_setback( nullptr ), m_description( nullptr ), m_moreBtn( nullptr ),
+    m_more( nullptr ), m_type( nullptr ), m_distanceRow( nullptr ), m_distance( nullptr ),
+    m_minEnergy( nullptr ), m_maxEnergy( nullptr ), m_candidate(), m_changed()
+{
+  addStyleClass( "DrfFormulaForm" );
+
+  // Name
+  m_name = new WLineEdit();  //owned once added below
+  {
+    std::unique_ptr<WLineEdit> owned( m_name );
+    form_row( this, WString::tr("dsl-f-name"), m_name )->addWidget( std::move(owned) );
+  }
+  m_name->setText( WString::tr("app-default-manual-det-name") );
+  no_autocorrect( m_name );
+
+  // Efficiency: formula or coefficients
+  WContainerWidget *eff_row = form_row( this, WString::tr("dsl-f-eff") );
+  eff_row->addStyleClass( "Top" );
+  WContainerWidget *eff = eff_row->addNew<WContainerWidget>();
+  eff->addStyleClass( "DrfFormStack" );
+  WContainerWidget *seg = eff->addNew<WContainerWidget>();
+  seg->addStyleClass( "DrfSeg Small" );
+  seg->setAttributeValue( "role", "group" );
+  seg->setAttributeValue( "aria-label", WString::tr("dsl-f-eff-as") );
+  m_formulaBtn = seg->addNew<WPushButton>( WString::tr("dsl-f-formula") );
+  m_coefBtn = seg->addNew<WPushButton>( WString::tr("dsl-f-coefs") );
+  m_formulaBtn->clicked().connect( [this](){ setCoefficientMode( false ); } );
+  m_coefBtn->clicked().connect( [this](){ setCoefficientMode( true ); } );
+
+  m_text = eff->addNew<WTextArea>();
+  m_text->setRows( 3 );
+  m_text->addStyleClass( "DrfMono" );
+  m_text->setAttributeValue( "aria-label", WString::tr("dsl-f-eff") );
+  no_autocorrect( m_text );
+  m_hint = eff->addNew<WText>( "", TextFormat::Plain );
+  m_hint->addStyleClass( "DrfFormHint" );
+  m_hint->setInline( false );
+  m_check = eff->addNew<WText>( "", TextFormat::Plain );
+  m_check->addStyleClass( "DrfFormCheck" );
+  m_check->setInline( false );
+
+  // Energy units
+  WContainerWidget *unit_row = form_row( this, WString::tr("dsl-f-units") );
+  WContainerWidget *units = unit_row->addNew<WContainerWidget>();
+  units->addStyleClass( "DrfFormInline" );
+  m_units = std::make_shared<WButtonGroup>();
+  m_kev = units->addNew<WRadioButton>( "keV" );
+  m_mev = units->addNew<WRadioButton>( "MeV" );
+  m_units->addButton( m_kev, 0 );
+  m_units->addButton( m_mev, 1 );
+  m_units->setSelectedButtonIndex( 0 );
+
+  // Diameter and setback
+  WContainerWidget *diam_row = form_row( this, WString::tr("dsl-f-diam") );
+  WContainerWidget *diam = diam_row->addNew<WContainerWidget>();
+  diam->addStyleClass( "DrfFormInline" );
+  m_diameter = diam->addNew<WLineEdit>( "5.08 cm" );
+  m_diameter->addStyleClass( "DrfFormShort" );
+  m_diameter->setAttributeValue( "aria-label", WString::tr("dsl-f-diam") );
+  WLabel *setback_label = diam->addNew<WLabel>( WString::tr("dsl-f-setback") );
+  setback_label->addStyleClass( "DrfFormLabel" );
+  m_setback = diam->addNew<WLineEdit>();
+  m_setback->addStyleClass( "DrfFormShort" );
+  m_setback->setPlaceholderText( "0 cm" );
+  setback_label->setBuddy( m_setback );
+  diam->addNew<WText>( WString::tr("dsl-f-setback-hint"), TextFormat::Plain )->addStyleClass( "DrfFormHint" );
+  no_autocorrect( m_diameter );
+  no_autocorrect( m_setback );
+
+  // Description
+  m_description = new WLineEdit();
+  {
+    std::unique_ptr<WLineEdit> owned( m_description );
+    form_row( this, WString::tr("dsl-f-desc"), m_description )->addWidget( std::move(owned) );
+  }
+  m_description->setPlaceholderText( WString::tr("dsl-f-desc-placeholder") );
+
+  // More options: what the efficiency means, and the energy range
+  m_moreBtn = addNew<WPushButton>( WString::tr("dsl-f-more") );
+  m_moreBtn->addStyleClass( "DrfLinkBtn DrfFormMore" );
+  m_more = addNew<WContainerWidget>();
+  m_more->addStyleClass( "DrfFormMoreBody" );
+  m_more->hide();
+  m_moreBtn->clicked().connect( [this](){
+    m_more->setHidden( !m_more->isHidden() );
+    m_moreBtn->setAttributeValue( "aria-expanded", m_more->isHidden() ? "false" : "true" );
+  } );
+  m_moreBtn->setAttributeValue( "aria-expanded", "false" );
+
+  m_type = new WComboBox();
+  {
+    std::unique_ptr<WComboBox> owned( m_type );
+    form_row( m_more, WString::tr("dsl-f-type"), m_type )->addWidget( std::move(owned) );
+  }
+  for( const char *key : { "ds-intrinsic-eff", "ds-abs-eff", "ds-fixed-geom-total",
+                           "ds-fixed-geom-cm2", "ds-fixed-geom-m2", "ds-fixed-geom-gram" } )
+    m_type->addItem( WString::tr(key) );
+  m_type->setCurrentIndex( 0 );
+
+  m_distance = new WLineEdit();
+  {
+    std::unique_ptr<WLineEdit> owned( m_distance );
+    m_distanceRow = form_row( m_more, WString::tr("dsl-f-distance"), m_distance );
+    m_distanceRow->addWidget( std::move(owned) );
+  }
+  m_distance->addStyleClass( "DrfFormShort" );
+  m_distance->setPlaceholderText( "25 cm" );
+  m_distanceRow->hide();
+
+  WContainerWidget *range_row = form_row( m_more, WString::tr("dsl-f-range") );
+  WContainerWidget *range = range_row->addNew<WContainerWidget>();
+  range->addStyleClass( "DrfFormInline" );
+  m_minEnergy = range->addNew<WLineEdit>();
+  m_minEnergy->addStyleClass( "DrfFormShort" );
+  m_minEnergy->setPlaceholderText( WString::tr("dsl-f-range-low") );
+  m_minEnergy->setAttributeValue( "aria-label", WString::tr("dsl-f-range-low") );
+  range->addNew<WText>( WString::fromUTF8("–"), TextFormat::Plain );
+  m_maxEnergy = range->addNew<WLineEdit>();
+  m_maxEnergy->addStyleClass( "DrfFormShort" );
+  m_maxEnergy->setPlaceholderText( WString::tr("dsl-f-range-high") );
+  m_maxEnergy->setAttributeValue( "aria-label", WString::tr("dsl-f-range-high") );
+  range->addNew<WText>( "keV", TextFormat::Plain );
+
+  // Every edit re-checks the detector
+  for( WLineEdit *edit : { m_name, m_diameter, m_setback, m_description, m_distance, m_minEnergy, m_maxEnergy } )
+    edit->textInput().connect( this, &DrfFormulaForm::update );
+  m_text->textInput().connect( this, &DrfFormulaForm::update );
+  m_units->checkedChanged().connect( this, &DrfFormulaForm::update );
+  m_type->activated().connect( this, &DrfFormulaForm::update );
+
+  setCoefficientMode( false );
+}//DrfFormulaForm constructor
+
+
+void DrfFormulaForm::setCoefficientMode( const bool coefs )
+{
+  m_coefMode = coefs;
+  m_formulaBtn->toggleStyleClass( "Pressed", !coefs );
+  m_formulaBtn->setAttributeValue( "aria-pressed", coefs ? "false" : "true" );
+  m_coefBtn->toggleStyleClass( "Pressed", coefs );
+  m_coefBtn->setAttributeValue( "aria-pressed", coefs ? "true" : "false" );
+  m_hint->setText( WString::tr( coefs ? "dsl-f-coefs-hint" : "dsl-f-formula-hint" ) );
+  m_text->setPlaceholderText( WString::tr( coefs ? "dsl-f-coefs-placeholder" : "dsl-f-formula-placeholder" ) );
+  update();
+}//setCoefficientMode(...)
+
+
+std::shared_ptr<DetectorPeakResponse> DrfFormulaForm::build() const
+{
+  string fcn = SpecUtils::trim_copy( m_text->text().toUTF8() );
+  if( fcn.empty() )
+    throw runtime_error( "" );  //nothing entered yet; not an error to show
+
+  // Coefficients (typed, or pasted from a spreadsheet, possibly with units and dimensions)
+  const CoefToFormulaInfo coefs = check_if_coef_for_formula( fcn );
+  float energy_units = static_cast<float>( (m_units->checkedId() == 1) ? PhysicalUnits::MeV : PhysicalUnits::keV );
+  if( coefs.m_valid_coefficients )
+  {
+    fcn = coefs.m_fcn;
+    if( coefs.m_energy_units > 0.0 )
+      energy_units = static_cast<float>( coefs.m_energy_units );
+  }else if( m_coefMode )
+  {
+    throw runtime_error( WString::tr("dsl-f-err-coefs").toUTF8() );
+  }
+
+  using GeomType = DetectorPeakResponse::EffGeometryType;
+  const int type_index = m_type->currentIndex();
+  const bool is_absolute = (type_index == 1);
+  const bool is_fixed_geom = (type_index >= 2);
+  GeomType geom_type = GeomType::FarFieldIntrinsic;
+  switch( type_index )
+  {
+    case 2: geom_type = GeomType::FixedGeomTotalAct;   break;
+    case 3: geom_type = GeomType::FixedGeomActPerCm2;  break;
+    case 4: geom_type = GeomType::FixedGeomActPerM2;   break;
+    case 5: geom_type = GeomType::FixedGeomActPerGram; break;
+    default: break;
+  }
+
+  double diameter = 0.0;
+  if( !is_fixed_geom )
+  {
+    try
+    {
+      diameter = PhysicalUnits::stringToDistance( m_diameter->text().toUTF8() );
+    }catch( std::exception & )
+    {
+      throw runtime_error( WString::tr("ds-err-det-diam-pos").toUTF8() );
+    }
+    if( diameter < 0.0001 )
+      throw runtime_error( WString::tr("ds-err-det-diam-pos").toUTF8() );
+  }//if( !is_fixed_geom )
+
+  double setback = 0.0;
+  const string setback_txt = SpecUtils::trim_copy( m_setback->text().toUTF8() );
+  if( !setback_txt.empty() && !is_fixed_geom )
+  {
+    try
+    {
+      setback = std::max( 0.0, PhysicalUnits::stringToDistance( setback_txt ) );
+    }catch( std::exception & )
+    {
+      throw runtime_error( WString::tr("dsl-f-err-setback").toUTF8() );
+    }
+  }//if( a setback was entered )
+
+  if( is_absolute )
+  {
+    // An absolute efficiency at a distance is turned into an intrinsic one.
+    double distance = 0.0;
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+    }catch( std::exception & )
+    {
+    }
+    if( distance < 0.0001 )
+      throw runtime_error( WString::tr("ds-err-det-dist-pos").toUTF8() );
+    const double gfactor = DetectorPeakResponse::fractionalSolidAngle( diameter, distance + setback );
+    fcn = std::to_string( 1.0/gfactor ) + "*(" + fcn + ")";
+  }//if( is_absolute )
+
+  float min_energy = optional_energy( m_minEnergy ), max_energy = optional_energy( m_maxEnergy );
+  if( (min_energy == 0.0f) && (max_energy == 0.0f) && coefs.m_valid_coefficients
+      && (coefs.m_upper_energy > coefs.m_lower_energy) )
+  {
+    min_energy = coefs.m_lower_energy;
+    max_energy = coefs.m_upper_energy;
+  }
+  if( max_energy <= min_energy )
+    min_energy = max_energy = 0.0f;
+
+  string name = SpecUtils::trim_copy( m_name->text().toUTF8() );
+  if( name.empty() )
+    name = coefs.m_det_name.empty() ? WString::tr("app-default-manual-det-name").toUTF8() : coefs.m_det_name;
+  string description = SpecUtils::trim_copy( m_description->text().toUTF8() );
+  if( description.empty() )
+  {
+    description = "f(x)=" + fcn;
+    if( description.size() > 25 )
+      description = description.substr( 0, 25 ) + "...";
+  }
+
+  auto drf = make_shared<DetectorPeakResponse>( name, description );
+  drf->setIntrinsicEfficiencyFormula( fcn, static_cast<float>(diameter), energy_units,
+                                      min_energy, max_energy, geom_type );
+  drf->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
+  if( setback > 0.0 )
+    drf->setDetectorSetback( setback );
+
+  // A formula that evaluates to nonsense at a typical energy is not a detector.
+  const double eff = drf->farFieldIntrinsicEfficiency( 661.657f );
+  if( !std::isfinite( eff ) || (eff <= 0.0) )
+    throw runtime_error( WString::tr("dsl-f-err-eval").toUTF8() );
+
+  return drf;
+}//build()
+
+
+void DrfFormulaForm::update()
+{
+  m_distanceRow->setHidden( m_type->currentIndex() != 1 );
+
+  m_candidate.reset();
+  try
+  {
+    m_candidate = build();
+    m_text->removeStyleClass( "Wt-invalid" );
+
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%.3g", m_candidate->farFieldIntrinsicEfficiency( 661.657f ) );
+    m_check->setText( WString::tr("dsl-f-check-ok").arg( buffer ) );
+    m_check->removeStyleClass( "Bad" );
+    m_check->show();
+  }catch( std::exception &e )
+  {
+    const string msg = e.what();
+    const bool nothing_entered = SpecUtils::trim_copy( m_text->text().toUTF8() ).empty();
+    m_text->toggleStyleClass( "Wt-invalid", !nothing_entered );
+    m_check->setText( WString::fromUTF8( msg ) );
+    m_check->addStyleClass( "Bad" );
+    m_check->setHidden( nothing_entered || msg.empty() );
+  }//try / catch
+
+  m_changed.emit();
+}//update()
+
+
+// ---------------------------------------------------------------------------------------------
+//  DrfSelect
+// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+  const char * const ns_chip_keys[] = { "dsl-chip-all", "dsl-origin-builtin", "dsl-origin-gadras",
+    "dsl-origin-isocs", "dsl-origin-angle", "dsl-chip-reltable", "dsl-origin-usermade" };
+  const int ns_chip_origins[] = { -1, static_cast<int>(DrfLibrary::Origin::BuiltIn),
+    static_cast<int>(DrfLibrary::Origin::Gadras), static_cast<int>(DrfLibrary::Origin::Isocs),
+    static_cast<int>(DrfLibrary::Origin::Angle), static_cast<int>(DrfLibrary::Origin::RelEffTable),
+    static_cast<int>(DrfLibrary::Origin::UserMade) };
+
+
+  /** The detector a user chose, for one kind of match, to be picked automatically; null if none.
+   Runs off the session thread (the session is mutex guarded).
+   */
+  shared_ptr<const DetectorPeakResponse> preferred_drf( shared_ptr<DataBaseUtils::DbSession> sql,
+                                                        const long long user_id,
+                                                        const UseDrfPref::UseDrfType type,
+                                                        const string &criteria )
+  {
+    if( !sql || (user_id < 0) || criteria.empty() )
+      return nullptr;
+
+    try
+    {
+      // Only the column: loading UseDrfPref objects would touch the session's shared InterSpecUser
+      //  object (its belongsTo pointer), whose reference count is not thread safe.
+      DataBaseUtils::DbTransaction transaction( *sql );
+      const Wt::Dbo::collection<long long> indices = sql->session()->query<long long>(
+                           "SELECT DrfIndex FROM UseDrfPref"
+                           " WHERE InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?"
+                           " ORDER BY id DESC" )
+                           .bind( user_id ).bind( static_cast<int>(type) ).bind( criteria ).resultList();
+      long long index = -1;
+      for( const long long i : indices )
+      {
+        index = i;
+        break;
+      }
+
+      shared_ptr<const DetectorPeakResponse> answer;
+      if( index >= 0 )
+      {
+        const auto drfs = sql->session()->find<DetectorPeakResponse>()
+                            .where( "InterSpecUser_id = ? AND id = ?" )
+                            .bind( user_id ).bind( index ).resultList();
+        if( !drfs.empty() )
+          answer = make_shared<const DetectorPeakResponse>( *drfs.front() );
+      }
+      transaction.commit();
+      return answer;
+    }catch( std::exception &e )
+    {
+      cerr << "DrfSelect: failed reading the preferred detector: " << e.what() << endl;
+    }
+    return nullptr;
+  }//preferred_drf(...)
+
+
+  /** What the foreground spectrum says about its detector, gathered on the session thread for the
+   Library scan's suggestions. */
+  struct ForegroundInfo
+  {
+    string serial, model, manufacturer, modelCriteria;
+    SpecUtils::DetectorType type = SpecUtils::DetectorType::Unknown;
+    shared_ptr<const DetectorPeakResponse> fileDrf, inUse;
+    string gadrasPaths;
+    shared_ptr<DataBaseUtils::DbSession> sql;
+    long long userId = -1;
+  };//struct ForegroundInfo
+
+
+  /** Detectors to suggest for the foreground spectrum (runs off the session thread). */
+  vector<DrfLibrary::Suggestion> make_suggestions( const ForegroundInfo &info )
+  {
+    vector<DrfLibrary::Suggestion> answer;
+    const auto add = [&answer]( shared_ptr<const DetectorPeakResponse> drf, const uint32_t reason ){
+      if( !drf )
+        return;
+      for( DrfLibrary::Suggestion &s : answer )
+      {
+        if( s.drf->hashValue() == drf->hashValue() )
+        {
+          s.reasons |= reason;
+          return;
+        }
+      }
+      DrfLibrary::Suggestion s;
+      s.drf = drf;
+      s.reasons = reason;
+      answer.push_back( s );
+    };//add lambda
+
+    add( preferred_drf( info.sql, info.userId, UseDrfPref::UseDrfType::UseDetectorSerialNumber, info.serial ),
+         DrfLibrary::SuggestForSerialNumber );
+    add( preferred_drf( info.sql, info.userId, UseDrfPref::UseDrfType::UseDetectorModelName, info.modelCriteria ),
+         DrfLibrary::SuggestForModel );
+    if( info.fileDrf && info.fileDrf->isValid() )
+      add( info.fileDrf, DrfLibrary::SuggestInSpectrumFile );
+
+    if( info.type != SpecUtils::DetectorType::Unknown )
+    {
+      shared_ptr<const DetectorPeakResponse> def;
+      try
+      {
+        def = DrfSelect::initARelEffDetector( info.type, info.manufacturer, info.model );
+      }catch( std::exception & )
+      {
+      }
+
+      try
+      {
+        if( !def )
+          def = DrfSelect::initAGadrasDetector( info.type, info.gadrasPaths );
+      }catch( std::exception & )
+      {
+      }
+
+      if( def && def->isValid() )
+        add( def, DrfLibrary::SuggestDefaultForType );
+    }//if( a known detector type )
+
+    // The detector in use is always in the Library, whether or not it is saved anywhere.
+    if( info.inUse && info.inUse->isValid() )
+      add( info.inUse, DrfLibrary::SuggestNone );
+
+    return answer;
+  }//make_suggestions(...)
+
+
+#if( BUILD_AS_OSX_APP )
+  /** The key of the security-scoped bookmark that keeps a user-chosen location readable across
+   launches of the (sandboxed) macOS app. */
+  string bookmark_key( const string &path )
+  {
+    string key = path;
+    try
+    {
+      key = SpecUtils::lexically_normalize_path( path );
+    }catch( std::exception & )
+    {
+    }
+    for( char &c : key )
+    {
+      if( (c == '/') || (c == '\\') || (c == ':') )
+        c = '_';
+    }
+    return "SecBookmark_DrfLibrary_" + key;
+  }//bookmark_key(...)
+
+  /** Starts accessing the bookmarked user locations - once per run of the app. */
+  void access_bookmarked_locations( const DrfLibrary::LocationSettings &settings )
+  {
+    static std::mutex s_mutex;
+    static std::set<string> s_started;
+
+    vector<string> paths;
+    for( const DrfLibrary::Location &loc : settings.userLocations )
+      paths.push_back( loc.path );
+    for( const pair<const string,string> &p : settings.standardPaths )
+      paths.push_back( p.second );
+
+    std::lock_guard<std::mutex> lock( s_mutex );
+    for( const string &path : paths )
+    {
+      if( s_started.count( path ) )
+        continue;
+      string resolved;
+      if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark( bookmark_key( path ), resolved ) )
+        s_started.insert( path );
+    }
+  }//access_bookmarked_locations(...)
+#endif //BUILD_AS_OSX_APP
+
+
+  /** The user's changes to the Library's locations.  The first time, the folders of the old
+   "GadrasDRFPath" preference (beyond its defaults) become locations the user added.
+   */
+  DrfLibrary::LocationSettings load_location_settings( InterSpec *viewer )
+  {
+    DrfLibrary::LocationSettings settings;
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+    try
+    {
+      // Read before any write (see UserPreferences::setPreferenceValue on new preferences).
+      const string pref = UserPreferences::preferenceValue<string>( "DrfLibraryLocations", viewer );
+      settings = DrfLibrary::parseLocationSettings( pref );
+
+      if( pref.empty() )
+      {
+        string old_pref;
+        try
+        {
+          old_pref = UserPreferences::preferenceValue<string>( "GadrasDRFPath", viewer );
+        }catch( std::exception & )
+        {
+        }
+
+        set<string> standard_paths;
+        for( const DrfLibrary::Location &loc : DrfLibrary::standardLocations() )
+          standard_paths.insert( SpecUtils::lexically_normalize_path( loc.path ) );
+
+        vector<string> paths;
+        SpecUtils::split( paths, old_pref, "\r\n;" );
+        for( string path : paths )
+        {
+          // A folder missing now (an unmounted drive, say) is kept - the Locations page shows it
+          //  as not found - unless it is a relative path that could not be resolved.
+          path = complete_drf_dir_path( SpecUtils::trim_copy( path ) );
+          if( path.empty() || (!SpecUtils::is_directory( path ) && !SpecUtils::is_absolute_path( path ))
+              || standard_paths.count( SpecUtils::lexically_normalize_path( path ) ) )
+            continue;
+
+          DrfLibrary::Location loc;
+          loc.id = loc.path = path;
+          loc.formats = DrfLibrary::FormatGadras;
+          settings.userLocations.push_back( loc );
+        }//for( string path : paths )
+
+        UserPreferences::setPreferenceValue<string>( "DrfLibraryLocations",
+                                     DrfLibrary::serializeLocationSettings( settings ), viewer );
+      }//if( never saved )
+    }catch( std::exception &e )
+    {
+      cerr << "DrfSelect: could not read the Library locations: " << e.what() << endl;
+    }
+#endif
+    return settings;
+  }//load_location_settings(...)
+
+
+  /** Saves the Library location settings; false (with a message to the user) if they are too long. */
+  bool save_location_settings( InterSpec *viewer, const DrfLibrary::LocationSettings &settings )
+  {
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+    return false;
+#else
+    const string value = DrfLibrary::serializeLocationSettings( settings );
+    if( value.size() > UserOption::sm_max_value_str_len )
+    {
+      passMessage( WString::tr("dsl-loc-too-many"), WarningWidget::WarningMsgHigh );
+      return false;
+    }
+    UserPreferences::setPreferenceValue<string>( "DrfLibraryLocations", value, viewer );
+    return true;
+#endif
+  }//save_location_settings(...)
+
+
+  /** The Library's locations: the standard ones, with the user's changes, then the user's own. */
+  vector<DrfLibrary::Location> library_locations( InterSpec *viewer )
+  {
+    const DrfLibrary::LocationSettings settings = load_location_settings( viewer );
+#if( BUILD_AS_OSX_APP )
+    access_bookmarked_locations( settings );
+#endif
+    return DrfLibrary::applyLocationSettings( DrfLibrary::standardLocations(), settings );
+  }//library_locations(...)
+
+
+  /** A name shortened for a button. */
+  string short_name( const string &name )
+  {
+    if( SpecUtils::utf8_str_len( name.c_str(), name.size() ) <= 30 )
+      return name;
+    string answer = name;
+    SpecUtils::utf8_limit_str_size( answer, 29 );
+    return answer + "…";
+  }//short_name(...)
+
+
+  /** A serial number without a leading "Serial" or "S/N" some files include (e.g. "Serial #1XXX"),
+   since the text it goes in says what it is. */
+  string without_serial_prefix( const string &serial )
+  {
+    for( const char *prefix : { "serial", "s/n", "sn:" } )
+    {
+      if( SpecUtils::istarts_with( serial, prefix ) )
+      {
+        const string rest = SpecUtils::trim_copy( serial.substr( strlen(prefix) ) );
+        if( !rest.empty() )
+          return (rest[0] == ':') ? SpecUtils::trim_copy( rest.substr(1) ) : rest;
+      }
+    }
+    return serial;
+  }//without_serial_prefix(...)
+
+
+  /** Whether an entry IS the detector with this hash: its own hash, or the hash it has under its
+   sibling source (see Summary::sourceAliasHashes) - not the hash of a database row folded into it,
+   which may be a different detector of the same name. */
+  bool has_hash( const DrfLibrary::Entry &entry, const uint64_t hash )
+  {
+    if( !entry.summary )
+      return false;
+    const vector<uint64_t> &aliases = entry.summary->sourceAliasHashes;
+    return (entry.summary->hash == hash) || (std::find( begin(aliases), end(aliases), hash ) != end(aliases));
+  }
+}//namespace
+
+
+DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
+                      InterSpec *specViewer,
+                      AuxWindow *parentWindow )
+  : WContainerWidget(),
+    m_interspec( specViewer ),
+    m_sql(),
+    m_inUse( currentDet ),
+    m_justChanged( false ),
+    m_justUsedHash( 0 ),
+    m_tab( Tab::Library ),
+    m_narrow( false ),
+    m_showDetails( false ),
+    m_detailsHeader( nullptr ),
+    m_detailsBack( nullptr ),
+    m_actionBar( nullptr ),
+    m_entries(),
+    m_pickedId(),
+    m_userPicked( false ),
+    m_pickInUseAfterScan( false ),
+    m_scrolledToPicked( false ),
+    m_pickedDrf(),
+    m_pickedError(),
+    m_suggestedNote(),
+    m_scanGeneration( 0 ),
+    m_loadGeneration( 0 ),
+    m_scanCancel(),
+    m_scanning( false ),
+    m_originChip( -1 ),
+    m_withGeometry( false ),
+    m_stripInUse( nullptr ), m_stripNone( nullptr ),
+    m_stripIcon( nullptr ), m_stripJust( nullptr ), m_stripName( nullptr ), m_stripMeta( nullptr ),
+    m_libTab( nullptr ), m_importTab( nullptr ), m_stack( nullptr ),
+    m_list( nullptr ), m_search( nullptr ), m_searchTimer( nullptr ), m_checkingTimer( nullptr ),
+    m_chips(), m_geoChip( nullptr ),
+    m_fileModeBtn( nullptr ), m_formulaModeBtn( nullptr ), m_importStack( nullptr ),
+    m_importWidget( nullptr ), m_formats( nullptr ), m_foundList( nullptr ), m_formula( nullptr ),
+    m_batch(), m_found(), m_foundPick( std::string::npos ), m_foundFolder(), m_batchGeneration( 0 ),
+    m_useAfterScanRoot(), m_useAfterScanName(), m_useAfterScanFallback(), m_useWhenLoadedId(),
+    m_closeAfterUse( false ),
+    m_preview( nullptr ),
+    m_manageLocations( nullptr ),
+    m_locationsPage( nullptr ),
+    m_scanLocations(),
+    m_locationStatuses(),
+    m_autoPick( nullptr ), m_autoSerial( nullptr ), m_autoModel( nullptr ),
+    m_cancelBtn( nullptr ), m_primaryBtn( nullptr ),
+    m_notice( nullptr ), m_noticeText( nullptr ),
+    m_modifyWindow( nullptr ),
+    m_doneSignal()
+{
+  assert( m_interspec );
+  if( !m_interspec )
+    throw runtime_error( "DrfSelect: no InterSpec" );
+
+  m_interspec->useMessageResourceBundle( "DrfSelect" );
+  wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
+  addStyleClass( "DrfSelect" );
+
+  m_sql = m_interspec->sql();
+
+  m_interspec->detectorChanged().connect( this, &DrfSelect::setDetector );
+  m_interspec->detectorModified().connect( this, &DrfSelect::setDetector );
+
+  // A phone, or a window too narrow for the list beside the preview: one screen at a time.
+  {
+    const int width = m_interspec->renderedWidth();
+    m_narrow = m_interspec->isPhone() || ((width > 100) && (width < 860));
+    toggleStyleClass( "DrfNarrow", m_narrow );
+  }
+
+  // ---- Details screen header (phone): back to the Library or Import
+  m_detailsHeader = addNew<WContainerWidget>();
+  m_detailsHeader->addStyleClass( "DrfDetailsHead" );
+  m_detailsBack = m_detailsHeader->addNew<WPushButton>( WString::tr("dsl-back-library") );
+  m_detailsBack->addStyleClass( "DrfLinkBtn DrfDetailsBack" );
+  m_detailsBack->clicked().connect( [this](){ setDetailsShown( false ); } );
+  m_detailsHeader->addNew<WText>( WString::tr("dsl-details"), TextFormat::Plain )->addStyleClass( "DrfDetailsTitle" );
+  m_detailsHeader->hide();
+
+  // ---- "In use now" strip
+  WContainerWidget *strip = addNew<WContainerWidget>();
+  strip->addStyleClass( "DrfStrip" );
+
+  m_stripInUse = strip->addNew<WContainerWidget>();
+  m_stripInUse->addStyleClass( "DrfStripRow" );
+  m_stripIcon = m_stripInUse->addNew<WText>( "", TextFormat::UnsafeXHTML );  //see DrfAppearance::icon_html
+  m_stripIcon->addStyleClass( "DrfStripIcon" );
+  WContainerWidget *strip_text = m_stripInUse->addNew<WContainerWidget>();
+  strip_text->addStyleClass( "DrfStripText" );
+  WContainerWidget *strip_label = strip_text->addNew<WContainerWidget>();
+  strip_label->addStyleClass( "DrfStripLabelLine" );
+  strip_label->addNew<WText>( WString::tr("dsl-in-use-now"), TextFormat::Plain )->addStyleClass( "DrfStripLabel" );
+  m_stripJust = strip_label->addNew<WText>( WString::tr("dsl-just-changed"), TextFormat::Plain );
+  m_stripJust->addStyleClass( "DrfJustChanged" );
+  m_stripName = strip_text->addNew<WText>( "", TextFormat::Plain );
+  m_stripName->addStyleClass( "DrfStripName" );
+  m_stripName->setInline( false );
+  m_stripMeta = strip_text->addNew<WText>( "", TextFormat::Plain );
+  m_stripMeta->addStyleClass( "DrfStripMeta" );
+  m_stripMeta->setInline( false );
+  WContainerWidget *strip_btns = m_stripInUse->addNew<WContainerWidget>();
+  strip_btns->addStyleClass( "DrfStripBtns" );
+  WPushButton *show_btn = strip_btns->addNew<WPushButton>( WString::tr("dsl-show-in-list") );
+  show_btn->addStyleClass( "DrfBtn" );
+  show_btn->clicked().connect( this, &DrfSelect::showInUseInList );
+  WPushButton *none_btn = strip_btns->addNew<WPushButton>( WString::tr("dsl-use-none") );
+  none_btn->addStyleClass( "DrfBtn" );
+  none_btn->clicked().connect( this, &DrfSelect::useNoDetector );
+
+  m_stripNone = strip->addNew<WContainerWidget>();
+  m_stripNone->addStyleClass( "DrfStripRow None" );
+  m_stripNone->addNew<WText>( "<span class=\"DrfIcon DrfIconGeneric\"></span>", TextFormat::UnsafeXHTML )
+                             ->addStyleClass( "DrfStripIcon" );
+  WContainerWidget *none_text = m_stripNone->addNew<WContainerWidget>();
+  none_text->addStyleClass( "DrfStripText" );
+  none_text->addNew<WText>( WString::tr("dsl-no-det-in-use"), TextFormat::Plain )->addStyleClass( "DrfStripLabel" );
+  WText *none_desc = none_text->addNew<WText>( WString::tr("dsl-no-det-in-use-text"), TextFormat::Plain );
+  none_desc->addStyleClass( "DrfStripNoneText" );
+  none_desc->setInline( false );
+
+  // ---- Tabs
+  WContainerWidget *tabs = addNew<WContainerWidget>();
+  tabs->addStyleClass( "DrfTabs" );
+  tabs->setAttributeValue( "role", "tablist" );
+  m_libTab = tabs->addNew<WPushButton>( WString::tr("dsl-tab-library"), TextFormat::XHTML );
+  m_libTab->addStyleClass( "DrfTab" );
+  m_libTab->setAttributeValue( "role", "tab" );
+  m_libTab->clicked().connect( [this](){ showTab( Tab::Library ); } );
+  m_importTab = tabs->addNew<WPushButton>( WString::tr("dsl-tab-import") );
+  m_importTab->addStyleClass( "DrfTab DrfTabImport" );
+  m_importTab->setAttributeValue( "role", "tab" );
+  m_importTab->clicked().connect( [this](){ showTab( Tab::Import ); } );
+
+  // ---- Body: the Library or Import, beside the preview
+  WContainerWidget *body = addNew<WContainerWidget>();
+  body->addStyleClass( "DrfBody" );
+  m_stack = body->addNew<WStackedWidget>();
+  m_stack->addStyleClass( "DrfMain" );
+
+  // Library
+  {
+    auto lib_owned = std::make_unique<WContainerWidget>();
+    WContainerWidget *lib = lib_owned.get();
+    lib->addStyleClass( "DrfLibPane" );
+    m_stack->addWidget( std::move(lib_owned) );
+
+    m_list = lib->addNew<DrfLibraryList>();
+    m_list->setNarrow( m_narrow );
+    m_list->setExtraSearchText( []( const DrfLibrary::Entry &entry ) -> string {
+      return DrfLibraryText::originLabel( entry.origin ).toUTF8();
+    } );
+
+    WContainerWidget *search_row = lib->addNew<WContainerWidget>();
+    search_row->addStyleClass( "DrfSearchRow" );
+    m_search = search_row->addNew<WLineEdit>();
+    m_search->addStyleClass( "DrfSearch" );
+    m_search->setPlaceholderText( WString::tr("dsl-search-placeholder") );
+    m_search->setAttributeValue( "aria-label", WString::tr("dsl-search-label") );
+    m_search->setAttributeValue( "type", "search" );
+    no_autocorrect( m_search );
+
+    // Adding folders the app reads needs a file system the user can see: not on the web or phones.
+    m_manageLocations = search_row->addNew<WPushButton>( WString::tr("dsl-manage-locations") );
+    m_manageLocations->addStyleClass( "DrfBtn DrfManageLocations" );
+    m_manageLocations->clicked().connect( [this](){ showTab( Tab::Locations ); } );
+#if( BUILD_FOR_WEB_DEPLOYMENT || IOS || ANDROID )
+    m_manageLocations->hide();
+#endif
+
+    WContainerWidget *chips = lib->addNew<WContainerWidget>();
+    chips->addStyleClass( "DrfChips" );
+    chips->setAttributeValue( "role", "group" );
+    chips->setAttributeValue( "aria-label", WString::tr("dsl-chips-label") );
+    for( size_t i = 0; i < sizeof(ns_chip_origins)/sizeof(ns_chip_origins[0]); ++i )
+    {
+      WPushButton *chip = chips->addNew<WPushButton>( WString::tr(ns_chip_keys[i]), TextFormat::XHTML );
+      chip->addStyleClass( "DrfChip" );
+      const int origin = ns_chip_origins[i];
+      chip->clicked().connect( [this, origin](){
+        m_originChip = origin;
+        updateChips();
+        updateFilter();
+      } );
+      m_chips.push_back( { origin, chip } );
+    }
+    chips->addNew<WContainerWidget>()->addStyleClass( "DrfChipDivider" );
+    m_geoChip = chips->addNew<WPushButton>( WString::tr("dsl-chip-geometry"), TextFormat::XHTML );
+    m_geoChip->addStyleClass( "DrfChip DrfChipGeometry" );
+    m_geoChip->clicked().connect( [this](){
+      m_withGeometry = !m_withGeometry;
+      updateChips();
+      updateFilter();
+    } );
+  }
+
+  // Import
+  {
+    auto imp_owned = std::make_unique<WContainerWidget>();
+    WContainerWidget *imp = imp_owned.get();
+    imp->addStyleClass( "DrfImportPane" );
+    m_stack->addWidget( std::move(imp_owned) );
+
+    WContainerWidget *top = imp->addNew<WContainerWidget>();
+    top->addStyleClass( "DrfImportTop" );
+    WContainerWidget *seg = top->addNew<WContainerWidget>();
+    seg->addStyleClass( "DrfSeg Large" );
+    seg->setAttributeValue( "role", "group" );
+    seg->setAttributeValue( "aria-label", WString::tr("dsl-import-how") );
+    m_fileModeBtn = seg->addNew<WPushButton>( WString::tr("dsl-from-file") );
+    m_fileModeBtn->addStyleClass( "DrfSegFile" );
+    m_formulaModeBtn = seg->addNew<WPushButton>( WString::tr("dsl-from-formula") );
+    m_formulaModeBtn->addStyleClass( "DrfSegFormula" );
+
+    WPushButton *make_drf = top->addNew<WPushButton>( WString::tr("dsl-make-from-cal") );
+    make_drf->addStyleClass( "DrfLinkBtn DrfMakeDrf" );
+    make_drf->clicked().connect( [this](){
+      InterSpec * const viewer = m_interspec;
+      viewer->showMakeDrfWindow();
+      m_doneSignal.emit();  //closes (deletes) this dialog
+    } );
+
+    m_importStack = imp->addNew<WStackedWidget>();
+    m_importStack->addStyleClass( "DrfImportStack" );
+    // From a file: the drop area (DrfImportWidget, for one detector), the formats it reads, and -
+    //  after a drop of several detectors' files - the detectors found.
+    WContainerWidget *file_page = m_importStack->addNew<WContainerWidget>();
+    file_page->addStyleClass( "DrfFilePage" );
+    // Not given the current detector: this tab is for bringing in a new one.
+    m_importWidget = file_page->addNew<DrfImportWidget>( DrfImportWidget::Host::ImportTab );
+    m_foundList = file_page->addNew<DrfFoundList>();
+    m_foundList->hide();
+
+    // On a phone, files can also arrive from other apps
+    if( m_interspec->isMobile() )
+    {
+      WText *share_note = file_page->addNew<WText>( WString::tr("dsl-share-note"), TextFormat::Plain );
+      share_note->addStyleClass( "DrfFormHint DrfShareNote" );
+      share_note->setInline( false );
+    }
+
+    m_formats = file_page->addNew<WContainerWidget>();
+    m_formats->addStyleClass( "DrfFormats" );
+    WText *formats_title = m_formats->addNew<WText>( WString::tr("dsl-fmt-title"), TextFormat::Plain );
+    formats_title->addStyleClass( "DrfSectionTitle" );
+    formats_title->setInline( false );
+    WContainerWidget *tiles = m_formats->addNew<WContainerWidget>();
+    tiles->addStyleClass( "DrfFormatTiles" );
+    for( const char *key : { "gadras", "isocs", "angle", "table", "interspec", "csv" } )
+    {
+      WContainerWidget *tile = tiles->addNew<WContainerWidget>();
+      tile->addStyleClass( "DrfFormatTile" );
+      WText *name = tile->addNew<WText>( WString::tr( string("dsl-fmt-") + key ), TextFormat::Plain );
+      name->addStyleClass( "DrfFormatName" );
+      name->setInline( false );
+      WText *desc = tile->addNew<WText>( WString::tr( string("dsl-fmt-") + key + "-desc" ), TextFormat::Plain );
+      desc->addStyleClass( "DrfFormHint" );
+      desc->setInline( false );
+    }
+
+    m_formula = m_importStack->addNew<DrfFormulaForm>();
+
+    const auto set_mode = [this]( const bool formula ){
+      m_importStack->setCurrentIndex( formula ? 1 : 0 );
+      m_fileModeBtn->toggleStyleClass( "Pressed", !formula );
+      m_fileModeBtn->setAttributeValue( "aria-pressed", formula ? "false" : "true" );
+      m_formulaModeBtn->toggleStyleClass( "Pressed", formula );
+      m_formulaModeBtn->setAttributeValue( "aria-pressed", formula ? "true" : "false" );
+      handleImportChanged();
+    };
+    m_fileModeBtn->clicked().connect( [set_mode](){ set_mode( false ); } );
+    m_formulaModeBtn->clicked().connect( [set_mode](){ set_mode( true ); } );
+    set_mode( false );
+
+    m_importWidget->changed().connect( this, &DrfSelect::handleImportChanged );
+    m_importWidget->characterizeRequested().connect( this, &DrfSelect::openModifyWindow );
+    m_importWidget->batchDropped().connect( this, &DrfSelect::handleBatchDropped );
+    m_foundList->picked().connect( [this]( const size_t index ){
+      pickFound( index );
+      if( m_narrow )
+        setDetailsShown( true );
+    } );
+    m_foundList->cleared().connect( this, &DrfSelect::clearFound );
+    m_formula->changed().connect( this, &DrfSelect::handleImportChanged );
+  }
+
+  // Library › Locations
+  {
+    auto page_owned = std::make_unique<DrfLocationsPage>();
+    m_locationsPage = page_owned.get();
+    m_stack->addWidget( std::move(page_owned) );
+    m_locationsPage->backRequested().connect( [this](){ showTab( Tab::Library ); } );
+    m_locationsPage->shownChanged().connect( this, &DrfSelect::setLocationShown );
+    m_locationsPage->rescanRequested().connect( this, &DrfSelect::rescanLocation );
+    m_locationsPage->removeRequested().connect( this, &DrfSelect::confirmRemoveLocation );
+    m_locationsPage->locateRequested().connect( this, &DrfSelect::locateLocation );
+    m_locationsPage->addFolderRequested().connect( this, &DrfSelect::startAddLocationFolder );
+    m_locationsPage->addFileRequested().connect( this, &DrfSelect::startAddLocationFile );
+  }
+
+  m_preview = body->addNew<DrfPreviewPanel>( DrfPreviewPanel::Context::Library );
+  m_preview->setReference( m_inUse );
+  m_preview->setNarrow( m_narrow );
+  if( m_narrow )
+  {
+    m_manageLocations->hide();
+    // The "In use now" card opens its details
+    m_stripInUse->clicked().connect( [this](){
+      const string id = entryIdFor( m_inUse );
+      if( !id.empty() )
+        pickEntry( id );
+    } );
+    // A card that acts as a button, for keyboards and screen readers too
+    m_stripInUse->setAttributeValue( "role", "button" );
+    m_stripInUse->setAttributeValue( "tabindex", "0" );
+    m_stripInUse->keyWentDown().connect( "function(s,e){ if( (e.key === 'Enter') || (e.key === ' ') ){ e.preventDefault(); s.click(); } }" );
+    m_preview->useNoneRequested().connect( [this](){
+      useNoDetector();
+      setDetailsShown( false );  //back to the Library, where the notice and "no detector" card show
+    } );
+  }
+
+  // ---- A notice (e.g., after "Use none")
+  m_notice = addNew<WContainerWidget>();
+  m_notice->addStyleClass( "DrfNotice" );
+  m_notice->setAttributeValue( "role", "status" );
+  m_noticeText = m_notice->addNew<WText>( "", TextFormat::Plain );
+  WPushButton *dismiss = m_notice->addNew<WPushButton>();
+  dismiss->addStyleClass( "DrfNoticeClose" );
+  dismiss->setAttributeValue( "aria-label", WString::tr("dsl-dismiss") );
+  dismiss->clicked().connect( m_notice, &WWidget::hide );
+  m_notice->hide();
+
+  // ---- Footer: the auto-pick checkboxes, Cancel, and the main button
+  WContainerWidget *footer = parentWindow ? parentWindow->footer() : addNew<WContainerWidget>();
+  if( !parentWindow )
+    footer->addStyleClass( "DrfFooter" );
+  AuxWindow::addHelpInFooter( footer, "detector-edit-dialog" );
+
+  // On a phone the window's footer is at the top of the screen; what acts on the detector shown
+  //  goes in a bar at the bottom instead.
+  WContainerWidget * const action_bar = m_narrow ? addNew<WContainerWidget>() : footer;
+  if( m_narrow )
+  {
+    action_bar->addStyleClass( "DrfBottomBar" );
+    m_actionBar = action_bar;
+  }
+
+  m_autoPick = action_bar->addNew<WContainerWidget>();
+  m_autoPick->addStyleClass( "DrfAutoPick" );
+  m_autoPick->addNew<WText>( WString::tr("dsl-auto-pick"), TextFormat::Plain )->addStyleClass( "DrfAutoPickLabel" );
+
+  const shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  string serial, model;
+  if( meas )
+  {
+    serial = meas->instrument_id();
+    model = (meas->detector_type() != SpecUtils::DetectorType::Unknown)
+            ? SpecUtils::detectorTypeToString( meas->detector_type() ) : meas->instrument_model();
+  }
+  if( !serial.empty() )
+    m_autoSerial = m_autoPick->addNew<WCheckBox>( WString::tr("dsl-auto-serial").arg( without_serial_prefix(serial) ) );
+  if( !model.empty() )
+    m_autoModel = m_autoPick->addNew<WCheckBox>( WString::tr("dsl-auto-model").arg( model ) );
+
+  if( !model.empty() && !serial.empty() )
+    m_suggestedNote = model + " · " + WString::tr("dsl-note-serial").arg( without_serial_prefix(serial) ).toUTF8();
+  else if( !model.empty() || !serial.empty() )
+    m_suggestedNote = model.empty() ? WString::tr("dsl-note-serial").arg( without_serial_prefix(serial) ).toUTF8() : model;
+  m_list->setSuggestedNote( WString::fromUTF8( m_suggestedNote ) );
+
+  m_cancelBtn = footer->addNew<WPushButton>( WString::tr( m_narrow ? "dsl-close" : "Cancel" ) );
+  WidgetUtils::applyButtonRole( m_cancelBtn, WidgetUtils::ButtonRole::Dismiss );
+  m_cancelBtn->clicked().connect( [this](){ m_doneSignal.emit(); } );
+
+  m_primaryBtn = action_bar->addNew<WPushButton>();
+  WidgetUtils::applyButtonRole( m_primaryBtn, WidgetUtils::ButtonRole::Affirm );
+  m_primaryBtn->addStyleClass( "DrfPrimary" );
+  m_primaryBtn->clicked().connect( this, &DrfSelect::handlePrimary );
+
+  // ---- Timers: search after a pause in typing; "Checking for changes" only if a scan is slow
+  m_searchTimer = addChild( std::make_unique<WTimer>() );
+  m_searchTimer->setSingleShot( true );
+  m_searchTimer->setInterval( std::chrono::milliseconds(250) );
+  m_searchTimer->timeout().connect( this, &DrfSelect::updateFilter );
+  m_search->textInput().connect( [this](){
+    m_searchTimer->stop();
+    m_searchTimer->start();
+  } );
+  m_search->enterPressed().connect( this, &DrfSelect::updateFilter );
+
+  m_checkingTimer = addChild( std::make_unique<WTimer>() );
+  m_checkingTimer->setSingleShot( true );
+  m_checkingTimer->setInterval( std::chrono::milliseconds(150) );
+  m_checkingTimer->timeout().connect( [this](){
+    if( m_scanning && !m_entries )
+    {
+      m_list->setChecking( true );
+      m_list->rebuild();
+    }
+  } );
+
+  // ---- Wiring the list and preview
+  m_list->picked().connect( this, &DrfSelect::pickEntry );
+  m_list->importRequested().connect( [this](){ showTab( Tab::Import ); } );
+  m_preview->customizeRequested().connect( this, &DrfSelect::openModifyWindow );
+  m_preview->qrRequested().connect( this, &DrfSelect::showQrCode );
+  m_preview->deleteRequested().connect( this, &DrfSelect::confirmDeletePicked );
+  m_preview->parentRequested().connect( [this](){
+    const DrfLibrary::Entry * const entry = pickedEntry();
+    if( !entry || !m_entries )
+      return;
+    const int parent = DrfLibrary::parentIndex( *m_entries, static_cast<size_t>(entry - &(*m_entries)[0]) );
+    if( parent >= 0 )
+    {
+      pickEntry( (*m_entries)[parent].id );
+      m_list->scrollToPicked();
+    }
+  } );
+
+  // Until the Library is read, preview the detector in use - it is already in memory.
+  updateInUseStrip();
+  showTab( Tab::Library );
+  updateChips();
+  startScan();
+}//DrfSelect constructor
+
+
+DrfSelect::~DrfSelect()
+{
+  if( m_scanCancel )
+    m_scanCancel->store( true );
+
+  if( m_modifyWindow )
+    AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
+}//~DrfSelect()
+
 
 Wt::Signal<> &DrfSelect::done()
 {
@@ -5653,14 +3297,1720 @@ Wt::Signal<> &DrfSelect::done()
 }
 
 
+std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
+{
+  return m_inUse;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DrfSelect::previewedDetector() const
+{
+  return m_preview ? m_preview->detector() : nullptr;
+}
+
+
+void DrfSelect::startScan()
+{
+  if( m_scanCancel )
+    m_scanCancel->store( true );
+  m_scanCancel = std::make_shared<std::atomic<bool>>( false );
+  const uint64_t generation = ++m_scanGeneration;
+  m_scanning = true;
+  m_checkingTimer->start();
+
+  // Everything the worker needs, gathered here on the session thread.
+  DrfLibrary::ScanRequest request;
+  request.locations = library_locations( m_interspec );
+  m_scanLocations = make_shared<const vector<DrfLibrary::Location>>( request.locations );
+  m_locationStatuses.reset();
+  updateLocationsPage();
+  request.sql = m_sql;
+  request.dbUserId = m_interspec->user() ? m_interspec->user().id() : -1;
+  request.cancel = m_scanCancel;
+
+  ForegroundInfo info;
+  const shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( meas )
+  {
+    info.serial = meas->instrument_id();
+    info.model = meas->instrument_model();
+    info.manufacturer = meas->manufacturer();
+    info.type = meas->detector_type();
+    info.modelCriteria = (info.type == SpecUtils::DetectorType::Unknown)
+                         ? info.model : SpecUtils::detectorTypeToString( info.type );
+    info.fileDrf = meas->detectorFromFile();
+  }
+  info.inUse = m_inUse ? make_shared<const DetectorPeakResponse>( *m_inUse ) : nullptr;
+  info.gadrasPaths = gadrasDrfSearchPaths( m_interspec );
+  info.sql = m_sql;
+  info.userId = request.dbUserId;
+
+  const WidgetUtils::WidgetHandle self( this );
+  const string session_id = wApp->sessionId();
+  request.progress = [self, session_id, generation]( const DrfLibrary::Snapshot &partial ){
+    const auto copy = make_shared<const DrfLibrary::Snapshot>( partial );
+    WServer::instance()->post( session_id, [self, generation, copy](){
+      DrfSelect * const widget = self.resolve_as<DrfSelect>();
+      if( !widget || (widget->m_scanGeneration != generation) )
+        return;
+      widget->receiveSnapshot( copy, false );
+      if( wApp )
+        wApp->triggerUpdate();
+    } );
+  };//request.progress
+
+  const auto result = make_shared<DrfLibrary::Snapshot>();
+  AppUtils::run_on_ioservice( [request, info, result]() mutable {
+      request.suggestions = make_suggestions( info );
+      *result = DrfLibrary::scan( request );
+    },
+    [self, generation, result](){
+      DrfSelect * const widget = self.resolve_as<DrfSelect>();
+      if( !widget || (widget->m_scanGeneration != generation) )
+        return;
+      widget->receiveSnapshot( result, true );
+      if( wApp )
+        wApp->triggerUpdate();
+    } );
+}//startScan()
+
+
+void DrfSelect::receiveSnapshot( std::shared_ptr<const DrfLibrary::Snapshot> snapshot, const bool final )
+{
+  if( !snapshot )
+    return;
+
+  if( final )
+  {
+    m_scanning = false;
+    m_checkingTimer->stop();
+    m_locationStatuses = make_shared<const vector<DrfLibrary::LocationStatus>>( snapshot->locations );
+  }
+
+  m_entries = make_shared<const vector<DrfLibrary::Entry>>( snapshot->entries );
+
+  // Until the user picks one, the preview follows the detector in use - whose entry can change
+  //  between scans (e.g., from an in-memory one, to the file it turns out to be from).
+  const string in_use_id = entryIdFor( m_inUse );
+  if( m_pickInUseAfterScan && final )
+  {
+    m_pickInUseAfterScan = false;
+    m_userPicked = false;
+  }
+  string pick = m_userPicked ? m_pickedId : in_use_id;
+
+  // A picked detector can be listed under a new id after a scan (e.g. the spectrum's own detector,
+  //  once used, is a database row): find it again by what it is.
+  if( m_userPicked && !pick.empty() && m_pickedDrf
+      && std::none_of( begin(*m_entries), end(*m_entries),
+                       [&pick]( const DrfLibrary::Entry &e ){ return e.id == pick; } ) )
+  {
+    const string again = entryIdFor( m_pickedDrf );
+    if( !again.empty() )
+    {
+      pick = again;
+      m_pickedId = again;  //same detector: nothing to reload
+    }
+  }
+
+  m_list->setChecking( false );
+  m_list->setEntries( m_entries );
+  m_list->setInUse( in_use_id );
+  m_list->setPicked( pick );
+  m_list->rebuild();
+
+  // The picked detector's entry may be new (or newly read): load it if need be.
+  const bool changed = (pick != m_pickedId);
+  if( changed )
+    m_pickedDrf.reset();
+  const DrfLibrary::Entry *entry = nullptr;
+  for( size_t i = 0; !pick.empty() && (i < m_entries->size()); ++i )
+  {
+    if( (*m_entries)[i].id == pick )
+      entry = &(*m_entries)[i];
+  }
+  // Also reload when the entry's file changed under it (e.g. edited, then "Rescan").
+  const bool stale = entry && entry->summary && m_pickedDrf && !has_hash( *entry, m_pickedDrf->hashValue() );
+  if( stale )
+    m_pickedDrf.reset();
+  if( changed || (entry && entry->summary && !m_pickedDrf) )
+    selectEntry( pick );
+
+  if( !m_scrolledToPicked && !m_pickedId.empty() && final )
+  {
+    m_scrolledToPicked = true;
+    m_list->scrollToPicked();
+  }
+
+  updateInUseStrip();  //its source may only now be known (e.g., a just-saved customized copy)
+  updateLocationsPage();
+  updateChips();
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+
+  // Last: on a phone, using the kept detector closes (deletes) this dialog.
+  if( final )
+    useKeptEntry();
+}//receiveSnapshot(...)
+
+
+const DrfLibrary::Entry *DrfSelect::pickedEntry() const
+{
+  if( !m_entries || m_pickedId.empty() )
+    return nullptr;
+  for( const DrfLibrary::Entry &entry : *m_entries )
+  {
+    if( entry.id == m_pickedId )
+      return &entry;
+  }
+  return nullptr;
+}//pickedEntry()
+
+
+std::string DrfSelect::entryIdFor( const std::shared_ptr<const DetectorPeakResponse> &drf ) const
+{
+  if( !drf || !m_entries )
+    return string();
+  const uint64_t hash = drf->hashValue();
+  for( const DrfLibrary::Entry &entry : *m_entries )
+  {
+    if( !entry.hidden && has_hash( entry, hash ) )
+      return entry.id;
+  }
+  return string();
+}//entryIdFor(...)
+
+
+void DrfSelect::pickEntry( const std::string &entryId )
+{
+  m_userPicked = true;
+  m_useWhenLoadedId.clear();  //the user moved on from a kept folder's detector still loading
+  if( m_tab != Tab::Library )
+    showTab( Tab::Library );
+  selectEntry( entryId );
+  if( m_narrow )
+    setDetailsShown( true );
+}//pickEntry(...)
+
+
+void DrfSelect::setDetailsShown( const bool show )
+{
+  m_showDetails = (m_narrow && show);
+  toggleStyleClass( "ShowDetails", m_showDetails );
+  m_detailsHeader->setHidden( !m_showDetails );
+  m_detailsBack->setText( WString::tr( (m_tab == Tab::Import) ? "dsl-back-import" : "dsl-back-library" ) );
+  if( !m_showDetails && (m_tab == Tab::Library) )
+    m_list->scrollToPicked();
+  updatePrimaryButton();
+  updateAutoPick();
+}//setDetailsShown(...)
+
+
+void DrfSelect::selectEntry( const std::string &entryId )
+{
+  const bool same = (entryId == m_pickedId);
+  m_pickedId = entryId;
+  m_list->setPicked( entryId );
+
+  const DrfLibrary::Entry * const entry = pickedEntry();
+  if( !same || !m_pickedDrf )
+  {
+    m_pickedDrf.reset();
+    m_pickedError = WString();
+    ++m_loadGeneration;
+
+    if( entry && entry->summary )
+    {
+      if( m_inUse && has_hash( *entry, m_inUse->hashValue() ) )
+      {
+        m_pickedDrf = m_inUse;
+      }else if( entry->kind == DrfLibrary::EntryKind::InMemory )
+      {
+        m_pickedDrf = entry->inMemoryDrf;
+      }else
+      {
+        // Reading a detector can take a moment (a CeeLo response, a .par grid): do it off the
+        //  session thread, keeping only the result for the detector still picked.
+        const uint64_t generation = m_loadGeneration;
+        const DrfLibrary::Entry entry_copy = *entry;
+        const shared_ptr<DataBaseUtils::DbSession> sql = m_sql;
+        const WidgetUtils::WidgetHandle self( this );
+        struct Loaded
+        {
+          shared_ptr<const DetectorPeakResponse> drf;
+          string error;
+        };
+        const auto loaded = make_shared<Loaded>();
+
+        AppUtils::run_on_ioservice( [entry_copy, sql, loaded](){
+            try
+            {
+              loaded->drf = DrfLibrary::loadDrf( entry_copy, sql );
+            }catch( std::exception &e )
+            {
+              loaded->error = e.what();
+            }
+          },
+          [self, generation, loaded](){
+            DrfSelect * const widget = self.resolve_as<DrfSelect>();
+            if( !widget || (widget->m_loadGeneration != generation) )
+              return;
+            widget->m_pickedDrf = loaded->drf;
+            if( !loaded->drf )
+            {
+              widget->m_pickedError = WString::tr("dsl-load-error").arg( loaded->error );
+              widget->m_useWhenLoadedId.clear();
+            }
+            if( loaded->drf && !widget->m_useWhenLoadedId.empty()
+                && (widget->m_useWhenLoadedId == widget->m_pickedId) )
+            {
+              widget->m_useWhenLoadedId.clear();
+              widget->useDetector( make_shared<DetectorPeakResponse>( *loaded->drf ) );
+              if( widget->m_closeAfterUse )
+              {
+                widget->m_doneSignal.emit();  //deletes the dialog
+                if( wApp )
+                  wApp->triggerUpdate();
+                return;
+              }
+            }
+            widget->updatePreview();
+            widget->updatePrimaryButton();
+            if( wApp )
+              wApp->triggerUpdate();
+          } );
+      }//if( in use ) / in memory / else
+    }//if( entry && entry->summary )
+  }//if( a different detector )
+
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+}//selectEntry(...)
+
+
+void DrfSelect::showTab( const Tab tab )
+{
+  if( m_showDetails )
+  {
+    m_showDetails = false;
+    removeStyleClass( "ShowDetails" );
+    m_detailsHeader->hide();
+  }
+  m_tab = tab;
+  m_stack->setCurrentIndex( (tab == Tab::Library) ? 0 : ((tab == Tab::Import) ? 1 : 2) );
+
+  // Locations is a page of the Library
+  for( WPushButton *btn : { m_libTab, m_importTab } )
+  {
+    const bool on = ((btn == m_libTab) == (tab != Tab::Import));
+    btn->toggleStyleClass( "Selected", on );
+    btn->setAttributeValue( "aria-selected", on ? "true" : "false" );
+  }
+
+  m_preview->setHidden( tab == Tab::Locations );
+  if( tab == Tab::Locations )
+    updateLocationsPage();
+  m_preview->setContext( (tab == Tab::Import) ? DrfPreviewPanel::Context::Import
+                                              : DrfPreviewPanel::Context::Library );
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+}//showTab(...)
+
+
+void DrfSelect::updateInUseStrip()
+{
+  const bool have = (m_inUse && m_inUse->isValid());
+  m_stripInUse->setHidden( !have );
+  m_stripNone->setHidden( have );
+  if( !have )
+    return;
+
+  const shared_ptr<const DrfLibrary::Summary> summary = DrfLibrary::Summary::fromDrf( *m_inUse );
+  const DrfLibrary::Entry *entry = nullptr;
+  const string id = entryIdFor( m_inUse );
+  for( size_t i = 0; m_entries && !id.empty() && (i < m_entries->size()); ++i )
+  {
+    if( (*m_entries)[i].id == id )
+      entry = &(*m_entries)[i];
+  }
+  const DrfLibrary::Origin origin = entry ? entry->origin : DrfLibrary::originForSource( m_inUse->drfSource() );
+
+  m_stripIcon->setText( WString::fromUTF8( DrfLibraryText::iconHtml( summary.get(), 18.0, 32.0 ) ) );
+  m_stripName->setText( WString::fromUTF8( m_inUse->name() ) );
+  m_stripMeta->setText( DrfLibraryText::metaLine( *summary, origin ) );
+  m_stripJust->setHidden( !m_justChanged );
+}//updateInUseStrip()
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::importCandidate() const
+{
+  if( m_importStack->currentIndex() == 1 )
+    return m_formula->candidate();
+
+  if( m_batch )
+  {
+    // A copy, so the found detectors stay as they were read
+    if( m_found && (m_foundPick < m_found->size()) && (*m_found)[m_foundPick].drf )
+      return make_shared<DetectorPeakResponse>( *(*m_found)[m_foundPick].drf );
+    return nullptr;
+  }
+
+  return m_importWidget->candidate();
+}//importCandidate()
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::importSeed() const
+{
+  if( m_importStack->currentIndex() == 1 )
+    return nullptr;
+
+  if( m_batch )
+  {
+    if( m_found && (m_foundPick < m_found->size()) )
+    {
+      const DrfImport::FoundDetector &found = (*m_found)[m_foundPick];
+      if( (found.source.status == DrfImport::Status::NeedsCharacterization) && found.source.base )
+        return make_shared<DetectorPeakResponse>( *found.source.base );
+    }
+    return nullptr;
+  }
+
+  return m_importWidget->characterizationSeed();
+}//importSeed()
+
+
+namespace
+{
+  /** The top folder all of a drop's files are in, or empty if they are not all in one. */
+  string drop_top_folder( const DrfDropBatch &batch )
+  {
+    string top;
+    for( size_t i = 0; i < batch.files.size(); ++i )
+    {
+      const string &path = batch.files[i].first;
+      const size_t pos = path.find( '/' );
+      if( pos == string::npos )
+        return string();
+      const string first = path.substr( 0, pos );
+      if( i == 0 )
+        top = first;
+      else if( first != top )
+        return string();
+    }
+    return top;
+  }//drop_top_folder(...)
+
+
+  /** Where the Library will list a found detector once its folder is kept at `root`: its GADRAS
+   folder, or its main file. */
+  string kept_entry_path( const string &root, const string &top_folder, const DrfImport::FoundDetector &found )
+  {
+    if( found.files.empty() )
+      return string();
+    string relative = found.files.front();
+    if( !top_folder.empty() && (relative.size() > top_folder.size()) )
+      relative = relative.substr( top_folder.size() + 1 );
+    const bool gadras_folder = (found.files.size() == 2)
+                && ((found.kind == DrfImport::FileKind::GadrasEfficiencyCsv)
+                    || (found.kind == DrfImport::FileKind::EfficiencyCsv)
+                    || (found.kind == DrfImport::FileKind::GadrasDetectorDat));
+    const string path = SpecUtils::append_path( root, relative );
+    return gadras_folder ? SpecUtils::parent_path( path ) : path;
+  }//kept_entry_path(...)
+
+
+  std::filesystem::path to_fs_path_local( const string &utf8 )
+  {
+#ifdef _WIN32
+    return std::filesystem::path( SpecUtils::convert_from_utf8_to_utf16( utf8 ) );
+#else
+    return std::filesystem::path( utf8 );
+#endif
+  }
+}//namespace
+
+
+void DrfSelect::handleBatchDropped( std::shared_ptr<const DrfDropBatch> batch )
+{
+  if( !batch )
+    return;
+
+  m_batch = batch;
+  m_found.reset();
+  m_foundPick = std::string::npos;
+  m_foundFolder = drop_top_folder( *batch );
+  const uint64_t generation = ++m_batchGeneration;
+
+  m_importWidget->hide();
+  m_formats->hide();
+  m_foundList->show();
+  m_foundList->setReading( WString::tr("dsl-found-reading").arg( static_cast<int>(batch->files.size()) ) );
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+
+  // Reading and grouping the files can take a while (a .par grid takes seconds): off the session thread.
+  struct Result
+  {
+    vector<DrfImport::FoundDetector> found;
+    vector<string> skipped;
+  };
+  const auto result = make_shared<Result>();
+  const WidgetUtils::WidgetHandle self( this );
+
+  AppUtils::run_on_ioservice( [batch, result](){
+      vector<DrfImport::InputFile> files;
+      for( const pair<string,string> &f : batch->files )
+      {
+        DrfImport::InputFile input;
+        input.relativePath = f.first;
+        try
+        {
+          input.data = DrfImport::readFile( f.second );
+        }catch( std::exception & )
+        {
+        }
+        files.push_back( input );
+      }
+      result->found = DrfImport::groupFiles( files, &result->skipped );
+    },
+    [self, generation, result, batch](){
+      DrfSelect * const widget = self.resolve_as<DrfSelect>();
+      if( !widget || (widget->m_batchGeneration != generation) )
+        return;
+      widget->receiveFound( make_shared<const vector<DrfImport::FoundDetector>>( std::move(result->found) ),
+                            result->skipped.size() + batch->numSkipped );
+      if( wApp )
+        wApp->triggerUpdate();
+    } );
+}//handleBatchDropped(...)
+
+
+void DrfSelect::receiveFound( std::shared_ptr<const std::vector<DrfImport::FoundDetector>> found,
+                              const size_t numSkipped )
+{
+  m_found = found;
+  m_foundPick = std::string::npos;
+
+  vector<DrfFoundList::Item> items;
+  size_t first_ready = std::string::npos;
+  for( size_t i = 0; found && (i < found->size()); ++i )
+  {
+    const DrfImport::FoundDetector &d = (*found)[i];
+    DrfFoundList::Item item;
+    item.name = d.name;
+
+    // "GADRAS Detector.dat · Detector.dat + Efficiency.csv"
+    WString format = DrfImportWidget::kindLabel( d.kind );
+    string names;
+    for( const string &f : d.files )
+      names += (names.empty() ? "" : " + ") + SpecUtils::filename( f );
+    format += WString::fromUTF8( " · " + names );
+    item.format = format;
+
+    const shared_ptr<const DetectorPeakResponse> drf = d.drf ? d.drf : d.source.base;
+    shared_ptr<const DrfLibrary::Summary> summary;
+    if( drf )
+    {
+      summary = DrfLibrary::Summary::fromDrf( *drf );
+      item.crystal = DrfLibraryText::crystalLabel( *summary );
+    }
+
+    switch( d.source.status )
+    {
+      case DrfImport::Status::Ready:
+        if( d.drf )
+        {
+          item.tag = WString::tr( (summary && (summary->range == DrfLibrary::Range::NearFieldOk))
+                                  ? "dsl-found-ready-near" : "dsl-found-ready" );
+          if( first_ready == std::string::npos )
+            first_ready = i;
+        }else
+        {
+          // Its file reads fine, but no detector could be made with the default options
+          item.tag = WString::tr( "dsl-found-needs-input" );
+          item.usable = false;
+        }
+        break;
+      case DrfImport::Status::NeedsCharacterization:
+        item.tag = WString::tr( "dsl-found-geometry" );
+        break;
+      case DrfImport::Status::Error:
+        item.tag = WString::tr( "dsl-found-error" );
+        item.usable = false;
+        break;
+      default:
+        item.tag = WString::tr( "dsl-found-needs-input" );
+        item.usable = false;
+        break;
+    }//switch( d.source.status )
+
+    items.push_back( item );
+  }//for( loop over found detectors )
+
+  const size_t num = items.size();
+  const WString title = m_foundFolder.empty()
+                        ? WString::tr("dsl-found-files").arg( static_cast<int>(m_batch ? m_batch->files.size() : 0) )
+                        : WString::fromUTF8( m_foundFolder );
+  const WString summary = WString::tr( (num == 0) ? "dsl-found-none" : ((num == 1) ? "dsl-found-1" : "dsl-found-n") )
+                            .arg( static_cast<int>(num) );
+  WString subtitle;
+  if( numSkipped )
+    subtitle = WString::tr("dsl-found-skipped").arg( static_cast<int>(numSkipped) );
+  if( m_batch && m_batch->numRefused )
+  {
+    const WString refused = WString::tr("dsl-found-refused").arg( static_cast<int>(m_batch->numRefused) );
+    subtitle = subtitle.empty() ? refused : WString::fromUTF8( subtitle.toUTF8() + " · " + refused.toUTF8() );
+  }
+
+  bool can_keep = false;
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  can_keep = (num > 1);
+#endif
+
+  // In the macOS app a dropped folder can be listed where it is, rather than copied.
+  if( m_batch && !m_batch->nativeFolder.empty() )
+  {
+    can_keep = (num > 0);
+    m_foundList->setKeepDescription( WString::tr("dsl-found-keep-desc-link") );
+  }else
+  {
+    // The phone layout has no Locations page to point to
+    m_foundList->setKeepDescription( WString::tr( m_narrow ? "dsl-found-keep-desc-phone" : "dsl-found-keep-desc") );
+  }
+
+  m_foundList->setFound( title, subtitle, summary, items, can_keep );
+  if( first_ready != std::string::npos )
+  {
+    pickFound( first_ready );
+  }else
+  {
+    updatePreview();
+    updatePrimaryButton();
+    updateAutoPick();
+  }
+}//receiveFound(...)
+
+
+void DrfSelect::pickFound( const size_t index )
+{
+  if( !m_found || (index >= m_found->size()) )
+    return;
+  m_foundPick = index;
+  m_foundList->setPicked( index );
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+}//pickFound(...)
+
+
+void DrfSelect::clearFound()
+{
+  ++m_batchGeneration;  //drops a read still running
+  m_batch.reset();
+  m_found.reset();
+  m_foundPick = std::string::npos;
+  m_foundFolder.clear();
+  m_foundList->hide();
+  m_importWidget->show();
+  m_formats->show();
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+}//clearFound()
+
+
+void DrfSelect::keepFoundAndUse()
+{
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  if( !m_batch || !m_found || (m_foundPick >= m_found->size()) )
+    return;
+  const DrfImport::FoundDetector &picked = (*m_found)[m_foundPick];
+
+  // A folder whose own path we know (dropped in the macOS app) is listed where it is.
+  if( !m_batch->nativeFolder.empty() )
+  {
+    const string folder = m_batch->nativeFolder;
+    m_useAfterScanRoot = folder;
+    m_useAfterScanName = picked.name;
+    m_useAfterScanPath = kept_entry_path( folder, m_foundFolder, picked );
+    m_useAfterScanFallback = picked.drf ? make_shared<DetectorPeakResponse>( *picked.drf ) : nullptr;
+    clearFound();
+    m_originChip = -1;
+    m_withGeometry = false;
+    m_search->setText( "" );
+    updateChips();
+    updateFilter();
+    showTab( Tab::Library );
+    if( addUserLocation( folder ) )  //saves it, bookmarks it on macOS, and re-reads the Library
+      return;
+
+    // Could not be added: use the detector as dropped (saved under Made by you)
+    const shared_ptr<DetectorPeakResponse> fallback = m_useAfterScanFallback;
+    m_useAfterScanRoot.clear();
+    m_useAfterScanFallback.reset();
+    if( fallback )
+      useDetector( fallback );
+    if( m_closeAfterUse )
+      m_doneSignal.emit();  //deletes this dialog
+    return;
+  }
+
+  // Only the files the detectors were made from; into a new folder of the user-data `drfs` folder.
+  set<string> needed;
+  for( const DrfImport::FoundDetector &d : *m_found )
+    needed.insert( begin(d.files), end(d.files) );
+
+  try
+  {
+    const string drfs = SpecUtils::append_path( InterSpec::writableDataDirectory(), "drfs" );
+    string name = m_foundFolder.empty() ? WString::tr("dsl-found-default-folder").toUTF8() : m_foundFolder;
+    for( char &c : name )
+    {
+      if( string("\\/:?\"<>|*").find( c ) != string::npos )
+        c = '_';
+    }
+    string dest = SpecUtils::append_path( drfs, name );
+    for( int i = 2; SpecUtils::is_directory( dest ) || SpecUtils::is_file( dest ); ++i )
+      dest = SpecUtils::append_path( drfs, name + " (" + std::to_string(i) + ")" );
+
+    // Copied into a hidden folder (the Library skips names starting with '.'), renamed once
+    //  complete - so a copy that fails half-way never shows up as broken detectors.
+    const string partial = SpecUtils::append_path( drfs, "." + SpecUtils::filename( dest ) + ".partial" );
+    std::error_code ec;
+    std::filesystem::remove_all( to_fs_path_local( partial ), ec );
+    try
+    {
+      for( const pair<string,string> &f : m_batch->files )
+      {
+        if( !needed.count( f.first ) )
+          continue;
+        string relative = f.first;
+        if( !m_foundFolder.empty() && (relative.size() > m_foundFolder.size()) )
+          relative = relative.substr( m_foundFolder.size() + 1 );
+        const string to = SpecUtils::append_path( partial, relative );
+        std::filesystem::create_directories( to_fs_path_local( SpecUtils::parent_path( to ) ) );
+        std::filesystem::copy_file( to_fs_path_local( f.second ), to_fs_path_local( to ) );
+      }
+      std::filesystem::rename( to_fs_path_local( partial ), to_fs_path_local( dest ) );
+    }catch( std::exception & )
+    {
+      std::filesystem::remove_all( to_fs_path_local( partial ), ec );
+      throw;
+    }
+
+    m_useAfterScanRoot = dest;
+    m_useAfterScanPath = kept_entry_path( dest, m_foundFolder, picked );
+    m_useAfterScanName = picked.name;
+    m_useAfterScanFallback = picked.drf ? make_shared<DetectorPeakResponse>( *picked.drf ) : nullptr;
+    showNotice( WString::tr("dsl-found-kept").arg( SpecUtils::filename( dest ) ) );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("dsl-found-keep-error").arg( Wt::Utils::htmlEncode( string(e.what()) ) ), WarningWidget::WarningMsgHigh );
+    m_useAfterScanRoot.clear();
+    if( picked.drf )
+      useDetector( make_shared<DetectorPeakResponse>( *picked.drf ) );
+    return;
+  }//try / catch
+
+  clearFound();
+  m_originChip = -1;
+  m_withGeometry = false;
+  m_search->setText( "" );
+  updateChips();
+  updateFilter();
+  showTab( Tab::Library );
+  startScan();
+#endif
+}//keepFoundAndUse()
+
+
+void DrfSelect::useKeptEntry()
+{
+  if( m_useAfterScanRoot.empty() || !m_entries )
+    return;
+
+  const string root = m_useAfterScanRoot;
+  const string name = m_useAfterScanName;
+  const string expected = m_useAfterScanPath;
+  const shared_ptr<DetectorPeakResponse> fallback = m_useAfterScanFallback;
+  m_useAfterScanRoot.clear();
+  m_useAfterScanName.clear();
+  m_useAfterScanPath.clear();
+  m_useAfterScanFallback.reset();
+
+  // The entry from the kept folder: at the picked detector's file (and of its name, for a table),
+  //  else of its name, else the only one there.
+  const auto in_root = [&root]( const string &path ) -> bool {
+    if( path.size() == root.size() )
+      return path == root;
+    return (path.size() > root.size()) && (path.compare( 0, root.size(), root ) == 0)
+           && ((path[root.size()] == '/') || (path[root.size()] == '\\'));
+  };
+
+  const DrfLibrary::Entry *by_path = nullptr, *by_path_and_name = nullptr, *by_name = nullptr, *only = nullptr;
+  size_t num_there = 0;
+  for( const DrfLibrary::Entry &entry : *m_entries )
+  {
+    if( entry.hidden || !entry.summary || !in_root( entry.path ) )
+      continue;
+    num_there += 1;
+    only = &entry;
+    const bool same_name = SpecUtils::iequals_ascii( entry.summary->name, name );
+    const bool same_path = !expected.empty()
+                 && (SpecUtils::lexically_normalize_path( entry.path ) == SpecUtils::lexically_normalize_path( expected ));
+    if( same_path && same_name )
+      by_path_and_name = &entry;
+    if( same_path && !by_path )
+      by_path = &entry;
+    if( same_name && !by_name )
+      by_name = &entry;
+  }
+  const DrfLibrary::Entry *match = by_path_and_name ? by_path_and_name
+                                   : (by_path ? by_path : (by_name ? by_name : ((num_there == 1) ? only : nullptr)));
+
+  if( !match )
+  {
+    if( fallback )
+      useDetector( fallback );
+    if( m_closeAfterUse )
+      m_doneSignal.emit();  //deletes this dialog
+    return;
+  }
+
+  const string id = match->id;
+  m_userPicked = true;
+  m_useWhenLoadedId = id;
+  selectEntry( id );
+  m_list->scrollToPicked();
+  if( m_pickedDrf && (m_useWhenLoadedId == id) )
+  {
+    m_useWhenLoadedId.clear();
+    useDetector( make_shared<DetectorPeakResponse>( *m_pickedDrf ) );
+    if( m_closeAfterUse )
+      m_doneSignal.emit();  //deletes this dialog
+  }
+}//useKeptEntry()
+
+
+void DrfSelect::updatePreview()
+{
+  if( m_tab == Tab::Import )
+  {
+    const shared_ptr<DetectorPeakResponse> candidate = importCandidate();
+    if( !candidate || !candidate->isValid() )
+    {
+      m_preview->showNothing();
+      return;
+    }
+
+    DrfPreviewPanel::Details details;
+    details.origin = DrfLibrary::originForSource( candidate->drfSource() );
+    details.where = (m_importStack->currentIndex() == 1) ? WString::tr("dsl-where-formula").toUTF8() : string();
+    details.whereIsPath = false;
+    m_preview->showSummary( DrfLibrary::Summary::fromDrf( *candidate ), details );
+    m_preview->setDetector( candidate );
+    return;
+  }//if( Import tab )
+
+  const DrfLibrary::Entry * const entry = pickedEntry();
+
+  // Before the Library is read: the detector in use.
+  if( !entry && !m_entries && m_inUse && m_inUse->isValid() )
+  {
+    DrfPreviewPanel::Details details;
+    details.origin = DrfLibrary::originForSource( m_inUse->drfSource() );
+    details.inUse = true;
+    m_preview->showSummary( DrfLibrary::Summary::fromDrf( *m_inUse ), details );
+    m_preview->setDetector( m_inUse );
+    return;
+  }
+
+  if( !entry || !entry->summary )
+  {
+    m_preview->showNothing();
+    return;
+  }
+
+  DrfPreviewPanel::Details details;
+  details.origin = entry->origin;
+  details.inUse = (m_inUse && has_hash( *entry, m_inUse->hashValue() ));
+  // A database row listed on its own: made by the user, or the record of a detector whose file is
+  //  gone - either way only deleting it removes it.
+  details.deletable = (entry->kind == DrfLibrary::EntryKind::DbRow) && (entry->dbId >= 0);
+
+  switch( entry->kind )
+  {
+    case DrfLibrary::EntryKind::DbRow:
+      details.where = WString::tr( entry->summary->parentHash ? "dsl-where-copy" : "dsl-where-saved" ).toUTF8();
+      details.whereIsPath = false;
+      break;
+    case DrfLibrary::EntryKind::InMemory:
+      details.where = WString::tr( (entry->origin == DrfLibrary::Origin::ThisSpectrum)
+                                   ? "dsl-where-spectrum" : "dsl-where-memory" ).toUTF8();
+      details.whereIsPath = false;
+      break;
+    default:
+    {
+      // Paths inside InterSpec's own data are shown from "data/".
+      string path = entry->path;
+      try
+      {
+        const string data_dir = InterSpec::staticDataDirectory();
+        if( !data_dir.empty() && SpecUtils::istarts_with( path, data_dir ) )
+          path = SpecUtils::append_path( "data", path.substr( data_dir.size() + ((path.size() > data_dir.size()) ? 1 : 0) ) );
+      }catch( std::exception & )
+      {
+      }
+      details.where = path;
+      break;
+    }
+  }//switch( entry->kind )
+
+  const size_t index = static_cast<size_t>( entry - &(*m_entries)[0] );
+  const int parent = DrfLibrary::parentIndex( *m_entries, index );
+  if( (parent >= 0) && (*m_entries)[parent].summary )
+    details.parentName = (*m_entries)[parent].summary->name;
+  for( size_t i = 0; i < m_entries->size(); ++i )
+  {
+    if( (i != index) && !(*m_entries)[i].hidden && (DrfLibrary::parentIndex( *m_entries, i ) == static_cast<int>(index)) )
+      details.numCopies += 1;
+  }
+
+  m_preview->showSummary( entry->summary, details );
+  m_preview->setDetector( m_pickedDrf );
+  if( !m_pickedError.empty() )
+    m_preview->showError( m_pickedError );
+}//updatePreview()
+
+
+void DrfSelect::updatePrimaryButton()
+{
+  WString label;
+  bool enabled = true;
+
+  if( m_tab == Tab::Locations )
+  {
+    label = WString::tr("dsl-loc-back");
+  }else if( m_tab == Tab::Import )
+  {
+    const shared_ptr<DetectorPeakResponse> candidate = importCandidate();
+    if( candidate && candidate->isValid() )
+      label = WString::tr("dsl-use-named").arg( short_name( candidate->name() ) );
+    else if( importSeed() )
+      label = WString::tr("dsl-compute-eff");
+    else
+    {
+      label = WString::tr("dsl-use-detector");
+      enabled = false;
+    }
+  }else
+  {
+    const DrfLibrary::Entry * const entry = pickedEntry();
+    const bool in_use = entry && m_inUse && has_hash( *entry, m_inUse->hashValue() );
+    if( entry && entry->summary && (entry->summary->range == DrfLibrary::Range::NeedsCharacterization) )
+    {
+      label = WString::tr("dsl-compute-eff");
+      enabled = !!m_pickedDrf;
+    }else if( entry && entry->summary && !in_use )
+    {
+      label = WString::tr("dsl-use-named").arg( short_name( entry->summary->name ) );
+      enabled = entry->summary->hasEfficiency && m_pickedDrf;
+    }else if( !entry && !m_inUse )
+    {
+      label = WString::tr("dsl-use-detector");
+      enabled = false;
+    }else
+    {
+      label = WString::tr("dsl-done");
+    }
+  }//if( Import ) / else
+
+  // On a phone, the main button belongs to the Details screen - and on Import, previews first.
+  if( m_narrow )
+  {
+    bool show = m_showDetails;
+    if( !m_showDetails && (m_tab == Tab::Import) && (importCandidate() || importSeed()) )
+    {
+      label = WString::tr("dsl-preview");
+      enabled = true;
+      show = true;
+    }else if( m_showDetails && (m_tab == Tab::Import) && enabled && importCandidate() )
+    {
+      label = WString::tr("dsl-import-and-use");
+    }
+    m_primaryBtn->setHidden( !show );
+    if( m_actionBar )
+      m_actionBar->setHidden( !show );
+  }//if( m_narrow )
+
+  m_primaryBtn->setText( label );
+  m_primaryBtn->setEnabled( enabled );
+}//updatePrimaryButton()
+
+
+void DrfSelect::handlePrimary()
+{
+  if( m_tab == Tab::Locations )
+  {
+    showTab( Tab::Library );
+    return;
+  }
+
+  // Phone: see the detector before importing it
+  if( m_narrow && !m_showDetails && (m_tab == Tab::Import) )
+  {
+    if( importCandidate() || importSeed() )
+      setDetailsShown( true );
+    return;
+  }
+
+  if( m_tab == Tab::Import )
+  {
+    const shared_ptr<DetectorPeakResponse> candidate = importCandidate();
+    if( candidate && candidate->isValid() )
+    {
+      if( m_batch && m_foundList->keep() )
+      {
+        m_closeAfterUse = m_narrow;
+        keepFoundAndUse();
+        return;
+      }
+      useDetector( candidate );
+      if( m_narrow )
+      {
+        // A phone has no room to show it in the Library: done, as when using a Library detector
+        m_doneSignal.emit();  //deletes this dialog: nothing after this
+        return;
+      }
+      if( m_batch )
+        clearFound();
+      showUsedInLibrary();
+    }else if( importSeed() )
+    {
+      openModifyWindow();
+    }
+    return;
+  }//if( Import tab )
+
+  const DrfLibrary::Entry * const entry = pickedEntry();
+  const bool in_use = entry && m_inUse && has_hash( *entry, m_inUse->hashValue() );
+  if( entry && entry->summary && (entry->summary->range == DrfLibrary::Range::NeedsCharacterization) )
+  {
+    openModifyWindow();
+  }else if( entry && entry->summary && !in_use )
+  {
+    if( m_pickedDrf && entry->summary->hasEfficiency )
+    {
+      useDetector( make_shared<DetectorPeakResponse>( *m_pickedDrf ) );
+      if( m_narrow )
+        m_doneSignal.emit();  //on a phone, using a detector is the end of it; deletes this dialog
+    }
+  }else
+  {
+    // "Done": the auto-pick boxes still apply to the detector in use.
+    const shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    const shared_ptr<DetectorPeakResponse> drf = m_inUse;
+    const shared_ptr<DataBaseUtils::DbSession> sql = m_sql;
+    const Dbo::ptr<InterSpecUser> user = m_interspec->user();
+    for( const pair<WCheckBox *,UseDrfPref::UseDrfType> &box
+          : { make_pair( m_autoSerial, UseDrfPref::UseDrfType::UseDetectorSerialNumber ),
+              make_pair( m_autoModel, UseDrfPref::UseDrfType::UseDetectorModelName ) } )
+    {
+      if( meas && drf && box.first && !box.first->isHidden() && box.first->isChecked() )
+      {
+        const UseDrfPref::UseDrfType type = box.second;
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, type, meas );  //a small write; session thread
+      }
+    }//for( the two boxes )
+
+    m_doneSignal.emit();
+  }
+}//handlePrimary()
+
+
+void DrfSelect::useDetector( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( !drf || !drf->isValid() )
+    return;
+
+  // The detector belongs to the foreground spectrum; without one there is nothing to use it for.
+  if( !m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) )
+  {
+    showNotice( WString::tr("dsl-notice-no-spectrum") );
+    return;
+  }
+
+  // Already in use (e.g. "Use" pressed twice): no second undo step.
+  if( m_inUse && (m_inUse->hashValue() == drf->hashValue()) )
+  {
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
+    return;
+  }
+
+  // Recorded first, so the Library lists it (with its "Last used") on the rescan below.
+  updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
+
+  const shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<DataBaseUtils::DbSession> sql = m_sql;
+  const Dbo::ptr<InterSpecUser> user = m_interspec->user();
+  for( const pair<WCheckBox *,UseDrfPref::UseDrfType> &box
+        : { make_pair( m_autoSerial, UseDrfPref::UseDrfType::UseDetectorSerialNumber ),
+            make_pair( m_autoModel, UseDrfPref::UseDrfType::UseDetectorModelName ) } )
+  {
+    if( meas && box.first && !box.first->isHidden() && box.first->isChecked() )
+    {
+      const UseDrfPref::UseDrfType type = box.second;
+      DrfSelect::setUserPrefferedDetector( drf, sql, user, type, meas );  //a small write; session thread
+    }
+  }//for( the two boxes )
+
+  const shared_ptr<DetectorPeakResponse> prev = m_inUse;
+  m_justUsedHash = drf->hashValue();
+  m_interspec->detectorChanged().emit( drf );  //calls setDetector(...)
+
+  // The undo/redo steps go through InterSpec, not this dialog, which may be gone by then.
+  UndoRedoManager * const undoManager = m_interspec->undoRedoManager();
+  if( undoManager )
+  {
+    undoManager->addUndoRedoStep( [prev](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->detectorChanged().emit( prev );
+    }, [drf](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->detectorChanged().emit( drf );
+    }, "Change DRF" );
+  }//if( undoManager )
+
+  m_notice->hide();
+  startScan();
+}//useDetector(...)
+
+
+void DrfSelect::useNoDetector()
+{
+  if( !m_inUse )
+    return;
+
+  const shared_ptr<DetectorPeakResponse> prev = m_inUse;
+  m_justUsedHash = 0;
+  m_interspec->detectorChanged().emit( nullptr );
+
+  UndoRedoManager * const undoManager = m_interspec->undoRedoManager();
+  if( undoManager )
+  {
+    undoManager->addUndoRedoStep( [prev](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->detectorChanged().emit( prev );
+    }, [](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->detectorChanged().emit( nullptr );
+    }, "Change DRF" );
+  }//if( undoManager )
+
+  showNotice( WString::tr("dsl-notice-none") );
+}//useNoDetector()
+
+
+void DrfSelect::setDetector( std::shared_ptr<DetectorPeakResponse> det )
+{
+  m_inUse = det;
+  m_justChanged = (det && m_justUsedHash && (det->hashValue() == m_justUsedHash));
+
+  m_preview->setReference( m_inUse );
+  updateInUseStrip();
+
+  // The Library may not have the detector in use yet (a new one): it shows up on the next scan.
+  m_list->setInUse( entryIdFor( m_inUse ) );
+  m_list->rebuild();
+  if( m_inUse && entryIdFor( m_inUse ).empty() && !m_scanning )
+    startScan();
+
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+}//setDetector(...)
+
+
+void DrfSelect::showInUseInList()
+{
+  if( m_tab != Tab::Library )
+    showTab( Tab::Library );
+
+  // Clear what could hide it
+  m_originChip = -1;
+  m_withGeometry = false;
+  m_search->setText( "" );
+  updateChips();
+  updateFilter();
+
+  const string id = entryIdFor( m_inUse );
+  if( !id.empty() )
+  {
+    pickEntry( id );
+    m_list->scrollToPicked();
+  }
+}//showInUseInList()
+
+
+void DrfSelect::updateChips()
+{
+  size_t num_all = 0, num_geom = 0;
+  map<int,size_t> num_by_origin;
+  for( size_t i = 0; m_entries && (i < m_entries->size()); ++i )
+  {
+    const DrfLibrary::Entry &entry = (*m_entries)[i];
+    if( entry.hidden || (!entry.summary && !entry.pending) )
+      continue;
+    num_all += 1;
+    num_by_origin[static_cast<int>(entry.origin)] += 1;
+    if( entry.summary && entry.summary->hasGeometry )
+      num_geom += 1;
+  }//for( loop over entries )
+
+  const auto chip_text = []( const WString &label, const size_t count ) -> WString {
+    return WString::fromUTF8( Wt::Utils::htmlEncode( label.toUTF8() )
+                              + " <span class=\"DrfChipCount\">" + std::to_string(count) + "</span>" );
+  };
+
+  for( size_t i = 0; i < m_chips.size(); ++i )
+  {
+    const int origin = m_chips[i].first;
+    WPushButton * const chip = m_chips[i].second;
+    const size_t count = (origin < 0) ? num_all : num_by_origin[origin];
+    const bool on = (origin == m_originChip);
+    chip->setText( chip_text( WString::tr( ns_chip_keys[i] ), count ) );
+    chip->toggleStyleClass( "Pressed", on );
+    chip->setAttributeValue( "aria-pressed", on ? "true" : "false" );
+    // A source with nothing in it (e.g., no ISOCS here) is not worth a chip, unless picked.
+    chip->setHidden( (origin >= 0) && (count == 0) && !on && m_entries );
+  }//for( loop over chips )
+
+  m_geoChip->setText( chip_text( WString::tr("dsl-chip-geometry"), num_geom ) );
+  m_geoChip->toggleStyleClass( "Pressed", m_withGeometry );
+  m_geoChip->setAttributeValue( "aria-pressed", m_withGeometry ? "true" : "false" );
+
+  m_libTab->setText( WString::fromUTF8( Wt::Utils::htmlEncode( WString::tr("dsl-tab-library").toUTF8() )
+                     + (m_entries ? (" <span class=\"DrfTabCount\">" + std::to_string(num_all) + "</span>") : string()) ) );
+}//updateChips()
+
+
+void DrfSelect::updateFilter()
+{
+  DrfLibrary::Filter filter;
+  filter.allOrigins = (m_originChip < 0);
+  if( m_originChip >= 0 )
+    filter.origin = static_cast<DrfLibrary::Origin>( m_originChip );
+  filter.withGeometry = m_withGeometry;
+  filter.query = m_search->text().toUTF8();
+
+  m_list->setFilter( filter );
+  m_list->rebuild();
+}//updateFilter()
+
+
+void DrfSelect::updateAutoPick()
+{
+  bool show = (m_autoSerial || m_autoModel) && (m_tab != Tab::Locations) && (!m_narrow || m_showDetails);
+  if( show && (m_tab == Tab::Import) )
+  {
+    const shared_ptr<DetectorPeakResponse> candidate = importCandidate();
+    show = (candidate && candidate->isValid());
+  }else if( show )
+  {
+    const DrfLibrary::Entry * const entry = pickedEntry();
+    show = entry ? (entry->summary && entry->summary->hasEfficiency) : (m_inUse && m_inUse->isValid());
+  }
+
+  m_autoPick->setHidden( !show );
+}//updateAutoPick()
+
+
+void DrfSelect::handleImportChanged()
+{
+  if( m_tab != Tab::Import )
+    return;
+  updatePreview();
+  updatePrimaryButton();
+  updateAutoPick();
+}//handleImportChanged()
+
+
+void DrfSelect::showNotice( const Wt::WString &message )
+{
+  m_noticeText->setText( message );
+  m_notice->show();
+}//showNotice(...)
+
+
+void DrfSelect::updateLocationsPage()
+{
+  if( !m_locationsPage || !m_scanLocations )
+    return;
+
+  size_t num_made = 0;
+  for( size_t i = 0; m_entries && (i < m_entries->size()); ++i )
+  {
+    const DrfLibrary::Entry &entry = (*m_entries)[i];
+    if( !entry.hidden && (entry.origin == DrfLibrary::Origin::UserMade) )
+      num_made += 1;
+  }
+
+  m_locationsPage->setLocations( *m_scanLocations,
+                                 m_locationStatuses ? *m_locationStatuses : vector<DrfLibrary::LocationStatus>(),
+                                 num_made );
+}//updateLocationsPage()
+
+
+void DrfSelect::setLocationShown( const std::string &id, const bool shown )
+{
+  DrfLibrary::LocationSettings settings = load_location_settings( m_interspec );
+
+  bool is_user = false;
+  for( DrfLibrary::Location &loc : settings.userLocations )
+  {
+    if( loc.id == id )
+    {
+      loc.hidden = !shown;
+      is_user = true;
+    }
+  }
+
+  if( !is_user )
+  {
+    if( shown )
+      settings.hiddenStandard.erase( id );
+    else
+      settings.hiddenStandard.insert( id );
+  }
+
+  if( save_location_settings( m_interspec, settings ) )
+    startScan();
+}//setLocationShown(...)
+
+
+void DrfSelect::rescanLocation( const std::string &id )
+{
+  for( size_t i = 0; m_scanLocations && (i < m_scanLocations->size()); ++i )
+  {
+    if( (*m_scanLocations)[i].id == id )
+      DrfLibrary::invalidatePath( (*m_scanLocations)[i].path );
+  }
+  startScan();
+}//rescanLocation(...)
+
+
+void DrfSelect::confirmRemoveLocation( const std::string &id )
+{
+  const DrfLibrary::LocationSettings settings = load_location_settings( m_interspec );
+  const auto pos = std::find_if( begin(settings.userLocations), end(settings.userLocations),
+                                 [&id]( const DrfLibrary::Location &loc ){ return loc.id == id; } );
+  if( pos == end(settings.userLocations) )
+    return;
+
+  const string name = SpecUtils::filename( pos->path );
+  SimpleDialog * const dialog = SimpleDialog::make<SimpleDialog>(
+                  WString::tr("dsl-loc-remove-title").arg( Wt::Utils::htmlEncode( name ) ),
+                  WString::tr("dsl-loc-remove-text") );
+  WPushButton * const remove_btn = dialog->addButton( WString::tr("dsl-loc-remove"), WidgetUtils::ButtonRole::Destructive );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  // The dialog can outlive this one: find it again when the button is clicked.
+  const Wt::Core::observing_ptr<DrfSelect> self( this );
+  remove_btn->clicked().connect( [self, id](){
+    if( self )
+      self->removeLocation( id );
+  } );
+}//confirmRemoveLocation(...)
+
+
+void DrfSelect::removeLocation( const std::string &id )
+{
+  DrfLibrary::LocationSettings settings = load_location_settings( m_interspec );
+  const auto pos = std::find_if( begin(settings.userLocations), end(settings.userLocations),
+                                 [&id]( const DrfLibrary::Location &loc ){ return loc.id == id; } );
+  if( pos == end(settings.userLocations) )
+    return;
+
+  const string path = pos->path;
+  settings.userLocations.erase( pos );
+  if( !save_location_settings( m_interspec, settings ) )
+    return;
+
+#if( BUILD_AS_OSX_APP )
+  macOsUtils::removeSecurityScopedBookmark( bookmark_key( path ) );
+#endif
+
+  DrfLibrary::invalidatePath( path );
+  showNotice( WString::tr("dsl-loc-removed").arg( SpecUtils::filename( path ) ) );
+  startScan();
+}//removeLocation(...)
+
+
+bool DrfSelect::addUserLocation( const std::string &path )
+{
+  if( path.empty() || (!SpecUtils::is_directory( path ) && !SpecUtils::is_file( path )) )
+    return false;
+
+  DrfLibrary::LocationSettings settings = load_location_settings( m_interspec );
+  const string normalized = SpecUtils::lexically_normalize_path( path );
+  for( const DrfLibrary::Location &loc : settings.userLocations )
+  {
+    if( SpecUtils::lexically_normalize_path( loc.path ) == normalized )
+    {
+      showNotice( WString::tr("dsl-loc-already").arg( path ) );
+      startScan();  //harmless, and what a caller waiting on the scan (keepFoundAndUse) needs
+      return true;
+    }
+  }
+
+  DrfLibrary::Location loc;
+  loc.id = loc.path = path;
+  loc.isFolder = SpecUtils::is_directory( path );
+  settings.userLocations.push_back( loc );
+  if( !save_location_settings( m_interspec, settings ) )
+    return false;
+
+#if( BUILD_AS_OSX_APP )
+  // Without the bookmark the (sandboxed) app cannot read the folder after it restarts.
+  if( !macOsUtils::createAndStoreSecurityScopedBookmark( path, bookmark_key( path ) ) )
+    passMessage( WString::tr("dsl-loc-bookmark-error").arg( Wt::Utils::htmlEncode( path ) ), WarningWidget::WarningMsgMedium );
+#endif
+
+  showNotice( WString::tr("dsl-loc-added").arg( SpecUtils::filename( path ) ) );
+  startScan();
+  return true;
+}//addUserLocation(...)
+
+
+void DrfSelect::startAddLocationFolder()
+{
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
+  SimpleDialog * const dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dsl-loc-add-folder-title") );
+  WPushButton * const ok = dialog->addButton( WString::tr("dsl-loc-add"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  ok->disable();
+
+  DirectorySelector * const selector = dialog->contents()->addNew<DirectorySelector>();
+  selector->pathValidityChanged().connect( ok, [ok]( bool valid ){ ok->setDisabled( !valid ); } );
+
+  const Wt::Core::observing_ptr<DrfSelect> self( this );
+  ok->clicked().connect( [self, selector](){
+    if( self )
+      self->addUserLocation( selector->path() );
+  } );
+#endif
+}//startAddLocationFolder()
+
+
+void DrfSelect::startAddLocationFile()
+{
+#if( BUILD_AS_OSX_APP )
+  // The macOS app is sandboxed: the file must come from the system's picker.
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    const WidgetUtils::WidgetHandle self( this );
+    macOsUtils::showFilePicker( WString::tr("dsl-loc-add-file-title").toUTF8(), "", true, false, false,
+      [self]( const vector<string> &paths ){
+        // Called on the session thread (macOsUtils posts it there)
+        DrfSelect * const widget = self.resolve_as<DrfSelect>();
+        if( widget && !paths.empty() )
+          widget->addUserLocation( paths.front() );
+      } );
+    return;
+  }
+#endif
+
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
+  SimpleDialog * const dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dsl-loc-add-file-title") );
+  WPushButton * const ok = dialog->addButton( WString::tr("dsl-loc-add"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  ok->disable();
+
+  WContainerWidget * const row = dialog->contents()->addNew<WContainerWidget>();
+  row->addStyleClass( "DrfLocFileRow" );
+  WLabel * const label = row->addNew<WLabel>( WString::tr("dsl-loc-file-path") );
+  WLineEdit * const edit = row->addNew<WLineEdit>();
+  edit->setPlaceholderText( WString::tr("dsl-loc-file-placeholder") );
+  label->setBuddy( edit );
+  WText * const hint = dialog->contents()->addNew<WText>( "", TextFormat::Plain );
+  hint->addStyleClass( "DrfFormHint" );
+  hint->setInline( false );
+
+  edit->textInput().connect( [edit, ok, hint](){
+    const string path = SpecUtils::trim_copy( edit->text().toUTF8() );
+    const bool valid = !path.empty() && SpecUtils::is_file( path );
+    ok->setDisabled( !valid );
+    hint->setText( (valid || path.empty()) ? WString() : WString::tr("dsl-loc-file-not-found") );
+  } );
+
+  const Wt::Core::observing_ptr<DrfSelect> self( this );
+  ok->clicked().connect( [self, edit](){
+    if( self )
+      self->addUserLocation( SpecUtils::trim_copy( edit->text().toUTF8() ) );
+  } );
+#endif
+}//startAddLocationFile()
+
+
+void DrfSelect::locateLocation( const std::string &id )
+{
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
+  WString name = WString::fromUTF8( id );
+  for( size_t i = 0; m_scanLocations && (i < m_scanLocations->size()); ++i )
+  {
+    const DrfLibrary::Location &loc = (*m_scanLocations)[i];
+    if( loc.id != id )
+      continue;
+    switch( loc.role )
+    {
+      case DrfLibrary::LocationRole::GadrasInstall: name = WString::tr("dsl-loc-gadras"); break;
+      case DrfLibrary::LocationRole::IsocsInstall:  name = WString::tr("dsl-loc-isocs");  break;
+      case DrfLibrary::LocationRole::AngleInstall:  name = WString::tr("dsl-loc-angle");  break;
+      default: break;
+    }
+  }
+
+  SimpleDialog * const dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dsl-loc-locate-title").arg( Wt::Utils::htmlEncode( name ) ) );
+  WPushButton * const ok = dialog->addButton( WString::tr("dsl-loc-use-folder"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  ok->disable();
+
+  DirectorySelector * const selector = dialog->contents()->addNew<DirectorySelector>();
+  selector->pathValidityChanged().connect( ok, [ok]( bool valid ){ ok->setDisabled( !valid ); } );
+
+  const Wt::Core::observing_ptr<DrfSelect> self( this );
+  ok->clicked().connect( [self, selector, id](){
+    if( !self )
+      return;
+    const string path = selector->path();
+    DrfLibrary::LocationSettings settings = load_location_settings( self->m_interspec );
+    settings.standardPaths[id] = path;
+    settings.hiddenStandard.erase( id );
+    if( !save_location_settings( self->m_interspec, settings ) )
+      return;
+#if( BUILD_AS_OSX_APP )
+    macOsUtils::createAndStoreSecurityScopedBookmark( path, bookmark_key( path ) );
+#endif
+    self->startScan();
+  } );
+#endif
+}//locateLocation(...)
+
+
+void DrfSelect::showQrCode()
+{
+#if( USE_QR_CODES )
+  const shared_ptr<const DetectorPeakResponse> drf = m_preview->detector();
+  if( !drf || !drf->isValid() )
+  {
+    passMessage( WString::tr("ds-no-drf-loaded"), WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+  try
+  {
+    const string url = drf->toAppUrlQr();
+    SimpleDialog *dialog = QrCode::displayTxtAsQrCode( url, WString::fromUTF8(drf->name()),
+                                                       WString::fromUTF8(drf->description()) );
+
+    // The URL carries the detector's shape, but a Monte-Carlo response is far too large for a QR
+    //  code - so say so, rather than let the recipient believe they received it.
+    if( dialog && drf->ceeloResponse() )
+    {
+      WText *note = dialog->contents()->addNew<WText>(
+                     WString::tr( drf->hasImportedGrid() ? "ds-qr-no-grid-note" : "ds-qr-no-mc-note" ) );
+      note->addStyleClass( "DrfQrNoMcNote" );
+      note->setInline( false );
+    }
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
+  }
+#endif //USE_QR_CODES
+}//showQrCode()
+
+
+void DrfSelect::confirmDeletePicked()
+{
+  const DrfLibrary::Entry * const entry = pickedEntry();
+  if( !entry || !entry->summary || (entry->kind != DrfLibrary::EntryKind::DbRow) || (entry->dbId < 0) )
+    return;
+
+  const long long db_id = entry->dbId;
+  const string name = entry->summary->name;
+
+  SimpleDialog * const dialog = SimpleDialog::make<SimpleDialog>(
+                     WString::tr("dsl-delete-title").arg( Wt::Utils::htmlEncode( name ) ), WString::tr("dsl-delete-text") );
+  WPushButton * const delete_btn = dialog->addButton( WString::tr("dsl-delete"), WidgetUtils::ButtonRole::Destructive );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  // The dialog can outlive this one: find it again when the button is clicked.
+  const Wt::Core::observing_ptr<DrfSelect> self( this );
+  delete_btn->clicked().connect( [self, db_id, name](){
+    if( self )
+      self->deleteEntry( db_id, name );
+  } );
+}//confirmDeletePicked()
+
+
+void DrfSelect::deleteEntry( const long long dbId, const std::string &name )
+{
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    const long long user_id = m_interspec->user().id();
+
+    const auto rows = m_sql->session()->find<DetectorPeakResponse>()
+                        .where( "InterSpecUser_id = ? AND id = ?" ).bind( user_id ).bind( dbId ).resultList();
+    for( Dbo::ptr<DetectorPeakResponse> row : rows )
+      row.remove();
+
+    // Nor pick it automatically for any spectrum any more.
+    const auto prefs = m_sql->session()->find<UseDrfPref>()
+                         .where( "InterSpecUser_id = ? AND DrfIndex = ?" ).bind( user_id ).bind( dbId ).resultList();
+    for( Dbo::ptr<UseDrfPref> pref : prefs )
+      pref.remove();
+
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("dsl-delete-error").arg( Wt::Utils::htmlEncode( name ) ).arg( Wt::Utils::htmlEncode( string(e.what()) ) ), WarningWidget::WarningMsgHigh );
+    return;
+  }//try / catch
+
+  DrfLibrary::invalidateDbRow( dbId );
+  if( pickedEntry() && (pickedEntry()->dbId == dbId) )
+  {
+    m_pickedId.clear();
+    m_pickedDrf.reset();
+    m_list->setPicked( "" );
+  }
+  updatePreview();
+  updatePrimaryButton();
+  startScan();
+}//deleteEntry(...)
+
+
+void DrfSelect::handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( drf )
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
+  m_doneSignal.emit();
+}//handleFitFwhmFinished(...)
+
+
+void DrfSelect::handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( drf )
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
+  m_doneSignal.emit();
+}//handleMcResponseFinished(...)
+
+
+void DrfSelect::openModifyWindow()
+{
+  if( m_modifyWindow )
+  {
+    m_modifyWindow->show();
+    m_modifyWindow->centerWindowHeavyHanded();
+    return;
+  }
+
+  // On the Import tab, Customize is for the file being imported - including a geometry-only one
+  //  (e.g., a lone Detector.dat), which is characterized there.
+  shared_ptr<DetectorPeakResponse> seed;
+  if( m_tab == Tab::Import )
+  {
+    seed = importCandidate();
+    if( !seed )
+      seed = importSeed();
+  }else if( m_preview->detector() )
+  {
+    seed = make_shared<DetectorPeakResponse>( *m_preview->detector() );
+  }
+
+  if( !seed )
+    return;
+
+  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, seed );
+
+  // Hide the Customize window before handling its result (the same order the standalone FWHM / MC
+  //  tools use in InterSpec::fwhmFromForegroundWindow / showMcResponseWindow).
+  m_modifyWindow->tool()->updatedDrf().connect( m_modifyWindow.get(), &AuxWindow::hide );
+  m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
+  m_modifyWindow->finished().connect( this, [this](){
+    if( !m_modifyWindow )
+      return;
+
+    AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
+    assert( !m_modifyWindow );
+
+    UndoRedoManager *undoRedo = m_interspec->undoRedoManager();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      undoRedo->addUndoRedoStep( [](){ reopenDrfSelectModifyWindow(); },
+                                 [](){ closeDrfSelectModifyWindow(); },
+                                 "Close modify-DRF tool" );
+    }//if( undoRedo )
+  } );
+
+  UndoRedoManager *undoRedo = m_interspec->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    undoRedo->addUndoRedoStep( [](){ closeDrfSelectModifyWindow(); },
+                               [](){ reopenDrfSelectModifyWindow(); },
+                               "Show modify-DRF tool" );
+  }//if( undoRedo )
+}//void openModifyWindow()
+
+
+void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( !drf )
+    return;
+
+  // The customized detector is used straight away, and listed under the one it was made from.
+  updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql, true );  //so a removed icon stays removed
+  useDetector( drf );
+  showUsedInLibrary();
+}//handleModifyFinished(...)
+
+
+void DrfSelect::showUsedInLibrary()
+{
+  // Once the rescan useDetector(...) started lists it: picked, with nothing filtering it out.
+  m_pickInUseAfterScan = true;
+  m_scrolledToPicked = false;
+  m_originChip = -1;
+  m_withGeometry = false;
+  m_search->setText( "" );
+  updateChips();
+  updateFilter();
+  if( m_tab != Tab::Library )
+    showTab( Tab::Library );
+}//showUsedInLibrary()
+
+
+// ---------------------------------------------------------------------------------------------
+//  DrfSelectWindow
+// ---------------------------------------------------------------------------------------------
+
 DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
-  : AuxWindow( WString::tr("window-title-select-det-eff-fcn"),
+  : AuxWindow( WString::tr("dsl-window-title"),
               AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize
                    | AuxWindowProperties::SetCloseable ),
-    m_edit( NULL ),
+    m_edit( nullptr ),
     m_interspec( viewer )
 {
   assert( m_interspec );
@@ -5668,36 +5018,39 @@ DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
     m_interspec = InterSpec::instance(); //jic
   if( !m_interspec )
     throw runtime_error( "DrfSelectWindow: invalid ptr to InterSpec" );
-  
+
+  addStyleClass( "DrfSelectWindow" );
+
   shared_ptr<SpecMeas> meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   shared_ptr<DetectorPeakResponse> det = meas ? meas->detector() : nullptr;
-  SpecMeasManager *fileManager = m_interspec->fileManager();
-  SpectraFileModel *fileModel = fileManager ? fileManager->model() : nullptr;
-  
   {
-    auto editOwned = std::make_unique<DrfSelect>( det, m_interspec, fileModel, this );
+    auto editOwned = std::make_unique<DrfSelect>( det, m_interspec, this );
     m_edit = editOwned.get();
     contents()->setPadding( 0 );
     contents()->setOverflow( Overflow::Hidden );
     stretcher()->addWidget( std::move(editOwned), 0, 0 );
   }
-  stretcher()->setContentsMargins( 6, 2, 6, 0 );
-  
-  m_edit->done().connect( this, [this](){ acceptAndDelete( this ); } );
-  finished().connect( this, [this]( Wt::DialogCode ){ acceptAndDelete( this ); } );
+  stretcher()->setContentsMargins( 0, 0, 0, 0 );
+
+  // Closing in any way applies nothing: a detector is only applied by "Use".
+  const auto close = [this](){
+    if( m_interspec )
+      m_interspec->closeDrfSelectWindow();
+    else
+      AuxWindow::deleteAuxWindow( this );
+  };
+  m_edit->done().connect( this, close );
+  finished().connect( this, [close]( Wt::DialogCode ){ close(); } );
   rejectWhenEscapePressed();
-  
+
   show();
-  
+
   if( !m_isPhone )
   {
-    // None this would have effect for phone
-    resize( WLength(650,WLength::Unit::Pixel), WLength(610,WLength::Unit::Pixel));
-    centerWindow();
-    
+    resize( WLength(1120,WLength::Unit::Pixel), WLength(880,WLength::Unit::Pixel) );
     resizeToFitOnScreen();
     centerWindowHeavyHanded();
-  }//
+  }
 }//DrfSelectWindow constructor
 
 
@@ -5710,14 +5063,3 @@ DrfSelect *DrfSelectWindow::widget()
 {
   return m_edit;
 }
-
-void DrfSelectWindow::acceptAndDelete( DrfSelectWindow *window )
-{
-  window->m_edit->emitChangedSignal();  //will only emit if necessary
-  //window->m_edit->emitModifiedSignal(); //will only emit if necessary
-  
-  if( window->m_interspec )
-    window->m_interspec->closeDrfSelectWindow();
-  else
-    AuxWindow::deleteAuxWindow( window );
-}//void acceptAndDelete( DrfSelectWindow *window )

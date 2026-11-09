@@ -127,6 +127,12 @@ div.DrfChartTooltip {
   stroke-dasharray: 4 3;
 }
 
+/* A second detector drawn for comparison (e.g., the one in use while previewing another). */
+.DrfChart .drf-ref-line {
+  stroke-dasharray: 6 4;
+  stroke-opacity: 0.65;
+}
+
 /* Responsive design considerations */
 @media screen and (max-width: 600px) {
   .DrfChart .axis-label {

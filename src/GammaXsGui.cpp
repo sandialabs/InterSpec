@@ -49,7 +49,6 @@
 #include "InterSpec/ShieldMaterialSuggestion.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -306,8 +305,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
 
   ++row;
   {
-    SpecMeasManager *fileManager = m_specViewer->fileManager();
-    auto dd = std::make_unique<DetectorDisplay>( m_specViewer, fileManager->model() );
+    auto dd = std::make_unique<DetectorDisplay>( m_specViewer );
     m_detectorDisplay = dd.get();
     m_detectorDisplay->setMinimumSize( WLength::Auto, WLength(1.5,WLength::Unit::FontEm) );
     m_layout->addWidget( std::move(dd), row, 0, 1, 3 );

@@ -332,9 +332,9 @@
   <!-- {1} = the geometry model's crystal, {2} = the stated diameter (setback) the flat-disk curve uses -->
   <message id="dmw-info-diam-flat-differs">{1}; Flat Disk uses {2}</message>
 
-  <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
-    detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
-    again later under the &quot;Previous&quot; tab of Detector Select.  Only the XML keeps a
-    Monte-Carlo response - a QR code carries the geometry, but the response must be generated
-    again from it.</message>
+  <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, your copy is listed in the
+    Detector Efficiency dialog under the detector it was made from (and under &quot;Made by
+    you&quot;), where you can also download it as an XML file or show it as a QR code.  Only the
+    XML keeps a Monte-Carlo response - a QR code carries the geometry, but the response must be
+    generated again from it.</message>
 </messages>

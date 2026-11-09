@@ -1623,6 +1623,13 @@ button.Wt-btn.with-label.LightButton,
     background: var(--interspec-hover-background);  /* translucent, so it reads on any surface */
   }
 
+  /* Keyboard focus (it is a role="button" with tabindex="0"); not shown for mouse clicks */
+  .DetectorDisplay:focus-visible
+  {
+    outline: 2px solid var(--interspec-accent-color);
+    outline-offset: 1px;
+  }
+
   /* The chevron at the right end */
   .DetectorDisplay::after
   {

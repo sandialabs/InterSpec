@@ -72,6 +72,9 @@ protected:
 
   std::shared_ptr<const DetectorPeakResponse> m_detector;
 
+  /** A second detector drawn dashed for comparison (#setReferenceDetector), or null. */
+  std::shared_ptr<const DetectorPeakResponse> m_reference;
+
   /** Whether to draw the per-angle response curves (only meaningful when the
    detector has a Monte-Carlo / transfer parameterized response). */
   bool m_showAngles;
@@ -86,6 +89,9 @@ protected:
 
   /** Whether the DRFs FWHM curve (and its right-hand axis) is drawn. */
   bool m_showFwhm;
+
+  /** Whether the efficiency is drawn; when not, the FWHM is drawn on the left-hand axis. */
+  bool m_showEfficiency;
 
   /** The javascript variable name used to refer to the DrfChart object.
    Currently is `jsRef() + ".chart"`.
@@ -116,18 +122,18 @@ protected:
    (once, however many changes there were), and a result is kept only if it was computed for the
    serials still current when it is ready.
    */
-  uint64_t m_detectorSerial, m_anglesSerial;
+  uint64_t m_detectorSerial, m_anglesSerial, m_referenceSerial;
 
   /** The client-side detector data (`DetectorPeakResponse::toJSON()`) and per-angle series last
    computed, and the serials they were computed for - so a full re-render re-sends them rather than
    computing them again.
    */
-  std::string m_detectorJson, m_anglesJson;
-  uint64_t m_detectorJsonSerial, m_anglesJsonSerial;
+  std::string m_detectorJson, m_anglesJson, m_referenceJson;
+  uint64_t m_detectorJsonSerial, m_anglesJsonSerial, m_referenceJsonSerial;
 
   /** The serials the most recent computation was started for, so a render while it is still running
    does not start the same work again. */
-  uint64_t m_detectorRequestedSerial, m_anglesRequestedSerial;
+  uint64_t m_detectorRequestedSerial, m_anglesRequestedSerial, m_referenceRequestedSerial;
 
   /** Bumped by every computation #render starts; the one with the latest value clears the chart's
    "computing" state when it lands. */
@@ -181,6 +187,16 @@ public:
    efficiency response, which the FWHM has nothing to say about. */
   void setShowFwhm( const bool show );
 
+  /** Enables/disables drawing the efficiency (curve, band and markers); defaults to enabled.  With
+   it off, the FWHM is drawn against the left-hand axis - for a chart showing only peak width.
+   */
+  void setShowEfficiency( const bool show );
+
+  /** Sets (or, with nullptr, clears) a second detector to draw dashed under the first, e.g. the
+   detector in use while another is previewed.  Only its efficiency and FWHM curves are drawn.
+   */
+  void setReferenceDetector( std::shared_ptr<const DetectorPeakResponse> det );
+
   /** Sets (or, with an empty vector, clears) measured data points to draw over the curves - the
    efficiency points the Create DRF tool fits, with error bars, and their FWHM markers. */
   void setDataPoints( const std::vector<DrfChartPoint> &points );
@@ -203,8 +219,8 @@ protected:
    */
   void refreshData();
 
-  /** Pushes #m_detectorJson and/or #m_anglesJson to the client. */
-  void pushData( const bool detector, const bool angles );
+  /** Pushes #m_detectorJson, #m_anglesJson and/or #m_referenceJson to the client. */
+  void pushData( const bool detector, const bool angles, const bool reference );
 
   /** Shows (or clears) the client's "computing" state. */
   void setPending( const bool pending );

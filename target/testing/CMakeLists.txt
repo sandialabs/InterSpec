@@ -976,6 +976,16 @@ add_test( NAME TDrfImport
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# The Detector Efficiency dialog's Library data (DrfLibrary): detector summaries, the cache that is
+#  reused until a file or database row changes, merging database rows into detectors found on disk,
+#  and the rows the list shows for a filter.
+add_executable( test_DrfLibrary test_DrfLibrary.cpp )
+target_link_libraries( test_DrfLibrary PRIVATE InterSpecLib )
+add_test( NAME TDrfLibrary
+  COMMAND $<TARGET_FILE:test_DrfLibrary> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_ImportedGridDrf test_ImportedGridDrf.cpp )
 target_link_libraries( test_ImportedGridDrf PRIVATE InterSpecLib )
 add_test( NAME TImportedGridDrf

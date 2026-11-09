@@ -38,7 +38,33 @@
 class SimpleDialog;
 class EccUncertOptions;
 class DetectorPeakResponse;
+class DrfBatchUploadResource;
 class FileDragUploadResource;
+
+
+/** The files of one drop (or browse) onto the Import tab: each file's path within the drop
+ ("Lab/HPGe-A/Detector.dat"), and the file its bytes were spooled to.  The spooled files are deleted
+ with this object, so it can be shared with a worker thread reading them.
+ */
+struct DrfDropBatch
+{
+  std::vector<std::pair<std::string,std::string>> files;  ///< {path within the drop, spool file}
+
+  /** The dropped folder's own path, when the app knows it (the macOS app, for a single dropped
+   folder), so it can be kept where it is; else empty. */
+  std::string nativeFolder;
+
+  /** Files left out: past the batch's size or count limit, or that failed to upload. */
+  size_t numRefused = 0;
+  /** Files the browser did not send, as not detector files (hidden, or of other types). */
+  size_t numSkipped = 0;
+  uintmax_t numBytes = 0;
+
+  DrfDropBatch() = default;
+  DrfDropBatch( const DrfDropBatch & ) = delete;
+  DrfDropBatch &operator=( const DrfDropBatch & ) = delete;
+  ~DrfDropBatch();
+};//struct DrfDropBatch
 
 namespace Wt
 {
@@ -64,8 +90,9 @@ public:
   enum class Host
   {
     /** The "Import" tab of `DrfSelect`: has a drop area (or click to browse) to choose the file.
-     DrfSelect applies every rebuilt DRF app-wide (with an undo step), so the diameter, distance
-     and name fields rebuild once an edit is committed, not on every keystroke.
+     DrfSelect previews each rebuilt DRF, and applies it only when the user clicks "Use"; the
+     diameter, distance and name fields rebuild once an edit is committed, not on every keystroke
+     (rebuilding from a .par grid takes seconds).
      */
     ImportTab,
 
@@ -103,6 +130,15 @@ public:
   /** Emitted when the user clicks "Characterize..." for a geometry-only file. */
   Wt::Signal<> &characterizeRequested();
 
+  /** Emitted, instead of the files being added here, for a drop holding more than one detector's
+   files (a folder, say) - see `DrfImport::groupFiles`.  A single file, or the two halves of one
+   detector, are added here as before.  ImportTab host only.
+   */
+  Wt::Signal<std::shared_ptr<const DrfDropBatch>> &batchDropped();
+
+  /** "GADRAS Detector.dat", "ISOCS efficiency (.ecc)", ... - what a kind of file is, for the user. */
+  static Wt::WString kindLabel( const DrfImport::FileKind kind );
+
   /** Fills `dialog` as the dialog shown for a DRF file dropped onto the app: this widget, a chart,
    the default-DRF-for-serial-number/model options, and Cancel / Further options / Use buttons.
    Returns the widget, so further dropped files can be added to it.
@@ -113,6 +149,7 @@ public:
 protected:
   void handleUpload( const std::string &displayName, const std::string &spoolName,
                      const bool companionArea );
+  void handleBatch( std::shared_ptr<DrfDropBatch> batch );
   void startSource( const size_t record );
   void setSource( std::shared_ptr<const DrfImport::Source> src );
   void handleRecordChanged();
@@ -123,7 +160,8 @@ protected:
 
   const Host m_host;
 
-  std::unique_ptr<FileDragUploadResource> m_mainUpload;       ///< null for Host::DropDialog
+  std::unique_ptr<FileDragUploadResource> m_mainUpload;       ///< unused (the main area takes batches)
+  std::unique_ptr<DrfBatchUploadResource> m_batchUpload;     ///< null for Host::DropDialog
   std::unique_ptr<FileDragUploadResource> m_companionUpload;
 
   Wt::WContainerWidget *m_mainDrop;                          ///< null for Host::DropDialog
@@ -174,6 +212,7 @@ protected:
 
   Wt::Signal<> m_changed;
   Wt::Signal<> m_characterizeRequested;
+  Wt::Signal<std::shared_ptr<const DrfDropBatch>> m_batchDropped;
 };//class DrfImportWidget
 
 #endif //DrfImportWidget_h

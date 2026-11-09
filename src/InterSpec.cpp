@@ -9508,12 +9508,11 @@ MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_f
       DrfSelect::updateLastUsedTimeOrAddToDb( drf, user().id(), sql() );
   } );
 
-  if( m_drfSelectWindow )
-  {
-    m_addFwhmTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+  // Detector Select may be closed (or opened) while this tool is up, so look it up when it fires.
+  m_addFwhmTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+    if( m_drfSelectWindow )
       m_drfSelectWindow->widget()->handleFitFwhmFinished( drf );
-    } );
-  }//if( m_drfSelectWindow )
+  } );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9584,14 +9583,11 @@ MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
       DrfSelect::updateLastUsedTimeOrAddToDb( drf, user().id(), sql() );
   } );
 
-  if( m_drfSelectWindow )
-  {
-    m_mcResponseTool->tool()->updatedDrf().connect( this,
-                        [this]( std::shared_ptr<DetectorPeakResponse> drf ){
-      if( m_drfSelectWindow )
-        m_drfSelectWindow->widget()->handleMcResponseFinished( drf );
-    } );
-  }//if( m_drfSelectWindow )
+  m_mcResponseTool->tool()->updatedDrf().connect( this,
+                      [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+    if( m_drfSelectWindow )
+      m_drfSelectWindow->widget()->handleMcResponseFinished( drf );
+  } );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -11499,27 +11495,23 @@ void InterSpec::handleCloseMakeDrfWindow( MakeDrfWindow *window )
 
 DrfSelectWindow *InterSpec::showDrfSelectWindow()
 {
-  auto redu = [this](){
-    if( !m_drfSelectWindow )
-      m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
-    else
-      m_drfSelectWindow->show();
-  };
-  
-  auto undo = [this](){
-    if( m_drfSelectWindow )
-    {
-      DrfSelectWindow *window = m_drfSelectWindow.get();
-      m_drfSelectWindow = nullptr;
-      AuxWindow::deleteAuxWindow( window );
-    }
-  };
+  if( m_drfSelectWindow )
+  {
+    m_drfSelectWindow->show();
+    m_drfSelectWindow->centerWindowHeavyHanded();
+    return m_drfSelectWindow.get();
+  }
 
-  redu();
-  
-  if( m_undo )
-    m_undo->addUndoRedoStep( undo, redu, "Show DRF Select Window" );
-  
+  // The window calls closeDrfSelectWindow() itself when it is closed (see DrfSelectWindow).
+  m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ closeDrfSelectWindow(); };
+    auto redo = [this](){ showDrfSelectWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show DRF Select Window" );
+  }//if( m_undo )
+
   return m_drfSelectWindow.get();
 }//void showDrfSelectWindow()
 
@@ -11532,26 +11524,18 @@ DrfSelectWindow *InterSpec::drfSelectWindow() const
 
 void InterSpec::closeDrfSelectWindow()
 {
-  auto undo = [this](){
-    if( !m_drfSelectWindow )
-      m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
-    else
-      m_drfSelectWindow->show();
-  };
-  
-  auto redo = [this](){
-    if( m_drfSelectWindow )
-    {
-      DrfSelectWindow *window = m_drfSelectWindow.get();
-      m_drfSelectWindow = nullptr;
-      AuxWindow::deleteAuxWindow( window );
-    }
-  };
-  
-  redo();
-  
-  if( m_undo )
-    m_undo->addUndoRedoStep( undo, redo, "Close DRF Select Window" );
+  if( !m_drfSelectWindow )
+    return;  //idempotent - and no undo step for closing nothing
+
+  AuxWindow::deleteAuxWindow( m_drfSelectWindow.get() );
+  assert( !m_drfSelectWindow );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showDrfSelectWindow(); };
+    auto redo = [this](){ closeDrfSelectWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close DRF Select Window" );
+  }//if( m_undo )
 }//void closeDrfSelectWindow()
 
 

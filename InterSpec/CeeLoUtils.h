@@ -457,6 +457,33 @@ namespace CeeLoUtils
    */
   ceelo::MaterialSpec gadrasCrystalMaterial( const std::string &gadras_material_name );
 
+  /** The crystal materials a detector can be made of: the GADRAS material-table names that
+   #gadrasCrystalMaterial can actually build, in table order.
+
+   Driven by the table rather than hand-listed, so any crystal a `Detector.dat` can name is one the
+   geometry form offers, and an imported descriptor matches an entry by name.
+   */
+  const std::vector<std::string> &crystalMaterialNames();
+
+  /** The crystal a DRF's free text names - an entry of #crystalMaterialNames, or empty.
+
+   A DRF seeded from a GADRAS `Detector.dat` records the crystal in its description ("GADRAS
+   geometry, LaBr3; ..."), and shipped detectors carry it in their name ("LaBr 10%").  Matched on
+   the table names, longest first, and only on whole tokens - so "Si" does not match inside
+   "Since", and "LaBr3" wins over any shorter prefix.
+   */
+  std::string crystalNameFromText( const std::string &text );
+
+  /** The crystal a DRF's own evidence implies - an entry of #crystalMaterialNames, or empty when
+   nothing usable says.  Does not look at the DRF's free text for a crystal name (see
+   #crystalNameFromText) or at its geometry.
+
+   In order: a detector model named in its name/description (SpecUtils::DetectorType names); its
+   own FWHM at 661 keV (below 5 keV is HPGe; above only vetoes an HPGe answer below); its recorded
+   peak-fit detector type.  Never guesses among scintillators the evidence does not separate.
+   */
+  std::string crystalNameFromDrfEvidence( const DetectorPeakResponse &drf );
+
   /** A stand-in material for a GADRAS attenuator, which is specified only as an
    effective atomic number and an areal density (g/cm2) - never a composition or
    a thickness.

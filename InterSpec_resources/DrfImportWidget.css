@@ -28,22 +28,113 @@
 
 .DrfImportDrop.DrfImportMainDrop
 {
-  min-height: 60px;
+  min-height: 200px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
   font-size: inherit;
+  color: var(--interspec-text-color);
+  background: var(--interspec-panel-background);
+  border-radius: 12px;
+}
+
+/* DrfImportDrop.js toggles DragOver */
+.DrfImportDrop.DrfImportMainDrop.DragOver
+{
+  border-color: var(--interspec-success-color);
+}
+
+.DrfImportDropIcon
+{
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: var(--interspec-selected-background);
+  position: relative;
+}
+
+.DrfImportDropIcon::after
+{
+  content: "";
+  position: absolute;
+  inset: 11px;
+  background: var(--interspec-selected-text-color);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 15V4M7 9l5-5 5 5'/><path d='M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 15V4M7 9l5-5 5 5'/><path d='M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4'/></svg>") center / contain no-repeat;
+}
+
+.DrfImportDropTitle
+{
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.DrfImportDropSub
+{
+  font-size: 13px;
+  color: var(--interspec-secondary-text-color);
+  max-width: 460px;
+}
+
+.DrfImportDropBtns
+{
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.DrfImportDropBtns button.Wt-btn.DrfImportBrowse
+{
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--interspec-outline-color);
+  background: var(--interspec-background-color);
+  color: var(--interspec-text-color);
+}
+
+.DrfImportDropBtns button.Wt-btn.DrfImportBrowse:hover
+{
+  background: var(--interspec-hover-background);
+}
+
+/* The suggested way in: the accent outline, as the dialogs' affirm buttons have */
+.DrfImportDropBtns button.Wt-btn.DrfImportBrowse.Primary
+{
+  border-color: var(--interspec-accent-color);
+  box-shadow: 0 0 0 1px var(--interspec-accent-color);
 }
 
 /* A file is loaded: the main area only offers to replace it. */
 .DrfImportDrop.DrfImportMainDrop.DrfImportLoaded
 {
   min-height: 0;
+  flex-direction: row;
   padding: 6px 10px;
   font-size: smaller;
+}
+
+.DrfImportDrop.DrfImportMainDrop.DrfImportLoaded .DrfImportDropIcon,
+.DrfImportDrop.DrfImportMainDrop.DrfImportLoaded .DrfImportDropSub
+{
+  display: none;
+}
+
+.DrfImportDrop.DrfImportMainDrop.DrfImportLoaded .DrfImportDropTitle
+{
+  font-size: inherit;
+  font-weight: normal;
+}
+
+.DrfImportDrop.DrfImportMainDrop.DrfImportLoaded .DrfImportDropBtns button.Wt-btn.DrfImportBrowse
+{
+  height: 28px;
 }
 
 .DrfImportDrop.DomIsDrugOver
 {
   border: 3px dashed var(--interspec-outline-color);
-  background-color: rgba(128, 128, 128, 0.5);
+  background-color: var(--interspec-hover-background);
 }
 
 .DrfImportDrop.DragedOver,

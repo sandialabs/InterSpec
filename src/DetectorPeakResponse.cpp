@@ -818,7 +818,19 @@ void DetectorPeakResponse::setParentHashValue( const uint64_t val )
 }
 
 
+uint64_t DetectorPeakResponse::hashValueWithSource( const DrfSource source ) const
+{
+  return computeHashValue( source );
+}
+
+
 void DetectorPeakResponse::computeHash()
+{
+  m_hash = computeHashValue( m_efficiencySource );
+}//void computeHash()
+
+
+uint64_t DetectorPeakResponse::computeHashValue( const DrfSource source ) const
 {
   std::size_t seed = 0;
 
@@ -842,7 +854,7 @@ void DetectorPeakResponse::computeHash()
     for( const float val : m_resolutionUncerts )
       boost::hash_combine( seed, val );
 
-  boost::hash_combine( seed, m_efficiencySource );
+  boost::hash_combine( seed, source );
   boost::hash_combine( seed, eff.form() );
 
   for( const EnergyEfficiencyPair &a : eff.energyEfficiencies() )
@@ -926,8 +938,8 @@ void DetectorPeakResponse::computeHash()
   if( !m_fixedGeomSetupXml.empty() )
     boost::hash_combine( seed, m_fixedGeomSetupXml );
 
-  m_hash = seed;
-}//void computeHash()
+  return seed;
+}//uint64_t computeHashValue( const DrfSource source ) const
 
 
 //isValid(): Tells wether or not this DetectorPeakResponse has been properly
@@ -1872,6 +1884,18 @@ void DetectorPeakResponse::updateLastUsedTimeToNow()
 {
   m_lastUsedUtc = std::time(nullptr);
 }//void updateLastUsedTimeToNow()
+
+
+int64_t DetectorPeakResponse::createdUtc() const
+{
+  return m_createdUtc;
+}
+
+
+int64_t DetectorPeakResponse::lastUsedUtc() const
+{
+  return m_lastUsedUtc;
+}
 
 
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
@@ -5816,9 +5840,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }else if( compare(node->value(),node->value_size(),"DefaultRelativeEfficiencyDrf",28,false) )
   {
     m_efficiencySource = DrfSource::DefaultRelativeEfficiencyDrf;
+  }else if( compare(node->value(),node->value_size(),"UserImportedEfficiencyCsvDrf",28,false) )
+  {
+    // Written by #toXml for this source; it used to be read back as UserImportedIntrisicEfficiencyDrf.
+    m_efficiencySource = DrfSource::UserImportedEfficiencyCsvDrf;
   }else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
-          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false)
-          || compare(node->value(),node->value_size(),"UserImportedEfficiencyCsvDrf",28,false)  )
+          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
   {
     m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
   }else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false)
@@ -6496,6 +6523,36 @@ double DetectorPeakResponse::geometricEfficiency( const double distance ) const
 
   return fractionalSolidAngle( modeledCrystalDiameter(), distance + modeledCrystalSetback() );
 }//geometricEfficiency(...)
+
+
+double DetectorPeakResponse::relativeEfficiencyIeee325() const
+{
+  // IEEE 325: Co-60 1332.49 keV, point source on axis 25 cm from the detector face; a 3x3 inch
+  //  NaI(Tl) crystal gives 1.2E-3 full-energy-peak counts per emitted gamma there.
+  const float co60_energy = 1332.49f;
+  const double nai3x3_abs_eff = 1.2E-3;
+
+  if( !isValid() || isFixedGeometry() )
+    return -1.0;
+
+  // A curve whose stated range stops short of 1332 keV would be extrapolated - not a number to quote.
+  const bool has_range = ((m_lowerEnergy != 0.0) || (m_upperEnergy != 0.0));
+  if( has_range && ((co60_energy < m_lowerEnergy) || (co60_energy > m_upperEnergy)) )
+    return -1.0;
+
+  try
+  {
+    const double eff = efficiency( co60_energy, 25.0*PhysicalUnits::cm );
+    if( !std::isfinite(eff) || (eff <= 0.0) )
+      return -1.0;
+
+    return 100.0 * eff / nai3x3_abs_eff;
+  }catch( std::exception & )
+  {
+  }
+
+  return -1.0;
+}//double relativeEfficiencyIeee325() const
 
 
 const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::getEnergyEfficiencyPair() const

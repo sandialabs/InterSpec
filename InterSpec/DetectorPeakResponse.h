@@ -293,6 +293,19 @@ public:
   uint64_t parentHashValue() const;
   void setParentHashValue( const uint64_t val );
 
+  /** The #hashValue this DRF would have if its #drfSource were `source`; computed on demand.
+
+   The source is part of #hashValue, so the same detector reached two ways (e.g., a shipped GADRAS
+   detector picked from a folder listing vs. chosen automatically for a spectrum, which have
+   historically been tagged `UserAddedGadrasDrf` and `DefaultGadrasDrf` respectively) gets two
+   hashes; this gives the other one.
+
+   Only meaningful for a DRF parsed from its original files: one read back from XML or the
+   database keeps the hash it was saved with, which recomputing from the round-tripped values (a
+   CeeLo response's text tables, in particular) need not reproduce.
+   */
+  uint64_t hashValueWithSource( const DrfSource source ) const;
+
   //isValid(): Tells wether or not this DetectorPeakResponse has been properly
   //  defined and can be used.  Right now this is solely based on whether or
   //  not 'm_energyEfficiencies' has been populated.
@@ -511,7 +524,10 @@ public:
    
    Detector Name, Relative Eff, Detector Description,  c0,  c1,  c2,  c3,  c4,  c5,  c6,  c7,  p0,  p1,  p2,  Calib Distance, Radius (cm),  G factor
    Detector Name: is usually the detector model, ex., "IdentiFINDER".
-   Relative Eff:. is the efficiency relative to a 3x3 NaI detector at 661 keV; this is only used for reference, and may be empty, ex., "11%"
+   Relative Eff:. is the efficiency relative to a 3x3 NaI detector at 1332 keV (MakeDrf writes its
+              intrinsic-efficiency ratio here; vendor values are usually the IEEE 325 absolute ratio
+              at 25 cm - see #relativeEfficiencyIeee325); this is only used for reference, and may be
+              empty, ex., "11%"
    Detector Description: Description of the detector crystal, ex., "2.5x1.5 Planar HPGe"
    c0 through c7: the coefficients that will be fed into #fromExpOfLogPowerSeries and are in MeV (not keV); it is not uncommon for
               only the first 4 or five coefficients to be non-zero.  These coefficients are teh relative efficiency at a given distance.
@@ -859,6 +875,16 @@ public:
    a response-backed one.
    */
   double geometricEfficiency( const double distance ) const;
+
+  /** The relative efficiency, in percent, by the IEEE 325 definition: the full-energy-peak
+   efficiency for 1332.49 keV gammas from an on-axis Co-60 point source 25 cm from the detector
+   face (#efficiency, so an attached #ceeloResponse is used), divided by 1.2E-3 - the value for a
+   3x3 inch NaI(Tl) crystal - times 100.  This is the number vendor data sheets quote.
+
+   Returns a negative value when it has no meaning: an invalid DRF, a fixed-geometry DRF, or one
+   whose efficiency energy range (when stated) does not reach 1332 keV.
+   */
+  double relativeEfficiencyIeee325() const;
 
 
   /** The source distance a #CeeLoUtils::flatDiskSnapshotAt snapshot was built for, or a
@@ -1449,7 +1475,14 @@ public:
       save to database.
    */
   void updateLastUsedTimeToNow();
-  
+
+  /** Seconds since the epoch (UTC) the DRF was created / last used; zero if unknown.  Parsers stamp
+   both with the time they ran, so only values read back from the database (or a DRF XML) say
+   anything about the user's history.
+   */
+  int64_t createdUtc() const;
+  int64_t lastUsedUtc() const;
+
   //Some temporary accessors for debugging 2019050
   ResolutionFnctForm resolutionFcnType() const { return m_resolutionForm; }
   const std::vector<float> &resolutionFcnCoefficients() const { return m_resolutionCoeffs; }
@@ -1612,6 +1645,9 @@ protected:
   void applyGadrasDat( const GadrasDetectorDat &dat, std::istream *efficiencyCsv );
 
   void computeHash();
+
+  /** The value #computeHash stores, as if #m_efficiencySource were `source`. */
+  uint64_t computeHashValue( const DrfSource source ) const;
   
 protected:
   /** Returns the multiplication factor to convert from absolute to intrinsic efficiency.

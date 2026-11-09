@@ -2185,21 +2185,14 @@ void MakeDrf::startSaveAs()
     std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
     const Wt::Dbo::ptr<InterSpecUser> &user = m_interspec->user();
     
+    // On this (the session) thread: copying the `Dbo::ptr` user is not thread safe.
     if( def_for_serial_cb && def_for_serial_cb->isChecked() && representative_meas )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
-      } ) );
-    }//if( def_for_serial_cb and is checked )
-    
+      DrfSelect::setUserPrefferedDetector( drf, sql, user, UseDrfPref::UseDrfType::UseDetectorSerialNumber,
+                                           representative_meas );
+
     if( def_for_model_cb && def_for_model_cb->isChecked() && representative_meas )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, representative_meas );
-      } ) );
-    }//if( def_for_serial_cb and is checked )
+      DrfSelect::setUserPrefferedDetector( drf, sql, user, UseDrfPref::UseDrfType::UseDetectorModelName,
+                                           representative_meas );
     
     w->hide();
     
@@ -4078,7 +4071,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   
   if( m_fwhmCoefs.empty() )
   {
-    snprintf( rel_eff_txt, sizeof(rel_eff_txt), "%.1f%% eff. (rel. to 3x3 NaI) @661 keV", relEffPercent );
+    snprintf( rel_eff_txt, sizeof(rel_eff_txt), "%.1f%% eff. (rel. to 3x3 NaI @1332 keV)", relEffPercent );
   }else
   {
     const float fwhm661 = DetectorPeakResponse::peakResolutionFWHM( 661.7, fwhmForm, m_fwhmCoefs );

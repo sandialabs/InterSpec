@@ -28,6 +28,7 @@
  <pref name="SpecFileQueryMaxSize" type="Integer">32</pref>
  <pref name="SpecFileQueryUnique" type="Boolean">true</pref>
  <pref name="GadrasDRFPath" type="String">data/GenericGadrasDetectors;C:\GADRAS\Detector</pref>
+ <pref name="DrfLibraryLocations" type="String"></pref>
  <pref name="ColorThemeIndex" type="Integer">-1</pref>
  <pref name="ShowXAxisSlider" type="Boolean">false</pref>
  <pref name="CompactXAxis" type="Boolean">false</pref>

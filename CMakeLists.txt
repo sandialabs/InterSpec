@@ -347,6 +347,8 @@ set(sources
     src/DetectorEffG2kPar.cpp
     src/DrfAppearance.cpp
     src/DrfImport.cpp
+    src/DrfLibrary.cpp
+    src/DrfLibraryWidgets.cpp
     src/AngleOutxImport.cpp
     src/GadrasDetectorDat.cpp
     src/GammaInteractionCalc.cpp
@@ -505,6 +507,8 @@ set(headers
     InterSpec/DetectorEffG2kPar.h
     InterSpec/DrfAppearance.h
     InterSpec/DrfImport.h
+    InterSpec/DrfLibrary.h
+    InterSpec/DrfLibraryWidgets.h
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h

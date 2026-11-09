@@ -1174,10 +1174,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     //m_layout->addWidget( minAmpLabel, 3, 0, AlignmentFlag::Middle );
     //m_layout->addWidget( m_lowerBrCuttoff, 3, 1 );
 
-    SpectraFileModel *specFileModel = specViewer->fileManager()->model();
-
     {
-      auto detDispOwner = std::make_unique<DetectorDisplay>( specViewer, specFileModel );
+      auto detDispOwner = std::make_unique<DetectorDisplay>( specViewer );
       m_detectorDisplay = detDispOwner.get();
       specViewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
       specViewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );

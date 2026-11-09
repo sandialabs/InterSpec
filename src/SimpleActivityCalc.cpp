@@ -793,7 +793,7 @@ void SimpleActivityCalc::init()
   // Detector row
   WContainerWidget *detectorRow = addNew<WContainerWidget>();
   detectorRow->addStyleClass( "row" );
-  m_detectorDisplay = detectorRow->addNew<DetectorDisplay>( m_viewer, m_viewer->fileManager()->model() );
+  m_detectorDisplay = detectorRow->addNew<DetectorDisplay>( m_viewer );
   m_detectorDisplay->addStyleClass( "input" );
 
   // Shielding row

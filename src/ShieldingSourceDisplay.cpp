@@ -3113,7 +3113,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
                                                   m_specViewer->isPhone() );
 
   
-  m_detectorDisplay = new DetectorDisplay( m_specViewer, m_specViewer->fileManager()->model() );
+  m_detectorDisplay = new DetectorDisplay( m_specViewer );
   m_detectorDisplay->setInline( true );
 
   //this validates floating point numbers followed by a distance unit

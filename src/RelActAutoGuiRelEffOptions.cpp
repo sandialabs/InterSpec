@@ -47,8 +47,6 @@
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/UserPreferences.h"
-#include "InterSpec/SpecMeasManager.h"
-#include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RelEffShieldWidget.h"
 #include "InterSpec/RelActAutoGuiRelEffOptions.h"
 
@@ -206,9 +204,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   WContainerWidget *phys_opt_row = m_phys_model_opts->addNew<WContainerWidget>();
   phys_opt_row->setStyleClass( "PhysicalModelOptRow" );
 
-  SpecMeasManager *spec_manager = viewer->fileManager();
-  SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
-  DetectorDisplay *det_disp = phys_opt_row->addNew<DetectorDisplay>( viewer, spec_model );
+  DetectorDisplay *det_disp = phys_opt_row->addNew<DetectorDisplay>( viewer );
 
   WContainerWidget *phys_opt_cb_row = phys_opt_row->addNew<WContainerWidget>();
   phys_opt_cb_row->addStyleClass( "PhysOptionCbDiv" );

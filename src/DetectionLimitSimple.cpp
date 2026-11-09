@@ -67,7 +67,6 @@
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ShieldingSelect.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DetectionLimitCalc.h"
@@ -460,8 +459,7 @@ void DetectionLimitSimple::init()
   
   
   // Add DRF select
-  SpectraFileModel *specFileModel = m_viewer->fileManager()->model();
-  m_detectorDisplay = generalInput->addNew<DetectorDisplay>( m_viewer, specFileModel );
+  m_detectorDisplay = generalInput->addNew<DetectorDisplay>( m_viewer );
   m_detectorDisplay->addStyleClass( "DetectorDisplay GridFourthCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter" );
   m_viewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   m_viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );

@@ -564,6 +564,8 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
     }
   }//if( m_detector != rhs.m_detector )
 
+  m_detectorFromFile = rhs.m_detectorFromFile;  //immutable, so the pointer can be shared
+
   // PeakFitDetPrefs is shared_ptr<const>, so just copy the pointer
   m_peakFitDetPrefs = rhs.m_peakFitDetPrefs;
 
@@ -1597,6 +1599,8 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
       cout << "none";
     }
     cout << "]" << endl;
+
+    m_detectorFromFile = make_shared<const DetectorPeakResponse>( *det );
   }//if( det )
 
 
@@ -1924,9 +1928,11 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
     {
       m_detector.reset( new DetectorPeakResponse() );
       m_detector->fromXml( node );
+      m_detectorFromFile = make_shared<const DetectorPeakResponse>( *m_detector );
     }catch( std::exception &e )
     {
       m_detector.reset();
+      m_detectorFromFile.reset();
       parse_warnings_.push_back( "Could not decode InterSpec specific detector response function in N42 file: "
                                  + std::string(e.what()) );
       
@@ -1939,6 +1945,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }else
   {
     m_detector.reset();
+    m_detectorFromFile.reset();
   }
 
   node = interspecnode->first_node( "PeakFitDetPrefs", 15 );
@@ -2494,6 +2501,12 @@ std::shared_ptr<DetectorPeakResponse> SpecMeas::detector()
 std::shared_ptr<const DetectorPeakResponse> SpecMeas::detector() const
 {
   return m_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> SpecMeas::detectorFromFile() const
+{
+  return m_detectorFromFile;
 }
 
 void SpecMeas::setDetector( std::shared_ptr<DetectorPeakResponse> det )

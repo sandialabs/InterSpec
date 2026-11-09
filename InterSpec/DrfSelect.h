@@ -25,8 +25,11 @@
 
 #include "InterSpec_config.h"
 
-#include <vector>
+#include <atomic>
+#include <memory>
 #include <string>
+#include <vector>
+#include <cstdint>
 #include <fstream>
 #include <functional>
 
@@ -43,61 +46,58 @@
 namespace Wt
 {
   class WText;
-  class WMenu;
-  class WMenuItem;
-  class WLabel;
+  class WTimer;
   class WCheckBox;
   class WLineEdit;
-  class WComboBox;
   class WPushButton;
-  class WPushButton;
-  class WTextArea;
-  class WStandardItemModel;
+  class WStackedWidget;
 }//namespace Wt
 
-class DrfChart;
 class InterSpec;
 class InterSpecUser;
+class DrfLibraryList;
+class DrfFormulaForm;
+class DrfPreviewPanel;
+class DrfLocationsPage;
+class DrfFoundList;
+struct DrfDropBatch;
+
+namespace DrfImport
+{
+  struct FoundDetector;
+}
 class DrfModifyWindow;
 class DrfImportWidget;
-
-namespace ceelo{ struct GeometryDescriptor; }
-class RelEffDetSelect;
-class GadrasDetSelect;
-class SpectraFileModel;
-class NativeFloatSpinBox;
 class DetectorPeakResponse;
+
+namespace DrfLibrary
+{
+  struct Entry;
+  struct Location;
+  struct Snapshot;
+  struct LocationStatus;
+}
+
 namespace DataBaseUtils
 {
   class DbSession;
 }
+
 namespace SpecUtils
 {
   class SpecFile;
   enum class DetectorType : int;
 }
 
-
+/** The detector in use - its icon and name - shown in the tools that need one; clicking it (or
+ Enter / Space when it has focus) opens the Detector Efficiency dialog.  It follows
+ `InterSpec::detectorChanged()` / `detectorModified()`.
+ */
 class DetectorDisplay : public Wt::WContainerWidget
 {
-/*
-  This class provides a way to consistently display information about the
-  currently defined detector, and also allow the user to change this by clicking
-  on this widget.
-
-  TODO as of 20121115:
-    -Need to style this widget okay, and indicate the user can click on it to
-     edit the detector
-*/
-
 public:
-  //DetectorDisplay constructor: the InterSpec and SpectraFileModel objects
-  //  passed in are assumed to be valid and longer lived than this
-  //  DetectorDisplay
-  DetectorDisplay( InterSpec *specViewer,
-                   SpectraFileModel *fileModel );
-
-  virtual ~DetectorDisplay();
+  /** `specViewer` must be valid, and outlive this widget. */
+  explicit DetectorDisplay( InterSpec *specViewer );
 
   void setDetector( std::shared_ptr<DetectorPeakResponse> det );
   void editDetector();
@@ -106,9 +106,6 @@ public:
   std::shared_ptr<const DetectorPeakResponse> detector() const;
 
 protected:
-  static const char * const sm_noDetectorTxt;
-  static const char * const sm_noDetectorTxtMbl;
-
   /** The generic detector icon (images/detector_generic.svg, as a mask in the text colour), shown
    unless the DRF has its own (#m_drfIcon). */
   Wt::WContainerWidget *m_genericIcon;
@@ -116,62 +113,59 @@ protected:
   Wt::WText *m_text;
 
   InterSpec *m_interspec;
-  SpectraFileModel *m_fileModel;
+
+  /** Weak: the detector is owned by the foreground spectrum (or by the tool that set it). */
   std::weak_ptr<DetectorPeakResponse> m_currentDetector;
 };//class DetectorDisplay
 
 
+/** The "Detector Efficiency" dialog: a Library of every detector InterSpec knows about (built in,
+ found in standard and user folders, and saved in the database), a preview of the one picked
+ compared against the one in use, and an Import tab for bringing in new ones.
+
+ Picking a detector only previews it; "Use" makes it the detector in use, app-wide (with an undo
+ step), and closing the dialog never applies a detector that was only previewed.
+
+ The detector list comes from `DrfLibrary`, which caches what it reads, so re-opening the dialog only
+ re-reads files and database rows that changed.
+ */
 class DrfSelect : public Wt::WContainerWidget
 {
-/*
-  This class is meant to allow the user to change or edit the detector
-  associated with a file in a consistent way across all windows that might use
-  a detector.
-*/
-  
 public:
   /** DrfSelect Constructor
-   @param currentDet Current DRF; will be used to help select what DRF to show.
-   @param parentWindow Used only to place the close, cancel and help buttons
-          into the footer
+   @param currentDet The detector in use.
+   @param parentWindow Used to place the Cancel / Use buttons and help into its footer.
    */
   DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
-                InterSpec *specViewer,
-                SpectraFileModel *fileModel,
-                AuxWindow *parentWindow = 0
- );
+             InterSpec *specViewer,
+             AuxWindow *parentWindow = nullptr );
+
   virtual ~DrfSelect();
 
   /** Decodes the URL, and then prompts the user if they want to use the DRF. */
   static void handle_app_url_drf( const std::string &url_query );
-  
-  //verify manual definition, set Apply to enabled if ok
-  void verifyManualDefinition();
-  
-  //User defined detector in functional form
-  void setFormulaDefineDetector();
-  
-  //Action when the user clicks on the ButtonGroup to select
-  //defined/upload/functional form definition for the detector
-  void selectButton( Wt::WStackedWidget * stack,
-                     Wt::WMenu *group,
-                     bool activateCallBack = true);
-    
-  //done(): signal emmitted when the user is done using this widget.  By the
-  //  time this signal is emmtitted, all detectorChanged or detectorModified
-  //  signals that need to be emitted, have been.
+
+  /** Emitted when the dialog should close. */
   Wt::Signal<> &done();
 
-  //emitChangedSignal(): causes the detectorChanged signal to be emitted only if
-  //  it is necessary (eg different detector object than last time an emit was
-  //  done)
-  void emitChangedSignal();
+  /** The detector in use (the foreground's). */
+  std::shared_ptr<DetectorPeakResponse> detector();
 
-  //emitModifiedSignal(): causes the detectorModified signal to be emitted only
-  //  if it is necessary (eg if the current detector does not equal previously
-  //  emitted detector)
-  //void emitModifiedSignal();
+  /** The detector previewed (fully loaded), or null. */
+  std::shared_ptr<const DetectorPeakResponse> previewedDetector() const;
 
+  /** Makes `drf` the detector in use, app-wide (with an undo step), records it in the database, and
+   - if those boxes are ticked - as the detector to pick automatically for the foreground's serial
+   number or model.  The dialog stays open, showing it as "Just changed".
+   */
+  void useDetector( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** Leaves no detector in use. */
+  void useNoDetector();
+
+  /** Slot for `InterSpec::detectorChanged()` / `detectorModified()`: the "In use now" strip and the
+   list follow the detector in use, however it changed. */
+  void setDetector( std::shared_ptr<DetectorPeakResponse> det );
 
   /** Searches the database for DRFs from the specified user with hashes
       matching the passed in DRF, and updates the last used time for all of
@@ -201,23 +195,15 @@ public:
                                             SpecUtils::DetectorType detType,
                                             const std::string &detector_model );
   
-  /**
+  /** Records `drf` as the detector to pick automatically for spectra with `meas`'s serial number
+   or model (per `prefType`), replacing any earlier choice.  Call on the session thread: it copies
+   the `Wt::Dbo::ptr` user, whose reference count is not thread safe.
    */
   static void setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> drf,
                                         std::shared_ptr<DataBaseUtils::DbSession> sql,
                                         Wt::Dbo::ptr<InterSpecUser> user,
                                         UseDrfPref::UseDrfType prefType,
                                         std::shared_ptr<const SpecUtils::SpecFile> meas );
-  
-  void acceptAndFinish();
-  void cancelAndFinish();
-  void finishWithNoDetector();
-
-  //Looks through directories specified by "GadrasDRFPath" for directories that
-  //  contain Detector.dat and Efficiency.csv; doesnt test that they are valid.
-  //  First each pair is the path to the detector, second in the pair is a
-  //  reasonable display name.
-  static std::vector< std::pair<std::string,std::string> > avaliableGadrasDetectors( InterSpec *viewer );
 
   /** The directories #initAGadrasDetector searches, separated by semicolons or newlines: the user
    preference "GadrasDRFPath", or the fixed data-directory locations on web deployments.
@@ -248,19 +234,6 @@ public:
                               const std::string &directory,
                               const bool allow_missing_efficiency_csv = false );
 
-  /** Starts the "generic detector" import of a GADRAS detector directory:
-   installs `seedDrf` and opens the Modify dialog with the geometry parsed from
-   the `Detector.dat`, so the user can review it and generate a response.
-
-   Used for a GADRAS directory holding only a `Detector.dat`, where there is no
-   efficiency and this is the only way forward.  Any parse warnings are shown first.
-   */
-  void startGadrasGeometryImport( const std::string &directory,
-                                  std::shared_ptr<DetectorPeakResponse> seedDrf );
-
-  //Will init detector in the static and user data folders, and return the first DRF that matches
-  //  DetectorType, or the manufacturer/model.
-  //  throws exception if there is an error.
   static std::shared_ptr<DetectorPeakResponse> initARelEffDetector( const SpecUtils::DetectorType type,
                                                                    std::string manufacturer,
                                                                    std::string model );
@@ -337,189 +310,216 @@ public:
    */
   static std::vector<std::string> potential_gadras_det_dirs( InterSpec *interspec );
 
-
-  //Callbacks for when detector is changed or modified
-  void gadrasDetectorSelectCallback();
-  void relEffDetectorSelectCallback();
-  
-  
-  /** The "Import" tab's detector changed (a file, or the user's edit of its options): makes it this
-   dialog's detector, and applies it app-wide once it is complete.
-   */
-  void handleImportChanged();
-
-  //updates energy efficient chart
-  void updateChart();
-  
-  //Listens to change in detector from outside this dialog, like when
-  //a spectrum is created.  But be careful of feedback loop.
-  void setDetector( std::shared_ptr<DetectorPeakResponse> det );
- 
-  //initializes the dialog with appropriate detector selected
-  void setGuiToCurrentDetector();
-  
-  /** Some of the DRFs from disk are initialized off the main thread, so calling this function lets
-   this widget know more DRFs are avaiable to try and check #m_detector, to see if it matches.*/
-  void detectorsWereInited();
-  
-  //detector(): returns m_detector.
-  std::shared_ptr<DetectorPeakResponse> detector();
-  
-  //deletes a row from DB table
-  void deleteDBTableSelected();
-  
-  //a row is selected, so update det and charts
-  void dbTableSelectionChanged();
-  
-  void handleFitFwhmRequested();
+  /** The standalone FWHM-from-foreground and Monte-Carlo tools finished: record the detector they
+   made, and close. */
   void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf );
-
-  /** Opens the characterize-by-Monte-Carlo tool (geometry entry + CeeLo MC
-   run), seeded with the currently displayed DRF.
-   */
-  void handleMcResponseRequested();
   void handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf );
 
-  /** Opens the consolidated "Modify..." dialog (rename, geometry + MC
-   characterization, FWHM, baseline uncertainty), seeded with the current DRF.
-   */
-  void handleModifyRequested();
-
-  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF - or, on the "Import"
-   tab with a geometry-only file, with that file's detector, to characterize.  The geometry form
-   and the measured-anchor editor come from the DRF's own `geometry()`, which an importer
-   (an ANGLE model, a GADRAS Detector.dat) sets when it knows the detector's shape.
+  /** Opens (or re-shows) the "Customize" dialog (rename, geometry + Monte-Carlo characterization,
+   FWHM, uncertainty), seeded with the previewed detector - or, on the Import tab, with the file
+   being imported (for a geometry-only file, to characterize it).
    */
   void openModifyWindow();
 
-  /** Receives the modified DRF from the Modify dialog, makes it this dialog's current detector,
-   and accepts it (as if the user had pressed Accept), closing this dialog.
-   */
+  /** Receives the customized detector from the Customize dialog and uses it. */
   void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf );
 
-  /** The "Modify..." dialog this widget owns, or nullptr when it is not open.
+  /** The "Customize" dialog this widget owns, or nullptr when it is not open.
    \sa InterSpec::drfModifyWidget
    */
   DrfModifyWindow *modifyWindow();
 
-  /** Closes the "Modify..." dialog without recording an undo/redo step - for use *from* an
+  /** Closes the "Customize" dialog without recording an undo/redo step - for use *from* an
    undo/redo step, whose counterpart already covers the close. */
   void programmaticallyCloseModifyWindow();
 
-  /** Rebuilds the "chips" summarizing what the current DRF contains (FWHM,
-   uncertainties, total efficiency, raw measured points, MC parameterization,
-   grounding, geometry interpretation).
-   */
-  void updateDrfContentSummary();
 protected:
-  void setAcceptButtonEnabled( const bool enable );
+  enum class Tab { Library, Import, Locations };
 
-protected:
-  WContainerWidget *m_footer;
+  void showTab( const Tab tab );
+
+  /** Re-reads the Library (off the session thread; cheap when nothing changed). */
+  void startScan();
+  void receiveSnapshot( std::shared_ptr<const DrfLibrary::Snapshot> snapshot, const bool final );
+
+  /** The user picked a Library entry: previews it (see #selectEntry), and stops the preview
+   following the detector in use. */
+  void pickEntry( const std::string &entryId );
+
+  /** Previews a Library entry (empty to clear); loads its full detector off the session thread. */
+  void selectEntry( const std::string &entryId );
+  const DrfLibrary::Entry *pickedEntry() const;
+
+  /** The Library entry for a detector, by its stored hash; empty if none. */
+  std::string entryIdFor( const std::shared_ptr<const DetectorPeakResponse> &drf ) const;
+
+  void updateInUseStrip();
+  void updatePreview();
+  void updatePrimaryButton();
+  void updateChips();
+  void updateFilter();
+  void updateAutoPick();
+
+  void handlePrimary();
+
+  /** On a phone: shows (or hides) the Details screen - the preview, full width, with a back button. */
+  void setDetailsShown( const bool show );
+  void handleImportChanged();
+  void showInUseInList();
+
+  /** After using a detector that may be new to the Library (imported, or customized): switch to
+   the Library, with filters cleared, and pick it once it is listed. */
+  void showUsedInLibrary();
+  void confirmDeletePicked();
+  void deleteEntry( const long long dbId, const std::string &name );
+  void showQrCode();
+  void showNotice( const Wt::WString &message );
+
+  // Library › Locations (desktop builds)
+  void updateLocationsPage();
+  void setLocationShown( const std::string &id, const bool shown );
+  void rescanLocation( const std::string &id );
+  /** Asks before removing a location the user added (its files are not touched). */
+  void confirmRemoveLocation( const std::string &id );
+  void removeLocation( const std::string &id );
+  void locateLocation( const std::string &id );
+  void startAddLocationFolder();
+  void startAddLocationFile();
+  /** Adds a folder or file to the Library (saved in the preferences), and re-reads it.  Returns
+   whether it is now in the Library (false if it could not be added). */
+  bool addUserLocation( const std::string &path );
+
+  /** The detector the Import tab would use now (a file's, a detector found in a dropped folder, or
+   the formula's), or null. */
+  std::shared_ptr<DetectorPeakResponse> importCandidate() const;
+
+  /** For a geometry-only file on the Import tab, the detector to characterize; else null. */
+  std::shared_ptr<DetectorPeakResponse> importSeed() const;
+
+  // A drop of several detectors' files (a folder)
+  void handleBatchDropped( std::shared_ptr<const DrfDropBatch> batch );
+  void receiveFound( std::shared_ptr<const std::vector<DrfImport::FoundDetector>> found,
+                     const size_t numSkipped );
+  void pickFound( const size_t index );
+  void clearFound();
+  /** Copies the dropped detectors into the user-data `drfs` folder (so the Library lists them), and
+   uses the picked one once the Library has read them. */
+  void keepFoundAndUse();
+  /** After a scan, uses the Library entry kept by #keepFoundAndUse (see #m_useAfterScanRoot). */
+  void useKeptEntry();
+
   InterSpec *m_interspec;
-  SpectraFileModel *m_fileModel;
-  DrfChart *m_chart;
+  std::shared_ptr<DataBaseUtils::DbSession> m_sql;
 
-  /** Chip strip summarizing the current DRFs contents; see
-   #updateDrfContentSummary. */
-  Wt::WContainerWidget *m_drfContentChips;
+  /** The detector in use (follows `InterSpec::detectorChanged()`). */
+  std::shared_ptr<DetectorPeakResponse> m_inUse;
+  /** Whether "Use" was pressed in this dialog for #m_inUse (whose hash #m_justUsedHash is). */
+  bool m_justChanged;
+  uint64_t m_justUsedHash;
 
-  /** The consolidated "Modify..." dialog, while open (auto-nulls on close). */
+  Tab m_tab;
+
+  /** A phone (or narrow window): Library, Import and Details are separate screens. */
+  bool m_narrow;
+  bool m_showDetails;
+  Wt::WContainerWidget *m_detailsHeader;
+  Wt::WPushButton *m_detailsBack;
+  /** Phone: the bar at the bottom holding the main button and the auto-pick boxes (else null). */
+  Wt::WContainerWidget *m_actionBar;
+  std::shared_ptr<const std::vector<DrfLibrary::Entry>> m_entries;
+  std::string m_pickedId;
+  /** Whether the user picked a detector (otherwise the one in use is picked when the Library is read). */
+  bool m_userPicked;
+  /** Pick the detector in use once the next scan finishes (it may have only just been saved). */
+  bool m_pickInUseAfterScan;
+  bool m_scrolledToPicked;
+  std::shared_ptr<const DetectorPeakResponse> m_pickedDrf;
+  Wt::WString m_pickedError;
+  std::string m_suggestedNote;
+
+  uint64_t m_scanGeneration, m_loadGeneration;
+  std::shared_ptr<std::atomic<bool>> m_scanCancel;
+  bool m_scanning;
+
+  /** Library filter state. */
+  int m_originChip;  ///< -1 for "All", else a `DrfLibrary::Origin`
+  bool m_withGeometry;
+
+  // The "In use now" strip
+  Wt::WContainerWidget *m_stripInUse, *m_stripNone;
+  Wt::WText *m_stripIcon, *m_stripJust, *m_stripName, *m_stripMeta;
+
+  // Tabs
+  Wt::WPushButton *m_libTab, *m_importTab;
+  Wt::WStackedWidget *m_stack;
+
+  // Library
+  DrfLibraryList *m_list;
+  Wt::WLineEdit *m_search;
+  Wt::WTimer *m_searchTimer, *m_checkingTimer;
+  std::vector<std::pair<int,Wt::WPushButton *>> m_chips;
+  Wt::WPushButton *m_geoChip;
+
+  // Import
+  Wt::WPushButton *m_fileModeBtn, *m_formulaModeBtn;
+  Wt::WStackedWidget *m_importStack;
+  DrfImportWidget *m_importWidget;
+  Wt::WContainerWidget *m_formats;  ///< the "Recognized formats" tiles
+  DrfFoundList *m_foundList;
+  DrfFormulaForm *m_formula;
+
+  /** The detectors found in the last drop of several files, and the one picked (npos for none). */
+  std::shared_ptr<const DrfDropBatch> m_batch;
+  std::shared_ptr<const std::vector<DrfImport::FoundDetector>> m_found;
+  size_t m_foundPick;
+  std::string m_foundFolder;   ///< the dropped folder's name, or empty for loose files
+  uint64_t m_batchGeneration;
+
+  /** Set by #keepFoundAndUse: the folder the detectors were copied to, the picked one's name, and
+   what to use if the Library does not list it after all. */
+  std::string m_useAfterScanRoot, m_useAfterScanName, m_useAfterScanPath;
+  std::shared_ptr<DetectorPeakResponse> m_useAfterScanFallback;
+  /** Use this Library entry as soon as its detector is loaded. */
+  std::string m_useWhenLoadedId;
+  /** On a phone, using a detector closes the dialog - once it is used, for a kept folder's (which is
+   used only after the Library has read it). */
+  bool m_closeAfterUse;
+
+  DrfPreviewPanel *m_preview;
+
+  // Locations
+  Wt::WPushButton *m_manageLocations;
+  DrfLocationsPage *m_locationsPage;
+  /** The locations the last scan read, and what it found in each. */
+  std::shared_ptr<const std::vector<DrfLibrary::Location>> m_scanLocations;
+  std::shared_ptr<const std::vector<DrfLibrary::LocationStatus>> m_locationStatuses;
+
+  // Footer
+  Wt::WContainerWidget *m_autoPick;
+  Wt::WCheckBox *m_autoSerial, *m_autoModel;
+  Wt::WPushButton *m_cancelBtn, *m_primaryBtn;
+
+  Wt::WContainerWidget *m_notice;
+  Wt::WText *m_noticeText;
+
+  /** The "Customize" dialog, while open (auto-nulls on close). */
   Wt::Core::observing_ptr<DrfModifyWindow> m_modifyWindow;
 
-  //m_detector: the detector that is currently defined for the user to edit.
-  //  When ever there is a substantial edit, this detector wil be emitted via
-  //  the appropriate detectorChanged or detectorModified signal.
-  std::shared_ptr<DetectorPeakResponse> m_detector;
-
-  bool m_gui_select_matches_det;
-  
-  //m_previousDetectorDef: this is equal to the previously emmitted detector
-  //  so that the detectorModified signals wont be emitted when its not
-  //  necessary (prob faster to check this, than push updates to clients -
-  //  unverified though)
-  DetectorPeakResponse m_previousDetectorDef;
-
-  //m_previousEmmittedDetector: pointer to the previously emitted detector so
-  //  un-needed detectorChanged signals wont be emmitted
-  std::shared_ptr<DetectorPeakResponse> m_previousEmmittedDetector;
-
-
-  //m_originalDetector: A pointer to the original detector passed into the
-  //  constructor.
-  std::shared_ptr<DetectorPeakResponse> m_originalDetector;
-
-  //m_originalDetectorCopy: a _copy_ of the detector passed in.  If the user
-  //  hits "cancel", then the detectorChanged signal is emitted with the
-  //  original detector pointer, but first set equal to m_originalDetectorCopy
-  //  incase there has been any changes made
-  std::shared_ptr<DetectorPeakResponse> m_originalDetectorCopy;
-  
   Wt::Signal<> m_doneSignal;
-
-
-  /** The "Import" tab. */
-  DrfImportWidget *m_importWidget;
-  Wt::WMenuItem *m_importMenuItem;
-
-  Wt::WPushButton *m_acceptButton;
-  Wt::WPushButton *m_cancelButton;
-  Wt::WPushButton *m_noDrfButton;
-  
-#if( BUILD_AS_OSX_APP || IOS )
-  Wt::WAnchor *m_xmlDownload;
-#else
-  Wt::WPushButton *m_xmlDownload;
-#endif
-  
-  Wt::WLineEdit    *m_detectorManualFunctionName;
-  Wt::WTextArea    *m_detectorManualFunctionText;
-  Wt::WLineEdit    *m_detectorManualDescription;
-  std::shared_ptr<Wt::WButtonGroup> m_eqnEnergyGroup;
-  Wt::WComboBox    *m_drfType;
-  
-  Wt::WLabel       *m_detectorManualDiameterLabel;
-  Wt::WLineEdit    *m_detectorManualDiameterText;
-  Wt::WLineEdit    *m_detectorManualSetbackText;
-  Wt::WLineEdit    *m_detectorManualDistText;
-  Wt::WLabel       *m_detectorManualDistLabel;
-  NativeFloatSpinBox *m_detectorManualMinEnergy;
-  NativeFloatSpinBox *m_detectorManualMaxEnergy;
-  Wt::WPushButton  *m_manualSetButton;
-  
-  GadrasDetSelect *m_gadrasDetSelect;
-  RelEffDetSelect *m_relEffSelect;
-  
-  Wt::WMenu *m_drfTypeMenu;
-  Wt::WStackedWidget *m_drfTypeStack;
-  
-  Wt::WPushButton* m_deleteButton;
-  Wt::WTreeView* m_DBtable;
-  
-  std::shared_ptr<DataBaseUtils::DbSession> m_sql;
-  Wt::Dbo::QueryModel< Wt::Dbo::ptr<DetectorPeakResponse> >    *m_model;
-
-  Wt::WCheckBox *m_defaultForSerialNumber;
-  Wt::WCheckBox *m_defaultForDetectorModel;
 };//class DrfSelect
 
 
 class DrfSelectWindow : public AuxWindow
 {
   friend class AuxWindow;
-/*
-  Provides a window that contains a DrfSelect
-*/
+
 public:
   virtual ~DrfSelectWindow();
 
   DrfSelect *widget();
 
 protected:
-  // Constructor is protected; use AuxWindow::make<DrfSelectWindow>() to create.
   DrfSelectWindow( InterSpec *viewer );
-
-  static void acceptAndDelete( DrfSelectWindow *window );
 
   DrfSelect *m_edit;
   InterSpec *m_interspec;

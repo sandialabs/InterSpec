@@ -83,7 +83,6 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
-#include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/DetectionLimitCalc.h"
@@ -1291,8 +1290,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   
   
   
-  SpectraFileModel *specFileModel = viewer->fileManager()->model();
-  m_detectorDisplay = inputTable->addNew<DetectorDisplay>( viewer, specFileModel );
+  m_detectorDisplay = inputTable->addNew<DetectorDisplay>( viewer );
   m_detectorDisplay->addStyleClass( "GridThirdCol GridFirstRow" );
   viewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
   viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );

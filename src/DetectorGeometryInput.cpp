@@ -144,24 +144,7 @@ namespace
    */
   const std::vector<std::string> &crystal_names()
   {
-    static const std::vector<std::string> names = []() -> std::vector<std::string> {
-      std::vector<std::string> n;
-      for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
-      {
-        // Only what can actually be built; a table entry whose formula does not
-        //  resolve would throw the moment it was selected.
-        try
-        {
-          CeeLoUtils::gadrasCrystalMaterial( info.name );
-          n.push_back( info.name );
-        }catch( std::exception & )
-        {
-        }
-      }
-      return n;
-    }();
-
-    return names;
+    return CeeLoUtils::crystalMaterialNames();
   }//crystal_names()
 
 
@@ -175,161 +158,24 @@ namespace
   }//crystal_material_spec(...)
 
 
-  /** The crystal a DRFs free text names, as an index into the crystal combo, or -1.
-
-   A DRF seeded from a GADRAS `Detector.dat` records the crystal in its description ("GADRAS
-   geometry, LaBr3; ..."), and shipped detectors carry it in their name ("LaBr 10%").  That text is
-   the only place the crystal survives for a DRF that reaches this form without a
-   `ceelo::GeometryDescriptor` - which is every DRF that was handed to the app as an efficiency
-   curve rather than characterized here.  Guessing from it beats silently rebuilding a LaBr detector
-   out of NaI.
-
-   Matched on the GADRAS material-table names, longest first, and only on whole tokens - so "Si"
-   does not match inside "Since", and "LaBr3" wins over any shorter prefix.
+  /** The crystal a DRFs free text names, as an index into the crystal combo, or -1; see
+   `CeeLoUtils::crystalNameFromText`.
    */
   int crystal_index_from_text( const std::string &text )
   {
-    if( text.empty() )
-      return -1;
-
-    std::string haystack = text;
-    SpecUtils::to_lower_ascii( haystack );
-
-    // Longest name first, so a name that contains a shorter one cannot shadow it.
-    std::vector<std::string> names = crystal_names();
-    std::sort( begin(names), end(names),
-      []( const std::string &lhs, const std::string &rhs ){ return lhs.size() > rhs.size(); } );
-
-    for( const std::string &name : names )
-    {
-      std::string needle = name;
-      SpecUtils::to_lower_ascii( needle );
-
-      for( size_t pos = haystack.find(needle);
-           pos != std::string::npos;
-           pos = haystack.find(needle, pos + 1) )
-      {
-        const bool start_ok = (pos == 0) || !std::isalnum( static_cast<unsigned char>(haystack[pos-1]) );
-        const size_t after = pos + needle.size();
-        const bool end_ok = (after >= haystack.size())
-                            || !std::isalnum( static_cast<unsigned char>(haystack[after]) );
-        if( !start_ok || !end_ok )
-          continue;
-
-        // The combo is populated from `crystal_names()` in order, so its index is the entrys.
-        const std::vector<std::string> &all = crystal_names();
-        for( int i = 0; i < static_cast<int>(all.size()); ++i )
-        {
-          if( all[i] == name )
-            return i;
-        }
-      }//for( each occurrence )
-    }//for( const std::string &name : names )
-
-    return -1;
+    const std::string name = CeeLoUtils::crystalNameFromText( text );
+    const std::vector<std::string> &all = crystal_names();
+    const auto pos = std::find( begin(all), end(all), name );
+    return (name.empty() || (pos == end(all))) ? -1 : static_cast<int>( pos - begin(all) );
   }//crystal_index_from_text(...)
 
 
-  /** The crystal combo index a detector's resolution implies, or -1 when nothing usable says.
-
-   Ordered by how specific the evidence is.  A DRF that states its own FWHM describes *this*
-   detector, so it is preferred over anything read off whatever spectrum happens to be loaded.
-
-   Only ever returns a crystal the evidence actually identifies: below HPGe the FWHM alone does
-   not separate NaI from CsI from LaBr from CZT, and guessing one of them would be no better than
-   the NaI the combo already defaults to - while looking like a determination.
+  /** The crystal combo index a detector's own evidence implies, or -1 when nothing usable says; see
+   `CeeLoUtils::crystalNameFromDrfEvidence`.
    */
   int crystal_index_from_resolution( const std::shared_ptr<const DetectorPeakResponse> &drf )
   {
-    // 1) A detector model named in the DRF's own name/description.  These are the shipped
-    //    relative-efficiency DRFs ("ORTEC Detective EX-100", "GR135"), which carry no FWHM and no
-    //    peak-fit preferences - the model name is the only thing that knows what they are, and
-    //    SpecUtils already names every type it can parse.  Matched longest-first so "Detective EX"
-    //    cannot shadow "Detective EX-100".
-    if( drf )
-    {
-      std::string haystack = drf->name() + " " + drf->description();
-      SpecUtils::to_lower_ascii( haystack );
-
-      SpecUtils::DetectorType best = SpecUtils::DetectorType::Unknown;
-      size_t best_len = 0;
-      for( int i = 0; i < static_cast<int>(SpecUtils::DetectorType::Unknown); ++i )
-      {
-        const SpecUtils::DetectorType type = static_cast<SpecUtils::DetectorType>( i );
-        std::string name = SpecUtils::detectorTypeToString( type );
-        if( name.size() <= best_len )
-          continue;
-
-        SpecUtils::to_lower_ascii( name );
-        if( !name.empty() && (haystack.find(name) != std::string::npos) )
-        {
-          best = type;
-          best_len = name.size();
-        }
-      }//for( each DetectorType )
-
-      if( best != SpecUtils::DetectorType::Unknown )
-      {
-        switch( PeakFitUtils::coarse_type_for_detector_type( best ) )
-        {
-          case PeakFitUtils::CoarseResolutionType::High: return crystal_index_from_text( "HPGe" );
-          case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
-          case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
-          case PeakFitUtils::CoarseResolutionType::Low:  return crystal_index_from_text( "NaI" );
-          case PeakFitUtils::CoarseResolutionType::MedRes:
-          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
-          case PeakFitUtils::CoarseResolutionType::Unknown:
-            break;
-        }//switch( coarse_type_for_detector_type(best) )
-      }//if( a model was recognised )
-    }//if( drf )
-
-    // 2) The DRF's own FWHM.  At 661 keV an HPGe is 1-2 keV where every scintillator here is
-    //    >10 keV (CZT ~2%, LaBr ~3%, NaI ~7%), so the gap is wide and a loose threshold is safe.
-    //
-    //    A not-HPGe answer is not the end of the search: the FWHM alone does not separate the
-    //    scintillators, but tier 4 below may still name one.  It only vetoes tier 4 answering
-    //    HPGe, since a measured resolution outranks a recorded preference.
-    bool fwhm_says_not_hpge = false;
-    if( drf && drf->hasResolutionInfo() )
-    {
-      const float fwhm = drf->peakResolutionFWHM( 661.7f );
-      if( (fwhm > 0.0f) && (fwhm < 5.0f) )
-        return crystal_index_from_text( "HPGe" );
-
-      fwhm_says_not_hpge = (fwhm > 0.0f);
-    }//if( drf && drf->hasResolutionInfo() )
-
-    // 4) The DRF's own peak-fit preferences, when it recorded a detector type.
-    //
-    // Deliberately NOT the loaded spectrum, which was tried and measurably misleads: picking a DRF
-    // in Detector Select makes it the foreground's detector, so "is this the spectrum's detector?"
-    // is always true there, and with an HPGe file open every unrecognised DRF - a GR135, a SAM 945
-    // - came back HPGe.  A spectrum describes the detector that recorded it, not whichever
-    // response the user is about to look at.  When nothing above knows, the combo keeps its
-    // default and the note asks the user to check it.
-    const std::shared_ptr<const PeakFitDetPrefs> prefs = drf ? drf->peakFitDetPrefs() : nullptr;
-    if( prefs )
-    {
-      switch( prefs->m_det_type )
-      {
-        // The DRF's measured resolution wins over what it recorded as its type
-        case PeakFitUtils::CoarseResolutionType::High:
-          return fwhm_says_not_hpge ? -1 : crystal_index_from_text( "HPGe" );
-        case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
-        case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
-
-        // Low is NaI *or* CsI, and the Med/LowOrMed cases are explicitly "cannot tell which" - so
-        //  leave the default rather than dress a coin flip up as an answer.
-        case PeakFitUtils::CoarseResolutionType::Low:
-        case PeakFitUtils::CoarseResolutionType::MedRes:
-        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
-        case PeakFitUtils::CoarseResolutionType::Unknown:
-          break;
-      }//switch( prefs->m_det_type )
-    }//if( prefs )
-
-    return -1;
+    return drf ? crystal_index_from_text( CeeLoUtils::crystalNameFromDrfEvidence( *drf ) ) : -1;
   }//crystal_index_from_resolution(...)
 
 

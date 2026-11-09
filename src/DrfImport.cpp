@@ -860,4 +860,213 @@ Result build( const Source &src, const Options &options )
   return result;
 }//build(...)
 
+
+namespace
+{
+  string parent_folder( const string &relative_path )
+  {
+    const size_t pos = relative_path.find_last_of( '/' );
+    return (pos == string::npos) ? string() : relative_path.substr( 0, pos );
+  }
+
+  string leaf_name( const string &relative_path )
+  {
+    const size_t pos = relative_path.find_last_of( '/' );
+    return (pos == string::npos) ? relative_path : relative_path.substr( pos + 1 );
+  }
+
+  string lower( string s )
+  {
+    SpecUtils::to_lower_ascii( s );
+    return s;
+  }
+}//namespace
+
+
+vector<FoundDetector> groupFiles( const vector<InputFile> &files, vector<string> *skipped )
+{
+  struct Parsed
+  {
+    string path, folder;
+    shared_ptr<const ParsedFile> file;
+  };
+
+  vector<Parsed> parsed;
+  for( const InputFile &input : files )
+  {
+    try
+    {
+      if( !input.data )
+        throw runtime_error( "no data" );
+      Parsed p;
+      p.path = input.relativePath;
+      p.folder = parent_folder( input.relativePath );
+      const string leaf = leaf_name( input.relativePath );
+      try
+      {
+        p.file = parseFile( leaf, input.data, false );
+      }catch( std::exception & )
+      {
+        // A table of detectors need not have a recognizable header; but a folder can hold any
+        //  CSV, so only take a complete list of detectors from one this way.
+        const string lname = lower( leaf );
+        if( SpecUtils::iends_with( lname, ".tsv" ) || SpecUtils::iends_with( lname, ".csv" ) )
+        {
+          const shared_ptr<const ParsedFile> as_csv = parseFile( leaf, input.data, true );
+          if( as_csv && isCompleteDrfKind( as_csv->kind ) )
+            p.file = as_csv;
+        }
+      }//try / catch
+      if( !p.file )
+        throw runtime_error( "not a detector file" );
+      parsed.push_back( p );
+    }catch( std::exception & )
+    {
+      if( skipped )
+        skipped->push_back( input.relativePath );
+    }
+  }//for( const InputFile &input : files )
+
+  vector<bool> used( parsed.size(), false );
+  vector<FoundDetector> answer;
+
+  const auto add = [&answer]( const Parsed &main, const Parsed *companion, const size_t record ){
+    FoundDetector found;
+    found.folder = main.folder;
+    found.kind = main.file->kind;
+    found.files.push_back( main.path );
+    if( companion )
+      found.files.push_back( companion->path );
+    found.source = makeSource( main.file, companion ? companion->file : nullptr, record );
+
+    // A name taken from a file named for its role (Efficiency.csv, x.par) says less than its folder
+    if( (record < found.source.recordNames.size()) && !found.source.recordNames[record].empty()
+        && (found.source.recordNames.size() > 1) && (main.file->kind != FileKind::ParGrid) )
+      found.name = found.source.recordNames[record];
+    else if( found.source.nameIsFileStem && !main.folder.empty() )
+      found.name = leaf_name( main.folder );
+    else
+      found.name = found.source.name;
+
+    if( found.source.status == Status::Ready )
+    {
+      Options options;
+      options.interpretation = found.source.defaultInterpretation;
+      options.name = found.name;  //e.g. a GADRAS detector is named for its folder, not "Efficiency"
+      const Result result = build( found.source, options );
+      if( (result.status == Status::Ready) && result.drf )
+        found.drf = result.drf;
+    }
+    answer.push_back( found );
+  };//add lambda
+
+  // GADRAS: a Detector.dat with the efficiency file in its folder
+  for( size_t i = 0; i < parsed.size(); ++i )
+  {
+    if( parsed[i].file->kind != FileKind::GadrasDetectorDat )
+      continue;
+    for( size_t j = 0; j < parsed.size(); ++j )
+    {
+      if( used[j] || (parsed[j].folder != parsed[i].folder) )
+        continue;
+      const FileKind k = parsed[j].file->kind;
+      if( (k == FileKind::GadrasEfficiencyCsv)
+          || ((k == FileKind::EfficiencyCsv) && (lower( leaf_name( parsed[j].path ) ) == "efficiency.csv")) )
+      {
+        used[i] = used[j] = true;
+        add( parsed[j], &parsed[i], 0 );
+        break;
+      }
+    }//for( loop over potential Efficiency.csv files )
+  }//for( loop over Detector.dat files )
+
+  // .par grids, with the DETECTOR.txt naming them
+  for( size_t i = 0; i < parsed.size(); ++i )
+  {
+    if( used[i] || (parsed[i].file->kind != FileKind::ParGrid) )
+      continue;
+
+    const string par_name = lower( leaf_name( parsed[i].path ) );
+    const auto names_par = [&]( const Parsed &txt ) -> bool {
+      for( const DetEffG2kPar::DetectorDef &def : txt.file->detectorDefs )
+      {
+        if( lower( SpecUtils::filename( def.parFile ) ) == par_name )
+          return true;
+      }
+      return false;
+    };
+
+    // Up from the grid's folder: a DETECTOR.txt there, or in a PARAMETERS folder there.
+    const Parsed *companion = nullptr, *fallback = nullptr;
+    string level = parsed[i].folder;
+    for( int depth = 0; !companion && (depth < 32); ++depth )
+    {
+      for( const Parsed &txt : parsed )
+      {
+        if( txt.file->kind != FileKind::ParDetectorTxt )
+          continue;
+        const bool here = (txt.folder == level);
+        const bool in_params = (parent_folder( txt.folder ) == level)
+                               && (lower( leaf_name( txt.folder ) ) == "parameters")
+                               && (txt.folder != level);
+        if( !here && !in_params )
+          continue;
+        if( names_par( txt ) )
+        {
+          companion = &txt;
+          break;
+        }
+        if( !fallback )
+          fallback = &txt;
+      }//for( loop over DETECTOR.txt files )
+
+      if( level.empty() )
+        break;
+      level = parent_folder( level );
+    }//for( walk up from the grid )
+
+    if( !companion && fallback && (fallback->file->detectorDefs.size() == 1) )
+      companion = fallback;  //a single record is taken whatever .par it names (as makeSource does)
+
+    used[i] = true;
+    for( size_t j = 0; j < parsed.size(); ++j )
+    {
+      if( &parsed[j] == companion )
+        used[j] = true;
+    }
+    add( parsed[i], companion, 0 );
+  }//for( loop over .par grids )
+
+  // DETECTOR.txt files no grid used say nothing on their own
+  for( size_t i = 0; i < parsed.size(); ++i )
+  {
+    if( !used[i] && (parsed[i].file->kind == FileKind::ParDetectorTxt) )
+    {
+      used[i] = true;
+      if( skipped )
+        skipped->push_back( parsed[i].path );
+    }
+  }
+
+  // Everything else is a detector of its own - one per row of a list
+  for( size_t i = 0; i < parsed.size(); ++i )
+  {
+    if( used[i] )
+      continue;
+    used[i] = true;
+    const size_t num_records = std::max( size_t(1), parsed[i].file->drfs.size() );
+    const bool is_list = isCompleteDrfKind( parsed[i].file->kind ) && (num_records > 1);
+    for( size_t record = 0; record < (is_list ? num_records : size_t(1)); ++record )
+      add( parsed[i], nullptr, record );
+  }//for( remaining files )
+
+  std::stable_sort( begin(answer), end(answer), []( const FoundDetector &a, const FoundDetector &b ){
+    if( a.folder != b.folder )
+      return a.folder < b.folder;
+    return lower( a.name ) < lower( b.name );
+  } );
+
+  return answer;
+}//groupFiles(...)
+
 }//namespace DrfImport
