@@ -136,7 +136,7 @@ void RefSpectraModel::sort( int column, Wt::SortOrder order )
 }//void sort(...)
 
 
-Wt::WModelIndex RefSpectraModel::addBaseDirectory( const std::string &path )
+Wt::WModelIndex RefSpectraModel::addBaseDirectory( const std::string &path, const std::string &displayName )
 {
   try 
   {
@@ -144,8 +144,12 @@ Wt::WModelIndex RefSpectraModel::addBaseDirectory( const std::string &path )
     if( !fs::exists( fsPath ) || !fs::is_directory( fsPath ) )
       return Wt::WModelIndex();
 
-    std::string name = fsPath.filename().string();  
-    SpecUtils::ireplace_all( name, "_", " " ); // Replace underscores with spaces
+    std::string name = displayName;
+    if( name.empty() )
+    {
+      name = fsPath.filename().string();
+      SpecUtils::ireplace_all( name, "_", " " ); // Replace underscores with spaces
+    }
     
     std::unique_ptr<Node> node = std::make_unique<Node>( name, path, true );
     
@@ -264,6 +268,12 @@ Wt::WModelIndex RefSpectraModel::indexForDisplayName( const std::string &display
 }//Wt::WModelIndex indexForDisplayName(...) const
 
 
+void RefSpectraModel::setHiddenPaths( const std::set<std::string> &paths )
+{
+  m_hiddenPaths = paths;
+}//setHiddenPaths(...)
+
+
 void RefSpectraModel::populateNode( Node *node ) const
 {
   try 
@@ -280,6 +290,9 @@ void RefSpectraModel::populateNode( Node *node ) const
       const bool isDir = entry.is_directory();
 
       if( entryName.empty() || entryName.front() == '.' )
+        continue;
+
+      if( !m_hiddenPaths.empty() && m_hiddenPaths.count( SpecUtils::lexically_normalize_path( entryPathStr ) ) )
         continue;
 
       if( !isDir && (SpecUtils::iequals_ascii( entryName, "readme.txt" )

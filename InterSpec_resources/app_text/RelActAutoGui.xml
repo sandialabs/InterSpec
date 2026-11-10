@@ -7,6 +7,7 @@
   <message id="raag-presets">Presets</message>
   <message id="raag-preset-blank">Blank</message>
   <message id="raag-user-preset">User: {1}</message>
+  <message id="raag-package-preset">{1} ({2})</message>
   
   <!-- Status messages -->
   <message id="raag-not-calculated">Not Calculated.</message>

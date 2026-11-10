@@ -814,6 +814,12 @@
   color: var(--interspec-secondary-text-color);
 }
 
+.DrfPvWarning
+{
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
 .DrfPvLineage button.Wt-btn.DrfLinkBtn
 {
   font-size: 12.5px;

@@ -212,6 +212,13 @@ public:
    */
   static std::string gadrasDrfSearchPaths( InterSpec *interspec );
 
+  /** The Detector Efficiency Library's locations: the standard ones (InterSpec's own, the user data
+   folder, installed packages) with the user's changes, then the folders and files the user added.
+   In the sandboxed macOS app this also starts access to user-added folders.  Reads a user
+   preference, so call it on the session thread and pass the result to any worker.
+   */
+  static std::vector<DrfLibrary::Location> libraryLocations( InterSpec *interspec );
+
   //Will init detector in the data/detector_responses folder, and return result.
   //  throws exception if there is an error.
   //Type should be a DetectorType enum (just not including that header to save

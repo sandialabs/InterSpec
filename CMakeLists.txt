@@ -348,6 +348,10 @@ set(sources
     src/DrfAppearance.cpp
     src/DrfImport.cpp
     src/DrfLibrary.cpp
+    src/UserLibrary.cpp
+    src/UserLibraryPackage.cpp
+    src/UserLibraryWindow.cpp
+    src/UserLibraryImportDialog.cpp
     src/DrfLibraryWidgets.cpp
     src/AngleOutxImport.cpp
     src/GadrasDetectorDat.cpp
@@ -509,6 +513,10 @@ set(headers
     InterSpec/DrfAppearance.h
     InterSpec/DrfImport.h
     InterSpec/DrfLibrary.h
+    InterSpec/UserLibrary.h
+    InterSpec/UserLibraryPackage.h
+    InterSpec/UserLibraryWindow.h
+    InterSpec/UserLibraryImportDialog.h
     InterSpec/DrfLibraryWidgets.h
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h

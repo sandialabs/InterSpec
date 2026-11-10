@@ -81,8 +81,9 @@ std::vector<SkillInfo> loadSkillsFromKnowledgeDir( const std::string &knowledge_
  */
 std::vector<std::string> knowledgeDirectories();
 
-/** Loads skills from all of #knowledgeDirectories; a skill in a later directory overrides a same-named
- skill (by canonical name) from an earlier one - e.g., a writable-directory skill overrides a shipped one.
+/** Loads skills - InterSpec's own, those from user library packages, and the user's own - one per
+ canonical name, chosen as UserLibrary::resolve does (the user's recorded choice, else the user's own
+ over a package's over InterSpec's); a deployment's config directory (--llm-config-dir) overrides all.
  Only the skills the #setSkillFilter filter allows are returned.
  */
 std::vector<SkillInfo> loadSkills();

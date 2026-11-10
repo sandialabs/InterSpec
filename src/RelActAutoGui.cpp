@@ -77,6 +77,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/RelEffChart.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -689,14 +690,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_interspec->peakFitDetPrefsChanged().connect( this, &RelActAutoGui::handlePeakFitDetPrefsChanged );
 
   m_default_par_sets_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
-  const vector<string> default_par_sets = SpecUtils::recursive_ls( m_default_par_sets_dir, ".xml" );
-  
-  vector<string> user_par_sets;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( USE_USER_LIBRARY )
   try
   {
     m_user_par_sets_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "rel_act" );
-    user_par_sets = SpecUtils::recursive_ls( m_user_par_sets_dir, ".xml" );
   }catch( std::exception & )
   {
     cerr << "RelActAutoGui: Writable data directory not set.\n";
@@ -712,25 +709,32 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_presets->addItem( WString::tr("raag-preset-blank") );
   m_preset_paths.push_back( "" );
   
-  for( const string &filename : default_par_sets )
+  // InterSpec's own presets, then those from user library packages, then the user's own (disabled
+  //  ones, and package presets that need a newer InterSpec, are left out).
+  const vector<UserLibrary::Item> preset_items = UserLibrary::items( "rel_act_preset" );
+  for( const UserLibrary::SourceKind kind : { UserLibrary::SourceKind::BuiltIn,
+                                              UserLibrary::SourceKind::Package,
+                                              UserLibrary::SourceKind::User } )
   {
-    string dispname = SpecUtils::filename(filename);
-    if( dispname.size() > 4 )
-      dispname = dispname.substr(0, dispname.size() - 4);
-    
-    m_presets->addItem( WString::fromUTF8(dispname) );
-    m_preset_paths.push_back( filename );
-  }//for( string filename : default_par_sets )
-  
-  for( const string &filename : user_par_sets )
-  {
-    string dispname = SpecUtils::filename(filename);
-    if( dispname.size() > 4 )
-      dispname = dispname.substr(0, dispname.size() - 4);
+    for( const UserLibrary::Item &item : preset_items )
+    {
+      if( item.source.kind != kind )
+        continue;
 
-    m_presets->addItem( WString::tr("raag-user-preset").arg(WString::fromUTF8(dispname)) );
-    m_preset_paths.push_back( filename );
-  }//for( string filename : default_par_sets )
+      string dispname = item.names.empty() ? SpecUtils::filename( item.found.path ) : item.names.front();
+      if( SpecUtils::iends_with( dispname, ".xml" ) )
+        dispname = dispname.substr( 0, dispname.size() - 4 );
+
+      WString txt = WString::fromUTF8( dispname );
+      if( kind == UserLibrary::SourceKind::User )
+        txt = WString::tr("raag-user-preset").arg( txt );
+      else if( kind == UserLibrary::SourceKind::Package )
+        txt = WString::tr("raag-package-preset").arg( txt ).arg( WString::fromUTF8( item.source.label ) );
+
+      m_presets->addItem( txt );
+      m_preset_paths.push_back( item.found.path );
+    }//for( loop over preset items )
+  }//for( loop over source kinds )
   
   // m_presets->addItem( WString::fromUTF8("Custom") );
   

@@ -190,7 +190,8 @@ namespace DrfLibrary
     UserData,        ///< the user-data folder (GADRAS folders and tables put there by hand)
     GadrasInstall,   ///< the standard GADRAS install folder
     IsocsInstall,    ///< the standard ISOCS (Genie 2000) data folder
-    AngleInstall     ///< ANGLE's standard folder
+    AngleInstall,    ///< ANGLE's standard folder
+    Package          ///< the `drfs` folder of a user library package
   };//enum class LocationRole
 
   struct Location
@@ -207,6 +208,17 @@ namespace DrfLibrary
 
     /** Which file formats to look for; a bit set of #LocationFormats. */
     uint32_t formats = 0x7;
+
+    /** What to call it, when its role does not say (a package's name; untrusted plain text). */
+    std::string label;
+
+    /** Folders below `path` not to search (e.g. the user-data `packages` folder). */
+    std::vector<std::string> excludePaths;
+
+    /** Detectors found at these paths (a file, or a GADRAS folder) are hidden, like a hidden location's;
+     normalized with SpecUtils::lexically_normalize_path.  (Items disabled in the user library.)
+     */
+    std::set<std::string> hiddenItems;
   };//struct Location
 
   enum LocationFormats : uint32_t
@@ -252,8 +264,11 @@ namespace DrfLibrary
     bool pending = false;       ///< being read (see the `progress` callback of #scan)
     std::string error;          ///< why it could not be read
 
-    bool hidden = false;        ///< its location is hidden from the Library
+    bool hidden = false;        ///< its location is hidden from the Library, or it is disabled
     uint32_t suggestReasons = SuggestNone;
+
+    /** Where it came from, when that is more than its Origin says: the package's name. */
+    std::string sourceLabel;
 
     /** Every DRF hash this entry stands for: its own, plus those of database rows merged into it
      (which may differ in DrfSource only).  Customized copies find their parent through these.
@@ -274,10 +289,19 @@ namespace DrfLibrary
   };//struct LocationStatus
 
 
+  /** A detector-looking file (or GADRAS folder) from which no detector could be read. */
+  struct UnreadableItem
+  {
+    std::string path;
+    bool isFolder = false;
+    std::string error;  ///< may be empty
+  };//struct UnreadableItem
+
   struct Snapshot
   {
     std::vector<Entry> entries;
     std::vector<LocationStatus> locations;
+    std::vector<UnreadableItem> unreadable;
   };//struct Snapshot
 
 
@@ -309,8 +333,9 @@ namespace DrfLibrary
 
 
   /** The standard locations for this build: InterSpec's own detectors, the user-data `drfs` folder
-   (and any folder in the user-data directory holding GADRAS detectors), and - on Windows desktop
-   builds - the default data folders of GADRAS, ISOCS and ANGLE.  Those are returned whether or not
+   (and any folder in the user-data directory holding GADRAS detectors), the `drfs` folder of each
+   installed user library package, and - on Windows desktop builds - the default data folders of
+   GADRAS, ISOCS and ANGLE.  Items disabled in the user library are in each location's `hiddenItems`.  Those are returned whether or not
    they exist; a scan sets `LocationStatus::found` false for a missing one, so the dialog can offer
    to locate it.
 

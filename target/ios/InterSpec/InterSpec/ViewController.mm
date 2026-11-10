@@ -45,6 +45,7 @@
 #include "AppDelegate.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecServer.h"
@@ -573,6 +574,10 @@ std::unique_ptr<Wt::WApplication> createApplication(const Wt::WEnvironment& env)
   DataBaseVersionUpgrade::checkAndUpgradeVersion();
 
   [self fixPermissions: writableDBPath];
+
+  // Unfinished user library package installs from an earlier run (e.g. the app was killed mid-install);
+  //  the other platforms do this in InterSpecServer::start_server.
+  UserLibrary::cleanupStaleFolders();
   
    NSLog( @"Done in viewDidLoad" );
 }

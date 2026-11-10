@@ -52,6 +52,7 @@
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -361,6 +362,19 @@ namespace BatchInfoLog
     
     if( rpt.empty() )
     {
+      // A template from a user library package: rendered with InterSpec's partials available, and
+      //  its includes resolved in its own folder, and only there.
+      if( UserLibrary::available()
+          && UserLibrary::isInPackages( tmplt ) )
+      {
+        string dir = SpecUtils::parent_path( tmplt );
+        if( !dir.empty() && (dir.back() != ns_path_sep) )
+          dir += ns_path_sep;
+        inja::Environment pkg_env = get_default_inja_env( dir );
+        UserLibrary::confineTemplateIncludes( pkg_env, tmplt );
+        return pkg_env.render( pkg_env.parse_template( SpecUtils::filename( tmplt ) ), data );
+      }//if( from a package )
+
       const string tmplt_dir = BatchInfoLog::template_include_dir( options );
       const bool is_in_inc = SpecUtils::is_file( SpecUtils::append_path(tmplt_dir, tmplt) );
       
@@ -390,6 +404,7 @@ namespace BatchInfoLog
           tmplt = tmplt_in_def_path;
         }
         
+
         inja::Environment sub_env;
         add_inja_callbacks( sub_env );
         injatmplt = sub_env.parse_template( tmplt );

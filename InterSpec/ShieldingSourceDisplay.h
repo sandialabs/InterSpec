@@ -679,6 +679,28 @@ public:
   void deSerializeShieldings( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings );
   
   void startModelUpload();
+
+  /** Lists the setups the footer "Preset" menu offers - the user's own (`act_shield_setups/` in the
+   user data folder), those from installed packages, and those saved in the database - and hides the
+   menu when there are none.
+   */
+  void refreshPresets();
+
+  /** Loads the setup chosen in the "Preset" menu (an undo/redo step). */
+  void presetSelected();
+
+  /** Asks for a name, and saves the current setup as `<user data>/act_shield_setups/<name>.act.shield.xml`. */
+  void startSavePreset();
+
+  /** Writes the current setup to a preset file; asks first (when `overwrite` is false) if one of that
+   name exists.
+   */
+  void savePreset( const std::string &name, const bool overwrite );
+
+  /** Loads a setup from an XML file, as an upload does; an undo/redo step.  On error the setup is
+   left as it was, and the user told.  Returns success.
+   */
+  bool loadModelFromFile( const std::string &path, const std::string &undo_label );
   void modelUploadError( const ::int64_t size_tried );
   void finishModelUpload( Wt::WFileUpload *upload );
   void closeModelUploadWindow();
@@ -945,17 +967,36 @@ protected:
   /** Footer model import/export controls + the download resource they link to
    (replaces the old upper-right "..." menu's Import/Export items). */
   Wt::WPushButton *m_importModelBtn;
-  Wt::WPushButton *m_exportModelBtn;
+  Wt::WInteractWidget *m_exportModelBtn;  ///< a button, or on macOS/iOS an anchor (their web views need one to download)
   /** The XML model download resource (the concrete type is file-local in the .cpp, so it
    is held here as its Wt::WResource base; the footer "Export Model" link uses its url()). */
   Wt::WResource *m_xmlDownloadResource;
 
 #if( USE_DB_TO_STORE_SPECTRA )
-  /** Footer database button + menu (Open / Save / Clone), replacing the old menu items. */
+  /** Footer database button + menu (Open / Save / Clone): only where there is no user data folder
+   for preset files (e.g., web deployments); elsewhere setups are saved as presets (#m_presetSelect).
+   */
   Wt::WPushButton *m_dbButton;
   PopupDivMenu *m_dbMenu;
   PopupDivMenuItem *m_saveAsNewModelInDb;
 #endif
+
+  /** Footer "Save as preset..." button; null where there is no user data folder. */
+  Wt::WPushButton *m_savePresetBtn;
+
+  /** Footer "Preset" label + menu; hidden when there are no presets. */
+  Wt::WContainerWidget *m_presetRow;
+  Wt::WComboBox *m_presetSelect;
+
+  /** What each #m_presetSelect entry loads (index 0 is the "choose" placeholder): a file, or a setup
+   saved in the database (`dbId`; read until a database upgrade writes them out as files).
+   */
+  struct PresetChoice
+  {
+    std::string path;
+    long long dbId = -1;
+  };
+  std::vector<PresetChoice> m_presetChoices;
 
   Wt::Dbo::ptr<ShieldingSourceModel> m_modelInDb;
 

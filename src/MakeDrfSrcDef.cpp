@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <regex>
 
 #include <boost/algorithm/string/regex.hpp>
@@ -58,6 +59,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
@@ -298,16 +300,48 @@ std::vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_all_libs()
 {
   vector<SrcLibLineInfo> source_lib_srcs;
   
+  // Libraries earlier in the list win a repeated source name.  First the user library's: the user's
+  //  (`source_libs/*.lib`, and "Source.lib" in the user data folder), then packages'.
+  vector<string> source_lib_files;
+  set<string> skip_files;  //handled by the user library (incl. those the user disabled)
+  string packages_dir;
+#if( USE_USER_LIBRARY )
+  try
+  {
+    if( UserLibrary::available() )
+    {
+      packages_dir = UserLibrary::packagesDirectory();
+      for( const UserLibrary::Item &item : UserLibrary::items( "source_lib", true ) )
+      {
+        skip_files.insert( SpecUtils::lexically_normalize_path( item.found.path ) );
+        if( !item.disabled && !item.needsNewer )
+          source_lib_files.push_back( item.found.path );
+      }
+    }//if( UserLibrary::available() )
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to list check-source libraries: " << e.what() << endl;
+  }
+#endif
+
+  // Then "Source.lib" files anywhere else in InterSpec's data, the working, or the user data folder;
+  //  not in packages (the user library knows which of those are installed and enabled).
   vector<string> base_paths{ InterSpec::staticDataDirectory(), SpecUtils::get_working_path() };
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_LOCAL_SERVER )
   try{ base_paths.push_back( InterSpec::writableDataDirectory() ); } catch(...){}
 #endif
-  vector<string> source_lib_files;
   for( const string &path : base_paths )
   {
-    const vector<string> files = SpecUtils::recursive_ls(path, "Source.lib" );
-    source_lib_files.insert( end(source_lib_files), begin(files), end(files) );
-  }
+    for( const string &file : SpecUtils::recursive_ls(path, "Source.lib" ) )
+    {
+      const bool in_packages = !packages_dir.empty() && !UserLibrary::relativePath( packages_dir, file ).empty();
+      if( !in_packages && !skip_files.count( SpecUtils::lexically_normalize_path( file ) ) )
+      {
+        skip_files.insert( SpecUtils::lexically_normalize_path( file ) );
+        source_lib_files.push_back( file );
+      }
+    }//for( loop over Source.lib files )
+  }//for( loop over base paths )
   
   for( const string &lib : source_lib_files )
   {

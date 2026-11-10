@@ -122,6 +122,9 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/DrfImport.h"
+#include "InterSpec/UserLibrary.h"
+#include "InterSpec/UserLibraryPackage.h"
+#include "InterSpec/UserLibraryImportDialog.h"
 #include "InterSpec/DrfImportWidget.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ZipArchive.h"
@@ -3242,6 +3245,9 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
         throw runtime_error( "Failed writing '" + outputname + "'" );
       }//
       
+      outfilestrm.close();
+      UserLibrary::recordLooseImport( outputname, SpecUtils::filename( displayName ) );
+
       passMessage( WString::tr("smm-saved-drf-conf").arg(filename), WarningWidget::WarningMsgInfo );
     }catch( std::exception &e )
     {
@@ -4122,6 +4128,16 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   } BOOST_SCOPE_EXIT_END
   
  
+#if( USE_USER_LIBRARY )
+  // A user library package (by extension, or a .zip with a package manifest at its root) - checked
+  //  before the spectrum-zip handling below.
+  if( UserLibrary::available() && UserLibraryPackage::looksLikePackage( name, spoolName ) )
+  {
+    UserLibraryImportDialog::start( spoolName, name );
+    return;
+  }
+#endif
+
   if( (name.length() > 4)
      && (SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
          || SpecUtils::iequals_ascii( name.substr(name.length()-4), ".tfa"))
@@ -6900,6 +6916,15 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
   
   const string origName = SpecUtils::filename( name );
+
+#if( USE_USER_LIBRARY )
+  // A user library package opened from the file system (e.g. "open with").
+  if( UserLibrary::available() && UserLibraryPackage::looksLikePackage( origName, name ) )
+  {
+    UserLibraryImportDialog::start( name, origName );
+    return true;
+  }
+#endif
   
   try
   {

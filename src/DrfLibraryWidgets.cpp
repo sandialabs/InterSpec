@@ -661,7 +661,8 @@ void DrfLibraryList::rebuild()
         const string crystal = summary ? DrfLibraryText::crystalLabel( *summary ) : string();
         const WString range = summary ? DrfLibraryText::rangeLabel( summary->range ) : WString();
         const WString badge = (summary && summary->parentHash) ? WString::tr( "dsl-badge-your-copy" )
-                                                               : DrfLibraryText::originLabel( entry.origin );
+                              : (!entry.sourceLabel.empty() ? WString::fromUTF8( entry.sourceLabel )
+                                                            : DrfLibraryText::originLabel( entry.origin ));
 
         // On a phone, the columns fold into the second line: crystal · source · last used
         WString sub = subText( entry, row );
@@ -773,6 +774,7 @@ DrfPreviewPanel::DrfPreviewPanel( const Context context )
     m_name( nullptr ),
     m_meta( nullptr ),
     m_kidsNote( nullptr ),
+    m_warning( nullptr ),
     m_lineage( nullptr ),
     m_parentLink( nullptr ),
     m_lineageEnd( nullptr ),
@@ -839,6 +841,10 @@ DrfPreviewPanel::DrfPreviewPanel( const Context context )
   m_kidsNote = head->addNew<WText>( "", TextFormat::Plain );
   m_kidsNote->addStyleClass( "DrfPvKids" );
   m_kidsNote->setInline( false );
+  m_warning = head->addNew<WText>( "", TextFormat::Plain );
+  m_warning->addStyleClass( "DrfPvWarning WarnTxt" );
+  m_warning->setInline( false );
+  m_warning->hide();
 
   // Efficiency / FWHM segmented control
   WContainerWidget *seg = m_content->addNew<WContainerWidget>();
@@ -1005,6 +1011,9 @@ void DrfPreviewPanel::showSummary( std::shared_ptr<const DrfLibrary::Summary> su
   m_kidsNote->setHidden( import || (num_copies == 0) );
   if( num_copies )
     m_kidsNote->setText( WString::tr( (num_copies == 1) ? "dsl-pv-kids-1" : "dsl-pv-kids-n" ).arg( num_copies ) );
+
+  m_warning->setText( details.warning );
+  m_warning->setHidden( details.warning.empty() );
 
   // What it includes
   m_caps->clear();
@@ -1233,6 +1242,7 @@ void DrfLocationsPage::setLocations( const std::vector<DrfLibrary::Location> &lo
       case LocationRole::GadrasInstall: name_key = "dsl-loc-gadras";   kind_key = "dsl-loc-install-kind";  break;
       case LocationRole::IsocsInstall:  name_key = "dsl-loc-isocs";    kind_key = "dsl-loc-install-kind";  break;
       case LocationRole::AngleInstall:  name_key = "dsl-loc-angle";    kind_key = "dsl-loc-install-kind";  break;
+      case LocationRole::Package:       kind_key = "dsl-loc-package-kind"; break;
       case LocationRole::User:
         kind_key = loc.isFolder ? "dsl-loc-user-folder-kind" : "dsl-loc-user-file-kind";
         break;
@@ -1250,7 +1260,8 @@ void DrfLocationsPage::setLocations( const std::vector<DrfLibrary::Location> &lo
 
     WContainerWidget *what = row->addNew<WContainerWidget>();
     what->addStyleClass( "DrfLocWhat" );
-    const WString name = name_key ? WString::tr( name_key ) : WString::fromUTF8( SpecUtils::filename( loc.path ) );
+    const WString name = name_key ? WString::tr( name_key )
+                                  : WString::fromUTF8( loc.label.empty() ? SpecUtils::filename( loc.path ) : loc.label );
     WString name_line = name;
     name_line += WString::fromUTF8( " · " );
     name_line += WString::tr( kind_key );

@@ -1,0 +1,121 @@
+<div align="center">
+  <h1 id="user-library"><b>Packages</b></h1>
+  <hr />
+</div>
+
+<p>
+The <b>Packages</b> window (<em>Help</em> &rarr; <em>Options</em> &rarr; <em>Packages...</em>) manages the data <b>InterSpec</b>
+reads from files: detector efficiency functions, <em>Isotopics by nuclides</em> presets and report templates,
+<em>Activity/Shielding Fit</em> report templates, reference spectra, and the knowledge the AI assistant uses.  It lets you share them
+as a single <b>package</b> file, install packages others give you, and choose which item is used when two have the same name.
+</p>
+
+<h2>Installing a package</h2>
+<p>
+Drop a package file (<code>.ispkg</code>, or a <code>.zip</code> with an <code>interspec-package.json</code> file at its top level)
+onto <b>InterSpec</b>, open a <code>.ispkg</code> file with <b>InterSpec</b> (e.g. double-click it, or <em>Open in</em>/<em>Share to</em>
+<b>InterSpec</b> on a phone or tablet), or use <em>Install a package…</em> on the <em>Installed</em> tab.  Before anything is installed, a dialog shows
+what is in the package, who made it, its handling marking (if any), and a fingerprint (SHA-256) you can compare with whoever sent it.
+Every item is read the way the tool that uses it reads it, and marked:
+</p>
+<ul>
+  <li><b>New</b>, <b>Updated</b>, or <b>Unchanged</b> (when updating a package you already have);</li>
+  <li><b>Already installed</b>: an identical item is already available;</li>
+  <li><b>Name in use</b>: something you already have has the same name - you choose which one <b>InterSpec</b> uses;</li>
+  <li><b>Needs a newer InterSpec</b>: installed, but not used until you upgrade;</li>
+  <li><b>Can not be read</b>: installed with the package, but flagged.</li>
+</ul>
+<p>
+Items that steer the AI assistant are shown in full, and each must be confirmed before installing.  Files that are not a kind
+<b>InterSpec</b> uses are not installed, and some files are never accepted from a package (for example AI provider settings, which
+hold API keys, and <b>InterSpec</b>'s database).
+</p>
+<p>
+A package is installed as a whole into its own folder, <code>packages/&lt;name&gt;/</code> in your user data folder (see
+<em>Help</em> &rarr; <em>About InterSpec</em> &rarr; <em>Data</em>); your own files are never changed.  Installing a newer version of
+the same package replaces that folder - the earlier version's files are removed, though its details and change notes are kept, as
+are your choices and disabled items.  To go back to an earlier version, install its package file again.  Uninstalling deletes the folder.
+</p>
+
+<h2>Which item is used</h2>
+<p>
+When items share a name (a detector efficiency function, a preset, ...), the one looked up by name - by a saved setup, the
+AI assistant, or batch analysis - is, unless you choose otherwise: <b>your own files</b>, then <b>packages</b> (the one installed first),
+then <b>InterSpec</b>'s own.  Lists, like the Detector Efficiency library or the presets menu, show them all, labelled with where they come from.
+On the <em>By type</em> tab you can choose which one is used, reset that choice, disable an item (hide it from lists and lookups),
+or delete one of your own files.
+</p>
+
+<h2>Creating a package</h2>
+<p>
+On the <em>Create package</em> tab, pick the items to share (your own files, or items from packages you installed - which then record
+where they came from), fill in the details, and click <em>Check and create</em>.  The items are checked first: an item that can not be
+read, two items with the same name, or files <b>InterSpec</b> never shares, stop the package being made.  Then download the package file
+and give it to others.  Making a package does not install it for you; your files stay your own.
+</p>
+<p>
+To make a new version of a package you made before, choose it under <em>Start from</em>: its details and items are filled in, the version
+is increased, and items that changed or are no longer found are pointed out.  Describe what changed - people updating see the notes of
+every version since theirs.
+</p>
+
+<h2>Package layout</h2>
+<p>
+A package is a zip file laid out like the user data folder, so you can also make one by hand:
+</p>
+<table class="BorderedHelpTable">
+  <tr><th>Folder</th><th>Contains</th></tr>
+  <tr><td><code>drfs/</code></td><td>Detector efficiency functions: GADRAS folders (<code>Detector.dat</code> + <code>Efficiency.csv</code>), relative-efficiency tables, InterSpec DRF XML, ISOCS and ANGLE files</td></tr>
+  <tr><td><code>rel_act/</code></td><td><em>Isotopics by nuclides</em> presets (<code>.xml</code>)</td></tr>
+  <tr><td><code>act_shield_setups/</code></td><td><em>Activity/Shielding Fit</em> setups (<code>.act.shield.xml</code>), listed in the tool's <em>Preset</em> menu</td></tr>
+  <tr><td><code>report_templates/act_shield/</code></td><td><em>Activity/Shielding Fit</em> report templates (file names containing <code>tmplt.</code>, <code>template.</code>, or <code>inja.</code>), and the files they include; also per-file batch reports</td></tr>
+  <tr><td><code>report_templates/act_shield_summary/</code></td><td>Batch <em>Activity/Shielding Fit</em> summary report templates</td></tr>
+  <tr><td><code>report_templates/peak_fit/</code></td><td>Batch peak fit report templates, one report per file</td></tr>
+  <tr><td><code>report_templates/peak_fit_summary/</code></td><td>Batch peak fit summary report templates</td></tr>
+  <tr><td><code>report_templates/isotopics_auto/</code></td><td><em>Isotopics by nuclides</em> report templates, also per-file batch reports</td></tr>
+  <tr><td><code>report_templates/isotopics_auto_summary/</code></td><td>Batch <em>Isotopics by nuclides</em> summary report templates</td></tr>
+  <tr><td><code>ref_lines/</code></td><td>Reference-line sources (<code>.xml</code>, in the format of <code>add_ref_line.xml</code>); read when <b>InterSpec</b> starts</td></tr>
+  <tr><td><code>materials/</code></td><td>Shielding materials (<code>.txt</code>, in the format of <code>MaterialDataBase.txt</code>); read when <b>InterSpec</b> starts</td></tr>
+  <tr><td><code>nuclide_search_categories/</code></td><td><em>Nuclide Search</em> categories (<code>.xml</code>, in the format of <code>NuclideSearchCatagories.xml</code>), listed after <b>InterSpec</b>'s own</td></tr>
+  <tr><td><code>source_libs/</code></td><td>Check-source libraries for <em>Make Detector Response</em> (<code>.lib</code>, in the format of <code>Source.lib</code>)</td></tr>
+  <tr><td><code>color_themes/</code></td><td>Color themes (<code>.json</code>, as the <em>Color Themes</em> window exports them)</td></tr>
+  <tr><td><code>reference_spectra/</code></td><td>Reference spectra; each folder in it is one set</td></tr>
+  <tr><td><code>llm_knowledge/</code></td><td>AI assistant knowledge: one folder per skill, with a <code>SKILL.md</code> (and optional <code>references/</code>)</td></tr>
+  <tr><td><code>llm_agents/</code></td><td>AI assistant agent definitions (<code>.xml</code>, in the format of <code>llm_agent_MainAgent.xml</code>); read when <b>InterSpec</b> starts</td></tr>
+</table>
+<p>
+Reference-line sources, shielding materials, <em>Nuclide Search</em> categories, and agents are matched one by one, by name (not file): when a package has one
+with the same name as one you already have, you choose which is used when installing, and can change it on the <em>By type</em> tab.  AI assistant settings (<code>llm_config.xml</code>,
+<code>llm_tools_config.xml</code>) are never put in, or taken from, a package.
+</p>
+<p>
+An optional <code>interspec-package.json</code> at the top level describes the package:
+</p>
+<pre>
+{
+  "format_version": 1,
+  "id": "a unique id (a UUID), kept the same for every version",
+  "name": "Field Team HPGe Kit",
+  "version": "3",
+  "author": "...", "organization": "...", "contact": "...",
+  "description": "one line, shown in lists",
+  "notes": "purpose, which detectors or setups, how to use",
+  "changes": "what changed in this version",
+  "handling": "optional marking, e.g. Internal use only",
+  "review_by": "optional date, YYYY-MM-DD",
+  "min_interspec_version": "optional, e.g. 1.0.14",
+  "items": [
+    { "item_id": "a unique id, kept across versions", "path": "drfs/Detective X.xml", "type": "drf",
+      "sha256": "...", "notes": "...", "intended_override": false }
+  ]
+}
+</pre>
+<p>
+Item types are <code>drf</code>, <code>rel_act_preset</code>, <code>act_shield_setup</code>, <code>act_shield_template</code>,
+<code>act_shield_summary_template</code>, <code>peak_fit_template</code>, <code>peak_fit_summary_template</code>,
+<code>isotopics_template</code>, <code>isotopics_summary_template</code>, <code>ref_lines</code>, <code>materials</code>,
+<code>source_lib</code>, <code>nuc_search_category</code>, <code>color_theme</code>, <code>ref_spectra</code>, <code>llm_skill</code>, and <code>llm_agent</code>.  When an item has <code>"intended_override": true</code> and whoever installs the package
+already has an item of the same name (their own, another package's, or one that comes with <b>InterSpec</b>), the install dialog
+starts with this one chosen; they can still keep theirs, and nothing is deleted either way.  Without this file, the package is installed under the zip file's name, and can not be
+updated later.
+</p>

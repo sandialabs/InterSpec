@@ -58,8 +58,18 @@ namespace ZipArchive
     uint32_t uncompressed_size;
     std::string filename;
     uint32_t header_offset; // local header offset
-    
+
+    // Central-directory only (zero for a local header):
+    uint16_t version_made_by = 0;     // high byte is the host system (3 = Unix)
+    uint32_t external_attributes = 0; // for Unix hosts, the high 16 bits are the st_mode
+
     bool init( std::istream &istream, const bool global );
+
+    /** Whether the entry is a symbolic link (only Unix-made archives record this). */
+    bool is_symlink() const;
+
+    /** Whether the entry is a directory (its name ends with '/'). */
+    bool is_directory() const;
   };//struct ZipFileHeader
   
   
@@ -71,6 +81,11 @@ namespace ZipArchive
   //open_zip_file(): throws std::exception with descriptive message upon error.
   //  Output is garunteed to have at least one entry.
   FilenameToZipHeaderMap open_zip_file( std::istream &instrm );
+
+  /** Every entry of the central directory, in order - unlike #open_zip_file, entries with the same
+   name are all kept, so a caller can reject such an archive.  Throws std::exception on error.
+   */
+  std::vector<std::shared_ptr<const ZipFileHeader>> list_zip_entries( std::istream &instrm );
 
   // Throws if any member exceeds the per-file limits, if declared aggregate
   // output exceeds max_aggregate_uncompressed_bytes, or if summing sizes would
@@ -88,5 +103,35 @@ namespace ZipArchive
                              std::shared_ptr<const ZipFileHeader> header,
                              std::ostream &output,
                              const ExtractionLimits &limits );
+
+  /** Writes a zip archive (deflate, no Zip64: under 65535 entries and 4 GB).  Names are stored as
+   UTF-8, '/' separated.
+
+   Usage: `ZipWriter w( out ); w.add_file( "a/b.txt", data ); w.finish();`
+   */
+  class ZipWriter
+  {
+  public:
+    explicit ZipWriter( std::ostream &output );
+
+    /** Adds a file; throws on error (e.g. a write failure, or the archive getting too large). */
+    void add_file( const std::string &name, const std::string &data, const bool compress = true );
+
+    /** Writes the central directory; the archive is incomplete until called.  Throws on error. */
+    void finish();
+
+  private:
+    struct Entry
+    {
+      std::string name;
+      uint32_t crc = 0, compressed_size = 0, uncompressed_size = 0, offset = 0;
+      uint16_t method = 0, dos_time = 0, dos_date = 0;
+    };
+
+    std::ostream &m_output;
+    std::vector<Entry> m_entries;
+    uint64_t m_position;
+    bool m_finished;
+  };//class ZipWriter
 }//namespace ZipArchive
 #endif

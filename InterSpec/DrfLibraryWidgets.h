@@ -172,6 +172,7 @@ public:
     size_t numCopies = 0;      ///< customized copies of it in the Library
     bool deletable = false;    ///< a detector made by the user, kept only in the database
     bool canShare = true;      ///< XML / QR code (needs the full DRF, so not while it loads)
+    Wt::WString warning;       ///< e.g. its package is past its review date; empty for none
   };//struct Details
 
   DrfPreviewPanel( Context context );
@@ -219,7 +220,7 @@ protected:
 
   Wt::WContainerWidget *m_content, *m_empty;
   Wt::WText *m_emptyTitle, *m_emptyText;
-  Wt::WText *m_tag, *m_icon, *m_name, *m_meta, *m_kidsNote;
+  Wt::WText *m_tag, *m_icon, *m_name, *m_meta, *m_kidsNote, *m_warning;
   Wt::WContainerWidget *m_lineage;
   Wt::WPushButton *m_parentLink;
   Wt::WText *m_lineageEnd;

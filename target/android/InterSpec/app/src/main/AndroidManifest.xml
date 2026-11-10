@@ -111,6 +111,22 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
             </intent-filter>
 
 
+            <!-- InterSpec packages of user data (detector efficiencies, templates, ...). -->
+            <intent-filter
+                android:icon='@mipmap/ic_launcher'
+                android:label='InterSpec Package'
+                android:priority='1'>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="*/*" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:pathSuffix=".ispkg" />
+                <data android:pathPattern="/.*\\.ispkg" />
+            </intent-filter>
+
+
             <!-- Secondary filter: same idea, but for generic types (CSV/XML/ZIP/TXT) when
                  InterSpec is invoked as an alternative handler. -->
             <intent-filter>

@@ -40,6 +40,8 @@
 
 
 #include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WAnchor.h>
 #include <Wt/WTable.h>
 #include <Wt/WTimer.h>
 #include <Wt/WLabel.h>
@@ -60,6 +62,7 @@
 #include <Wt/Http/Response.h>
 #include <Wt/WSplitButton.h>
 #include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
 #include <Wt/WSelectionBox.h>
 #include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemDelegate.h>
@@ -87,11 +90,13 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InjaLogDialog.h"
@@ -343,6 +348,8 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
     throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
   }
   
+  if( versionMajor > ShieldingSourceDisplay::sm_xmlSerializationMajorVersion )
+    throw XmlUtils::FormatTooNew( "This Activity/Shielding Fit setup was written by a newer InterSpec." );
   if( versionMajor != ShieldingSourceDisplay::sm_xmlSerializationMajorVersion )
     throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
   
@@ -695,7 +702,23 @@ namespace
         return;
       }//if( !lock )
       
-      suggestFileName( "shielding_source_fit_model.xml", ContentDisposition::Attachment );
+      // "<foreground file name>.act.shield.xml" - like ".drf.xml" for detector efficiencies.
+      string filename;
+      InterSpec * const viewer = InterSpec::instance();
+      const shared_ptr<SpecMeas> foreground = viewer ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+      if( foreground )
+        filename = SpecUtils::filename( foreground->filename() );
+      const string extension = SpecUtils::file_extension( filename );
+      if( !extension.empty() && (extension.size() < filename.size()) )
+        filename = filename.substr( 0, filename.size() - extension.size() );
+      for( char &c : filename )
+      {
+        if( string( "\\/:?\"<>|*" ).find( c ) != string::npos )
+          c = '_';
+      }
+      if( filename.empty() )
+        filename = "activity_shielding_fit";
+      suggestFileName( filename + ".act.shield.xml", ContentDisposition::Attachment );
       response.setMimeType( "application/xml" );
       if( !m_display )
         return;
@@ -2823,12 +2846,21 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       if( !viewer->isPhone() )
         footer->addStyleClass( "SsdModelFooterDesktop" );
 
-      disp->m_exportModelBtn = footer->addNew<WPushButton>();
-      disp->m_exportModelBtn->setStyleClass( "SsdFooterIcon" );
-      disp->m_exportModelBtn->setIcon( WLink("InterSpec_resources/images/download_small.svg") );
       WLink exportLink( disp->m_xmlDownloadResource->url() );
       exportLink.setTarget( Wt::LinkTarget::NewWindow );
-      disp->m_exportModelBtn->setLink( exportLink );
+#if( BUILD_AS_OSX_APP || IOS )
+      // The macOS and iOS web views only download from an anchor, not a button with a link.
+      WAnchor *exportAnchor = footer->addNew<WAnchor>( exportLink );
+      exportAnchor->setImage( std::make_unique<WImage>( WLink("InterSpec_resources/images/download_small.svg") ) );
+      exportAnchor->setStyleClass( "SsdFooterIcon" );
+      disp->m_exportModelBtn = exportAnchor;
+#else
+      WPushButton *exportBtn = footer->addNew<WPushButton>();
+      exportBtn->setStyleClass( "SsdFooterIcon" );
+      exportBtn->setIcon( WLink("InterSpec_resources/images/download_small.svg") );
+      exportBtn->setLink( exportLink );
+      disp->m_exportModelBtn = exportBtn;
+#endif
       HelpSystem::attachToolTipOn( disp->m_exportModelBtn, WString::tr("ssd-tt-export-model"), showToolTips );
 
       disp->m_importModelBtn = footer->addNew<WPushButton>();
@@ -2837,21 +2869,55 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       disp->m_importModelBtn->clicked().connect( disp, &ShieldingSourceDisplay::startModelUpload );
       HelpSystem::attachToolTipOn( disp->m_importModelBtn, WString::tr("ssd-tt-import-model"), showToolTips );
 
-#if( USE_DB_TO_STORE_SPECTRA )
-      disp->m_dbButton = footer->addNew<WPushButton>();
-      disp->m_dbButton->setStyleClass( "SsdFooterIcon" );
-      disp->m_dbButton->setIcon( WLink("InterSpec_resources/images/db_small.png") );
-      HelpSystem::attachToolTipOn( disp->m_dbButton, WString::tr("ssd-tt-database"), showToolTips );
+      // Presets, in place of the old database menu: setups saved as "<name>.act.shield.xml" files (the
+      //  user's own, and from installed packages), plus - until a database upgrade writes them out as
+      //  files - those saved in the database.  Nothing is saved to the database any more.
+      bool use_presets = false;
+#if( USE_USER_LIBRARY )
+      use_presets = UserLibrary::available();
+      if( use_presets )
+      {
+        disp->m_savePresetBtn = footer->addNew<WPushButton>();
+        disp->m_savePresetBtn->setStyleClass( "SsdFooterIcon" );
+        disp->m_savePresetBtn->setIcon( WLink("InterSpec_resources/images/disk.svg") );
+        disp->m_savePresetBtn->clicked().connect( disp, &ShieldingSourceDisplay::startSavePreset );
+        HelpSystem::attachToolTipOn( disp->m_savePresetBtn, WString::tr("ssd-tt-save-preset"), showToolTips );
+      }
+#endif
 
-      disp->m_dbMenu = makePopupMenu( disp->m_dbButton );
-      PopupDivMenuItem *dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
-      dbItem->triggered().connect( disp, &ShieldingSourceDisplay::startBrowseDatabaseModels );
-      dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
-      dbItem->triggered().connect( disp, [disp](){ disp->startSaveModelToDatabase( false ); } );
-      disp->m_saveAsNewModelInDb = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
-      disp->m_saveAsNewModelInDb->triggered().connect( disp, &ShieldingSourceDisplay::saveCloneModelToDatabase );
-      disp->m_saveAsNewModelInDb->disable();
+#if( USE_DB_TO_STORE_SPECTRA )
+      // Without a user data folder (e.g., a web deployment) there are no preset files: setups are
+      //  opened from, and saved to, the database as before.
+      if( !use_presets )
+      {
+        disp->m_dbButton = footer->addNew<WPushButton>();
+        disp->m_dbButton->setStyleClass( "SsdFooterIcon" );
+        disp->m_dbButton->setIcon( WLink("InterSpec_resources/images/db_small.png") );
+        HelpSystem::attachToolTipOn( disp->m_dbButton, WString::tr("ssd-tt-database"), showToolTips );
+
+        disp->m_dbMenu = makePopupMenu( disp->m_dbButton );
+        PopupDivMenuItem *dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
+        dbItem->triggered().connect( disp, &ShieldingSourceDisplay::startBrowseDatabaseModels );
+        dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
+        dbItem->triggered().connect( disp, [disp](){ disp->startSaveModelToDatabase( false ); } );
+        disp->m_saveAsNewModelInDb = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
+        disp->m_saveAsNewModelInDb->triggered().connect( disp, &ShieldingSourceDisplay::saveCloneModelToDatabase );
+        disp->m_saveAsNewModelInDb->disable();
+      }//if( !use_presets )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+
+      if( use_presets )
+      {
+        disp->m_presetRow = footer->addNew<WContainerWidget>();
+        disp->m_presetRow->addStyleClass( "SsdPresetRow" );
+        WLabel *presetLabel = disp->m_presetRow->addNew<WLabel>( WString::tr("ssd-preset") );
+        disp->m_presetSelect = disp->m_presetRow->addNew<WComboBox>();
+        presetLabel->setBuddy( disp->m_presetSelect );
+        HelpSystem::attachToolTipOn( disp->m_presetSelect, WString::tr("ssd-tt-preset"), showToolTips );
+        disp->m_presetSelect->activated().connect( disp, [disp]( int ){ disp->presetSelected(); } );
+        disp->refreshPresets();
+        viewer->userLibraryChanged().connect( disp, &ShieldingSourceDisplay::refreshPresets );
+      }//if( use_presets )
     }
 
     window->rejectWhenEscapePressed();
@@ -3003,6 +3069,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_dbMenu( nullptr ),
     m_saveAsNewModelInDb( nullptr ),
 #endif
+    m_savePresetBtn( nullptr ),
+    m_presetRow( nullptr ),
+    m_presetSelect( nullptr ),
+    m_presetChoices(),
     m_shieldingSelects( nullptr ),
     m_geometryLabel( nullptr ),
     m_prevGeometry( GammaInteractionCalc::GeometryType::Spherical ),
@@ -7701,71 +7771,70 @@ void ShieldingSourceDisplay::showCalcLog()
       }
     ) );
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    const string tmplts_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_fit_templates" );
-
-    if( !tmplts_dir.empty() && SpecUtils::is_directory(tmplts_dir) )
+    // The user's own templates, and those from user library packages (each rendered with its own
+    //  folder as the Inja include folder, so its includes resolve beside it).
+    for( const UserLibrary::Item &item : UserLibrary::items( "act_shield_template" ) )
     {
+      if( item.source.kind == UserLibrary::SourceKind::BuiltIn )
+        continue;
+
+      const string filename = SpecUtils::filename( item.found.path );
+
       // Inja assumes trailing path seperator.
 #if( defined(_WIN32) )
       const char path_sep = '\\';
 #else
       const char path_sep = '/';
 #endif
-      const string tmplts_dir_inja = (tmplts_dir[tmplts_dir.size()-1] == path_sep) ? tmplts_dir : (tmplts_dir + path_sep);
+      const string tmplts_dir = SpecUtils::parent_path( item.found.path );
+      const string tmplts_dir_inja = (!tmplts_dir.empty() && (tmplts_dir.back() == path_sep)) ? tmplts_dir : (tmplts_dir + path_sep);
 
-      const vector<string> potential_tmplts = SpecUtils::ls_files_in_directory( tmplts_dir );
-      for( const string tmplt_path : potential_tmplts )
+      string outname = filename;
+      string tmplt_ext = SpecUtils::file_extension(filename);
+
+      size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
+      if( pos == string::npos )
+        pos = SpecUtils::ifind_substr_ascii(outname, "template");
+      if( pos != string::npos )
+        outname = outname.substr(0, pos);
+
+      while( !outname.empty()
+            && (SpecUtils::iends_with(outname, "_")
+                || SpecUtils::iends_with(outname, ".")
+                || SpecUtils::iends_with(outname, "-")) )
       {
-        const string filename = SpecUtils::filename(tmplt_path);
+        outname = outname.substr(0, outname.size() - 1);
+      }
 
-        if( !SpecUtils::icontains(filename, "tmplt.")
-           && !SpecUtils::icontains(filename, "template.")
-           && !SpecUtils::icontains(filename, "inja.") )
-        {
-          continue;
-        }
+      if( tmplt_ext.empty()
+         || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+         || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+        tmplt_ext = SpecUtils::file_extension(outname);
 
-        string outname = filename;
-        string tmplt_ext = SpecUtils::file_extension(filename);
+      if( tmplt_ext.empty() )
+        tmplt_ext = ".txt";
 
-        size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
-        if( pos == string::npos )
-          pos = SpecUtils::ifind_substr_ascii(outname, "template");
-        if( pos != string::npos )
-          outname = outname.substr(0, pos);
+      outname += tmplt_ext;
 
-        while( !outname.empty()
-              && (SpecUtils::iends_with(outname, "_")
-                  || SpecUtils::iends_with(outname, ".")
-                  || SpecUtils::iends_with(outname, "-")) )
-        {
-          outname = outname.substr(0, outname.size() - 1);
-        }
+      InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
+      if( SpecUtils::icontains(tmplt_ext, "html") )
+        rpt_type = InjaLogDialog::LogType::Html;
 
-        if( tmplt_ext.empty()
-           || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
-           || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
-          tmplt_ext = SpecUtils::file_extension(outname);
+      WString label = WString::fromUTF8( outname );
+      if( item.source.kind == UserLibrary::SourceKind::Package )
+        label = WString::tr( "ssd-template-from-package" ).arg( label ).arg( WString::fromUTF8( item.source.label ) );
 
-        if( tmplt_ext.empty() )
-          tmplt_ext = ".txt";
-
-        outname += tmplt_ext;
-
-        InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
-        if( SpecUtils::icontains(tmplt_ext, "html") )
-          rpt_type = InjaLogDialog::LogType::Html;
-
-        templates.push_back( make_tuple( WString::fromUTF8(outname), "_" + outname, rpt_type,
-                                        [filename,tmplts_dir_inja]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
-          inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
-          return env.render_file( filename, data );
-        }
-                                        ) );
-      }//for( const string tmplt_path : potential_tmplts )
-    }//if( SpecUtils::is_directory(tmplts_dir) )
-#endif
+      const bool from_package = (item.source.kind == UserLibrary::SourceKind::Package);
+      const string tmplt_path = item.found.path;
+      templates.push_back( make_tuple( label, "_" + outname, rpt_type,
+                                      [filename,tmplts_dir_inja,from_package,tmplt_path]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
+        inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
+        if( from_package )
+          UserLibrary::confineTemplateIncludes( env, tmplt_path );  //includes only from its own folder
+        return env.render_file( filename, data );
+      }
+                                      ) );
+    }//for( loop over user and package templates )
 
     // Create and show the dialog, store in m_logDiv
     m_logDiv = SimpleDialog::make<InjaLogDialog>( WString::tr( "ssd-calc-log-html-title" ), data, templates );
@@ -7864,7 +7933,23 @@ void ShieldingSourceDisplay::closeModelUploadWindow()
 
 void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
 {
-  ShieldSourceChange change( this, "Upload Activity/Shielding fit model." );
+  const std::string filename = upload->spoolFileName();
+  if( SpecUtils::file_size( filename ) > 50 * 1024 * 1024 )
+  {
+    passMessage( WString::tr("ssd-err-opening-import-model").arg( "Uploaded file is too large (max 50 MB)." ),
+                 WarningWidget::WarningMsgHigh );
+  }else
+  {
+    loadModelFromFile( filename, "Upload Activity/Shielding fit model." );
+  }
+
+  closeModelUploadWindow();
+}//void finishModelUpload(...)
+
+
+bool ShieldingSourceDisplay::loadModelFromFile( const std::string &path, const std::string &undo_label )
+{
+  ShieldSourceChange change( this, undo_label );
   
   shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> pre_state;
   if( change.m_pre_state )
@@ -7879,21 +7964,16 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
       change.m_pre_state = pre_state;
     }catch( std::exception &e )
     {
-      passMessage( "Error adding undo step for 'Upload Activity/Shielding fit model': "
-                  + string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( "Error adding undo step for '" + undo_label + "': " + string(e.what()), WarningWidget::WarningMsgHigh );
     }
   }//if( change.m_pre_state ) / else
   
   try
   {
-    const std::string filename = upload->spoolFileName();
-
-    const size_t filesize = SpecUtils::file_size( filename );
-    if( filesize > 50 * 1024 * 1024 )
-      throw runtime_error( "Uploaded file is too large (max 50 MB)." );
-
     std::vector<char> data;
-    SpecUtils::load_file_data( filename.c_str(), data );
+    SpecUtils::load_file_data( path.c_str(), data );
+    if( data.empty() )
+      throw runtime_error( "Could not read the file." );
     
     rapidxml::xml_document<char> new_doc;
     const int flags = rapidxml::parse_normalize_whitespace
@@ -7904,7 +7984,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     m_modifiedThisForeground = true;
   }catch( std::exception &e )
   {
-    passMessage( WString::tr("ssd-err-opening-import-model").arg(e.what()), 
+    passMessage( WString::tr("ssd-err-opening-import-model").arg( Wt::Utils::htmlEncode( string( e.what() ) ) ),
                 WarningWidget::WarningMsgHigh );
     
     try
@@ -7916,15 +7996,224 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
                    WarningWidget::WarningMsgHigh );
     }//try / catch
     
-    // We wont insert an undo/redo step here, but this means if the user does an undo, then
-    //  there will be a blank step (i.e., will try to close the upload window when there is
-    //  none to close)
-    // lets keep the ShieldSourceChange from inserting a undo/redo step.
+    // Keep the ShieldSourceChange from inserting an undo/redo step for a change that did not happen.
     change.m_pre_state.reset();
+    return false;
   }//try / catch
-  
-  closeModelUploadWindow();
-}//void finishModelUpload(...)
+
+  return true;
+}//bool loadModelFromFile(...)
+
+
+void ShieldingSourceDisplay::refreshPresets()
+{
+  if( !m_presetSelect || !m_presetRow )
+    return;
+
+  m_presetSelect->clear();
+  m_presetChoices.clear();
+  m_presetSelect->addItem( WString::tr("ssd-preset-choose") );
+  m_presetChoices.push_back( PresetChoice() );
+
+  // The user's own preset files, then those from installed packages (labelled with the package).
+  const vector<UserLibrary::Item> items = UserLibrary::items( "act_shield_setup" );
+  for( const UserLibrary::SourceKind kind : { UserLibrary::SourceKind::User, UserLibrary::SourceKind::Package } )
+  {
+    for( const UserLibrary::Item &item : items )
+    {
+      if( item.source.kind != kind )
+        continue;
+      const WString name = WString::fromUTF8( item.names.empty() ? SpecUtils::filename( item.found.path ) : item.names.front() );
+      m_presetSelect->addItem( (kind == UserLibrary::SourceKind::Package)
+                                ? WString::tr("ssd-preset-from-package").arg( name ).arg( WString::fromUTF8( item.source.label ) )
+                                : name );
+      PresetChoice choice;
+      choice.path = item.found.path;
+      m_presetChoices.push_back( choice );
+    }//for( loop over items )
+  }//for( user's, then packages' )
+
+#if( USE_DB_TO_STORE_SPECTRA )
+  // Setups saved in the database (before presets were files): still offered, but never saved to.
+  try
+  {
+    std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer ? m_specViewer->sql() : nullptr;
+    if( sql && m_specViewer->user() )
+    {
+      DataBaseUtils::DbTransaction transaction( *sql );
+      const Wt::Dbo::collection<Wt::Dbo::ptr<ShieldingSourceModel>> models
+                    = sql->session()->find<ShieldingSourceModel>()
+                                     .where( "InterSpecUser_id = ?" ).bind( m_specViewer->user().id() )
+                                     .orderBy( "name" );
+      for( const Wt::Dbo::ptr<ShieldingSourceModel> &model : models )
+      {
+        m_presetSelect->addItem( WString::tr("ssd-preset-from-db").arg( model->name ) );
+        PresetChoice choice;
+        choice.dbId = model.id();
+        m_presetChoices.push_back( choice );
+      }
+      transaction.commit();
+    }//if( sql && user )
+  }catch( std::exception &e )
+  {
+    cerr << "ShieldingSourceDisplay::refreshPresets(): reading the database: " << e.what() << endl;
+  }
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
+
+  m_presetSelect->setCurrentIndex( 0 );
+  m_presetRow->setHidden( m_presetChoices.size() <= 1 );
+}//void refreshPresets()
+
+
+void ShieldingSourceDisplay::presetSelected()
+{
+  const int index = m_presetSelect ? m_presetSelect->currentIndex() : -1;
+  if( (index <= 0) || (index >= static_cast<int>( m_presetChoices.size() )) )
+    return;
+
+  const PresetChoice choice = m_presetChoices[index];
+  if( !choice.path.empty() )
+  {
+    loadModelFromFile( choice.path, "Load Activity/Shielding preset." );
+    return;
+  }
+
+#if( USE_DB_TO_STORE_SPECTRA )
+  if( choice.dbId >= 0 )
+  {
+    Wt::Dbo::ptr<ShieldingSourceModel> model;
+    try
+    {
+      std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer->sql();
+      DataBaseUtils::DbTransaction transaction( *sql );
+      model = sql->session()->load<ShieldingSourceModel>( choice.dbId );
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr("ssd-err-opening-db-model").arg( e.what() ), WarningWidget::WarningMsgHigh );
+      return;
+    }
+
+    ShieldSourceChange change( this, "Load Activity/Shielding preset." );
+    if( loadModelFromDb( model ) )
+      m_modifiedThisForeground = true;
+    else
+      change.m_pre_state.reset();
+  }//if( choice.dbId >= 0 )
+#endif
+}//void presetSelected()
+
+
+void ShieldingSourceDisplay::startSavePreset()
+{
+#if( USE_USER_LIBRARY )
+  SimpleDialog * const dialog = SimpleDialog::make( WString::tr("ssd-save-preset-title"), WString::tr("ssd-save-preset-msg") );
+  WLineEdit *edit = dialog->contents()->addNew<WLineEdit>();
+  edit->addStyleClass( "SsdPresetName" );
+  edit->setInline( false );
+  edit->setWidth( WLength( 100, WLength::Unit::Percentage ) );
+  edit->setPlaceholderText( WString::tr("ssd-save-preset-placeholder") );
+
+  // The name of the preset last loaded, as a starting point.
+  const int index = m_presetSelect ? m_presetSelect->currentIndex() : -1;
+  if( (index > 0) && (index < static_cast<int>( m_presetChoices.size() )) && !m_presetChoices[index].path.empty() )
+  {
+    string name = SpecUtils::filename( m_presetChoices[index].path );
+    if( SpecUtils::iends_with( name, ".act.shield.xml" ) )
+      name = name.substr( 0, name.size() - 15 );
+    edit->setText( WString::fromUTF8( name ) );
+  }
+  edit->setFocus();
+
+  WPushButton *save = dialog->addButton( WString::tr("Save"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  // The dialog can outlive this tool, so find the tool again when clicked.
+  auto do_save = [edit](){
+    InterSpec * const viewer = InterSpec::instance();
+    ShieldingSourceDisplay * const display = viewer ? viewer->shieldingSourceFit( false ) : nullptr;
+    const string name = SpecUtils::trim_copy( edit->text().toUTF8() );
+    if( display && !name.empty() )
+      display->savePreset( name, false );
+  };
+  save->clicked().connect( std::bind( do_save ) );
+  edit->enterPressed().connect( std::bind( [save](){ save->clicked().emit( Wt::WMouseEvent() ); } ) );
+#endif
+}//void startSavePreset()
+
+
+void ShieldingSourceDisplay::savePreset( const std::string &name, const bool overwrite )
+{
+#if( USE_USER_LIBRARY )
+  try
+  {
+    const string dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_setups" );
+    const string filename = UserLibrary::sanitizeFileName( name, "preset" ) + ".act.shield.xml";
+    const string path = SpecUtils::append_path( dir, filename );
+
+    if( !overwrite && SpecUtils::is_file( path ) )
+    {
+      SimpleDialog * const dialog = SimpleDialog::make( WString::tr("ssd-save-preset-title"),
+                        WString::tr("ssd-save-preset-replace").arg( WString::fromUTF8( Wt::Utils::htmlEncode( filename ) ) ) );
+      WPushButton *replace = dialog->addButton( WString::tr("ssd-save-preset-replace-btn"), WidgetUtils::ButtonRole::Destructive );
+      dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+      replace->clicked().connect( std::bind( [name](){
+        InterSpec * const viewer = InterSpec::instance();
+        ShieldingSourceDisplay * const display = viewer ? viewer->shieldingSourceFit( false ) : nullptr;
+        if( display )
+          display->savePreset( name, true );
+      } ) );
+      return;
+    }//if( a preset of that name exists )
+
+    rapidxml::xml_document<char> doc;
+    serialize( &doc );
+    string xml;
+    rapidxml::print( std::back_inserter( xml ), doc, 0 );
+
+    if( SpecUtils::create_directory( dir ) == 0 )
+      throw runtime_error( "Could not create the folder '" + dir + "'" );
+
+    // Written to a temporary file, then renamed, so a failed write never leaves half a preset.
+    const string tmp_path = path + ".partial";
+    {
+#ifdef _WIN32
+      std::ofstream output( SpecUtils::convert_from_utf8_to_utf16( tmp_path ).c_str(), ios::out | ios::binary | ios::trunc );
+#else
+      std::ofstream output( tmp_path.c_str(), ios::out | ios::binary | ios::trunc );
+#endif
+      output << xml;
+      if( !output )
+        throw runtime_error( "Could not write '" + tmp_path + "'" );
+    }
+    SpecUtils::remove_file( path );
+    if( !SpecUtils::rename_file( tmp_path, path ) )
+    {
+      SpecUtils::remove_file( tmp_path );
+      throw runtime_error( "Could not write '" + path + "'" );
+    }
+
+    // Every tool listing presets re-reads (this one included, via the signal), then show the new one.
+    UserLibrary::notifyChanged();
+    if( m_specViewer )
+      m_specViewer->userLibraryChanged().emit();
+    else
+      refreshPresets();
+    for( size_t i = 0; i < m_presetChoices.size(); ++i )
+    {
+      if( SpecUtils::lexically_normalize_path( m_presetChoices[i].path ) == SpecUtils::lexically_normalize_path( path ) )
+        m_presetSelect->setCurrentIndex( static_cast<int>( i ) );
+    }
+
+    passMessage( WString::tr("ssd-save-preset-done").arg( WString::fromUTF8( Wt::Utils::htmlEncode( name ) ) ),
+                 WarningWidget::WarningMsgInfo );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("ssd-save-preset-error").arg( WString::fromUTF8( Wt::Utils::htmlEncode( string( e.what() ) ) ) ),
+                 WarningWidget::WarningMsgHigh );
+  }
+#endif
+}//void savePreset(...)
 
 
 void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried )
@@ -10237,6 +10526,8 @@ void ShieldingSourceDisplay::setWidgetStateForFitStarting( const bool autoTrigge
   // Footer controls (created in createWindow()); may be null on code paths without a window.
   if( m_importModelBtn ) m_importModelBtn->disable();
   if( m_exportModelBtn ) m_exportModelBtn->disable();
+  if( m_savePresetBtn ) m_savePresetBtn->disable();
+  if( m_presetSelect ) m_presetSelect->disable();
 #if( USE_DB_TO_STORE_SPECTRA )
   if( m_dbButton ) m_dbButton->disable();
   if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->disable();
@@ -10269,6 +10560,8 @@ void ShieldingSourceDisplay::setWidgetStateForFitBeingDone()
   m_addShieldingBtn->enable();
   if( m_importModelBtn ) m_importModelBtn->enable();
   if( m_exportModelBtn ) m_exportModelBtn->enable();
+  if( m_savePresetBtn ) m_savePresetBtn->enable();
+  if( m_presetSelect ) m_presetSelect->enable();
 #if( USE_DB_TO_STORE_SPECTRA )
   if( m_dbButton ) m_dbButton->enable();
   if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->enable();

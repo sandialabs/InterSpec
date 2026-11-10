@@ -136,6 +136,10 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
+#include "InterSpec/UserLibrary.h"
+#include "InterSpec/UserLibraryWindow.h"
+#include "InterSpec/UserLibraryPackage.h"
+#include "InterSpec/UserLibraryImportDialog.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -589,6 +593,10 @@ InterSpec::InterSpec()
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_colorThemeWindow( nullptr ),
+#if( USE_USER_LIBRARY )
+  m_userLibraryWindow( nullptr ),
+#endif
+  m_userLibraryChanged(),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_decayBatchCalc( nullptr ),
@@ -1403,6 +1411,9 @@ InterSpec::~InterSpec() noexcept(true)
     removeChild( m_undo.get() );
   AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
   AuxWindow::deleteAuxWindow( m_colorThemeWindow.get() );
+#if( USE_USER_LIBRARY )
+  closeUserLibrary();
+#endif
   
   try
   {
@@ -4129,6 +4140,14 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         theme = m_user->m_colorThemes.find().where( "id = ?" ).bind( colorThemIndex ).resultValue();
       if( theme )
         entry.modify()->colorThemeJson = theme->json_data;
+
+#if( USE_USER_LIBRARY )
+      // A theme from a file is in use instead.
+      const shared_ptr<ColorTheme> file_theme
+            = ColorThemeWindow::themeFromFile( UserPreferences::preferenceValue<string>( "ColorThemeFile", this ) );
+      if( file_theme )
+        entry.modify()->colorThemeJson = ColorTheme::toJson( *file_theme );
+#endif
     }catch(...)
     {
       //Probably shouldnt ever happen
@@ -4823,7 +4842,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           //  of the data, and are hopefully obvious
           static const std::string prefs_to_load[] = {
             "LogY", "ShowVerticalGridlines", "ShowHorizontalGridlines",
-            "ColorThemeIndex", "ShowXAxisSlider", "CompactXAxis",
+            "ColorThemeIndex", "ColorThemeFile", "ShowXAxisSlider", "CompactXAxis",
             "ShowYAxisScalers", "DisplayBecquerel"
           };
           
@@ -5061,6 +5080,22 @@ std::shared_ptr<const ColorTheme> InterSpec::getColorTheme()
     return m_colorTheme;
   
   auto theme = make_shared<ColorTheme>();
+
+#if( USE_USER_LIBRARY )
+  // A theme from a file (a package's, or in the user data folder), if one was chosen and is still there.
+  try
+  {
+    const shared_ptr<ColorTheme> file_theme
+          = ColorThemeWindow::themeFromFile( UserPreferences::preferenceValue<string>( "ColorThemeFile", this ) );
+    if( file_theme )
+    {
+      m_colorTheme = file_theme;
+      return file_theme;
+    }
+  }catch( std::exception & )
+  {
+  }
+#endif
   
   try
   {
@@ -5232,6 +5267,70 @@ void InterSpec::osThemeChange( std::string name )
   }
 }//void osThemeChange( std::string name )
 #endif
+
+
+#if( USE_USER_LIBRARY )
+UserLibraryWindow *InterSpec::showUserLibrary()
+{
+  if( m_userLibraryWindow )
+  {
+    m_userLibraryWindow->show();
+    m_userLibraryWindow->centerWindowHeavyHanded();
+    return m_userLibraryWindow.get();
+  }
+
+  m_userLibraryWindow = AuxWindow::make<UserLibraryWindow>( this );
+  m_userLibraryWindow->finished().connect( this, &InterSpec::closeUserLibrary );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->closeUserLibrary();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->showUserLibrary();
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Packages window." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+
+  return m_userLibraryWindow.get();
+}//UserLibraryWindow *showUserLibrary()
+
+
+void InterSpec::closeUserLibrary()
+{
+  if( !m_userLibraryWindow )
+    return;
+
+  AuxWindow::deleteAuxWindow( m_userLibraryWindow.get() );
+  assert( !m_userLibraryWindow );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->showUserLibrary();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->closeUserLibrary();
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Packages window." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void closeUserLibrary()
+#endif
+
+
+Wt::Signal<> &InterSpec::userLibraryChanged()
+{
+  return m_userLibraryChanged;
+}
 
 
 ColorThemeWindow *InterSpec::showColorThemeWindow()
@@ -6920,7 +7019,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   m_exportSpecFileMenu->setNativeAccelerator( "CmdOrCtrl+E" );
   m_exportSpecFileMenu->triggered().connect( this, [this](){ createExportSpectrumFileDialog(); } );
   m_exportSpecFileMenu->disable();
-  
+
 #if( USE_DB_TO_STORE_SPECTRA )
   assert( !m_fileManager || m_saveStateAs );
   assert( !m_fileManager || m_saveState );
@@ -8834,6 +8933,17 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 	item = subPopup->addMenuItem( WString::tr("app-mi-help-pref-theme") );
 	item->triggered().connect( this, [this](){ showColorThemeWindow(); } );
 
+#if( USE_USER_LIBRARY )
+  // Packages of shared data (detector efficiencies, presets, templates, ...): not an everyday tool,
+  //  so it lives with the options rather than in the main menus.
+  if( UserLibrary::available() )
+  {
+    item = subPopup->addMenuItem( WString::tr("app-mi-help-pref-packages") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-packages"), showToolTips );
+    item->triggered().connect( this, [this](){ showUserLibrary(); } );
+  }
+#endif
+
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
   subPopup->addSeparator();
   WCheckBox *promptOnLoad = new WCheckBox( WString::tr("app-mi-help-pref-prompt-prev") );
@@ -9955,6 +10065,12 @@ void InterSpec::trackToolDialog( Wt::WDialog *dialog )
 
   m_trackedDialogs.emplace_back( dialog );
 }//void InterSpec::trackToolDialog( Wt::WDialog *dialog )
+
+
+void InterSpec::showNuclideSearch()
+{
+  searchOnEnergyFromRightClick();  //which just brings up the tool
+}//void showNuclideSearch()
 
 
 void InterSpec::searchOnEnergyFromRightClick()
@@ -11742,16 +11858,25 @@ void InterSpec::closeShieldingSourceFit()
 
 void InterSpec::showHelpWindow( const std::string &preselect )
 {
+  // When Help is opened from a (non-modal) window's footer "?", the click that got us here can raise
+  //  that window after Help raised itself, leaving Help behind it; so, as SimpleDialog does, raise
+  //  Help again on a short delay.
+  auto raise_after_click = []( AuxWindow *window ){
+    window->doJavaScript( "setTimeout(function(){Wt.WT.AuxWindowBringToFront('" + window->id() + "');},60);" );
+  };
+
   if( m_helpWindow )
   {
     m_helpWindow->show();
     m_helpWindow->centerWindow();
     m_helpWindow->setTopic( preselect );
+    raise_after_click( m_helpWindow.get() );
     return;
   }//if( m_helpWindow )
   
   m_helpWindow = AuxWindow::make<HelpSystem::HelpWindow>( preselect );
   m_helpWindow->finished().connect( this, &InterSpec::closeHelpWindow );
+  raise_after_click( m_helpWindow.get() );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -13467,6 +13592,17 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
     
     if( !SpecUtils::is_file(path) )
       throw runtime_error( "Could not access file '" + path + "'" );
+
+#if( USE_USER_LIBRARY )
+    // A package opened from the OS ("open with", a double-click): offer to install it.  Checked
+    //  before trying it as a spectrum, which could read all of a large archive.  Like the other
+    //  non-spectrum files below, no spectrum was opened, so e.g. the previous session still loads.
+    if( UserLibrary::available() && UserLibraryPackage::looksLikePackage( displayFileName, path ) )
+    {
+      UserLibraryImportDialog::start( path, displayFileName );
+      return false;
+    }
+#endif
   
     auto meas = make_shared<SpecMeas>();
     const bool success = meas->load_file( path, SpecUtils::ParserType::Auto, displayFileName );

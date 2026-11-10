@@ -24,6 +24,7 @@
       with your spectra in them)
     </div>
   </message>
+  <message id="rs-package-set">{1} ({2})</message>
   <message id="rs-some-dirs-removed">{1} directories are no longer avaiable, and have been removed.</message>
   <message id="rs-dir-added-successfully">Added path '{1}'.</message>
   <message id="rs-show-as">Load as</message>

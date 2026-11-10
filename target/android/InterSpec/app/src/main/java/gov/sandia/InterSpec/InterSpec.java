@@ -287,7 +287,10 @@ public class InterSpec extends AppCompatActivity
       }
 
       final File tmpDir = getCacheDir();
-      final File outputFile = File.createTempFile("spectrum", ".tmp", tmpDir);
+      // A package is recognized by its extension (its manifest supplies its name), so keep that.
+      final boolean isPackage = (displayName != null)
+                       && displayName.toLowerCase(java.util.Locale.ROOT).endsWith(".ispkg");
+      final File outputFile = File.createTempFile("spectrum", (isPackage ? ".ispkg" : ".tmp"), tmpDir);
       outputFile.deleteOnExit();
 
       try( InputStream input = new FileInputStream( parcelFD.getFileDescriptor() );

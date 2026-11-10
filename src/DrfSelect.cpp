@@ -91,6 +91,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/DrfLibrary.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/DrfLibraryWidgets.h"
 #include "InterSpec/InterSpec.h"
@@ -471,11 +472,35 @@ namespace
     return find_valid_path( pathstr, true );
   }
   
+  /** Whether a path is the user library's `packages` folder or inside it (packages' detectors are
+   listed per package, by DrfLibrary, rather than as loose files of the user data folder).
+   */
+  bool in_user_library_packages( const string &path )
+  {
+#if( USE_USER_LIBRARY )
+    try
+    {
+      if( !UserLibrary::available() )
+        return false;
+      const string pkgs = UserLibrary::packagesDirectory();
+      return (SpecUtils::lexically_normalize_path( path ) == SpecUtils::lexically_normalize_path( pkgs ))
+             || !UserLibrary::relativePath( pkgs, path ).empty();
+    }catch( std::exception & )
+    {
+    }
+#endif
+    return false;
+  }//in_user_library_packages(...)
+
+
   void potential_rel_eff_files( const string &base_dir, vector<string> &potential_paths )
   {
     const vector<string> tsv_files = SpecUtils::recursive_ls( base_dir, ".tsv");
     for( const auto &p : tsv_files )
-      potential_paths.push_back( p );
+    {
+      if( !in_user_library_packages( p ) )
+        potential_paths.push_back( p );
+    }
     
     const string drfsdir = SpecUtils::append_path( base_dir, "drfs" );
     
@@ -1267,6 +1292,8 @@ std::vector<std::string> DrfSelect::potential_gadras_det_dirs( InterSpec *inters
     const vector<string> subdirs = SpecUtils::ls_directories_in_directory( basestr );
     for( const string &subdirpath : subdirs )
     {
+      if( in_user_library_packages( subdirpath ) )
+        continue;
       auto subsubdirs = DrfSelect::recursive_list_gadras_drfs(subdirpath);
       if( subsubdirs.size() )
         pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
@@ -1279,7 +1306,7 @@ std::vector<std::string> DrfSelect::potential_gadras_det_dirs( InterSpec *inters
     {
       const boost::filesystem::path &p = itr->path();
       const string pstr = p.string<string>();
-      if( SpecUtils::is_directory( pstr ) )
+      if( SpecUtils::is_directory( pstr ) && !in_user_library_packages( pstr ) )
       {
         auto subdirs = DrfSelect::recursive_list_gadras_drfs(pstr);
         if( subdirs.size() )
@@ -2854,6 +2881,12 @@ namespace
 }//namespace
 
 
+std::vector<DrfLibrary::Location> DrfSelect::libraryLocations( InterSpec *interspec )
+{
+  return library_locations( interspec );
+}
+
+
 DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                       InterSpec *specViewer,
                       AuxWindow *parentWindow )
@@ -3272,6 +3305,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
       m_list->scrollToPicked();
     }
   } );
+
+  // Installing, removing, or disabling packages changes what the Library lists.
+  m_interspec->userLibraryChanged().connect( this, &DrfSelect::startScan );
 
   // Until the Library is read, preview the detector in use - it is already in memory.
   updateInUseStrip();
@@ -4002,6 +4038,8 @@ void DrfSelect::keepFoundAndUse()
       throw;
     }
 
+    UserLibrary::recordLooseImport( dest, m_foundFolder.empty() ? SpecUtils::filename( dest ) : m_foundFolder );
+
     m_useAfterScanRoot = dest;
     m_useAfterScanPath = kept_entry_path( dest, m_foundFolder, picked );
     m_useAfterScanName = picked.name;
@@ -4179,6 +4217,22 @@ void DrfSelect::updatePreview()
     if( (i != index) && !(*m_entries)[i].hidden && (DrfLibrary::parentIndex( *m_entries, i ) == static_cast<int>(index)) )
       details.numCopies += 1;
   }
+
+  // A reminder when it comes from a package past the review date its authors set.
+#if( USE_USER_LIBRARY )
+  try
+  {
+    const optional<UserLibrary::Package> pkg = (UserLibrary::available() && !entry->path.empty())
+                                               ? UserLibrary::packageForPath( entry->path ) : nullopt;
+    if( pkg && pkg->manifest.reviewDue() )
+      details.warning = WString::tr( "dsl-pv-review-due" )
+                          .arg( WString::fromUTF8( pkg->manifest.name ) )
+                          .arg( WString::fromUTF8( pkg->manifest.reviewBy ) );
+  }catch( std::exception &e )
+  {
+    cerr << "DrfSelect: failed to check the package of '" << entry->path << "': " << e.what() << endl;
+  }
+#endif
 
   m_preview->showSummary( entry->summary, details );
   m_preview->setDetector( m_pickedDrf );

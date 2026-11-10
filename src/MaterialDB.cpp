@@ -23,7 +23,10 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
+#include <map>
 #include <mutex>
+#include <optional>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -43,6 +46,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -580,6 +584,30 @@ MaterialDB::~MaterialDB()
 }
 
 
+namespace
+{
+  /** Whether a material file has an "Air" entry, as a full copy of the material database does (and
+   any lines before it are a header to skip); a file of a few materials has not.
+   */
+  bool file_has_air_entry( const std::string &file )
+  {
+#ifdef _WIN32
+    std::ifstream input( SpecUtils::convert_from_utf8_to_utf16( file ).c_str() );
+#else
+    std::ifstream input( file.c_str() );
+#endif
+    std::string line;
+    while( SpecUtils::safe_get_line( input, line ) )
+    {
+      SpecUtils::trim( line );
+      if( line == "Air" )  //not e.g. "Air (humid)", which could be a material of the user's own
+        return true;
+    }
+    return false;
+  }//file_has_air_entry(...)
+}//namespace
+
+
 void MaterialDB::initialize()
 {
   std::lock_guard<std::mutex> lock( sm_mutex );
@@ -597,22 +625,69 @@ void MaterialDB::initialize()
     const string materialfile = SpecUtils::append_path( staticDir, "MaterialDataBase.txt" );
     db->parseGadrasMaterialFile( materialfile, decayDb, false, false );
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    // Load user overrides from writable directory, if available
+    // The user's and packages' materials over InterSpec's own: each name from the file
+    //  UserLibrary::resolve picks.  (Disabled files, and package files needing a newer InterSpec, are
+    //  left out by UserLibrary::items.)
     try
     {
-      const string writableDir = InterSpec::writableDataDirectory();
-      if( !writableDir.empty() )
+      const vector<UserLibrary::Item> items = UserLibrary::items( "materials" );
+      map<string,shared_ptr<MaterialDB>> parsed;  //by path, all but InterSpec's own
+      set<string> names;
+      for( const UserLibrary::Item &item : items )
       {
-        const string userFile = SpecUtils::append_path( writableDir, "MaterialDataBase.txt" );
-        if( SpecUtils::is_file( userFile ) )
-          db->parseGadrasMaterialFile( userFile, decayDb, false, true );
-      }//if( writable directory is available )
+        if( item.source.kind == UserLibrary::SourceKind::BuiltIn )
+          continue;
+        try
+        {
+          shared_ptr<MaterialDB> file_db( new MaterialDB() );
+          file_db->parseGadrasMaterialFile( item.found.path, decayDb, false, true, file_has_air_entry( item.found.path ) );
+          for( const string &name : file_db->m_materialNames )
+          {
+            if( !SpecUtils::iequals_ascii( name, "void" ) )  //every MaterialDB has it
+              names.insert( name );
+          }
+          parsed[item.found.path] = file_db;
+        }catch( std::exception &e )
+        {
+          cerr << "Warning: failed to load materials from '" << item.found.path << "': " << e.what() << endl;
+        }
+      }//for( loop over material files )
+
+      for( const string &name : names )
+      {
+        const optional<UserLibrary::Item> chosen = UserLibrary::resolve( "materials", name, items );
+        if( !chosen || (chosen->source.kind == UserLibrary::SourceKind::BuiltIn) )
+          continue;  //InterSpec's own, already loaded
+        const map<string,shared_ptr<MaterialDB>>::const_iterator file_db = parsed.find( chosen->found.path );
+        if( file_db == end(parsed) )
+          continue;
+        const shared_ptr<const Material> material = file_db->second->material( name );
+        if( !material )
+          continue;
+
+        // Matched as the database matches names (ignoring case, spaces, '-', and '_').
+        bool replaced = false;
+        for( shared_ptr<const Material> &m : db->m_materials )
+        {
+          if( equal_by_name( m.get(), material.get() ) )
+          {
+            m = material;
+            replaced = true;
+          }
+        }
+        if( !replaced )
+          db->m_materials.push_back( material );
+      }//for( loop over names )
+
+      sort( begin(db->m_materials), end(db->m_materials),
+        []( const shared_ptr<const Material> &a, const shared_ptr<const Material> &b ) -> bool {
+          return less_than_by_name( a.get(), b.get() );
+        } );
+      db->refreshMaterialNames();
     }catch( std::exception &e )
     {
-      cerr << "Warning: failed to load user MaterialDataBase.txt overrides: " << e.what() << endl;
+      cerr << "Warning: failed to load user and package materials: " << e.what() << endl;
     }
-#endif
 
     sm_instance = std::move( db );
     sm_initError.clear();
@@ -710,6 +785,26 @@ std::shared_ptr<const Material> MaterialDB::material( const size_t index ) const
 }//shared_ptr<const Material> material( size_t index ) const
 
 
+std::vector<std::string> MaterialDB::namesInFile( const std::string &file )
+{
+  const SandiaDecay::SandiaDecayDataBase * const decayDb = DecayDataBaseServer::database();
+  if( !decayDb )
+    throw runtime_error( "DecayDataBaseServer not initialized" );
+
+  MaterialDB file_db;
+  file_db.parseGadrasMaterialFile( file, decayDb, false, true, file_has_air_entry( file ) );
+
+  // Not the "void" material every MaterialDB has.
+  vector<string> answer;
+  for( const string &name : file_db.m_materialNames )
+  {
+    if( !SpecUtils::iequals_ascii( name, "void" ) )
+      answer.push_back( name );
+  }
+  return answer;
+}//namesInFile(...)
+
+
 void MaterialDB::refreshMaterialNames()
 {
   m_materialNames.clear();
@@ -735,7 +830,8 @@ void MaterialDB::writeGadrasStyleMaterialFile( ostream &file ) const
 void MaterialDB::parseGadrasMaterialFile( const std::string &file,
                                           const SandiaDecay::SandiaDecayDataBase *db,
                                           const bool swapNameDescription,
-                                          const bool overwrite )
+                                          const bool overwrite,
+                                          const bool startAtAir )
 {
   //Gadras Material names are formatted like
   /*
@@ -773,7 +869,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
 
 
     string line;
-    bool has_hit_air = false;
+    bool has_hit_air = !startAtAir;
 
     while( SpecUtils::safe_get_line( is, line ) )
     {
@@ -782,7 +878,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
       SpecUtils::trim( line );
 
       if( !has_hit_air )
-        has_hit_air = SpecUtils::starts_with(line,"Air");
+        has_hit_air = (line == "Air");  //the database's first entry; not e.g. "Air (humid)"
 
       if( !has_hit_air )
         continue;

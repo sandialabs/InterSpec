@@ -63,6 +63,7 @@
 #include "InterSpec/DrfImport.h"
 #include "InterSpec/DrfLibrary.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -431,6 +432,10 @@ namespace
 
     size_t num_files_seen = 0;
 
+    set<string> excluded;
+    for( const string &p : loc.excludePaths )
+      excluded.insert( SpecUtils::lexically_normalize_path( p ) );
+
     std::function<void(const string &, int)> walk;
     walk = [&]( const string &dir, const int depth ){
       if( (depth > ns_max_folder_depth) || (num_files_seen > ns_max_files_per_location) )
@@ -512,6 +517,8 @@ namespace
       {
         const string lname = SpecUtils::filename( sub );
         if( !lname.empty() && (lname[0] == '.') )
+          continue;
+        if( !excluded.empty() && excluded.count( SpecUtils::lexically_normalize_path( sub ) ) )
           continue;
         walk( sub, depth + 1 );
       }
@@ -682,7 +689,9 @@ namespace
     e.path = item.path;
     e.companionPath = item.companion;
     e.record = index;
-    e.hidden = loc.hidden;
+    e.hidden = loc.hidden
+               || (!loc.hiddenItems.empty() && loc.hiddenItems.count( SpecUtils::lexically_normalize_path( item.path ) ));
+    e.sourceLabel = loc.label;
     e.summary = summary;
     if( summary )
     {
@@ -985,18 +994,22 @@ std::vector<Location> standardLocations()
     cerr << "DrfLibrary::standardLocations(): no static data directory: " << e.what() << endl;
   }//try / catch
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+#if( USE_USER_LIBRARY )
   // The user-data directory: `drfs/` holds files saved from the app (any format), and - as before -
-  //  any GADRAS detector folders or relative-efficiency tables anywhere in it are listed too.
+  //  any GADRAS detector folders or relative-efficiency tables anywhere in it are listed too, except
+  //  in user library packages (listed below, under their own names) and the other user library folders.
   try
   {
     const string user_dir = InterSpec::writableDataDirectory();
+    const bool have_library = UserLibrary::available();
+    const set<string> disabled = have_library ? UserLibrary::disabledPaths( "drf" ) : set<string>();
 
     Location drfs;
     drfs.path = SpecUtils::append_path( user_dir, "drfs" );
     drfs.id = drfs.path;
     drfs.role = LocationRole::KeptImports;
     drfs.isAuto = true;
+    drfs.hiddenItems = disabled;
     locations.push_back( drfs );
 
     Location user;
@@ -1004,7 +1017,40 @@ std::vector<Location> standardLocations()
     user.role = LocationRole::UserData;
     user.isAuto = true;
     user.formats = FormatGadras | FormatTable;
+    user.hiddenItems = disabled;
+    if( have_library )
+    {
+      user.excludePaths.push_back( UserLibrary::packagesDirectory() );
+      for( const UserLibrary::AssetType &type : UserLibrary::assetTypes() )
+      {
+        vector<string> folders = type.legacyFolders;
+        folders.push_back( type.folder );
+        for( const string &folder : folders )
+        {
+          if( folder != "drfs" )
+            user.excludePaths.push_back( SpecUtils::append_path( user_dir, folder ) );
+        }
+      }//for( loop over user library types )
+    }//if( have_library )
     locations.push_back( user );
+
+    const vector<UserLibrary::Package> packages = have_library ? UserLibrary::installedPackages()
+                                                               : vector<UserLibrary::Package>();
+    for( const UserLibrary::Package &pkg : packages )
+    {
+      const string path = SpecUtils::append_path( pkg.path, "drfs" );
+      if( !SpecUtils::is_directory( path ) )
+        continue;
+
+      Location loc;
+      loc.id = "package:" + pkg.id;
+      loc.path = path;
+      loc.role = LocationRole::Package;
+      loc.isAuto = true;
+      loc.label = pkg.manifest.name;
+      loc.hiddenItems = disabled;
+      locations.push_back( loc );
+    }//for( loop over installed packages )
   }catch( std::exception & )
   {
     // No writable directory set (e.g., some unit tests).
@@ -1418,6 +1464,15 @@ Snapshot scan( const ScanRequest &request )
     LocationStatus &status = snapshot.locations[work[i].locationIndex];
     status.numDetectors += results[i].summaries.size();
     status.numUnreadable += results[i].numUnreadable;
+
+    if( results[i].numUnreadable && results[i].summaries.empty() )
+    {
+      UnreadableItem bad;
+      bad.path = work[i].path;
+      bad.isFolder = (work[i].kind == EntryKind::GadrasFolder);
+      bad.error = results[i].error;
+      snapshot.unreadable.push_back( bad );
+    }
   }
 
   return snapshot;

@@ -51,6 +51,7 @@
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -471,6 +472,21 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
       showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
       showBtn->clicked().connect( showBtn, [userDataDir](){
         AppUtils::showFileInOsFileBrowser(userDataDir);
+      } );
+    }
+#endif
+
+#if( USE_USER_LIBRARY )
+    // Packages of shared data (detector efficiencies, presets, ...) live in the user data folder too.
+    if( UserLibrary::available() )
+    {
+      viewer->useMessageResourceBundle( "UserLibrary" );
+      WPushButton *libBtn = parent->addNew<WPushButton>( WString::tr("ul-about-link") );
+      libBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      libBtn->clicked().connect( libBtn, [](){
+        InterSpec * const interspec = InterSpec::instance();
+        if( interspec )
+          interspec->showUserLibrary();
       } );
     }
 #endif

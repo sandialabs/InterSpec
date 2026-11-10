@@ -122,6 +122,15 @@ module.exports = {
       mimeType: 'application/gamma-spectrum',
       role: 'Viewer',
     },
+    {
+      // Packages of user data (detector efficiencies, templates, ...) - see UserLibraryPackage.
+      //  One extension, so electron-builder's generated Linux glob is valid for this one.
+      ext: [ 'ispkg' ],
+      name: 'InterSpec package',
+      description: 'InterSpec data package',
+      mimeType: 'application/x-interspec-package',
+      role: 'Viewer',
+    },
   ],
 
   linux: {

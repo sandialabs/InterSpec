@@ -180,6 +180,7 @@
   <message id="dsl-pv-your-copy-of">Your copy of </message>
   <message id="dsl-pv-kids-1">You have 1 customized copy of this detector, listed under it.</message>
   <message id="dsl-pv-kids-n">You have {1} customized copies of this detector, listed under it.</message>
+  <message id="dsl-pv-review-due">From the package “{1}”, whose authors asked for it to be reviewed by {2}: check with them for a newer version.</message>
   <message id="dsl-pv-empty-title">Nothing picked yet</message>
   <message id="dsl-pv-empty-text">Pick a detector on the left to see its efficiency curve and what it includes.</message>
   <message id="dsl-pv-empty-import-title">Nothing to preview yet</message>
@@ -312,6 +313,7 @@
   <message id="dsl-loc-isocs">ISOCS</message>
   <message id="dsl-loc-angle">ANGLE</message>
   <message id="dsl-loc-install-kind">standard location</message>
+  <message id="dsl-loc-package-kind">installed package</message>
   <message id="dsl-loc-user-folder-kind">folder you added</message>
   <message id="dsl-loc-user-file-kind">file you added</message>
   <message id="dsl-loc-add">Add</message>

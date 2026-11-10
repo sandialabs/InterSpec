@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <fstream>
 #include <iostream>
 #include <filesystem>
@@ -50,6 +51,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
@@ -1408,47 +1410,91 @@ void RefSpectraWidget::initBaseDirs()
   }//if( SpecUtils::is_directory( common_nucs_dir ) )
 
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-  // Check for directories under reference_spectra in the "user_data" directory
-  const std::string user_dir = InterSpec::writableDataDirectory();
-  const std::string user_ref_spectra_dir = SpecUtils::append_path( user_dir, "reference_spectra" );
-  if( SpecUtils::is_directory( user_ref_spectra_dir ) ) 
+#if( USE_USER_LIBRARY )
+  // The user's own reference spectra (`reference_spectra` in the user data folder), then those from
+  //  user library packages - each set labelled with its package's name.  Disabled sets are left out.
+  try
   {
-    bool has_spectra_files_in_base = false;
-    vector<string> dirs_to_add;
-    try
-    {
-      for( const auto &entry : fs::directory_iterator( user_ref_spectra_dir ) )
-      {
-        const std::string entry_name = entry.path().filename().string();
-        if( entry_name.empty() || entry_name.front() == '.' )
-          continue;
-        
-        if( fs::is_directory( entry.path() ) )
-        {
-          // Only add the directory if it has spectra files, or children directories that have spectra files
-          if( has_spectra_files( entry.path() ) )
-            dirs_to_add.push_back( entry.path().string() );
-        }else{
-          if( !SpecUtils::likely_not_spec_file( entry.path().string() ) )
-            has_spectra_files_in_base = true;
-        }
-      }
-    }catch( std::exception &e )
-    {
-      cerr << "RefSpectraWidget::initBaseDirs(): caught exception iterating directories: " << e.what() << endl;
-    }//try / catc
+    const std::string user_dir = InterSpec::writableDataDirectory();
+    const std::string user_ref_spectra_dir = SpecUtils::append_path( user_dir, "reference_spectra" );
+    const std::set<std::string> disabled = UserLibrary::disabledPaths( "ref_spectra" );
 
-    // If base dir has spectra files in it, we'll just add base directory.
-    // Otherwise, we'll add the sub-directories that do have spectra files in them.
-    if( has_spectra_files_in_base )
+    if( SpecUtils::is_directory( user_ref_spectra_dir ) )
     {
-      m_treeModel->addBaseDirectory( ref_spectra_dir );
-    }else
+      bool has_spectra_files_in_base = false;
+      vector<string> dirs_to_add;
+      try
+      {
+        for( const auto &entry : fs::directory_iterator( user_ref_spectra_dir ) )
+        {
+          const std::string entry_name = entry.path().filename().string();
+          if( entry_name.empty() || entry_name.front() == '.' )
+            continue;
+
+          if( disabled.count( SpecUtils::lexically_normalize_path( entry.path().string() ) ) )
+            continue;
+
+          if( fs::is_directory( entry.path() ) )
+          {
+            // Only add the directory if it has spectra files, or children directories that have spectra files
+            if( has_spectra_files( entry.path() ) )
+              dirs_to_add.push_back( entry.path().string() );
+          }else{
+            if( !SpecUtils::likely_not_spec_file( entry.path().string() ) )
+              has_spectra_files_in_base = true;
+          }
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "RefSpectraWidget::initBaseDirs(): caught exception iterating directories: " << e.what() << endl;
+      }//try / catc
+
+      // If base dir has spectra files in it, we'll just add base directory.
+      // Otherwise, we'll add the sub-directories that do have spectra files in them.
+      if( has_spectra_files_in_base )
+      {
+        m_treeModel->addBaseDirectory( user_ref_spectra_dir );
+      }else
+      {
+        for( const auto &dir : dirs_to_add )
+          m_treeModel->addBaseDirectory( dir );
+      }
+    }//if( SpecUtils::is_directory( user_ref_spectra_dir ) )
+
+    // Each package set as its own base folder.  A package with loose spectra too is listed once,
+    //  under the package's name, with its sets inside it (disabled ones hidden).
+    m_treeModel->setHiddenPaths( disabled );
+    const std::vector<UserLibrary::Item> ref_items = UserLibrary::items( "ref_spectra" );
+    std::set<std::string> packages_with_loose_files;
+    for( const UserLibrary::Item &item : ref_items )
     {
-      for( const auto &dir : dirs_to_add )
-        m_treeModel->addBaseDirectory( dir );
+      if( (item.source.kind == UserLibrary::SourceKind::Package) && !item.found.isFolder )
+        packages_with_loose_files.insert( item.source.packageId );
     }
+
+    std::set<std::string> package_roots_added;
+    for( const UserLibrary::Item &item : ref_items )
+    {
+      if( item.source.kind != UserLibrary::SourceKind::Package )
+        continue;
+
+      if( !packages_with_loose_files.count( item.source.packageId ) )
+      {
+        std::string name = SpecUtils::filename( item.found.path );
+        SpecUtils::ireplace_all( name, "_", " " );
+        const std::string label = WString::tr( "rs-package-set" ).arg( WString::fromUTF8( name ) )
+                                    .arg( WString::fromUTF8( item.source.label ) ).toUTF8();
+        m_treeModel->addBaseDirectory( item.found.path, label );
+      }else
+      {
+        const std::string root = SpecUtils::parent_path( item.found.path );  //the package's reference_spectra
+        if( package_roots_added.insert( root ).second )
+          m_treeModel->addBaseDirectory( root, item.source.label );
+      }
+    }//for( loop over reference-spectra items )
+  }catch( std::exception &e )
+  {
+    cerr << "RefSpectraWidget::initBaseDirs(): user and package reference spectra: " << e.what() << endl;
   }
 #endif
 

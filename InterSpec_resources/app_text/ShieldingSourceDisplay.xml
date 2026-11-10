@@ -87,6 +87,19 @@
   <message id="ssd-tt-export-model">Export / download the current model as an XML config.</message>
   <message id="ssd-tt-import-model">Import a previously exported model from an XML file.</message>
   <message id="ssd-tt-database">Open, save, or clone this model in the database.</message>
+  <message id="ssd-preset">Preset</message>
+  <message id="ssd-preset-choose">Choose...</message>
+  <message id="ssd-preset-from-package">{1} ({2})</message>
+  <message id="ssd-preset-from-db">{1} (database)</message>
+  <message id="ssd-tt-preset">Load a saved setup: yours, one from an installed package, or one saved in the database by an earlier InterSpec.</message>
+  <message id="ssd-tt-save-preset">Save this setup as a preset, so it is in the Preset menu (and can be put in a package to share).</message>
+  <message id="ssd-save-preset-title">Save as Preset</message>
+  <message id="ssd-save-preset-msg">Name for this setup:</message>
+  <message id="ssd-save-preset-placeholder">e.g. Steel drum, 1 m</message>
+  <message id="ssd-save-preset-replace">A preset named “{1}” already exists.  Replace it?</message>
+  <message id="ssd-save-preset-replace-btn">Replace</message>
+  <message id="ssd-save-preset-done">Saved preset “{1}”.</message>
+  <message id="ssd-save-preset-error">Could not save the preset: {1}</message>
   <!-- Phase 2: per-nuclide card display (sfn- = SourceFitNuclideDisplay) -->
   <message id="sfn-activity">Activity</message>
   <message id="sfn-age">Age</message>
@@ -308,6 +321,7 @@
   <message id="ssd-calc-log-export-txt">TXT file</message>
   <message id="ssd-calc-log-html-title">Calculation Log</message>
   <message id="ssd-template-text-log">Standard Log (Text)</message>
+  <message id="ssd-template-from-package">{1} ({2})</message>
   <message id="ssd-template-html-report">Activity Fit Report (HTML)</message>
   <message id="ssd-no-fit-results">No fit results available to display.</message>
   <message id="ssd-error-creating-html-log">Error creating HTML calculation log: {1}</message>

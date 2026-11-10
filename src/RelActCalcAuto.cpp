@@ -19681,6 +19681,10 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
 
     lower_edge = read_edge( "LowerEdge" );
     upper_edge = read_edge( "UpperEdge" );
+  }catch( XmlUtils::FormatTooNew &e )
+  {
+    // Kept as is, so a caller can tell "written by a newer InterSpec" from "unreadable".
+    throw XmlUtils::FormatTooNew( "RoiRange::fromXml(): " + string(e.what()) );
   }catch( std::exception &e )
   {
     throw runtime_error( "RoiRange::fromXml(): " + string(e.what()) );
@@ -20079,6 +20083,21 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     
     const auto color_node = XML_FIRST_INODE( nuc_info_node, "PeakColorCss");
     peak_color_css = SpecUtils::xml_value_str( color_node );
+    // Presets are shared (e.g. in packages), and the colour is written verbatim into CSS and JSON:
+    //  anything but plain colour syntax (e.g. "#aabbcc", "rgb(1,2,3)", "red") is dropped.
+    for( const char c : peak_color_css )
+    {
+      if( !isalnum( static_cast<unsigned char>(c) ) && (string( "#(),.% -" ).find( c ) == string::npos) )
+      {
+        cerr << "NucInputInfo::fromXml(): ignoring invalid peak color '" << peak_color_css << "'" << endl;
+        peak_color_css.clear();
+        break;
+      }
+    }//for( loop over characters )
+  }catch( XmlUtils::FormatTooNew &e )
+  {
+    // Kept as is, so a caller can tell "written by a newer InterSpec" from "unreadable".
+    throw XmlUtils::FormatTooNew( "NucInputInfo::fromXml(): " + string(e.what()) );
   }catch( std::exception &e )
   {
     throw runtime_error( "NucInputInfo::fromXml(): " + string(e.what()) );
@@ -20135,6 +20154,10 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       energy_origin = EnergyType::Known;
     }
+  }catch( XmlUtils::FormatTooNew &e )
+  {
+    // Kept as is, so a caller can tell "written by a newer InterSpec" from "unreadable".
+    throw XmlUtils::FormatTooNew( "FloatingPeak::fromXml(): " + string(e.what()) );
   }catch( std::exception &e )
   {
     throw runtime_error( "FloatingPeak::fromXml(): " + string(e.what()) );
@@ -21516,6 +21539,10 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
                               + std::to_string(rel_eff_curves.size()) + " curves loaded)." );
       }
     }
+  }catch( XmlUtils::FormatTooNew &e )
+  {
+    // Kept as is, so a caller can tell "written by a newer InterSpec" from "unreadable".
+    throw XmlUtils::FormatTooNew( "Options::fromXml(): " + string(e.what()) );
   }catch( std::exception &e )
   {
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
@@ -22757,7 +22784,14 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node 
   const xml_attribute<char> *attrib = XML_FIRST_ATTRIB(base_node, "version");
   const string base_version = SpecUtils::xml_value_str(attrib);
   if( !SpecUtils::istarts_with(base_version, "0") )
+  {
+    // A newer InterSpec writes a higher number; anything else is just not a valid file.
+    int numeric_version = 0;
+    if( SpecUtils::parse_int( base_version.c_str(), base_version.size(), numeric_version ) && (numeric_version > 0) )
+      throw XmlUtils::FormatTooNew( "RelActAutoGuiState::deSerialize: xml version='" + base_version
+                                    + "' is newer than this InterSpec reads" );
     throw runtime_error( "RelActAutoGuiState::deSerialize: invalid xml version='" + base_version + "'" );
+  }
 
   const xml_node<char> * const note_node = XML_FIRST_NODE(base_node, "Note");
   note = SpecUtils::xml_value_str( note_node );

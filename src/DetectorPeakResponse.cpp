@@ -5718,7 +5718,7 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse invalid version" );
 
   if( version > sm_xmlSerializationVersion )
-    throw runtime_error( "Invalid DetectorPeakResponse version" );
+    throw XmlUtils::FormatTooNew( "Invalid DetectorPeakResponse version" );
 
   const xml_node<char> *node = parent->first_node( "Name", 4 );
   if( !node || !node->value() )

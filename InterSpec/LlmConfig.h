@@ -62,6 +62,9 @@ std::string agentTypeToString( AgentType type );
 /** Convert string name to AgentType (throws if invalid) */
 AgentType stringToAgentType( const std::string &name );
 
+/** The real agents (not the McpServer pseudo-agent), each defined in a "llm_agent_<name>.xml" file. */
+const std::vector<AgentType> &definedAgentTypes();
+
 /** Configuration settings for LLM interface and MCP server.
 
  This class handles loading and saving LLM configuration from XML files.
@@ -668,6 +671,13 @@ public:
    @throws std::runtime_error if file cannot be parsed or doesn't exist
    */
   static std::vector<AgentConfig> loadAgentsFromFile( const std::string &agentsConfigPath );
+
+  /** The files to read an agent's definition from, most preferred first (later ones are fallbacks):
+   the copy in `configDirectory()`, else the file the user library picks (the user's choice, else the
+   user's own over a package's over InterSpec's), else as `configFilePath()` finds it.
+   Only the agent of this type is taken from the file.
+   */
+  static std::vector<std::string> agentFiles( const AgentType type );
 
   /** Load tool configurations from a specific XML file.
 

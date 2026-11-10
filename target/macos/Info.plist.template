@@ -39,6 +39,25 @@
 				<string>application/gamma-spectrum</string>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>gov.sandia.InterSpec.package</string>
+			<key>UTTypeDescription</key>
+			<string>InterSpec Package</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ispkg</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-interspec-package</string>
+			</dict>
+		</dict>
 	</array>
 	<key>CFBundleDocumentTypes</key>
     <array>
@@ -51,6 +70,18 @@
 			  </array>
         <key>LSHandlerRank</key>
         <string>Default</string>
+        <key>CFBundleTypeRole</key>
+        <string>Viewer</string>
+      </dict>
+      <dict>
+			  <key>CFBundleTypeName</key>
+				<string>InterSpec Package</string>
+        <key>LSItemContentTypes</key>
+			  <array>
+				  <string>gov.sandia.InterSpec.package</string>
+			  </array>
+        <key>LSHandlerRank</key>
+        <string>Owner</string>
         <key>CFBundleTypeRole</key>
         <string>Viewer</string>
       </dict>

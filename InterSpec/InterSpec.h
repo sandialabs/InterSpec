@@ -102,6 +102,7 @@ class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
 class ColorThemeWindow;
+class UserLibraryWindow;
 class LicenseAndDisclaimersWindow;
 namespace ceelo{ struct GeometryDescriptor; }
 namespace HelpSystem{ class HelpWindow; }
@@ -262,7 +263,8 @@ public:
   /** Appropriate to call if the user opens a file by double-clicking it in the finder.
   
    Parses the file, and then calls #userOpenFile, so will behave as that function describes.
-  
+   Files that are not spectra (a package, a detector efficiency, ...) are handed to whatever handles
+   them, and false is returned: true only when a spectrum was opened.
    */
   bool userOpenFileFromFilesystem( const std::string filepath, std::string displayFileName = "" );
   
@@ -759,6 +761,11 @@ public:
   //Nuclide Search
   void closeNuclideSearchWindow();
   void showNuclideSearchWindow();
+
+  /** Brings up the Nuclide Search tool: switches to its tab, or shows its window when tool tabs are
+   hidden (an undo step either way).
+   */
+  void showNuclideSearch();
   
   
   GammaXsWindow *showGammaXsTool();
@@ -1018,6 +1025,22 @@ public:
    already-open one forward rather than creating a second.
    */
   ColorThemeWindow *showColorThemeWindow();
+
+#if( USE_USER_LIBRARY )
+  /** Shows the Packages window (the user library: installed packages, items by type, creating
+   packages; Help -> Options -> Packages…); brings an already-open one forward rather than creating a
+   second.  Opening and closing it are undo/redo steps.
+   */
+  UserLibraryWindow *showUserLibrary();
+
+  /** Closes the user library window, if open.  Idempotent. */
+  void closeUserLibrary();
+#endif
+
+  /** Emitted after user library packages are installed or uninstalled, or the user changes which
+   item is used for a name or disables one, in this session; open tools that list such items re-read.
+   */
+  Wt::Signal<> &userLibraryChanged();
 
 #if( USE_LLM_INTERFACE )
   /** Create and show the LLM tool widget, if its not already created; it goes where the user last
@@ -1972,6 +1995,11 @@ protected:
    answered), so this is nullptr unless it is showing or waiting on that prompt.
    */
   Wt::Core::observing_ptr<ColorThemeWindow> m_colorThemeWindow;
+
+#if( USE_USER_LIBRARY )
+  Wt::Core::observing_ptr<UserLibraryWindow> m_userLibraryWindow;
+#endif
+  Wt::Signal<> m_userLibraryChanged;
   
   //m_useInfoWindow: a pointer to the window initially shown when app starts up
   //  that allows you to select a previous work state or spectrum, or to watch
