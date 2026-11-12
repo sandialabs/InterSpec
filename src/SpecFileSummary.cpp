@@ -475,7 +475,6 @@ void SpecFileSummary::init()
     m_displaySampleNumEdit = m_displaySampleDiv->addNew<WLineEdit>();
 
     m_displaySampleNumEdit->setAutoComplete( false );
-    m_displaySampleNumEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
     m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );

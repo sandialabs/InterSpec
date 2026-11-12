@@ -6369,7 +6369,6 @@ void InterSpec::startStoreTestState()
   WLineEdit *edit = new WLineEdit();
   edit->setPlaceholderText( WString::tr("db-name-empty-txt") );
 
-  edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
@@ -6463,7 +6462,6 @@ void InterSpec::stateSaveAs()
   WLineEdit *edit = new WLineEdit();
   edit->setPlaceholderText( WString::tr("db-name-empty-txt") );
   
-  edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
@@ -6529,7 +6527,6 @@ void InterSpec::stateSaveTag()
 
   WLineEdit *edit = new WLineEdit();
 
-  edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );

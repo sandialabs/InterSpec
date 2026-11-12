@@ -51,7 +51,6 @@ NativeFloatSpinBox::NativeFloatSpinBox()
 #endif
   setAttributeValue( "type", "number" );
   setAttributeValue( "step", "any" ); //For FF
-  setAttributeValue( "ondragstart", "return false" ); //so you cant select text and drag it - which would start the file upload JS
   setValue( 0.0f );
           
   // @TODO: Since #handleChanged is connected first, it will be called last after the subsequent connections.

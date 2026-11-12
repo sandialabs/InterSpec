@@ -314,7 +314,6 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
   auto editUPtr = std::make_unique<WLineEdit>();
   m_edit = editUPtr.get();
 
-  m_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_edit->setAttributeValue( "autocorrect", "off" );
   m_edit->setAttributeValue( "spellcheck", "off" );

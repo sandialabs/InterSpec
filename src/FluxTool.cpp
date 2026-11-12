@@ -1521,7 +1521,6 @@ void FluxToolWidget::init()
   m_distance->addStyleClass( "FluxDistanceEnter" );
   label->setBuddy(m_distance);
 
-  m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );

@@ -1942,7 +1942,6 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  m_detDiameter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detDiameter->setAttributeValue( "autocorrect", "off" );
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
@@ -1954,7 +1953,6 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_detSetback->setPlaceholderText( WString::tr("md-det-setback-ph") );
   m_detSetback->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detSetback->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  m_detSetback->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detSetback->setAttributeValue( "autocorrect", "off" );
   m_detSetback->setAttributeValue( "spellcheck", "off" );
@@ -2025,7 +2023,6 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_efficiencyMultiple->setPlaceholderText( "1" );
   m_efficiencyMultiple->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_efficiencyMultiple->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  m_efficiencyMultiple->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_efficiencyMultiple->setAttributeValue( "autocorrect", "off" );
   m_efficiencyMultiple->setAttributeValue( "spellcheck", "off" );
@@ -2331,7 +2328,6 @@ void MakeDrf::startSaveAs()
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
 
-  name->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   name->setAttributeValue( "autocorrect", "off" );
   name->setAttributeValue( "spellcheck", "off" );

@@ -56,8 +56,19 @@ function DrfImportDropSetup( target, url, filesBtn, folderBtn )
     files_input.click();
   } );
 
-  target.addEventListener( 'dragenter', function(e){ e.preventDefault(); e.stopPropagation(); target.classList.add( 'DragOver' ); } );
-  target.addEventListener( 'dragover', function(e){ e.preventDefault(); e.stopPropagation(); target.classList.add( 'DragOver' ); } );
+  // Files and folders report 'Files'; text or links dragged in from another app do not.
+  const is_file_drag = function(e){
+    const types = e.dataTransfer ? e.dataTransfer.types : null;
+    return !!types && (Array.prototype.indexOf.call( types, 'Files' ) >= 0);
+  };
+  const drag_over = function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    if( is_file_drag( e ) )
+      target.classList.add( 'DragOver' );
+  };
+  target.addEventListener( 'dragenter', drag_over );
+  target.addEventListener( 'dragover', drag_over );
   target.addEventListener( 'dragleave', function(e){
     if( !e.relatedTarget || !target.contains( e.relatedTarget ) )
       target.classList.remove( 'DragOver' );

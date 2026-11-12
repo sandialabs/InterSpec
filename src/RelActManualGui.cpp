@@ -347,7 +347,6 @@ public:
         m_age_edit_tmp->addStyleClass( "AgeEdit" );
         
         m_age_edit_tmp->setAutoComplete( false );
-        m_age_edit_tmp->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_age_edit_tmp->setAttributeValue( "autocorrect", "off" );
         m_age_edit_tmp->setAttributeValue( "spellcheck", "off" );

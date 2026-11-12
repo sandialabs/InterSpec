@@ -160,7 +160,6 @@ namespace
     WLineEdit *edit = row->addNew<WLineEdit>();
     lbl->setBuddy( edit );
     edit->setValidator( validator );
-    edit->setAttributeValue( "ondragstart", "return false" );
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "false" );
     edit->setPlaceholderText( "cm" );
@@ -464,7 +463,6 @@ DrfImportWidget::DrfImportWidget( const Host host )
   label = m_nameDiv->addNew<WLabel>( WString::tr("ds-name-label") );
   m_nameEdit = m_nameDiv->addNew<WLineEdit>();
   label->setBuddy( m_nameEdit );
-  m_nameEdit->setAttributeValue( "ondragstart", "return false" );
   m_nameEdit->setAttributeValue( "autocorrect", "off" );
   m_nameEdit->setAttributeValue( "spellcheck", "false" );
   m_nameEdit->setTextSize( 30 );

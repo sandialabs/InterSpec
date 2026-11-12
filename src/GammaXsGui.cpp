@@ -112,7 +112,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>( "100" );
     m_energyEdit = edit.get();
     m_energyEdit->setAutoComplete( false );
-    m_energyEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_energyEdit->setAttributeValue( "autocorrect", "off" );
     m_energyEdit->setAttributeValue( "spellcheck", "off" );
@@ -141,7 +140,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>( "C0.5H0.2Ni0.3" );
     m_materialEdit = edit.get();
     m_materialEdit->setAutoComplete( false );
-    m_materialEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_materialEdit->setAttributeValue( "autocorrect", "off" );
     m_materialEdit->setAttributeValue( "spellcheck", "off" );
@@ -245,7 +243,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>();
     m_density = edit.get();
     m_density->setAutoComplete( false );
-    m_density->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_density->setAttributeValue( "autocorrect", "off" );
     m_density->setAttributeValue( "spellcheck", "off" );
@@ -277,7 +274,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>( "1 cm" );
     m_thickness = edit.get();
     m_thickness->setAutoComplete( false );
-    m_thickness->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_thickness->setAttributeValue( "autocorrect", "off" );
     m_thickness->setAttributeValue( "spellcheck", "off" );
@@ -321,7 +317,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>("2 cm");
     m_detectorDistance = edit.get();
     m_detectorDistance->setAutoComplete( false );
-    m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_detectorDistance->setAttributeValue( "autocorrect", "off" );
     m_detectorDistance->setAttributeValue( "spellcheck", "off" );

@@ -460,7 +460,6 @@ void DoseCalcWidget::init()
         doseLabel->setBuddy( m_doseEnter );
 
         m_doseEnter->setAutoComplete( false );
-        m_doseEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_doseEnter->setAttributeValue( "autocorrect", "off" );
         m_doseEnter->setAttributeValue( "spellcheck", "off" );
@@ -512,7 +511,6 @@ void DoseCalcWidget::init()
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
 
         m_activityEnter->setAutoComplete( false );
-        m_activityEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_activityEnter->setAttributeValue( "autocorrect", "off" );
         m_activityEnter->setAttributeValue( "spellcheck", "off" );
@@ -585,7 +583,6 @@ void DoseCalcWidget::init()
         distanceLabel->setBuddy( m_distanceEnter );
 
         m_distanceEnter->setAutoComplete( false );
-        m_distanceEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         m_distanceEnter->setAttributeValue( "autocorrect", "off" );
         m_distanceEnter->setAttributeValue( "spellcheck", "off" );

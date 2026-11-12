@@ -492,7 +492,6 @@ public:
 
     m_duration = m_layout->addWidget( make_unique<WLineEdit>(), 2, 1, Wt::AlignmentFlag::Left );
 
-    m_duration->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_duration->setAttributeValue( "autocorrect", "off" );
     m_duration->setAttributeValue( "spellcheck", "off" );
@@ -732,7 +731,6 @@ private:
   WLineEdit *addNuclideInput( WTableCell *cell, const WString &regex, const string &txt )
   {
     WLineEdit *edit = cell->addNew<WLineEdit>();
-    edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "off" );
@@ -1417,7 +1415,6 @@ protected:
 
     el = table->elementAt(0,1);
     m_ageEdit = el->addNew<WLineEdit>( timeSpanStr );
-    m_ageEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_ageEdit->setAttributeValue( "autocorrect", "off" );
     m_ageEdit->setAttributeValue( "spellcheck", "off" );
@@ -1606,7 +1603,6 @@ void DecayActivityDiv::init()
   
   //Initialize all member widgets; will assign parentage later on
   m_displayTimeLength      = new WLineEdit( "" );
-  m_displayTimeLength->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_displayTimeLength->setAttributeValue( "autocorrect", "off" );
   m_displayTimeLength->setAttributeValue( "spellcheck", "off" );

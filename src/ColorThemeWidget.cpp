@@ -89,7 +89,6 @@ ColorThemeWidget::ColorThemeWidget()
 	cell = table->elementAt(row, 1);
 	cell->setColumnSpan(2);
 	m_themeTitle = cell->addNew<WLineEdit>(WString::tr("ctwidget-title-placeholder"));
-  m_themeTitle->setAttributeValue( "ondragstart", "return false" );
 	label->setBuddy(m_themeTitle);
 	m_themeTitle->setWidth(WLength(95, WLength::Unit::Percentage));
 
@@ -99,7 +98,6 @@ ColorThemeWidget::ColorThemeWidget()
 	cell = table->elementAt(row, 1);
 	cell->setColumnSpan(2);
   m_themeDescription = cell->addNew<WLineEdit>(WString::tr("ctwidget-desc-placeholder"));
-  m_themeDescription->setAttributeValue( "ondragstart", "return false" );
 	label->setBuddy(m_themeDescription);
 	m_themeDescription->setWidth(WLength(95, WLength::Unit::Percentage));
 	
@@ -487,7 +485,6 @@ ColorThemeWidget::ColorThemeWidget()
   {
     cell = table->elementAt(i,0);
     m_specificRefLineName[i] = cell->addNew<WLineEdit>();
-    m_specificRefLineName[i]->setAttributeValue( "ondragstart", "return false" );
     nuclideSuggest->forEdit( m_specificRefLineName[i], PopupTrigger::Editing );
     IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_specificRefLineName[i] );
     m_specificRefLineName[i]->changed().connect( this, [this, i](){ specificRefLineSourceChangedCallback( i ); } );

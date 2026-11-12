@@ -1,8 +1,18 @@
+/** Returns if a drag is of files (or folders, which also report 'Files'), as opposed to text or links. */
+function isFileDrag(event){
+  const types = (event && event.dataTransfer) ? event.dataTransfer.types : null;
+  return !!types && (Array.prototype.indexOf.call(types, 'Files') >= 0);
+}
+
+
 /** Called when files  */
 function onDragOverStart(event){
   event.preventDefault(); // to allow dropping
   event.stopPropagation(); // stop event from bubbling up
-  
+
+  if( !isFileDrag(event) )
+    return;
+
   try {
     const domRoot = document.querySelector('.Wt-domRoot');
     const idsList = JSON.parse(domRoot.dataset.batchUploadIds);
@@ -294,12 +304,14 @@ function BatchInputDropUploadSetup( target, uploadURL, multiple )
 
   target.addEventListener("dragenter", function(event){
     event.preventDefault();
-    target.classList.add("DragedOver");
+    if( isFileDrag(event) )
+      target.classList.add("DragedOver");
   }, false);
 
   target.addEventListener("dragover", function(event){
     event.preventDefault();
-    target.classList.add("DragedOver");
+    if( isFileDrag(event) )
+      target.classList.add("DragedOver");
   }, false);
   
   fileInput.addEventListener('change', function(event){

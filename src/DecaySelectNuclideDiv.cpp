@@ -232,9 +232,6 @@ void DecaySelectNuclide::init()
   m_selectedIsotopeHalfLife = halfLifeOwned.get();
   m_isotopeSearch           = isoSearchOwned.get();
 
-  m_nuclideActivityEdit->setAttributeValue( "ondragstart", "return false" );
-  m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
-  m_isotopeSearch->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );

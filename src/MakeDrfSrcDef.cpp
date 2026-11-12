@@ -570,7 +570,6 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setTextSize( 16 );
   
   m_distanceEdit->setAutoComplete( false );
-  m_distanceEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
@@ -592,7 +591,6 @@ void MakeDrfSrcDef::create()
   m_distanceUncertEdit = cell->addNew<WLineEdit>();
   m_distanceUncertEdit->setTextSize( 16 );
   m_distanceUncertEdit->setAutoComplete( false );
-  m_distanceUncertEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceUncertEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceUncertEdit->setAttributeValue( "spellcheck", "off" );
@@ -611,7 +609,6 @@ void MakeDrfSrcDef::create()
   m_activityEdit = cell->addNew<WLineEdit>();
   
   m_activityEdit->setAutoComplete( false );
-  m_activityEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_activityEdit->setAttributeValue( "autocorrect", "off" );
   m_activityEdit->setAttributeValue( "spellcheck", "off" );
@@ -676,7 +673,6 @@ void MakeDrfSrcDef::create()
   m_sourceAgeAtAssay = cell->addNew<WLineEdit>();
   
   m_sourceAgeAtAssay->setAutoComplete( false );
-  m_sourceAgeAtAssay->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_sourceAgeAtAssay->setAttributeValue( "autocorrect", "off" );
   m_sourceAgeAtAssay->setAttributeValue( "spellcheck", "off" );

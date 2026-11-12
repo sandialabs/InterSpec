@@ -3193,7 +3193,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_distanceEdit = new WLineEdit( "100 cm" );
   
-  m_distanceEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
@@ -3224,7 +3223,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   for( WLineEdit *edit : { m_offsetEdit1, m_offsetEdit2 } )
   {
-    edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "off" );
@@ -4369,7 +4367,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         label->setBuddy( value );
         
         value->setAutoComplete( false );
-        value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
         value->setAttributeValue( "spellcheck", "off" );
@@ -4387,7 +4384,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
         tolerance->setAutoComplete( false );
-        tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         tolerance->setAttributeValue( "autocorrect", "off" );
         tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4409,7 +4405,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
         
         value->setAutoComplete( false );
-        value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
         value->setAttributeValue( "spellcheck", "off" );
@@ -4427,7 +4422,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
         tolerance->setAutoComplete( false );
-        tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         tolerance->setAttributeValue( "autocorrect", "off" );
         tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4458,7 +4452,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
 
           value->setAutoComplete( false );
-          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -4487,7 +4480,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
-          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4520,7 +4512,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
 
           value->setAutoComplete( false );
-          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -4550,7 +4541,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
-          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4681,7 +4671,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
 
           value->setAutoComplete( false );
-          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -4722,7 +4711,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
-          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -8796,7 +8784,6 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   label->setInline( false );
 
   WLineEdit *nameEdit = contents->addNew<WLineEdit>();
-  nameEdit->setAttributeValue( "ondragstart", "return false" );
   nameEdit->setInline( false );
   if( m_modelInDb )
     nameEdit->setValueText( m_modelInDb->name );
@@ -8808,7 +8795,6 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   label->setInline( false );
 
   WLineEdit *descEdit = contents->addNew<WLineEdit>();
-  descEdit->setAttributeValue( "ondragstart", "return false" );
   descEdit->setInline( false );
   if( m_modelInDb )
     descEdit->setValueText( m_modelInDb->description );

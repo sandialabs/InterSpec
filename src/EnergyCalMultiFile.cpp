@@ -236,7 +236,6 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
 
     auto coefvalUptr = std::make_unique<WLineEdit>();
     WLineEdit *coefval = coefvalUptr.get();
-    coefval->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     coefval->setAttributeValue( "autocorrect", "off" );
     coefval->setAttributeValue( "spellcheck", "off" );

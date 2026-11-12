@@ -388,7 +388,6 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife = m_minHalfLiveDiv->addNew<WLineEdit>( "6000 s" );
   m_minHl = 6000.0 * PhysicalUnits::second;
   
-  m_minHalfLife->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_minHalfLife->setAttributeValue( "autocorrect", "off" );
   m_minHalfLife->setAttributeValue( "spellcheck", "off" );

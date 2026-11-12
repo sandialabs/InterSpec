@@ -407,7 +407,6 @@ void DetectionLimitSimple::init()
   m_distance->addStyleClass( "GridFifthCol GridFirstRow GridStretchCol" );
   distanceLabel->setBuddy( m_distance );
 
-  m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );
@@ -686,7 +685,6 @@ void DetectionLimitSimple::init()
   m_distanceUncert = m_advancedDiv->addNew<WLineEdit>();
   m_distanceUncert->setPlaceholderText( WString::tr("dl-dist-uncert-empty-text") );
   distUncertLabel->setBuddy( m_distanceUncert );
-  m_distanceUncert->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceUncert->setAttributeValue( "autocorrect", "off" );
   m_distanceUncert->setAttributeValue( "spellcheck", "off" );

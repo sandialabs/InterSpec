@@ -1013,7 +1013,6 @@ void SnapshotBrowser::startEditSelected()
     auto nameEditOwner = std::make_unique<WLineEdit>();
     label = labelOwner.get();
     nameEdit = nameEditOwner.get();
-    nameEdit->setAttributeValue( "ondragstart", "return false" );
     nameEdit->setPlaceholderText( WString::tr("sb-edit-name-placeholder") );
     nameEdit->setText( state->name );
     layout->addWidget( std::move(labelOwner), 0, 0 );

@@ -1027,7 +1027,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     "} );" );
 
     m_nuclideEdit->setAutoComplete( false );
-    m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
   #if( BUILD_AS_OSX_APP || IOS )
     m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
@@ -1100,7 +1099,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_ageEdit->setValidator( ageValidator );
 
     m_ageEdit->setAutoComplete( false );
-    m_ageEdit->setAttributeValue( "ondragstart", "return false" );
   #if( BUILD_AS_OSX_APP || IOS )
     m_ageEdit->setAttributeValue( "autocorrect", "off" );
     m_ageEdit->setAttributeValue( "spellcheck", "off" );

@@ -275,7 +275,6 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 
     m_displayedPreTexts[typeindex] = m_sampleDivs[typeindex]->addNew<WText>();
     WLineEdit *edit = m_sampleDivs[typeindex]->addNew<WLineEdit>();
-    edit->setAttributeValue( "ondragstart", "return false" );
     edit->addStyleClass( "SampleNumInput" );
     edit->setValidator( validatorOwner );
     edit->setAutoComplete( false );
