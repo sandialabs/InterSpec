@@ -544,6 +544,131 @@ namespace RelActCalcAutoImp
 const double ns_decay_act_mult = SandiaDecay::MBq;
 
 
+/** Wraps the auto-diff cost function so a Jacobian already computed at bitwise-identical parameters,
+ within the current `ceres::Solve`, is replayed instead of recomputed.
+
+ On a bounds-constrained problem Ceres' trust-region minimizer runs a projected Armijo line search
+ every iteration, which (with the default CUBIC interpolation) evaluates the full Jacobian at each
+ trial point.  When the step is then accepted, `HandleSuccessfulStep` evaluates the Jacobian again at
+ that very point: the line search's last trial, or - if Armijo gave up - its first.  The evaluation
+ is deterministic, so replaying the stored result is exact, and saves every auto-diff pass of it.
+
+ Only Jacobian evaluations are memoised.  Residual-only evaluations run the `double` instantiation,
+ whose values can differ from the Jet `.a` parts in the last bits (e.g., `boost_erf_imp` vs
+ `std::erf`), so the two are never mixed.
+
+ The memo is active only inside `run_ceres_solve(...)`: the functor's state (armed profile
+ constraints, cascade/skew switches, ...) changes between solves, never during one.
+ */
+class JacobianMemoCostFunction : public ceres::CostFunction
+{
+public:
+  JacobianMemoCostFunction( ceres::CostFunction *inner, std::shared_ptr<std::atomic_bool> cancel )
+    : m_inner( inner ),
+      m_cancel( std::move(cancel) )
+  {
+    assert( m_inner && (m_inner->parameter_block_sizes().size() == 1) );
+    set_num_residuals( m_inner->num_residuals() );
+    *mutable_parameter_block_sizes() = m_inner->parameter_block_sizes();
+  }
+
+  bool Evaluate( double const *const *parameters, double *residuals, double **jacobians ) const override
+  {
+    if( !m_active || !residuals || !jacobians || !jacobians[0] )
+      return m_inner->Evaluate( parameters, residuals, jacobians );
+
+    const size_t npar = static_cast<size_t>( parameter_block_sizes()[0] );
+    const size_t nres = static_cast<size_t>( num_residuals() );
+
+    for( const Entry &entry : m_entries )
+    {
+      if( entry.valid && (std::memcmp( entry.x.data(), parameters[0], npar*sizeof(double) ) == 0) )
+      {
+        std::copy( begin(entry.residuals), end(entry.residuals), residuals );
+        std::copy( begin(entry.jacobian), end(entry.jacobian), jacobians[0] );
+        return true;
+      }
+    }//for( loop over remembered evaluations )
+
+    const bool success = m_inner->Evaluate( parameters, residuals, jacobians );
+
+    // A cancelled evaluation returns all-zero residuals; never remember it, or a failure.
+    if( success && !(m_cancel && m_cancel->load()) )
+    {
+      Entry &entry = m_entries[m_next_entry];
+      m_next_entry = (m_next_entry + 1) % m_entries.size();
+      entry.x.assign( parameters[0], parameters[0] + npar );
+      entry.residuals.assign( residuals, residuals + nres );
+      entry.jacobian.assign( jacobians[0], jacobians[0] + nres*npar );
+      entry.valid = true;
+    }//if( success )
+
+    return success;
+  }//Evaluate(...)
+
+  /** Starts (true) or ends (false) the span the memo may be used in; both forget what it holds. */
+  void set_active( const bool active ) const
+  {
+    m_active = active;
+    for( Entry &entry : m_entries )
+      entry.valid = false;
+    m_next_entry = 0;
+  }
+
+private:
+  struct Entry
+  {
+    bool valid = false;
+    std::vector<double> x, residuals, jacobian;
+  };
+
+  std::unique_ptr<ceres::CostFunction> m_inner;
+  const std::shared_ptr<std::atomic_bool> m_cancel;
+
+  // Ceres evaluates the problem's single residual block from one thread at a time.
+  mutable bool m_active = false;
+  /** A few entries, so an Armijo search that backtracks a few times still has its first trial when
+   it gives up and Ceres accepts the full step. */
+  mutable std::array<Entry,4> m_entries;
+  mutable size_t m_next_entry = 0;
+};//class JacobianMemoCostFunction
+
+
+/** Runs `ceres::Solve` with the problem's `JacobianMemoCostFunction`s (if any) active for exactly its
+ duration - see `JacobianMemoCostFunction`.  Every solve of a RelActAuto problem should go through this. */
+static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Problem &problem,
+                             ceres::Solver::Summary &summary )
+{
+  std::vector<const JacobianMemoCostFunction *> memos;
+  std::vector<ceres::ResidualBlockId> blocks;
+  problem.GetResidualBlocks( &blocks );
+  for( const ceres::ResidualBlockId block : blocks )
+  {
+    const auto memo = dynamic_cast<const JacobianMemoCostFunction *>( problem.GetCostFunctionForResidualBlock( block ) );
+    if( memo )
+      memos.push_back( memo );
+  }
+
+  struct MemoSpan
+  {
+    const std::vector<const JacobianMemoCostFunction *> &m_memos;
+    explicit MemoSpan( const std::vector<const JacobianMemoCostFunction *> &memos ) : m_memos( memos )
+    {
+      for( const JacobianMemoCostFunction *memo : m_memos )
+        memo->set_active( true );
+    }
+    ~MemoSpan()
+    {
+      for( const JacobianMemoCostFunction *memo : m_memos )
+        memo->set_active( false );
+    }
+  };//struct MemoSpan
+
+  const MemoSpan span( memos );
+  ceres::Solve( options, &problem, &summary );
+}//run_ceres_solve(...)
+
+
 /** A solve whose last `sm_stall_window_steps` successful steps together lowered chi2 by less than
  `sm_stall_min_chi2_drop` is stopped - see `solve_stopping_creep(...)`. */
 static constexpr size_t sm_stall_window_steps = 50;
@@ -585,7 +710,7 @@ static void solve_stopping_creep( const ceres::Solver::Options &options,
   StallCallback stall_callback;
   ceres::Solver::Options stall_options = options;
   stall_options.callbacks.push_back( &stall_callback );
-  ceres::Solve( stall_options, &problem, &summary );
+  run_ceres_solve( stall_options, problem, summary );
 }//solve_stopping_creep(...)
 
 
@@ -3170,6 +3295,11 @@ struct RelActAutoCostFcn
    header, we should be good to go from a safety standpoint...
    */
   mutable boost::asio::thread_pool m_pool;
+
+  /** `RelActCalc::max_solve_threads()` when this functor was made.  Read once, since whether a ROI's
+   peaks are summed on several threads changes the order of the sum, and so its last bits; an
+   evaluation must give the same bits for the same parameters throughout a solve. */
+  const size_t m_num_solve_threads;
   
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
   
@@ -3258,6 +3388,7 @@ struct RelActAutoCostFcn
   m_free_peak_area_multiples{},
   m_solution_finished( false ),
   m_pool{ RelActCalc::max_solve_threads() },
+  m_num_solve_threads( RelActCalc::max_solve_threads() ),
   m_cancel_calc( cancel_calc ),
   m_ncalls( 0 ),
   m_nanoseconds_spent_in_eval( size_t(0) )
@@ -8597,7 +8728,8 @@ struct RelActAutoCostFcn
       dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
       dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
 
-      cost_function = dyn_auto_diff_cost_function;
+      // Owns `dyn_auto_diff_cost_function`; replays Jacobians Ceres asks for twice at the same point.
+      cost_function = new JacobianMemoCostFunction( dyn_auto_diff_cost_function, cost_functor->m_cancel_calc );
     }else
     {
       ceres::NumericDiffOptions num_diff_options;
@@ -8978,7 +9110,7 @@ struct RelActAutoCostFcn
         double *pars = &parameters[0];
         problem.SetManifold( pars, subset_manifold );
         ceres::Solver::Summary summary;
-        ceres::Solve(pre_fit_options, &problem, &summary);
+        run_ceres_solve( pre_fit_options, problem, summary );
 
         const double fresh_final_cost = (*cost_functor)(parameters);
 
@@ -9121,7 +9253,7 @@ struct RelActAutoCostFcn
         
         cout << "20250324 HACK to test fitting peak skew - reset manifold - now refitting." << endl;
         
-        ceres::Solve(ceres_options, &problem, &summary);
+        run_ceres_solve( ceres_options, problem, summary );
         
         cout << "20250324 HACK to test fitting peak skew - Done refitting." << endl;
         
@@ -10119,7 +10251,7 @@ struct RelActAutoCostFcn
           problem.SetManifold(pars,new ceres::SubsetManifold(static_cast<int>(num_pars),trial_const));
 
           ceres::Solver::Summary trial_summary;
-          ceres::Solve(elimination_trial_options,&problem,&trial_summary);
+          run_ceres_solve( elimination_trial_options, problem, trial_summary );
           double objective = std::numeric_limits<double>::infinity();
           try { objective = (*cost_functor)(parameters); }
           catch( const std::exception & ) { objective = std::numeric_limits<double>::infinity(); }
@@ -16561,8 +16693,7 @@ struct RelActAutoCostFcn
     // Only fan out within a ROI when we're allowed >1 thread; when solves run
     // concurrently (the GA), max_solve_threads() is 1 and this stays single-
     // threaded to avoid oversubscribing / exhausting OS threads.
-    const bool multhread_each_roi = (RelActCalc::max_solve_threads() > 1)
-                                    && (m_energy_ranges.size() < 6);
+    const bool multhread_each_roi = (m_num_solve_threads > 1) && (m_energy_ranges.size() < 6);
     
     // Calling `m_pool.join()` puts the threadpool in a state where it will no longer work,
     //  so instead we will manually manage waiting on jobs to finish.
