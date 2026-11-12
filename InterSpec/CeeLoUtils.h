@@ -174,6 +174,10 @@ namespace CeeLoUtils
    becomes the total-efficiency anchor when it has at least two points, else
    the bare-crystal kernel-exact total tier is used.
 
+   The anchors are the whole detector's efficiency (what a DRF's evaluators give); the response is
+   made carrying `efficiency_scale` - the DRF's DetectorPeakResponse::efficiencyMultiple - with the
+   one modeled element's efficiency being the anchor divided by it.
+
    Touches nothing but its arguments (in particular, no DetectorPeakResponse),
    so it may run on a worker thread with value-captured inputs.  No Monte
    Carlo is run - this is deterministic and sub-second.
@@ -196,7 +200,8 @@ namespace CeeLoUtils
                       const ceelo::GeometryDescriptor &geom,
                       const TransferAnchor &anchor,
                       const ceelo::AnchorCurve &tot_curve,
-                      const std::string &detector_name );
+                      const std::string &detector_name,
+                      const double efficiency_scale );
 
   /** MC-free full-energy-peak kernel K(E, position) of a detector geometry - the attenuation-weighted
    effective solid angle the EFFTRAN transfer is built on (see external_libs/CeeLo/src/io/EfficiencyTransfer.h).
@@ -554,6 +559,10 @@ namespace CeeLoUtils
    The detector diameter (the crystal's), setback (the response's endcap offset), geometry type and
    energy range are taken from the response, so the flat-disk model places the crystal where the
    response does; @p drf's DRF-source is preserved across the call.
+
+   The curve is the one modeled element's - the response's efficiency divided by its
+   `efficiency_scale` - as a DRF's stored curves are (DetectorPeakResponse::efficiencyMultiple); so
+   @p drf must carry the same multiple, which attaching @p response gives it.
 
    Throws std::runtime_error for a null response, or if fewer than two positive
    points can be sampled.

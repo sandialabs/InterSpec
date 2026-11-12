@@ -1216,7 +1216,7 @@ BOOST_AUTO_TEST_CASE( assemble_drf_preserves_mc_grounding )
     seed->setMeasuredPoints( nullptr );
     const CeeLoUtils::TransferAnchor anchor
           = CeeLoUtils::transferAnchorForDrf( seed, *geom.geometry, 50.0 );
-    return CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, ceelo::AnchorCurve{}, "stand-in" );
+    return CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, ceelo::AnchorCurve{}, "stand-in" , 1.0);
   };
 
   // A response that arrives GROUNDED must stay grounded, with the same k(E) after repeated saves.

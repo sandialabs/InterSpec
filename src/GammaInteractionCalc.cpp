@@ -1149,7 +1149,8 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( m_detector, *geom, 0.0 );
       const ceelo::AnchorCurve tot_curve = CeeLoUtils::totalTransferAnchorForDrf( m_detector, anchor );
       return CeeLoUtils::makeTransferResponse( *geom, anchor, tot_curve,
-                                               m_detector->name() + " (EFFTRAN transfer)" );
+                                               m_detector->name() + " (EFFTRAN transfer)",
+                                               m_detector->efficiencyMultiple() );
     }catch( std::exception &e )
     {
       m_volEffResolveNote = std::string("EFFTRAN transfer unavailable (") + e.what() + ")";

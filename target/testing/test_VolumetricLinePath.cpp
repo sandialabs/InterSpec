@@ -3537,7 +3537,7 @@ shared_ptr<const ceelo::DetectorResponse> make_angular_test_response( const Angl
     anchor.curve.frac_sigma.push_back( row.frac_sigma );
   }
   shared_ptr<ceelo::DetectorResponse> resp = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{},
-                                                                               "synthetic angular" );
+                                                                               "synthetic angular" , 1.0);
   BOOST_REQUIRE( resp );
   ceelo::EtaTable &t = resp->eta_fep;
   BOOST_REQUIRE_EQUAL( t.cos_thetas.size(), size_t(2) );

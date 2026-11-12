@@ -1973,13 +1973,14 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
   };//donor_ln_ratio
 
   // ln of the grid's FEP at `pos` without its kernel - so defined even where that underflows - and
-  //  its fractional sigma.
+  //  its fractional sigma.  Without its efficiency scale too, which eps_total applies on top of
+  //  eta_tot just as eps_fep does on top of eta_fep.
   const auto grid_ln_fep = [&resp,&data_frac]( const double energy, const Eigen::Vector3d &pos,
                                                const ApertureQuadrature &q, double &ln_f, double &frac ) -> bool {
     const EffResult f = resp->fep_prefactor( energy, pos, q );
     if( (f.flag == ResponseFlag::NeedsMc) || !(f.value > 0.0) )
       return false;
-    ln_f = std::log( f.value );
+    ln_f = std::log( f.value / resp->efficiency_scale );
     frac = data_frac( f );
     return std::isfinite( ln_f ) && std::isfinite( frac );
   };//grid_ln_fep
@@ -2160,7 +2161,9 @@ std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::Det
         {
           const size_t idx = tn.index( e, c, d );
           const double energy = tn.energies_keV[e];
-          const double far_field = resp->total_prefactor( energy, grid_pos, q_grid ).value;
+          //Unscaled, as grid_ln_fep is: ln N is a ratio of one element's totals.
+          const double far_field = resp->total_prefactor( energy, grid_pos, q_grid ).value
+                                   / resp->efficiency_scale;
           double ln_f = 0.0, f_frac = 0.0, ln_r = 0.0, r_frac = 0.0;
           if( !(far_field > 0.0) || !std::isfinite( far_field )
               || !grid_ln_fep( energy, grid_pos, q_grid, ln_f, f_frac )

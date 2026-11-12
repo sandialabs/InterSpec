@@ -472,6 +472,10 @@ bool applyPointRows( DetectorPeakResponse &working,
         eff_at_ref = point.efficiency * ratio;
       }//if( this point was measured somewhere other than the reference distance )
 
+      // The points are the whole detector's, the curve is one element's (see
+      //  DetectorPeakResponse::efficiencyMultiple).
+      eff_at_ref /= working.efficiencyMultiple();
+
       DetectorPeakResponse::EnergyEffPoint e;
       e.energy = point.energy;
       e.efficiency = static_cast<float>( eff_at_ref );
@@ -996,7 +1000,8 @@ bool checkDrfSelfConsistent( const DetectorPeakResponse &drf, std::string &why )
           point_at_ref = point.efficiency * ratio;
         }//if( measured somewhere other than the reference distance )
 
-        const double curve_eff = curve->efficiency( point.energy );
+        // The stored curve is one element's, the point the whole detector's.
+        const double curve_eff = drf.efficiencyMultiple() * curve->efficiency( point.energy );
         if( curve_eff <= 0.0 )
           continue;
 

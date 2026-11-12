@@ -1071,8 +1071,16 @@ namespace
               SpecUtils::trim( remark );
               
               //Look for a string like "Age= 13y 5d 3s something something something"
+              //  sm_timeDurationRegex is anchored with a leading "^" and trailing "$" that would
+              //  never match mid-string; strip just those two (it has a "(?!$)" inside to keep).
+              string age_regex = PhysicalUnits::sm_timeDurationRegex;
+              if( !age_regex.empty() && (age_regex.front() == '^') )
+                age_regex.erase( 0, 1 );
+              if( !age_regex.empty() && (age_regex.back() == '$') )
+                age_regex.pop_back();
+
               std::smatch mtch;
-              std::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", std::regex::icase );
+              std::regex expr( string(".+(Age\\s*\\=\\s*(") + age_regex + ")).*?", std::regex::icase );
                 
               if( std::regex_match( remark, mtch, expr ) )
               {
@@ -1156,7 +1164,8 @@ namespace
               SpecUtils::ireplace_all( dist_regex, "^", "" );
               SpecUtils::ireplace_all( dist_regex, "$", "" );
               
-              std::regex dist_expr( string(".+([dist|distance]\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
+              // "dist=" or "distance=", as a whole word (so e.g. "Age=" or "H=" isnt taken as a distance)
+              std::regex dist_expr( string(".*?\\b((?:dist|distance)\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
               
               if( std::regex_match( remark, dist_mtch, dist_expr ) )
               {
@@ -1696,6 +1705,7 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
   m_detSetback( nullptr ),
+  m_efficiencyMultiple( nullptr ),
   m_geometry( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmOptionGroup( nullptr ),
@@ -1716,6 +1726,7 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_effUpperEnergy( 0.0f ),
   m_effBirgeScale( 1.0 ),
   m_dataDiameter( 0.0 ),
+  m_dataEfficiencyMultiple( 1.0 ),
   m_peakFitDetPrefsGui( nullptr )
 {
   assert( m_interspec );
@@ -1811,6 +1822,25 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   } );
   m_geomPanel->addWidget( std::move(mcToolOwned) );
   m_mcTool->hide();  //diameter mode to start
+
+  // For either description: e.g., a 2x2 CZT array described as one of its crystals.
+  WContainerWidget *multipleRow = m_geomPanel->addNew<WContainerWidget>();
+  multipleRow->addStyleClass( "MakeDrfMultipleRow" );
+  WLabel *multipleLabel = multipleRow->addNew<WLabel>( WString::tr("md-eff-multiple") );
+  m_efficiencyMultiple = multipleRow->addNew<WLineEdit>();
+  multipleLabel->setBuddy( m_efficiencyMultiple );
+  auto multipleValidator = std::make_shared<WRegExpValidator>( "^\\s*([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][+-]?[0-9]+)?\\s*$" );
+  m_efficiencyMultiple->setValidator( multipleValidator );
+  m_efficiencyMultiple->setPlaceholderText( "1" );
+  m_efficiencyMultiple->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_efficiencyMultiple->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_efficiencyMultiple->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_efficiencyMultiple->setAttributeValue( "autocorrect", "off" );
+  m_efficiencyMultiple->setAttributeValue( "spellcheck", "off" );
+#endif
+  HelpSystem::attachToolTipOn( multipleRow, WString::tr("md-tt-eff-multiple"), showToolTips,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   // --- The chart ---
   auto chartOwned = std::make_unique<DrfChart>();
@@ -2893,6 +2923,7 @@ void MakeDrf::handleSourcesUpdates()
   
   m_dataPoints = datapoints;
   m_dataDiameter = diameter;
+  m_dataEfficiencyMultiple = geom_choice.efficiencyMultiple;
 
   // Chart points: the intrinsic efficiency each peak gave (matched to its data point by energy),
   //  with the total 1-sigma as its error bar, and the peaks FWHM.
@@ -2915,9 +2946,11 @@ void MakeDrf::handleSourcesUpdates()
       auto pos = fit_by_energy.lower_bound( d.energy - 0.01f*d.energy );
       if( (pos != end(fit_by_energy)) && (fabs(pos->first - d.energy) <= 0.01f*d.energy) )
       {
+        // The fit points are one element's, the chart's curve the whole detector's (as the DRF
+        //  reports it), so the points get the multiple back.
         const MakeDrfFit::EffFitPoint &fp = *pos->second;
-        cp.efficiency = fp.efficiency;
-        cp.efficiencyUncert = fp.efficiency * sqrt( fp.fracStatUncert*fp.fracStatUncert
+        cp.efficiency = static_cast<float>( geom_choice.efficiencyMultiple * fp.efficiency );
+        cp.efficiencyUncert = cp.efficiency * sqrt( fp.fracStatUncert*fp.fracStatUncert
                                                     + fp.fracCertUncert*fp.fracCertUncert
                                                     + fp.fracDistUncert*fp.fracDistUncert );
       }
@@ -3089,6 +3122,7 @@ std::string MakeDrf::detectorTypeHint() const
 MakeDrfCalc::GeometryChoice MakeDrf::geometryChoice() const
 {
   MakeDrfCalc::GeometryChoice choice;
+  choice.efficiencyMultiple = enteredEfficiencyMultiple();
   choice.fixedGeometry = (m_geometry->currentIndex() != 0);
   if( choice.fixedGeometry )
     return choice;
@@ -3349,7 +3383,11 @@ void MakeDrf::updateEffEqn( MakeDrfFit::EffFitResult result,
   if( !m_effEqnCoefs.empty() )
   {
     const vector<float> &coefs = m_effEqnCoefs;
-    string eqn = "Eff<sub>int.</sub>(x) = exp( ";
+    // The equation as fit and stored: one element's, so the multiple is written out in front of it.
+    string eqn = "Eff<sub>int.</sub>(x) = ";
+    if( m_dataEfficiencyMultiple != 1.0 )
+      eqn += SpecUtils::printCompact( m_dataEfficiencyMultiple, 6 ) + " × ";
+    eqn += "exp( ";
     for( size_t i = 0; i < coefs.size(); ++i )
     {
       const float val = fabs(coefs[i]);
@@ -3690,7 +3728,11 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   const double fwhmChi2 = m_fwhmEqnChi2;
   const vector<float> fwhmCoefs = m_fwhmCoefs;
   const vector<float> fwhmCoefUncert = m_fwhmCoefUncerts;
-  const vector<float> effEqnCoefs = m_effEqnCoefs;
+  // This CSV has no field for an efficiency multiple, so the equation is written for the whole
+  //  detector - the multiple folded into the constant term - for the file to read back correctly.
+  vector<float> effEqnCoefs = m_effEqnCoefs;
+  if( !effEqnCoefs.empty() && (m_dataEfficiencyMultiple != 1.0) )
+    effEqnCoefs[0] += static_cast<float>( std::log( m_dataEfficiencyMultiple ) );
   const vector<float> effEqnCoefsUncerts = m_effEqnCoefUncerts;
   
   const vector<MakeDrfChart::DataPoint> data = m_dataPoints;
@@ -3763,8 +3805,12 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   out << "# Description,";
   output_csv_field( out, drfdescription );
 
-  out << endline << endline
-  << "# Intrinsic Efficiency Coefficients for equation of form"
+  out << endline << endline;
+  if( m_dataEfficiencyMultiple != 1.0 )
+    out << "# Efficiency scalar multiple " << SpecUtils::printCompact( m_dataEfficiencyMultiple, 6 )
+        << " (identical detector elements summed) is folded into c0 below: these equations are the whole detector's."
+        << endline;
+  out << "# Intrinsic Efficiency Coefficients for equation of form"
   " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
@@ -4196,7 +4242,9 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   const bool effInMeV = isEffEqnInMeV();
   const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
   const float co60Energy = (effInMeV ? 1.33249f : 1332.49f);
-  const float intrinsicEffAt1332 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( co60Energy, m_effEqnCoefs );
+  // The whole detector's: the fitted equation is one element's (see m_dataEfficiencyMultiple)
+  const float intrinsicEffAt1332 = static_cast<float>( m_dataEfficiencyMultiple
+                      * DetectorPeakResponse::expOfLogPowerSeriesEfficiency( co60Energy, m_effEqnCoefs ) );
   const float relEffPercent = 100.0 * intrinsicEffAt1332 / ns_NaI3x3IntrinsicEff_1332;
   
   char rel_eff_txt[256] = { '\0' };
@@ -4367,7 +4415,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
       continue;
     
     const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
-    const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+    const float intrinsic_eff = static_cast<float>( m_dataEfficiencyMultiple
+                            * DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs ) );
     snprintf( buffer, sizeof(buffer), "<td>%.3G</td>", 100.0*intrinsic_eff );
     efftable << buffer;
   }
@@ -4408,7 +4457,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
 
         if( abs_eff < 0.0 )
         {
-          const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+          const float intrinsic_eff = static_cast<float>( m_dataEfficiencyMultiple
+                              * DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs ) );
           abs_eff = intrinsic_eff * DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm + setback );
         }
 
@@ -4488,7 +4538,13 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     }//switch( m_fwhmEqnType->currentIndex() )
     
     chart.setFwhmCoefficients( m_fwhmCoefs, m_fwhmCoefUncerts, fwhmEqnType, units );
-    chart.setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, units );
+
+    // The equation is one element's; drawn for the whole detector, like the points above, by
+    //  folding the multiple into the constant term of exp( sum c_i ln(E)^i ).
+    vector<float> eqn_coefs = m_effEqnCoefs;
+    if( !eqn_coefs.empty() && (m_dataEfficiencyMultiple != 1.0) )
+      eqn_coefs[0] += static_cast<float>( std::log( m_dataEfficiencyMultiple ) );
+    chart.setEfficiencyCoefficients( eqn_coefs, m_effEqnCoefUncerts, units );
     
     chart.update();
     
@@ -4581,6 +4637,21 @@ double MakeDrf::detectorSetback() const
 
   return enteredSetback();
 }//double detectorSetback() const
+
+
+double MakeDrf::enteredEfficiencyMultiple() const
+{
+  const string txt = SpecUtils::trim_copy( m_efficiencyMultiple ? m_efficiencyMultiple->text().toUTF8() : string() );
+  if( txt.empty() )
+    return 1.0;
+
+  double multiple = 0.0;
+  if( !SpecUtils::parse_double( txt.c_str(), txt.size(), multiple )
+      || !(multiple > 0.0) || !std::isfinite(multiple) )
+    throw runtime_error( WString::tr("md-err-eff-multiple-invalid").toUTF8() );
+
+  return multiple;
+}//double enteredEfficiencyMultiple() const
 
 
 double MakeDrf::enteredSetback() const

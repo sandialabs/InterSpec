@@ -273,6 +273,13 @@ struct GenerationOptions {
     /// needs a full characterization (transfer_mode = false), not more anchors.
     int  n_anchor_angles = 1;
 
+    /// DetectorResponse::efficiency_scale for the result: the number of identical, one-spectrum
+    /// elements the one modeled crystal stands for (or an empirical scale).  Everything inside
+    /// generation - node MC, closed-loop refinement, the certificate - runs on the one element;
+    /// the scale is stamped on the finished response, so a host grounding it afterwards (against
+    /// the whole detector's efficiency) fits k(E) with the scale already in the model.
+    double efficiency_scale = 1.0;
+
     uint64_t base_seed = 1;         ///< deterministic node-seed base (never 0)
     unsigned num_threads = 0;       ///< per-node MC threads (0 = auto)
     int kernel_n_rays = 2048;       ///< evaluation-time quadrature rays
@@ -419,6 +426,9 @@ public:
     /// for curve-derived points, versus <=6 quantile-placed knots for raw
     /// measured points, where over-fitting scatter would cost more than the
     /// extra flexibility gains.
+    /// The points are the WHOLE detector's efficiency, and the model includes
+    /// response.efficiency_scale, so set the scale before grounding: k(E) is
+    /// then the physics correction to the one modeled element.
     static void ground_to_points(DetectorResponse& response,
                                  std::vector<GroundingPoint> points,
                                  bool curve_derived);

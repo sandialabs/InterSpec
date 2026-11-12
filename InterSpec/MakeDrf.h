@@ -266,6 +266,10 @@ protected:
   Wt::WLineEdit *m_detDiameter;
   Wt::WLineEdit *m_detSetback;
 
+  /** The efficiency scalar multiple (DetectorPeakResponse::efficiencyMultiple): the detector is
+   this many identical elements, combined into one spectrum, of the one described; empty means 1. */
+  Wt::WLineEdit *m_efficiencyMultiple;
+
   Wt::WComboBox *m_geometry;
   
   Wt::WCheckBox *m_showFwhmPoints;
@@ -316,6 +320,10 @@ protected:
   std::vector<MakeDrfChart::DataPoint> m_dataPoints;
   double m_dataDiameter;
 
+  /** The efficiency multiple (MakeDrfCalc::GeometryChoice::efficiencyMultiple) #m_dataPoints were fit
+   with: the fitted equation is one element's, so everything shown for the detector is this times it. */
+  double m_dataEfficiencyMultiple;
+
   /** The raw per-peak efficiency points (absolute, at each source's own distance) and the sources
    they came from - what the fit is derived from, and what the DRF stores for provenance and for
    grounding a Monte-Carlo response.  Rebuilt by #handleSourcesUpdates.
@@ -336,6 +344,9 @@ private:
   /** The setback typed into the diameter-mode field (PhysicalUnits; 0.0 if empty or invalid) -
    #detectorSetback is what the DRF is actually assembled with. */
   double enteredSetback() const;
+
+  /** #m_efficiencyMultiple's value, 1 when empty; throws std::runtime_error when not a positive number. */
+  double enteredEfficiencyMultiple() const;
 
   /** Optional peak fitting preferences to embed in the created DRF. */
   PeakFitDetPrefsGui *m_peakFitDetPrefsGui;

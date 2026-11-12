@@ -1260,6 +1260,19 @@ ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
 
 std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     const GeometryDescriptor& gd, const GenerationOptions& opts_in) {
+    if (!(opts_in.efficiency_scale > 0.0) || !std::isfinite(opts_in.efficiency_scale))
+        throw std::runtime_error("ResponseGenerator: efficiency_scale must be finite and > 0");
+
+    // Generate (and certify) the one element, then scale the finished response; see
+    //  GenerationOptions::efficiency_scale.
+    if (opts_in.efficiency_scale != 1.0) {
+        GenerationOptions element_opts = opts_in;
+        element_opts.efficiency_scale = 1.0;
+        const std::shared_ptr<DetectorResponse> resp = generate(gd, element_opts);
+        resp->efficiency_scale = opts_in.efficiency_scale;
+        return resp;
+    }
+
     if (opts_in.scans_stop_on_total && (opts_in.transfer_mode || opts_in.closed_loop))
         throw std::runtime_error("ResponseGenerator: scans_stop_on_total needs the fixed-grid"
                                  " full characterization (not transfer_mode or closed_loop)");
@@ -2584,8 +2597,18 @@ void ResponseGenerator::certify(DetectorResponse& resp,
     // condition. A response that certifies above the gate reports converged =
     // false with its true p95 (never a misleading pass).
 
+    // The probes are Monte Carlo of the one element the descriptor describes; the response answers
+    //  for the whole detector (DetectorResponse::efficiency_scale), so that is the truth to score.
+    const double scale = resp.efficiency_scale;
+
     std::vector<double> fep_errs, tot_errs;
-    for (const ProbePoint& pp : bank) {
+    for (const ProbePoint& pp_element : bank) {
+        ProbePoint pp = pp_element;
+        pp.eps_fep *= scale;
+        pp.fep_unc *= scale;
+        pp.eps_tot *= scale;
+        pp.tot_unc *= scale;
+
         const Eigen::Vector3d src =
             source_position(pp.d_cm, pp.cos_theta, pp.phi_deg * kPi / 180.0);
         const EffResult m = resp.eps_fep_at(pp.energy_keV, src);

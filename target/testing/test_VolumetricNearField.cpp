@@ -1857,7 +1857,7 @@ BOOST_AUTO_TEST_CASE( TransferValidationStudy, * boost::unit_test::disabled() )
 
   const std::shared_ptr<ceelo::DetectorResponse> transfer =
         CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{},
-                                          "ANGLE GEM35-70 (transfer validation)" );
+                                          "ANGLE GEM35-70 (transfer validation)" , 1.0);
   BOOST_REQUIRE( transfer );
 
   // ---- 2) evaluation grid ----

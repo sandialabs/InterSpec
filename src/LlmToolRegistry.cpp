@@ -9516,6 +9516,10 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
     result["crystalSetbackBehindFace"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalSetback(), 4 );
   }
 
+  // Every efficiency is this times the one modeled element's (e.g., identical crystals summed)
+  if( drf->efficiencyMultiple() != 1.0 )
+    result["efficiencyScalarMultiple"] = drf->efficiencyMultiple();
+
   // Hash and source
   result["hash"] = drf->hashValue();
 

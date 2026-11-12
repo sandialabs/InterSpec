@@ -39,6 +39,17 @@
   margin-bottom: 5px;
 }
 
+.MakeDrfMultipleRow {
+  padding: 4px 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.MakeDrfMultipleRow input {
+  width: 5em;
+}
+
 .MakeDrfMcTool .McGeomBox,
 .MakeDrfMcTool .McOptsBox {
   margin: 2px 0;

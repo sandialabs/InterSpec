@@ -226,6 +226,23 @@ namespace
 
     return WString::tr("mmr-est-minutes").arg( static_cast<int>( std::ceil(minutes) ) );
   }//duration_phrase(...)
+
+
+  /** Attaches a generated `response` to `drf`, a copy of the seed DRF - or, without one, of the
+   foreground's detector.  The response was made with the seed's efficiency multiple (1 with no seed;
+   see #generationOptions), and the multiple goes with the response (DetectorPeakResponse::
+   setCeeloResponse), so a copy of some other detector takes the response's rather than tripping
+   setCeeloResponse's check that a response was made for the DRF it is attached to.  (A copy that
+   already carries a response adopts the new one's scale on its own.) */
+  void attach_generated_response( DetectorPeakResponse &drf,
+                                  const shared_ptr<const ceelo::DetectorResponse> &response )
+  {
+    assert( response );
+    if( !drf.ceeloResponse() && (drf.efficiencyMultiple() != response->efficiency_scale) )
+      drf.setEfficiencyMultiple( response->efficiency_scale );
+    drf.setCeeloResponse( response );
+    assert( drf.efficiencyMultiple() == response->efficiency_scale );
+  }//attach_generated_response(...)
 }//namespace
 
 
@@ -1496,7 +1513,7 @@ void MakeMcResponseForDrf::updateResponseChart()
                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
   }//if( !preview )
 
-  preview->setCeeloResponse( m_result );
+  attach_generated_response( *preview, m_result );
 
   // Chart source distance (absolute mode); default to 25 cm when unparseable.
   double dist = 25.0 * PhysicalUnits::cm;
@@ -1863,16 +1880,17 @@ bool MakeMcResponseForDrf::startGeneration()
     const ceelo::AnchorCurve tot_curve
                        = CeeLoUtils::totalTransferAnchorForDrf( m_seedDrf, anchor );
     const string det_name = m_seedDrf ? m_seedDrf->name() : string("user geometry");
+    const double efficiency_scale = m_seedDrf ? m_seedDrf->efficiencyMultiple() : 1.0;
 
     const string sessionId = wApp->sessionId();
     const string widgetId = id();
 
-    auto worker = [gd,anchor,tot_curve,det_name,sessionId,widgetId,generation_id](){
+    auto worker = [gd,anchor,tot_curve,det_name,efficiency_scale,sessionId,widgetId,generation_id](){
       shared_ptr<ceelo::DetectorResponse> response;
       string errmsg;
       try
       {
-        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name );
+        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name, efficiency_scale );
       }catch( std::exception &e )
       {
         errmsg = e.what();
@@ -2223,6 +2241,10 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
 
   opts.num_threads = CeeLoUtils::monteCarloThreadCount();
 
+  // The seed's multiple (its geometry is one of that many summed elements) - set here, so the
+  //  measured-point grounding that follows generation fits k(E) with it in the model.
+  opts.efficiency_scale = m_seedDrf ? m_seedDrf->efficiencyMultiple() : 1.0;
+
   return opts;
 }//generationOptions()
 
@@ -2551,7 +2573,7 @@ void MakeMcResponseForDrf::acceptResponse()
     //an incomplete form; the response's own descriptor is still there
   }
 
-  new_det->setCeeloResponse( m_result );
+  attach_generated_response( *new_det, m_result );
 
   m_interspec->detectorChanged().emit( new_det );
 
