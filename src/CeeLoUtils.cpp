@@ -517,7 +517,8 @@ bool attachCurveTransferResponse( DetectorPeakResponse &drf )
     const TransferAnchor anchor = transferAnchorForDrf( drf_ptr, *geom, -1.0 );
     const ceelo::AnchorCurve tot_curve = totalTransferAnchorForDrf( drf_ptr, anchor );
     const shared_ptr<ceelo::DetectorResponse> resp
-                    = makeTransferResponse( *geom, anchor, tot_curve, drf.name() );
+                    = makeTransferResponse( *geom, anchor, tot_curve, drf.name(),
+                                            drf.efficiencyMultiple() );
     if( !resp )
       return false;
 
@@ -536,10 +537,13 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
                       const ceelo::GeometryDescriptor &geom,
                       const TransferAnchor &anchor,
                       const ceelo::AnchorCurve &tot_curve,
-                      const std::string &detector_name )
+                      const std::string &detector_name,
+                      const double efficiency_scale )
 {
   if( anchor.curve.energies_keV.size() < 2 )
     throw runtime_error( "makeTransferResponse: need at least two anchor points." );
+  if( !(efficiency_scale > 0.0) || !std::isfinite(efficiency_scale) )
+    throw runtime_error( "makeTransferResponse: the efficiency scale must be finite and > 0." );
 
   // The kernel positions are in the crystal-face frame (z = 0 at the crystal face, source in front
   //  at negative z); the anchor distance is from the DETECTOR FACE, as every InterSpec distance is
@@ -548,6 +552,7 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
 
   ceelo::TransferResponseOptions opts;
   opts.detector_name = detector_name;
+  opts.efficiency_scale = efficiency_scale;
 
   const ceelo::AnchorCurve * const tot_anchor
                        = (tot_curve.energies_keV.size() >= 2) ? &tot_curve : nullptr;
@@ -2023,14 +2028,14 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
                         + " cm further back than Detector.dat's setback." );
   }
 
-  // GADRAS scales its own efficiency by this; a Monte Carlo of the geometry
-  //  will not reproduce that scaling.
+  // GADRAS scales its own efficiency by this; the DRF carries it as its efficiency multiple
+  //  (DetectorPeakResponse::applyGadrasDat), over the one crystal described here.
   if( (dat.effScalar() > 0.0f) && (std::fabs(dat.effScalar() - 1.0f) > 1.0e-3f) )
-    warnings.push_back( "Detector.dat applies an efficiency scalar of "
+    warnings.push_back( "Detector.dat multiplies its efficiency by "
                         + SpecUtils::printCompact(dat.effScalar(), 4)
-                        + ", which a Monte Carlo of the geometry does not"
-                        " reproduce; expect the computed efficiency to differ by"
-                        " about that factor." );
+                        + " (several identical crystals summed, or an empirical factor); this"
+                        " geometry is one crystal, and the detector response carries the factor"
+                        " as its efficiency multiple." );
 
   relaxGeometryFeatures( gd, warnings );
 
@@ -2147,12 +2152,16 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
 
     const vector<double> energies = responseSampleEnergies( *response, num_points );
 
+    // The stored curve is the one element's; the snapshot keeps the scale as its multiple (it is
+    //  moved there when the response is detached below).
+    const double scale = response->efficiency_scale;
+
     vector<DetectorPeakResponse::EnergyEffPoint> points;
     points.reserve( energies.size() );
     for( const double energy : energies )
     {
       const ceelo::EffResult res = response->eps_fep_at( energy, src_pos, quad );
-      const double eff = res.value / omega;
+      const double eff = res.value / (omega * scale);
       if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
         continue;
 
@@ -2160,7 +2169,7 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
       p.energy = static_cast<float>( energy );
       p.efficiency = static_cast<float>( eff );
       if( res.sigma > 0.0 )
-        p.efficiencyUncert = static_cast<float>( res.sigma / omega );
+        p.efficiencyUncert = static_cast<float>( res.sigma / (omega * scale) );
       points.push_back( p );
     }//for( const double energy : energies )
 
@@ -2172,6 +2181,8 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
     // The response must NOT come along: it is what `efficiency()` would dispatch to, and the
     //  whole point is that the curve now answers instead.
     snapshot->setCeeloResponse( nullptr );
+
+    assert( snapshot->efficiencyMultiple() == scale );
 
     // setEfficiencyPoints resets the setback and the DRF source along with the curve.
     const DetectorPeakResponse::DrfSource source = drf->drfSource();
@@ -2224,12 +2235,15 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   const Eigen::Vector3d src_pos = farFieldSourcePosition( response->descriptor );
   const ceelo::ApertureQuadrature quad = response->make_quadrature( src_pos );
 
+  // Stored curves are the one element's (DetectorPeakResponse::efficiencyMultiple).
+  const double scale = response->efficiency_scale;
+
   vector<DetectorPeakResponse::EnergyEffPoint> points;
   points.reserve( energies.size() );
   for( const double energy : energies )
   {
     const ceelo::EffResult res = response->eps_fep_at( energy, src_pos, quad );
-    const double eff = res.value / omega;
+    const double eff = res.value / (omega * scale);
     if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
       continue;
 
@@ -2237,7 +2251,7 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
     p.energy = static_cast<float>( energy );
     p.efficiency = static_cast<float>( eff );
     if( res.sigma > 0.0 )
-      p.efficiencyUncert = static_cast<float>( res.sigma / omega );
+      p.efficiencyUncert = static_cast<float>( res.sigma / (omega * scale) );
     points.push_back( p );
   }//for( const double energy : energies )
 

@@ -62,6 +62,7 @@
 #include "SpecUtils/D3SpectrumExport.h"
 
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
@@ -2060,7 +2061,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     chart->disableLegend();
     const double dx = upper_upper_energy - lower_lower_energy;
     chart->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
-    chart->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
+    chart->setShowPeakLabel( PeakLabelType::ShowPeakUserLabel, true );
     
     //TODO: set no interaction, and implement drawing the various areas...
     

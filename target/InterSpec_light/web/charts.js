@@ -79,7 +79,9 @@ App.initCharts = function() {
     rightclicked: (energy, count, pageX, pageY, refLineParent) => {
       App.peaks.showContextMenu( energy, pageX, pageY );
     },
-    shiftkeydragged: (e0, e1) => {
+    shiftkeydragged: (e0, e1, specType) => {
+      if( specType && (specType !== 'FOREGROUND') )  // B/S held: background/secondary peaks aren't supported
+        return;
       App.run( 'erasePeaks', { e0: e0, e1: e1 }, { busy: true } );
     },
     roiDrag: (newLower, newUpper, px, origLower, specType, isFinal) => {
@@ -104,7 +106,12 @@ App.initCharts = function() {
           App.applyState( result );
       } );
     },
-    fitRoiDrag: (lower, upper, npeaks, isFinal) => {
+    fitRoiDrag: (lower, upper, npeaks, isFinal, pageX, pageY, specType) => {
+      if( specType && (specType !== 'FOREGROUND') )
+      {
+        later( () => spec.updateRoiBeingDragged( null ) );
+        return;
+      }
       let result = null;
       try
       {

@@ -3410,8 +3410,11 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     {
       const vector<ShieldingSourceFitCalc::ShieldingInfo> shield_bases(
                       results->final_shieldings.begin(), results->final_shieldings.end() );
-      const ShieldSourcePullTrend::FitConfigSummary trend_config =
+      ShieldSourcePullTrend::FitConfigSummary trend_config =
         ShieldSourcePullTrend::summarize_fit_config( shield_bases, results->fit_src_info );
+      ShieldSourcePullTrend::set_summing_info( trend_config, chi2Fcn->distance(),
+                                               chi2Fcn->options().correct_for_cascade_summing,
+                                               chi2Fcn->detector(), results->fit_src_info );
       results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
         ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
                                                *results->peak_calc_details,

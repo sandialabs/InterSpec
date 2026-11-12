@@ -73,6 +73,18 @@
   padding: 0 2px 6px 2px;
 }
 
+/* "Scalar multiple": a short input after its label, for either detector description */
+.MakeDrfMultipleRow {
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.MakeDrfMultipleRow input {
+  width: 5em;
+}
+
 .MakeDrfMcTool .McGeomBox,
 .MakeDrfMcTool .McOptsBox {
   margin: 2px 0;

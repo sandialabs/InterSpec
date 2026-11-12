@@ -199,6 +199,9 @@ struct TransferResponseOptions {
     /// Total-kernel scatter-in recapture (see kTotalScatterInRecapture); only
     /// affects eps_total, and only for detectors with passive layers.
     double scatter_in_recapture = kTotalScatterInRecapture;
+    /// DetectorResponse::efficiency_scale for the result.  The anchors are the WHOLE detector's
+    /// efficiency; the eta table (and total b(E)) are the one modeled element's, anchor / scale.
+    double efficiency_scale = 1.0;
     std::string detector_name;
 };
 

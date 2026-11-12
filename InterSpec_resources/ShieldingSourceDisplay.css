@@ -1488,16 +1488,21 @@ a.SsdFooterIcon
   white-space: nowrap;
 }
 
-/* Passive pull-trend interpretation text, sharing the under-chart `.ChartToolbar` strip with the
-   Mult./chi switch.  Ellipsized so it stays on one line and can never push the switch out of
-   view; hidden entirely when the fit has no conclusion to offer. */
+/* The one-line pull-trend interpretation, beside the Mult./chi switch.  Wraps to at most two lines
+   (the hint clause and summing caveat can be long), then ellipsized - the full text is the tooltip -
+   so it can never push the switch out of view; hidden entirely when the fit has no conclusion. */
 .ShieldingSourceDisplay .ChartToolbar .ShieldSourceTrendMsg
 {
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   text-overflow: ellipsis;
+  line-height: 1.25;
   font-size: 12px;
   font-style: italic;
   color: var(--interspec-fainter-text-color);

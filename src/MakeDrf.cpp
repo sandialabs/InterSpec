@@ -73,7 +73,6 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
-#include "InterSpec/QrCode.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 
@@ -98,6 +97,8 @@
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
+#include "InterSpec/FitSkewParamsTool.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MakeDrfSrcDef.h"
@@ -114,6 +115,10 @@
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#endif
 
 
 // The regex in GCC 4.8.x does not have working regex
@@ -621,7 +626,7 @@ namespace
   class DrfPeak : public WContainerWidget
   {
   public:
-    const std::shared_ptr<const PeakDef> m_peak;
+    std::shared_ptr<const PeakDef> m_peak;
     const double m_livetime;
     Wt::WCheckBox *m_useForEffCb;
     WText *m_descTxt;
@@ -653,40 +658,11 @@ namespace
       m_useForEffCb = addNew<WCheckBox>( WString::tr("dp-use-cb") );
       m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
-      char buffer[256];
       if( peak && peak->parentNuclide() && peak->nuclearTransition() )
       {
-        const bool use = peak->useForDrfIntrinsicEffFit();
-        
-        const char *gammatype = "";
-        switch( peak->sourceGammaType() )
-        {
-          case PeakDef::SourceGammaType::NormalGamma:
-            break;
-          case PeakDef::SourceGammaType::AnnihilationGamma:
-            gammatype = " (annih.)";
-            break;
-          case PeakDef::SourceGammaType::DoubleEscapeGamma:
-            gammatype = " (D.E.)";
-            break;
-          case PeakDef::SourceGammaType::SingleEscapeGamma:
-            gammatype = " (S.E.)";
-            break;
-          case PeakDef::SourceGammaType::XrayGamma:
-            gammatype = " (x-ray)";
-            break;
-        }//switch( peak->sourceGammaType() )
-        
-        m_useForEffCb->setChecked( use );
-        snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
-                  peak->parentNuclide()->symbol.c_str(),
-                  peak->mean(),
-                  (peak->amplitude() / livetime),
-                  peak->gammaParticleEnergy(),
-                  gammatype );
+        m_useForEffCb->setChecked( peak->useForDrfIntrinsicEffFit() );
       }else
       {
-        snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", peak->mean() );
         m_userBr = new WDoubleSpinBox();
         //m_userBr->addStyleClass( "DrfPeakNoNucBr" );
         m_userBr->setRange( 0.0, 1.0 );
@@ -705,7 +681,7 @@ namespace
         } );
       }
       
-      m_descTxt = addNew<WText>( WString::fromUTF8(buffer) );
+      m_descTxt = addNew<WText>( descriptionText() );
       // This is totally bizarre, but Safari (version 16.5 at least), and Chrome, will crash
       //  (the rendering process for the tab, by running up huge amounts of memory), the
       //  second time we create the "Make Detector Response" window, under some
@@ -736,6 +712,68 @@ namespace
       m_previewBtn->clicked().connect( this, [this]( WMouseEvent a1 ){ togglePeakPreview( a1 ); } );
     }//DrfPeak constructor;
     
+    /** The text describing the peak to the user. */
+    WString descriptionText() const
+    {
+      char buffer[256];
+      if( m_peak && m_peak->parentNuclide() && m_peak->nuclearTransition() )
+      {
+        const char *gammatype = "";
+        switch( m_peak->sourceGammaType() )
+        {
+          case PeakDef::SourceGammaType::NormalGamma:
+            break;
+          case PeakDef::SourceGammaType::AnnihilationGamma:
+            gammatype = " (annih.)";
+            break;
+          case PeakDef::SourceGammaType::DoubleEscapeGamma:
+            gammatype = " (D.E.)";
+            break;
+          case PeakDef::SourceGammaType::SingleEscapeGamma:
+            gammatype = " (S.E.)";
+            break;
+          case PeakDef::SourceGammaType::XrayGamma:
+            gammatype = " (x-ray)";
+            break;
+        }//switch( m_peak->sourceGammaType() )
+
+        snprintf( buffer, sizeof(buffer), "%s: %.2f keV peak with %.1f cps for %.2f keV gamma%s.",
+                  m_peak->parentNuclide()->symbol.c_str(),
+                  m_peak->mean(),
+                  (m_peak->amplitude() / m_livetime),
+                  m_peak->gammaParticleEnergy(),
+                  gammatype );
+      }else
+      {
+        snprintf( buffer, sizeof(buffer), "%.2f keV peak - no nuc. associated", (m_peak ? m_peak->mean() : 0.0) );
+      }
+
+      return WString::fromUTF8( buffer );
+    }//WString descriptionText() const
+
+
+    /** Replaces the peak (e.g., refit with a new peak shape); whether it is used, and any user entered
+     branching ratio, are kept.
+     */
+    void setPeak( const std::shared_ptr<const PeakDef> &peak )
+    {
+      assert( peak );
+      if( !peak || (peak == m_peak) )
+        return;
+
+      m_peak = peak;
+      m_descTxt->setText( descriptionText() );
+
+      // The preview chart is of the old peak; it gets re-made when next shown
+      if( m_previewPopup )
+      {
+        m_previewBtn->removeStyleClass( "active", true );
+        removeWidget( m_previewPopup );
+        m_previewPopup = nullptr;
+      }
+    }//void setPeak( const std::shared_ptr<const PeakDef> &peak )
+
+
     bool useForEffFit() const
     {
       return m_useForEffCb->isChecked();
@@ -906,6 +944,9 @@ namespace
     WCheckBox *m_allNoneSome;
     Wt::Signal<> m_srcInfoUpdated;
     DetectorPeakResponse::EffGeometryType m_geometry_type;
+
+    /** The spectrum the peaks are of - the sum over the sample numbers and detectors, if more than one. */
+    std::shared_ptr<const SpecUtils::Measurement> m_summedMeas;
     
     void updateTitle()
     {
@@ -1069,6 +1110,7 @@ namespace
         summed_meas = meas->measurement( *begin(samples), detnames[0] );
       if( !summed_meas )
         summed_meas = meas->sum_measurements( samples, meas->detector_names(), nullptr );
+      m_summedMeas = summed_meas;
       
       //ToDo: in principle, summed_meas->live_time() should equal livetime; should check
       
@@ -1158,8 +1200,16 @@ namespace
               SpecUtils::trim( remark );
               
               //Look for a string like "Age= 13y 5d 3s something something something"
+              //  sm_timeDurationRegex is anchored with a leading "^" and trailing "$" that would
+              //  never match mid-string; strip just those two (it has a "(?!$)" inside to keep).
+              string age_regex = PhysicalUnits::sm_timeDurationRegex;
+              if( !age_regex.empty() && (age_regex.front() == '^') )
+                age_regex.erase( 0, 1 );
+              if( !age_regex.empty() && (age_regex.back() == '$') )
+                age_regex.pop_back();
+
               std::smatch mtch;
-              std::regex expr( string(".+(Age\\s*\\=\\s*(") + PhysicalUnits::sm_timeDurationRegex + ")).*?", std::regex::icase );
+              std::regex expr( string(".+(Age\\s*\\=\\s*(") + age_regex + ")).*?", std::regex::icase );
                 
               if( std::regex_match( remark, mtch, expr ) )
               {
@@ -1245,7 +1295,8 @@ namespace
               SpecUtils::ireplace_all( dist_regex, "^", "" );
               SpecUtils::ireplace_all( dist_regex, "$", "" );
               
-              std::regex dist_expr( string(".*\\b((?:distance|dist)\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
+              // "dist=" or "distance=", as a whole word (so e.g. "Age=" or "H=" isnt taken as a distance)
+              std::regex dist_expr( string(".*?\\b((?:dist|distance)\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
               
               if( std::regex_match( remark, dist_mtch, dist_expr ) )
               {
@@ -1567,6 +1618,76 @@ namespace
       }
       return answer;
     }//std::string locationLabel() const
+
+    std::shared_ptr<const SpecUtils::Measurement> summedMeasurement() const { return m_summedMeas; }
+
+
+    /** A plain-text title for the sample (no markup): #locationLabel, then the spectrum title, if any. */
+    std::string plainTitle() const
+    {
+      std::string spectitle;
+      for( const int sample : m_samples )
+      {
+        for( const string &detname : m_meas->detector_names() )
+        {
+          const shared_ptr<const SpecUtils::Measurement> m = m_meas->measurement( sample, detname );
+          if( m && !m->title().empty() )
+            spectitle = m->title();
+        }
+      }//for( const int sample : m_samples )
+      SpecUtils::trim( spectitle );
+
+      std::string answer = locationLabel();
+      if( !spectitle.empty() )
+        answer += (answer.empty() ? "\"" : ", \"") + spectitle + "\"";
+
+      return answer;
+    }//std::string plainTitle() const
+
+
+    /** Replaces peaks of this sample, both in the peak rows and in the file, with the ones they map to
+     in `old_to_new`.  If `peak_model` is non-null (i.e., this sample is the displayed foreground), the
+     peaks are set through it, so the spectrum chart updates too.  Returns if any peak was replaced.
+     */
+    bool replacePeaks( const map<shared_ptr<const PeakDef>,shared_ptr<const PeakDef>> &old_to_new,
+                       PeakModel * const peak_model )
+    {
+      bool any_replaced = false;
+      for( DrfPeak *peakw : peaks() )
+      {
+        const auto iter = old_to_new.find( peakw->m_peak );
+        if( (iter != end(old_to_new)) && iter->second )
+        {
+          peakw->setPeak( iter->second );
+          any_replaced = true;
+        }
+      }//for( DrfPeak *peakw : peaks() )
+
+      if( !any_replaced )
+        return false;
+
+      // Copy the file's peaks by value, as `setPeaks(...)` refills its deque in place
+      const shared_ptr<const SpecMeas> const_meas = m_meas;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> file_peaks = const_meas->peaks( m_samples );
+      vector<shared_ptr<const PeakDef>> updated;
+      if( file_peaks )
+      {
+        for( const shared_ptr<const PeakDef> &peak : *file_peaks )
+        {
+          const auto iter = old_to_new.find( peak );
+          updated.push_back( ((iter != end(old_to_new)) && iter->second) ? iter->second : peak );
+        }
+      }//if( file_peaks )
+
+      if( peak_model )
+        peak_model->setPeaks( updated );
+      else
+        m_meas->setPeaks( deque<shared_ptr<const PeakDef>>( begin(updated), end(updated) ), m_samples );
+
+      updateTitle();
+
+      return true;
+    }//bool replacePeaks(...)
     
   };//class DrfSpecFileSample
   
@@ -1723,6 +1844,7 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_blockSourceUpdates( false ),
   m_detDiameter( nullptr ),
   m_detSetback( nullptr ),
+  m_efficiencyMultiple( nullptr ),
   m_geometry( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmOptionGroup( nullptr ),
@@ -1757,6 +1879,7 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_effUpperEnergy( 0.0f ),
   m_effBirgeScale( 1.0 ),
   m_dataDiameter( 0.0 ),
+  m_dataEfficiencyMultiple( 1.0 ),
   m_peakFitDetPrefsGui( nullptr )
 {
   assert( m_interspec );
@@ -1890,6 +2013,25 @@ MakeDrf::MakeDrf( InterSpec *viewer )
     m_geomMode->setChecked( true );
     handleGeometryModeChanged();
   } );
+
+  // For either description: e.g., a 2x2 CZT array described as one of its crystals.
+  WContainerWidget *multipleRow = m_detSectionBody->addNew<WContainerWidget>();
+  multipleRow->addStyleClass( "MakeDrfMultipleRow" );
+  WLabel *multipleLabel = multipleRow->addNew<WLabel>( WString::tr("md-eff-multiple") );
+  m_efficiencyMultiple = multipleRow->addNew<WLineEdit>();
+  multipleLabel->setBuddy( m_efficiencyMultiple );
+  auto multipleValidator = std::make_shared<WRegExpValidator>( "^\\s*([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][+-]?[0-9]+)?\\s*$" );
+  m_efficiencyMultiple->setValidator( multipleValidator );
+  m_efficiencyMultiple->setPlaceholderText( "1" );
+  m_efficiencyMultiple->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_efficiencyMultiple->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_efficiencyMultiple->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_efficiencyMultiple->setAttributeValue( "autocorrect", "off" );
+  m_efficiencyMultiple->setAttributeValue( "spellcheck", "off" );
+#endif
+  HelpSystem::attachToolTipOn( multipleRow, WString::tr("md-tt-eff-multiple"), showToolTips,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   // Fixed-geometry efficiencies dont use the detector description; say so rather than vanish
   m_detNotUsedTxt = m_detSection->addNew<WText>( WString::tr("md-det-not-used-fixed") );
@@ -3042,6 +3184,7 @@ void MakeDrf::handleSourcesUpdates()
   
   m_dataPoints = datapoints;
   m_dataDiameter = diameter;
+  m_dataEfficiencyMultiple = geom_choice.efficiencyMultiple;
 
   // Chart points: the intrinsic efficiency each peak gave, with the total 1-sigma as its error bar,
   //  and the peaks FWHM.  A fit point is found by its source key and energy (converted exactly as
@@ -3068,10 +3211,12 @@ void MakeDrf::handleSourcesUpdates()
                          : fit_points.find( {key.first, inMeV ? (key.second / 1000.0f) : key.second} );
       if( (pos != end(fit_points)) && !pos->second.empty() )
       {
+        // The fit points are one element's, the chart's curve the whole detector's (as the DRF
+        //  reports it), so the points get the multiple back.
         const MakeDrfFit::EffFitPoint &fp = *pos->second.front();
         pos->second.pop_front();
-        cp.efficiency = fp.efficiency;
-        cp.efficiencyUncert = fp.efficiency * sqrt( fp.fracStatUncert*fp.fracStatUncert
+        cp.efficiency = static_cast<float>( geom_choice.efficiencyMultiple * fp.efficiency );
+        cp.efficiencyUncert = cp.efficiency * sqrt( fp.fracStatUncert*fp.fracStatUncert
                                                     + fp.fracCertUncert*fp.fracCertUncert
                                                     + fp.fracDistUncert*fp.fracDistUncert );
       }
@@ -3278,7 +3423,9 @@ MakeDrfCalc::GeometryChoice MakeDrf::geometryChoice() const
   MakeDrfCalc::GeometryChoice choice;
   choice.fixedGeometry = (m_geometry->currentIndex() != 0);
   if( choice.fixedGeometry )
-    return choice;
+    return choice;  //the detector section (multiple included) is hidden, and not used
+
+  choice.efficiencyMultiple = enteredEfficiencyMultiple();
 
   if( m_geomMode && m_geomMode->isChecked() && m_mcTool )
   {
@@ -3408,8 +3555,23 @@ std::vector<MakeDrf::StatusItem> MakeDrf::validateDetectorInputs()
     }//if( !setback_txt.empty() )
   }//if( fixed_geom ) / else if( full_geom ) / else
 
+  // The scalar multiple goes with either description
+  bool multiple_value_error = false;
+  if( !fixed_geom )
+  {
+    try
+    {
+      enteredEfficiencyMultiple();
+    }catch( std::exception & )
+    {
+      items.push_back( makeStatusItem( WString::tr("md-err-eff-multiple-invalid"), m_efficiencyMultiple, true ) );
+      multiple_value_error = (m_efficiencyMultiple->validate() == Wt::ValidationState::Valid);  //e.g., "0"
+    }
+  }//if( !fixed_geom )
+
   WidgetUtils::setInputValueError( m_detDiameter, diameter_value_error );
   WidgetUtils::setInputValueError( m_detSetback, setback_value_error );
+  WidgetUtils::setInputValueError( m_efficiencyMultiple, multiple_value_error );
 
   return items;
 }//validateDetectorInputs()
@@ -3756,7 +3918,11 @@ void MakeDrf::updateEffEqn( MakeDrfFit::EffFitResult result,
   if( !m_effEqnCoefs.empty() )
   {
     const vector<float> &coefs = m_effEqnCoefs;
-    string eqn = "Eff<sub>int.</sub>(x) = exp( ";
+    // The equation as fit and stored: one element's, so the multiple is written out in front of it.
+    string eqn = "Eff<sub>int.</sub>(x) = ";
+    if( m_dataEfficiencyMultiple != 1.0 )
+      eqn += SpecUtils::printCompact( m_dataEfficiencyMultiple, 6 ) + " × ";
+    eqn += "exp( ";
     for( size_t i = 0; i < coefs.size(); ++i )
     {
       const float val = fabs(coefs[i]);
@@ -4100,7 +4266,11 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   const double fwhmChi2 = m_fwhmEqnChi2;
   const vector<float> fwhmCoefs = m_fwhmCoefs;
   const vector<float> fwhmCoefUncert = m_fwhmCoefUncerts;
-  const vector<float> effEqnCoefs = m_effEqnCoefs;
+  // This CSV has no field for an efficiency multiple, so the equation is written for the whole
+  //  detector - the multiple folded into the constant term - for the file to read back correctly.
+  vector<float> effEqnCoefs = m_effEqnCoefs;
+  if( !effEqnCoefs.empty() && (m_dataEfficiencyMultiple != 1.0) )
+    effEqnCoefs[0] += static_cast<float>( std::log( m_dataEfficiencyMultiple ) );
   const vector<float> effEqnCoefsUncerts = m_effEqnCoefUncerts;
   
   const vector<MakeDrfChart::DataPoint> data = m_dataPoints;
@@ -4195,8 +4365,12 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   //  not positive definite.
   const std::streamsize prev_precision = out.precision( std::numeric_limits<float>::max_digits10 );
 
-  out << endline << endline
-  << "# Intrinsic Efficiency Coefficients for equation of form"
+  out << endline << endline;
+  if( m_dataEfficiencyMultiple != 1.0 )
+    out << "# Efficiency scalar multiple " << SpecUtils::printCompact( m_dataEfficiencyMultiple, 6 )
+        << " (identical detector elements summed) is folded into c0 below: these equations are the whole detector's."
+        << endline;
+  out << "# Intrinsic Efficiency Coefficients for equation of form"
   " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
@@ -4808,7 +4982,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
       continue;
     
     const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
-    const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+    const float intrinsic_eff = static_cast<float>( m_dataEfficiencyMultiple
+                            * DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs ) );
     snprintf( buffer, sizeof(buffer), "<td>%.3G</td>", 100.0*intrinsic_eff );
     efftable << buffer;
   }
@@ -4841,7 +5016,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
 
         if( abs_eff < 0.0 )
         {
-          const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
+          const float intrinsic_eff = static_cast<float>( m_dataEfficiencyMultiple
+                              * DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs ) );
           abs_eff = intrinsic_eff * DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm + setback );
         }
 
@@ -4921,7 +5097,14 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     }//switch( m_fwhmEqnType->currentIndex() )
     
     chart.setFwhmCoefficients( m_fwhmCoefs, m_fwhmCoefUncerts, fwhmEqnType, units );
-    chart.setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, m_effEqnCov, units );
+
+    // The equation is one element's; drawn for the whole detector, like the points above, by
+    //  folding the multiple into the constant term of exp( sum c_i ln(E)^i ) - which leaves the
+    //  coefficient covariance as it is.
+    vector<float> eqn_coefs = m_effEqnCoefs;
+    if( !eqn_coefs.empty() && (m_dataEfficiencyMultiple != 1.0) )
+      eqn_coefs[0] += static_cast<float>( std::log( m_dataEfficiencyMultiple ) );
+    chart.setEfficiencyCoefficients( eqn_coefs, m_effEqnCoefUncerts, m_effEqnCov, units );
     
     chart.update();
     
@@ -4933,7 +5116,9 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   stringstream eff_chart_svg;
   eff_chart.write( eff_chart_svg );
   
+  // The sheet has no QR code if this build cant make them
   string qr_code, qr_note;
+#if( USE_QR_CODES )
   try
   {
     if( !drf )
@@ -4955,6 +5140,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     qr_code = WString::tr("app-qr-err").arg(e.what()).toUTF8();
     cerr << qr_code << endl;
   }
+#endif //USE_QR_CODES
   
   
   WTemplate tmplt;
@@ -5016,6 +5202,21 @@ double MakeDrf::detectorSetback() const
 }//double detectorSetback() const
 
 
+double MakeDrf::enteredEfficiencyMultiple() const
+{
+  const string txt = SpecUtils::trim_copy( m_efficiencyMultiple ? m_efficiencyMultiple->text().toUTF8() : string() );
+  if( txt.empty() )
+    return 1.0;
+
+  double multiple = 0.0;
+  if( !SpecUtils::parse_double( txt.c_str(), txt.size(), multiple )
+      || !(multiple > 0.0) || !std::isfinite(multiple) )
+    throw runtime_error( WString::tr("md-err-eff-multiple-invalid").toUTF8() );
+
+  return multiple;
+}//double enteredEfficiencyMultiple() const
+
+
 double MakeDrf::enteredSetback() const
 {
   try
@@ -5044,3 +5245,79 @@ void MakeDrf::useSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &
   }//for( auto w : m_files->children() )
   
 }//void useSourceLibrary( const vector<SrcLibLineInfo> &srcs );
+
+
+vector<FitSkewSpectrumInput> MakeDrf::skewFitSpectra()
+{
+  const shared_ptr<const SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  const set<int> &foreground_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+  vector<FitSkewSpectrumInput> answer;
+  for( WWidget *w : m_files->children() )
+  {
+    DrfSpecFile * const fileWidget = dynamic_cast<DrfSpecFile *>( w );
+    if( !fileWidget )
+      continue;
+
+    for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+    {
+      FitSkewSpectrumInput input;
+      input.spectrum = sample->summedMeasurement();
+      input.title = WString::fromUTF8( sample->plainTitle() );
+      input.isBackground = sample->isBackground();
+      input.isDisplayedForeground = foreground && (sample->measurement() == foreground)
+                                    && (sample->samples() == foreground_samples);
+
+      // The "selected" peaks are whole ROIs: every peak sharing a continuum with a peak being used
+      set<shared_ptr<const PeakContinuum>> used_rois;
+      for( DrfPeak *peak : sample->peaks() )
+      {
+        input.allPeaks.push_back( peak->m_peak );
+        if( peak->useForEffFit() )
+          used_rois.insert( peak->m_peak->continuum() );
+      }
+
+      for( const shared_ptr<const PeakDef> &peak : input.allPeaks )
+      {
+        if( used_rois.count( peak->continuum() ) )
+          input.selectedPeaks.push_back( peak );
+      }
+
+      if( input.spectrum && !input.allPeaks.empty() )
+        answer.push_back( std::move(input) );
+    }//for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+  }//for( WWidget *w : m_files->children() )
+
+  return answer;
+}//vector<FitSkewSpectrumInput> skewFitSpectra()
+
+
+void MakeDrf::replacePeaks( const map<shared_ptr<const PeakDef>,shared_ptr<const PeakDef>> &old_to_new )
+{
+  if( old_to_new.empty() )
+    return;
+
+  const shared_ptr<const SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  const set<int> &foreground_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<PeakModel> peak_model = m_interspec->peakModel();
+
+  bool any_replaced = false;
+  for( WWidget *w : m_files->children() )
+  {
+    DrfSpecFile * const fileWidget = dynamic_cast<DrfSpecFile *>( w );
+    if( !fileWidget )
+      continue;
+
+    for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
+    {
+      // The displayed foreground's peaks go through the PeakModel, so the spectrum chart shows them
+      const bool is_foreground = foreground && (sample->measurement() == foreground)
+                                 && (sample->samples() == foreground_samples);
+      if( sample->replacePeaks( old_to_new, is_foreground ? peak_model.get() : nullptr ) )
+        any_replaced = true;
+    }
+  }//for( WWidget *w : m_files->children() )
+
+  if( any_replaced )
+    handleSourcesUpdates();
+}//void replacePeaks(...)

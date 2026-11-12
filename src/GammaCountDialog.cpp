@@ -48,7 +48,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/GammaCountDialog.h"

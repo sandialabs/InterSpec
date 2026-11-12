@@ -18,7 +18,6 @@
 #include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
-#include "InterSpec/SpectrumChart.h"
 
 
 //Forward declarations

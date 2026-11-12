@@ -77,7 +77,6 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"

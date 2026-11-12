@@ -135,7 +135,7 @@ std::vector<MakeDrfFit::EffFitPoint> intrinsicFitPoints( const MeasuredDrfPoints
 
     MakeDrfFit::EffFitPoint fp;
     fp.energy = inMeV ? (p.energy / 1000.0f) : p.energy;
-    fp.efficiency = static_cast<float>( p.efficiency / g );
+    fp.efficiency = static_cast<float>( p.efficiency / (g * geom.efficiencyMultiple) );
     fp.fracStatUncert = p.fracStatUncert;
     fp.fracCertUncert = p.fracCertUncert;
     fp.fracDistUncert = static_cast<float>( fabs(slope_per_cm) * (p.distanceUncert / PhysicalUnits::cm) );
@@ -157,6 +157,9 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
   if( fit.eff.coefs.empty() )
     throw runtime_error( "Equation coefficients are empty." );
 
+  if( !(geom.efficiencyMultiple > 0.0) || !std::isfinite(geom.efficiencyMultiple) )
+    throw runtime_error( "The efficiency multiple must be greater than zero." );
+
   for( const float val : fit.eff.coefs )
   {
     if( std::isnan(val) || std::isinf(val) )
@@ -175,6 +178,9 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
                                 far_field ? static_cast<float>(geom.diameter) : 0.0f,
                                 eqnEnergyUnits, fit.lowerEnergy, fit.upperEnergy, fit.geometryType );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
+
+  // Before any response is made: they are given it (the fitted equation is one element's).
+  drf->setEfficiencyMultiple( geom.efficiencyMultiple );
 
   // The flat-disk setback: entered directly, or implied by the geometry's front layers
   double setback = geom.setback;
@@ -235,13 +241,18 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
     //  redo it, because the measured points may have changed since.
     const bool was_grounded = !mcResponse->grounding.empty();
 
-    // Ground a COPY: the caller's response is attached to every DRF stored or exported from it, so
-    //  re-grounding it in place would change DRFs already in use (and race threads evaluating
+    // The multiple may have been changed since the Monte Carlo ran; k(E) is fit with the scale in
+    //  the model, so the response has to carry the DRF's before grounding (and before attaching,
+    //  either way - the DRF already holds the multiple, and attaching a response adopts its scale).
+    const bool rescale = (mcResponse->efficiency_scale != geom.efficiencyMultiple);
+
+    // Ground/rescale a COPY: the caller's response is attached to every DRF stored or exported from
+    //  it, so changing it in place would change DRFs already in use (and race threads evaluating
     //  them).  DetectorResponse is not copyable, so copy through its codec (as
-    //  CeeLoUtils::withoutGrounding does) - only when there is grounding to redo, as that is a
+    //  CeeLoUtils::withoutGrounding does) - only when there is something to change, as that is a
     //  full serialize and parse.
     shared_ptr<ceelo::DetectorResponse> response;
-    if( was_grounded )
+    if( was_grounded || rescale )
     {
       try
       {
@@ -250,12 +261,21 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
       {
         cerr << "MakeDrfCalc::assembleDrf: failed to copy MC response: " << e.what() << endl;
       }
-    }//if( was_grounded )
+
+      if( response )
+        response->efficiency_scale = geom.efficiencyMultiple;
+    }//if( was_grounded || rescale )
 
     if( !response )
     {
-      drf->setCeeloResponse( mcResponse );  //as handed over, unmodified
-    }else
+      // As handed over, unmodified - unless it carries another multiple, which would make every
+      //  efficiency off by their ratio; then the DRF goes without a response (the curve stands).
+      if( !rescale )
+        drf->setCeeloResponse( mcResponse );
+      else
+        cerr << "MakeDrfCalc::assembleDrf: not attaching the MC response, as it could not be given"
+                " the efficiency multiple." << endl;
+    }else if( was_grounded )
     {
       try
       {
@@ -290,7 +310,10 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
       }
 
       drf->setCeeloResponse( response );
-    }//if( could not copy the response ) / else
+    }else
+    {
+      drf->setCeeloResponse( response );  //only rescaled
+    }//if( could not copy the response ) / else if( re-ground ) / else
   }else if( geom.geometry && far_field )
   {
     try
@@ -298,7 +321,8 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
       const CeeLoUtils::TransferAnchor anchor
                   = CeeLoUtils::curveAnchorWithCovarianceForDrf( drf, *geom.geometry, -1.0 );
       const ceelo::AnchorCurve tot_curve = CeeLoUtils::totalTransferAnchorForDrf( drf, anchor );
-      drf->setCeeloResponse( CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, tot_curve, name ) );
+      drf->setCeeloResponse( CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, tot_curve, name,
+                                                               drf->efficiencyMultiple() ) );
     }catch( std::exception &e )
     {
       cerr << "MakeDrfCalc::assembleDrf: could not build the curve-transfer response: " << e.what() << endl;
@@ -322,6 +346,7 @@ GeometryChoice geometryChoiceForDrf( const DetectorPeakResponse &drf )
   answer.geometry = drf.geometry();
   answer.diameter = drf.detectorDiameter();
   answer.setback = drf.detectorSetback();
+  answer.efficiencyMultiple = drf.efficiencyMultiple();
 
   return answer;
 }//geometryChoiceForDrf(...)

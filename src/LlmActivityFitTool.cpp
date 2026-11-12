@@ -2776,10 +2776,11 @@ nlohmann::json fit_results_to_comprehensive_json(
   }//if( peak_comparisons )
 
   // 6. Pull-trend / atomic-number diagnostic.
-  //   A wrong shielding model leaves a trend in the per-peak pulls vs energy: a slope indicates the
-  //   wrong shielding *amount*, a low-energy curvature the wrong effective atomic number (AN).  We
-  //   ALWAYS report an AN-consistency status, distinguishing "the data could not resolve AN"
-  //   (not_determinable) from "AN is consistent with the data".  See ShieldSourcePullTrend.h.
+  //   Whether changing the shielding amount (or adding shielding), or its effective atomic number
+  //   (AN), explains the per-peak residuals significantly better than the fit model (profile
+  //   likelihood-ratio tests).  We ALWAYS report an AN-consistency status, distinguishing "the data
+  //   could not resolve AN" (not_determinable) from "AN is consistent with the data".  See
+  //   ShieldSourcePullTrend.h.
   {
     using namespace ShieldSourcePullTrend;
 
@@ -2818,10 +2819,19 @@ nlohmann::json fit_results_to_comprehensive_json(
                            " likely too high (modeled material is heavier than the true shielding).";
           break;
 
-        case TrendConclusion::NoConclusion:
         case TrendConclusion::ShieldingAmountTooLow:
         case TrendConclusion::ShieldingAmountTooHigh:
         case TrendConclusion::OtherModelInconsistency:
+        case TrendConclusion::ModelLacksShielding:
+          // A different model problem dominates the residuals; until it is fixed, the absence of
+          //  an atomic-number signature says nothing about whether the AN is right.
+          an_status = "not_determinable";
+          an_explanation = "The peak residuals show a different model problem (see 'conclusion');"
+                           " the shielding's effective atomic number cannot be judged until that is"
+                           " resolved.";
+          break;
+
+        case TrendConclusion::NoConclusion:
           if( trend->anDiscriminable )
           {
             an_status = "consistent";
@@ -2853,6 +2863,7 @@ nlohmann::json fit_results_to_comprehensive_json(
         case TrendConclusion::AtomicNumberTooLow:      conclusion_str = "atomic_number_too_low";      break;
         case TrendConclusion::AtomicNumberTooHigh:     conclusion_str = "atomic_number_too_high";     break;
         case TrendConclusion::OtherModelInconsistency: conclusion_str = "other_model_inconsistency";  break;
+        case TrendConclusion::ModelLacksShielding:     conclusion_str = "model_lacks_shielding";      break;
       }//switch( trend->conclusion )
 
       trend_json["conclusion"] = conclusion_str;
@@ -2875,11 +2886,29 @@ nlohmann::json fit_results_to_comprehensive_json(
           trend_json["conclusion_message"] = conclusion_msg;
       }//if( a conclusion was reached )
 
-      // Supporting statistics, for transparency into the call.
-      trend_json["slope_t"] = trend->slopeT;
-      trend_json["curvature_t"] = trend->curvatureT;
-      trend_json["reduced_chi2"] = trend->redChi2;
-      trend_json["num_points_used"] = static_cast<int>( trend->numPointsUsed );
+      // Shielding estimate behind the call (amount and "lacks shielding" conclusions: best-fit total
+      //  areal density; atomic-number conclusions: the favored effective Z and its areal density).
+      if( trend->suggestedArealDensity > 0.0 )
+        trend_json["suggested_areal_density_g_cm2"]
+                   = trend->suggestedArealDensity / (PhysicalUnits::g / PhysicalUnits::cm2);
+      if( (trend->suggestedAtomicNumber > 0.0) && trend->suggestedAtomicNumberResolved )
+        trend_json["suggested_atomic_number"] = trend->suggestedAtomicNumber;
+      trend_json["model_has_shielding"] = trend->modelHasShielding;
+      trend_json["tests_run"] = trend->testsRun;
+      if( trend->possibleCascadeSumming )
+        trend_json["possible_cascade_summing"] = true;
+
+      // Supporting statistics, for transparency into the call: likelihood-ratio significances
+      //  (sigma; amount > 0 = wants more shielding, atomic_number > 0 = wants higher Z, other = smooth
+      //  residual trend beyond those), and the descriptive trend-curve fit.
+      trend_json["amount_sigma"] = trend->amountT;
+      trend_json["atomic_number_sigma"] = trend->atomicNumberT;
+      trend_json["other_trend_sigma"] = trend->otherT;
+      trend_json["residual_scale"] = trend->residualScale;
+      trend_json["num_peaks_tested"] = static_cast<int>( trend->numPeaksTested );
+      trend_json["curve_slope_t"] = trend->slopeT;
+      trend_json["curve_curvature_t"] = trend->curvatureT;
+      trend_json["curve_reduced_chi2"] = trend->redChi2;
     }//if( !trend ) / else
   }//end pull-trend / atomic-number diagnostic
 

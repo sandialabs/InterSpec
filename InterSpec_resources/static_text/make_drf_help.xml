@@ -280,6 +280,24 @@ information are used either way.  The uncertainties of the source activities (an
 them, of the source distances) are carried through the fit into the DRF, and on into the activity
 uncertainties reported by the analysis tools; you do not need to do anything for that to happen.
 </p>
+<p>
+<em>Scalar multiple</em> (below the diameter or geometry; normally left blank, meaning 1): for a detector
+made of several identical elements whose events are combined into <em>one</em> spectrum, with one live
+time - an H3D M400's four CZT crystals, for example - you may describe just one element (its diameter,
+or its geometry) and enter the number of elements.  The efficiency equation is then fit for one element
+(its constant term is lower by ln N, and it is shown as &quot;N &#215; exp(...)&quot;), while the chart and
+every efficiency the saved detector response reports are for the whole detector.  The CSV export, which
+has no field for the multiple, writes the whole detector's equation.  The multiple can also carry an
+empirical scale factor, as GADRAS's Detector.dat parameter 18 does.
+</p>
+<p>
+Leave it at 1 when the elements are recorded as <em>separate</em> spectra - for example a portal or
+backpack file with the same sample from eight detectors, each under its own detector name.  InterSpec
+sums those spectra for you, adding their live times as well as their counts, so the summed spectrum's
+counts per second of live time are already those of one detector: its efficiency is one detector's, and
+entering 8 would make every efficiency eight times too high.  Leave it at 1 too when the geometry you
+enter describes the whole array (for the M400, one 44 &#215; 44 mm crystal).
+</p>
 </div>
 
 <div style="display:table-row">

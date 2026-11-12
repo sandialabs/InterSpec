@@ -77,7 +77,6 @@
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecFileSummary.h"
@@ -2164,7 +2163,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
     upperx = upperx + upperXChangeFrac*energydelta;
     
     D3SpectrumDisplayDiv *specchart = m_viewer->spectrum();
-    specchart->performDragCreateRoiWork( lowerx, upperx, npeaks, true, -1.0, -1.0 );
+    specchart->performDragCreateRoiWork( lowerx, upperx, npeaks, true, -1.0, -1.0,
+                                         SpecUtils::SpectrumType::Foreground );
     
     vector<PeakDef> foundpeaks, refitOrigPeaks, allPostFitPeaks;
     for( const PeakModel::PeakShrdPtr &peak : *peakModel->peaks() )

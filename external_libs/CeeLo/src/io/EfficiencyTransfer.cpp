@@ -162,9 +162,12 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
         fep_anchor.eff.size() != fep_anchor.energies_keV.size())
         throw std::runtime_error(
             "make_transfer_response: need >= 2 ascending anchor points");
+    if (!(opts.efficiency_scale > 0.0) || !std::isfinite(opts.efficiency_scale))
+        throw std::runtime_error("make_transfer_response: efficiency_scale must be finite and > 0");
 
     auto resp = std::make_shared<DetectorResponse>();
     resp->descriptor = descriptor;
+    resp->efficiency_scale = opts.efficiency_scale;
 
     // Stored mu tables (self-contained; eta*K cannot drift with the XS data).
     for (size_t i = 0; i < descriptor.materials.size(); ++i) {
@@ -212,7 +215,7 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
         const double K = resp->kernel_K(E, q_ref, MuChoice::Total);
         if (E <= 0.0 || fep_anchor.eff[e] <= 0.0 || K <= 0.0)
             throw std::runtime_error("make_transfer_response: zero kernel/eff");
-        const double ln_eta = std::log(fep_anchor.eff[e] / K);
+        const double ln_eta = std::log(fep_anchor.eff[e] / (K * opts.efficiency_scale));
         const double fs = (!have_cov && e < fep_anchor.frac_sigma.size())
                               ? fep_anchor.frac_sigma[e] : 0.0;
         for (size_t c = 0; c < 2; ++c) {
@@ -237,7 +240,7 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
             if (E <= 0.0 || tot_anchor->eff[i] <= 0.0 || K_nors <= 0.0)
                 continue;
             resp->tot_eff.b_energies_keV.push_back(E);
-            resp->tot_eff.ln_b.push_back(std::log(tot_anchor->eff[i] / K_nors));
+            resp->tot_eff.ln_b.push_back(std::log(tot_anchor->eff[i] / (K_nors * opts.efficiency_scale)));
         }
         if (resp->tot_eff.b_energies_keV.size() < 2)
             resp->tot_eff.tier = TotEffTier::NotCharacterized;   // nothing usable

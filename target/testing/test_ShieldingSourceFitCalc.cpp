@@ -2439,7 +2439,7 @@ std::shared_ptr<DetectorPeakResponse> make_synthetic_nai_drf( const bool attach_
   {
     const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, gd, -1.0 );
     det->setCeeloResponse( CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{},
-                                                             "synthetic NaI" ) );
+                                                             "synthetic NaI" , 1.0) );
     BOOST_REQUIRE( det->ceeloResponse() );
   }
 
@@ -4360,7 +4360,7 @@ BOOST_AUTO_TEST_CASE( EffTranByNameFailureKeepsAttachedResponse )
   //  transfer rather than reuse this one.
   const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, *gd, -1.0 );
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( *gd, anchor, ceelo::AnchorCurve{}, "synthetic NaI (posing as MC)" );
+        = CeeLoUtils::makeTransferResponse( *gd, anchor, ceelo::AnchorCurve{}, "synthetic NaI (posing as MC)" , 1.0);
   BOOST_REQUIRE( resp );
   resp->provenance.method = ceelo::ProductionMethod::FullMc;
   det->setCeeloResponse( resp );

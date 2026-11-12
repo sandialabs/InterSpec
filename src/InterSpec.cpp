@@ -88,6 +88,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/MakeDrf.h"
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
@@ -119,7 +120,6 @@
 #include "InterSpec/EnergyCalGainMatch.h"
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/SpectrumChart.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
@@ -1217,8 +1217,8 @@ InterSpec::InterSpec()
     handleLeftClick( a1, a2, a3, a4, a5 );
   } );
   
-  m_spectrum->shiftKeyDragged().connect( this, [this]( const double a1, const double a2 ){
-    excludePeaksFromRange( a1, a2 );
+  m_spectrum->shiftKeyDragged().connect( this, [this]( const double a1, const double a2, const SpecUtils::SpectrumType a3 ){
+    excludePeaksFromRange( a1, a2, a3 );
   } );
   m_spectrum->doubleLeftClick().connect( this, [this]( const double a1, const double /*a2*/,
                                                 const std::string &a3,
@@ -1684,10 +1684,10 @@ D3SpectrumExport::D3SpectrumChartOptions InterSpec::getD3SpectrumOptions() const
   const bool showHorizontalGridLines = m_spectrum->horizontalLinesShowing();
   const bool legendEnabled = m_spectrum->legendIsEnabled();
   const bool compactXAxis = m_spectrum->isAxisCompacted();
-  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakUserLabel );
-  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakEnergyLabel );
-  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideLabel );
-  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( SpectrumChart::kShowPeakNuclideEnergies );
+  const bool showPeakUserLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakUserLabel );
+  const bool showPeakEnergyLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakEnergyLabel );
+  const bool showPeakNuclideLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakNuclideLabel );
+  const bool showPeakNuclideEnergyLabels = m_spectrum->showingPeakLabel( PeakLabelType::ShowPeakNuclideEnergies );
   const bool showEscapePeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::EscapePeakMarker)]);
   const bool showComptonPeakMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonPeakMarker)]);
   const bool showComptonEdgeMarker = (m_featureMarkersWindow && m_featureMarkersShown[static_cast<int>(FeatureMarkerType::ComptonEdgeMarker)]);
@@ -3085,13 +3085,27 @@ void InterSpec::deletePeakEdit()
 
 void InterSpec::showFitSkewParamsWindow()
 {
+  // When the (modal) "Create Detector Response Function" tool is open, it is what opened us, so the
+  //  skew is fit across the spectra it is using.
+  vector<FitSkewSpectrumInput> drfSpectra;
+  if( m_makeDrfTool && m_makeDrfTool->tool() )
+    drfSpectra = m_makeDrfTool->tool()->skewFitSpectra();
+
   if( m_fitSkewParamsWindow )
   {
-    m_fitSkewParamsWindow->show();
-    return;
-  }
+    FitSkewParamsTool * const tool = m_fitSkewParamsWindow->tool();
+    if( tool && (tool->isDrfMode() == !drfSpectra.empty()) )
+    {
+      m_fitSkewParamsWindow->show();
+      return;
+    }
 
-  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this );
+    // Opened for the other mode - start over (without an undo step for closing it)
+    AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
+    assert( !m_fitSkewParamsWindow );
+  }//if( m_fitSkewParamsWindow )
+
+  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this, std::move(drfSpectra) );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -3125,7 +3139,7 @@ void InterSpec::acceptFitSkewParamsWindow()
     return;
 
   FitSkewParamsTool *tool = m_fitSkewParamsWindow->tool();
-  if( !tool )
+  if( !tool || !tool->canAccept() ) // e.g., an Accept click queued before the fit started
     return;
 
   // Capture old state for undo
@@ -3142,6 +3156,10 @@ void InterSpec::acceptFitSkewParamsWindow()
   {
     UndoRedoManager::BlockUndoRedoInserts block;
     tool->acceptResults();
+
+    // The DRF tool's peaks, refit with the new skew (the DRF tool blocks undo/redo while open)
+    if( !tool->drfPeakReplacements().empty() && m_makeDrfTool && m_makeDrfTool->tool() )
+      m_makeDrfTool->tool()->replacePeaks( tool->drfPeakReplacements() );
   }
 
   // Capture new state
@@ -4041,12 +4059,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         entry.modify()->disabledNotifications |= (0x1<<level);
     }
     
+    // A bit for each label showing, at the `PeakLabelType` value
     entry.modify()->showingPeakLabels = 0x0;
-    for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-         label < SpectrumChart::kNumPeakLabels;
-         label = SpectrumChart::PeakLabels(label+1) )
+    for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
     {
-      if( m_spectrum->showingPeakLabel( label ) )
+      if( m_spectrum->showingPeakLabel( PeakLabelType(label) ) )
         entry.modify()->showingPeakLabels |= (0x1<<label);
     }
 
@@ -4796,12 +4813,10 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
-    for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
-        label < SpectrumChart::kNumPeakLabels;
-        label = SpectrumChart::PeakLabels(label+1) )
+    for( int label = 0; label < static_cast<int>(PeakLabelType::NumPeakLabels); ++label )
     {
       const bool showing = (entry->showingPeakLabels & (0x1<<label));
-      m_spectrum->setShowPeakLabel( label, showing );
+      m_spectrum->setShowPeakLabel( PeakLabelType(label), showing );
     }//for( loop over peak labels )
 
     // We wont change user preferences if this state was an end of session state.
@@ -8708,7 +8723,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
                                                         "InterSpec_resources/images/tag.svg" );
   
   // Make a lamda to do work of connecting signals, and undo/redo
-  auto setupLabelCbCallbacks = [this]( const SpectrumChart::PeakLabels label, WCheckBox *cb ){
+  auto setupLabelCbCallbacks = [this]( const PeakLabelType label, WCheckBox *cb ){
     
     cb->checked().connect( this, [this, label](){ m_spectrum->setShowPeakLabel( label, true ); } );
     cb->unChecked().connect( this, [this, label](){ m_spectrum->setShowPeakLabel( label, false ); } );
@@ -8744,18 +8759,18 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   //  reads the initial state from - setChecked() afterwards emits nothing for it to notice.
   cb->setChecked(true);
   PopupDivMenuItem *item = menu->addWidget( cb );
-  m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
+  m_spectrum->setShowPeakLabel( PeakLabelType::ShowPeakUserLabel, true );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakUserLabel, cb );
   
   cb = new WCheckBox( WString::tr("app-mi-view-lbl-peak-en") );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakEnergyLabel, cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakEnergyLabel, cb );
   
   cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-nm") );
   cb->setChecked(false);
   item = menu->addWidget( cb );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideLabel, cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakNuclideLabel, cb );
   
   WCheckBox *nuc_energy_cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-en") );
   nuc_energy_cb->setChecked(false);
@@ -8773,7 +8788,7 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
     nuc_energy_cb->disable();
     syncNativeMenuCheckBox( nuc_energy_cb );
   } );
-  setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideEnergies, nuc_energy_cb );
+  setupLabelCbCallbacks( PeakLabelType::ShowPeakNuclideEnergies, nuc_energy_cb );
 }//void addPeakLabelMenu( Wt::WContainerWidget *menuDiv )
 
 
@@ -11602,6 +11617,13 @@ void InterSpec::handleCloseMakeDrfWindow( MakeDrfWindow *window )
   
   m_makeDrfTool = nullptr;
   AuxWindow::deleteAuxWindow( window );
+
+  // A fit skew dialog fitting across the DRF tool's spectra no longer has anywhere to put its peaks
+  if( m_fitSkewParamsWindow && m_fitSkewParamsWindow->tool() && m_fitSkewParamsWindow->tool()->isDrfMode() )
+  {
+    AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
+    assert( !m_fitSkewParamsWindow );
+  }
 }//void handleCloseMakeDrfWindow( MakeDrfWindow *window )
 
 
@@ -13640,8 +13662,12 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
   if( SpecUtils::icontains(url, "RADDATA://")
      || SpecUtils::istarts_with(url, "interspec://G0/") )
   {
+#if( USE_QR_CODES )
     m_fileManager->handleSpectrumUrl( std::move(url) );
     return;
+#else
+    throw runtime_error( "This build of InterSpec does not support spectra encoded in URLs." );
+#endif
   }
   
   string host, path, query_str, frag;
@@ -14555,7 +14581,7 @@ void InterSpec::startBackgroundPeakRecoveryIfReady()
 }//void startBackgroundPeakRecoveryIfReady()
 
 
-void InterSpec::excludePeaksFromRange( double x0, double x1 )
+void InterSpec::excludePeaksFromRange( double x0, double x1, const SpecUtils::SpectrumType type )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
@@ -14565,14 +14591,22 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   if( x0 > x1 )
     swap( x0, x1 );
   
-  vector<PeakDef> all_peaks = m_peakModel->peakVec();
+  // The foreground's peaks, or the background's or secondary's (the user held B or S)
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = m_peakModel->peaks( type );
+  if( !orig_peaks )
+    return;
+
+  vector<PeakDef> all_peaks;
+  for( const shared_ptr<const PeakDef> &p : *orig_peaks )
+    all_peaks.push_back( *p );
 //  vector<PeakDef> peaks_in_range = peaksInRange( x0, x1, 4.0, all_peaks );
   vector<PeakDef> peaks_in_range = peaksTouchingRange( x0, x1, all_peaks );
   
   if( peaks_in_range.empty() )
     return;
   
-  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
+  const bool forForeground = (type == SpecUtils::SpectrumType::Foreground);
+  std::shared_ptr<const SpecUtils::Measurement> data = forForeground ? m_spectrum->data() : displayedHistogram( type );
   if( !data )
     return;
   
@@ -14635,19 +14669,24 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   }//for( PeakDef peak : peaks_in_range )
   
   
-  std::shared_ptr<const DetectorPeakResponse> detector
-                                          = measurment(SpecUtils::SpectrumType::Foreground)->detector();
+  // Prefer the foreground's DRF/prefs, falling back to those of the spectrum being erased from
+  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const SpecMeas> eraseMeas = forForeground ? fgMeas : measurment( type );
+  std::shared_ptr<const DetectorPeakResponse> detector = fgMeas ? fgMeas->detector() : nullptr;
+  if( !detector && eraseMeas )
+    detector = eraseMeas->detector();
   map<std::shared_ptr<const PeakContinuum>,PeakShrdVec > peaksinroi;
   for( PeakDef peak : peaks_to_keep )
     peaksinroi[peak.continuum()].push_back( std::make_shared<PeakDef>(peak) );
   
-  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<const PeakFitDetPrefs> erasePrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+  if( !erasePrefs && eraseMeas )
+    erasePrefs = eraseMeas->peakFitDetPrefs();
   if( !erasePrefs && detector )
     erasePrefs = detector->peakFitDetPrefs();
   assert( erasePrefs );
   const PeakFitUtils::CoarseResolutionType eraseDetType
-    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fgMeas );
+    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, eraseMeas );
 
   map<std::shared_ptr<const PeakContinuum>, PeakShrdVec >::const_iterator iter;
   for( iter = peaksinroi.begin(); iter != peaksinroi.end(); ++iter )
@@ -14696,8 +14735,17 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   }//for( loop over peaksinroi elements )
   
   
-  m_peakModel->setPeaks( all_peaks );
-}//void excludePeaksFromRange( const double x0, const double x1 )
+  if( forForeground )
+  {
+    m_peakModel->setPeaks( all_peaks );
+  }else
+  {
+    deque<shared_ptr<const PeakDef>> newpeaks;
+    for( const PeakDef &p : all_peaks )
+      newpeaks.push_back( make_shared<const PeakDef>( p ) );
+    m_peakModel->setPeaks( newpeaks, type );
+  }
+}//void excludePeaksFromRange(...)
 
 
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const

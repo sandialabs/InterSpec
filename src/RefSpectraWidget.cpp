@@ -423,7 +423,7 @@ void RefSpectraWidget::setupUI()
   m_spectrum->disableLegend();
   m_spectrum->setYAxisLog( wasLogY );
   //m_spectrum->showYAxisScalers( true );
-  //m_spectrum->setShowPeakLabel( 0, true ); //SpectrumChart::PeakLabels::kShowPeakUserLabel
+  //m_spectrum->setShowPeakLabel( PeakLabelType::ShowPeakUserLabel, true );
   //m_spectrum->setReferncePhotoPeakLines( ReferenceLineInfo() );
 
   m_stack->addWidget( std::move(spectrumOwner) );

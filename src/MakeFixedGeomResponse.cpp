@@ -523,7 +523,9 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
       cfg.num_threads = CeeLoUtils::monteCarloThreadCount();
       cfg.seed = 9000 + i;  //deterministic
       const ceelo::EfficiencyResult res = point_calc.compute( cfg );
-      const double resp_eff = mc_resp->eps_fep_at( energy, resp_pos ).value;
+      // Per element, as the point Monte Carlo is: the curves made below are the one element's,
+      //  and the new DRF keeps the multiple (DetectorPeakResponse::efficiencyMultiple).
+      const double resp_eff = mc_resp->eps_fep_at( energy, resp_pos ).value / mc_resp->efficiency_scale;
 
       if( (res.full_energy_peak_efficiency > 0.0) && (resp_eff > 0.0) )
       {

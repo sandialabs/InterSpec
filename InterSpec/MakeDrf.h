@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -49,6 +51,7 @@ class SwitchCheckbox;
 class DetectorPeakResponse;
 class PeakFitDetPrefsGui;
 class MakeMcResponseForDrf;
+struct FitSkewSpectrumInput;
 
 namespace Wt
 {
@@ -170,6 +173,18 @@ public:
    */
   void useSourceLibrary( const std::vector<std::shared_ptr<const SrcLibLineInfo>> &srcs,
                          const bool auto_populate );
+
+  /** The spectra, and their peaks, the DRF is being made from - one entry per sample(s) with peaks, of
+   each file; for fitting the peak skew across all the calibration spectra (see FitSkewParamsTool).
+   */
+  std::vector<FitSkewSpectrumInput> skewFitSpectra();
+
+  /** Replaces peaks (e.g., refit with a new peak skew) with the ones they map to in `old_to_new`, both in
+   this tool and in the spectrum files, then re-fits the efficiency and FWHM.  The keys are peaks from
+   #skewFitSpectra.
+   */
+  void replacePeaks( const std::map<std::shared_ptr<const PeakDef>,std::shared_ptr<const PeakDef>> &old_to_new );
+
 protected:
   /** Recomputes the fits from the current source/peak inputs.
 
@@ -300,6 +315,10 @@ protected:
   Wt::WLineEdit *m_detDiameter;
   Wt::WLineEdit *m_detSetback;
 
+  /** The efficiency scalar multiple (DetectorPeakResponse::efficiencyMultiple): the detector is
+   this many identical elements, combined into one spectrum, of the one described; empty means 1. */
+  Wt::WLineEdit *m_efficiencyMultiple;
+
   Wt::WComboBox *m_geometry;
   
   Wt::WCheckBox *m_showFwhmPoints;
@@ -389,6 +408,10 @@ protected:
   std::vector<MakeDrfChart::DataPoint> m_dataPoints;
   double m_dataDiameter;
 
+  /** The efficiency multiple (MakeDrfCalc::GeometryChoice::efficiencyMultiple) #m_dataPoints were fit
+   with: the fitted equation is one element's, so everything shown for the detector is this times it. */
+  double m_dataEfficiencyMultiple;
+
   /** The raw per-peak efficiency points (absolute, at each source's own distance) and the sources
    they came from - what the fit is derived from, and what the DRF stores for provenance and for
    grounding a Monte-Carlo response.  Rebuilt by #handleSourcesUpdates.
@@ -409,6 +432,9 @@ private:
   /** The setback typed into the diameter-mode field (PhysicalUnits; 0.0 if empty or invalid) -
    #detectorSetback is what the DRF is actually assembled with. */
   double enteredSetback() const;
+
+  /** #m_efficiencyMultiple's value, 1 when empty; throws std::runtime_error when not a positive number. */
+  double enteredEfficiencyMultiple() const;
 
   /** Optional peak fitting preferences to embed in the created DRF. */
   PeakFitDetPrefsGui *m_peakFitDetPrefsGui;

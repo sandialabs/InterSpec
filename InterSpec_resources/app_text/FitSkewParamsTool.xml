@@ -9,10 +9,31 @@
   <message id="fsw-accept-btn">Accept</message>
   <message id="fsw-cancel-btn">Cancel</message>
   <message id="fsw-update-peaks-cb">Update analysis peaks on accept</message>
+  <message id="fsw-refit-drf-peaks-cb">Refit peaks of the DRF spectra on accept</message>
+
+  <!-- When fitting across the spectra of the "Create Detector Response Function" tool -->
+  <message id="fsw-spectrum-label">Displayed Spectrum:</message>
+  <message id="fsw-spectrum-item">{1} ({2} peaks)</message>
+  <message id="fsw-only-char-peaks-cb">Only characterization peaks</message>
+  <message id="fsw-only-char-peaks-tt">When checked, only the peaks selected to be used in the detector response function tool (and the other peaks in their ROIs) are fit.  When unchecked, all the peaks of the spectra are fit.</message>
+  <message id="fsw-only-displayed-cb">Only displayed spectrum</message>
+  <message id="fsw-only-displayed-tt">When unchecked, the skew is fit across all the (non-background) spectra the detector response function is being made from.  When checked, only the spectrum being displayed is fit.</message>
+
+  <!-- Description of what will be fit; {1} is the number of peaks, {2} the number of spectra -->
+  <message id="fsw-desc-char-peaks">Using the {1} peaks selected for characterization, from {2} spectra.</message>
+  <message id="fsw-desc-all-peaks">Using all {1} peaks, from {2} spectra.</message>
+  <message id="fsw-desc-char-peaks-displayed">Using the {1} peaks selected for characterization, from only the displayed spectrum.</message>
+  <message id="fsw-desc-all-peaks-displayed">Using all {1} peaks, from only the displayed spectrum.</message>
+  <message id="fsw-desc-bkg-excluded">Background spectra are not used.</message>
+  <message id="fsw-desc-refit-drf">On accept, the peaks of all {1} DRF spectra will be refit.</message>
+  <message id="fsw-desc-foreground">Using the {1} peaks found in the foreground.</message>
+  <message id="fsw-desc-refit-foreground">On accept, the foreground analysis peaks will be refit.</message>
 
   <!-- Status messages -->
   <message id="fsw-fitting">Fitting...</message>
   <message id="fsw-fit-success">Fit {1} peaks</message>
+  <message id="fsw-fit-success-multi">Fit {1} peaks in {2} spectra</message>
+  <message id="fsw-no-selected-peaks">No peaks are selected to use in the DRF tool.</message>
   <message id="fsw-fit-chi2">, &lt;Chi2/dof&gt; = {1}</message>
   <message id="fsw-fit-failed">Fit failed: {1}</message>
 

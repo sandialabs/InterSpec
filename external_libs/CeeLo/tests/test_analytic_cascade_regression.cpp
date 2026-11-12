@@ -27,8 +27,11 @@
 // 1) stored_values_unchanged: the expected numbers below were captured from the
 //    PRE-templating implementation (AnalyticCascade.cpp at commit dddbdba, plain
 //    double throughout) with a temporary capture tool, printed at %.17g. The
-//    templated T=double path must reproduce them EXACTLY (same operations, same
-//    order) — proving the in-place templating changed no answers.
+//    templated T=double path must reproduce them (same operations, same
+//    order) — proving the in-place templating changed no answers.  They match to
+//    a 1e-14 relative tolerance rather than bit for bit: they were captured with
+//    Apple clang on arm64, and GCC fuses multiply-adds into FMAs differently,
+//    which moves the last digit or two.
 //    The synthetic schemes exercise every arithmetic path: level-scheme survival
 //    DP, EC-K/L and IC-K/L x-ray channels, annihilation-511 pair handling,
 //    pairwise fallback (no level scheme), angular-correlated summing-in pairs,
@@ -42,7 +45,7 @@
 //    (e.g. ceres::Jet) flows correctly through the summing factors.
 
 #define BOOST_TEST_MODULE AnalyticCascadeRegression
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include "cascade/AnalyticCascade.h"
 #include "cascade/CascadeTypes.h"
@@ -326,6 +329,7 @@ BOOST_AUTO_TEST_CASE(stored_values_unchanged) {
     // results as kExpected rows (%.17g); paste them only after checking that
     // the change is the intended one (e.g. new relaxation data).
     const bool print_rows = std::getenv("CEELO_PRINT_ANALYTIC_EXPECTED") != nullptr;
+    const double kTol = 1.0e-14;  // relative; compiler FMA contraction differs
     std::size_t idx = 0;
     for (const Case& cs : make_cases()) {
         const std::vector<AnalyticPeakResult> rr =
@@ -347,13 +351,13 @@ BOOST_AUTO_TEST_CASE(stored_values_unchanged) {
                 BOOST_CHECK_EQUAL(cs.name, e.name);
                 BOOST_CHECK_EQUAL(r.energy_keV, e.energy);
                 BOOST_CHECK_EQUAL((int)r.found, e.found);
-                BOOST_CHECK_EQUAL(r.c_out, e.c_out);
-                BOOST_CHECK_EQUAL(r.c_in, e.c_in);
-                BOOST_CHECK_EQUAL(r.c_net, e.c_net);
-                BOOST_CHECK_EQUAL(r.eff_no_summing, e.eff_no);
-                BOOST_CHECK_EQUAL(r.eff_with_summing, e.eff_with);
-                BOOST_CHECK_EQUAL(r.eff_with_summing_unc, e.eff_with_unc);
-                BOOST_CHECK_EQUAL(r.summing_factor_unc, e.sf_unc);
+                BOOST_CHECK_CLOSE_FRACTION(r.c_out, e.c_out, kTol);
+                BOOST_CHECK_CLOSE_FRACTION(r.c_in, e.c_in, kTol);
+                BOOST_CHECK_CLOSE_FRACTION(r.c_net, e.c_net, kTol);
+                BOOST_CHECK_CLOSE_FRACTION(r.eff_no_summing, e.eff_no, kTol);
+                BOOST_CHECK_CLOSE_FRACTION(r.eff_with_summing, e.eff_with, kTol);
+                BOOST_CHECK_CLOSE_FRACTION(r.eff_with_summing_unc, e.eff_with_unc, kTol);
+                BOOST_CHECK_CLOSE_FRACTION(r.summing_factor_unc, e.sf_unc, kTol);
                 BOOST_CHECK_EQUAL(r.unmatched_energies.size(), e.n_unmatched);
             }
             ++idx;

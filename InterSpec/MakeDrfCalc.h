@@ -68,6 +68,13 @@ namespace MakeDrfCalc
     /** True for the fixed-geometry (e.g. activity per area) efficiency types: the measured points
      already are what the equation describes, no source geometry is divided out. */
     bool fixedGeometry = false;
+
+    /** The number of identical detector elements, combined into one spectrum (one live time), that the
+     geometry (or diameter) is one of, or an empirical scale - DetectorPeakResponse::efficiencyMultiple.
+     Not detectors recorded as separate spectra: InterSpec sums those with their live times, which
+     leaves one detector's efficiency.  The measured points are the
+     whole detector's, so #intrinsicFitPoints divides it out and the fitted equation is per element. */
+    double efficiencyMultiple = 1.0;
   };//struct GeometryChoice
 
 
