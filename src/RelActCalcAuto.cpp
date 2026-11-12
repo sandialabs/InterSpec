@@ -3296,6 +3296,11 @@ struct RelActAutoCostFcn
    */
   mutable boost::asio::thread_pool m_pool;
 
+  /** Per Physical-Model curve (empty for other curves): the fixed-energy inputs of its efficiency
+   (detector efficiency, shield attenuation coefficients) at each of its sources' line energies,
+   sorted by energy.  Built at construction; `relative_eff(...)` computes any energy not here. */
+  std::vector<std::vector<std::pair<double,RelActCalc::PhysModelEnergyConsts>>> m_phys_energy_consts;
+
   /** `RelActCalc::max_solve_threads()` when this functor was made.  Read once, since whether a ROI's
    peaks are summed on several threads changes the order of the sum, and so its last bits; an
    evaluation must give the same bits for the same parameters throughout a solve. */
@@ -3737,7 +3742,93 @@ struct RelActAutoCostFcn
     }
 
     setup_fluorescence_depth_model();
+
+    build_phys_model_energy_consts();
   }//RelActAutoCostFcn constructor.
+
+
+  /** Fills `m_phys_energy_consts`; see there. */
+  void build_phys_model_energy_consts()
+  {
+    m_phys_energy_consts.clear();
+    m_phys_energy_consts.resize( m_options.rel_eff_curves.size() );
+
+    for( size_t curve_index = 0; curve_index < m_options.rel_eff_curves.size(); ++curve_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = m_options.rel_eff_curves[curve_index];
+      if( (curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+         || (curve_index >= m_nuclides.size()) )
+        continue;
+
+      // The shielding materials `make_phys_eqn_input(curve_index, ...)` can use: this curve's, and
+      //  those of the curves shielding it (or all of them, when shielding is shared).
+      vector<const Material *> materials;
+      const auto add_curve_materials = [&materials]( const RelActCalcAuto::RelEffCurveInput &c ){
+        if( c.phys_model_self_atten && c.phys_model_self_atten->material )
+          materials.push_back( c.phys_model_self_atten->material.get() );
+        for( const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : c.phys_model_external_atten )
+        {
+          if( ext && ext->material )
+            materials.push_back( ext->material.get() );
+        }
+      };//add_curve_materials
+
+      add_curve_materials( curve );
+      for( const RelActCalcAuto::RelEffCurveInput &other : m_options.rel_eff_curves )
+      {
+        if( (&other != &curve) && (other.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+          add_curve_materials( other );
+      }
+      std::sort( begin(materials), end(materials) );
+      materials.erase( std::unique( begin(materials), end(materials) ), end(materials) );
+
+      vector<double> energies;
+      for( const NucInputGamma &src : m_nuclides[curve_index] )
+      {
+        if( src.nominal_gammas )
+        {
+          for( const NucInputGamma::EnergyYield &gamma : *src.nominal_gammas )
+            energies.push_back( gamma.energy );
+        }
+      }//for( loop over sources )
+      std::sort( begin(energies), end(energies) );
+      energies.erase( std::unique( begin(energies), end(energies) ), end(energies) );
+
+      vector<pair<double,RelActCalc::PhysModelEnergyConsts>> &table = m_phys_energy_consts[curve_index];
+      try
+      {
+        table.reserve( energies.size() );
+        for( const double energy : energies )
+        {
+          // The same calls `RelActCalc::eval_physical_model_eqn_imp(...)` makes.
+          RelActCalc::PhysModelEnergyConsts consts;
+          consts.drf = m_drf.get();
+          consts.det_part = m_drf ? m_drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) ) : 1.0;
+          for( const Material * const material : materials )
+            consts.material_mu.emplace_back( material,
+                     GammaInteractionCalc::transmition_length_coefficient( material, energy ) / material->density );
+          table.emplace_back( energy, std::move(consts) );
+        }//for( loop over energies )
+      }catch( std::exception & )
+      {
+        // Leave it to the evaluation to report the problem, as it would without this table.
+        table.clear();
+      }//try / catch
+    }//for( loop over rel. eff. curves )
+  }//build_phys_model_energy_consts()
+
+
+  /** The `m_phys_energy_consts` entry for `energy` of curve `rel_eff_index`, or nullptr. */
+  const RelActCalc::PhysModelEnergyConsts *phys_model_energy_consts( const size_t rel_eff_index,
+                                                                     const double energy ) const
+  {
+    if( rel_eff_index >= m_phys_energy_consts.size() )
+      return nullptr;
+    const vector<pair<double,RelActCalc::PhysModelEnergyConsts>> &table = m_phys_energy_consts[rel_eff_index];
+    const auto pos = std::lower_bound( begin(table), end(table), energy,
+      []( const pair<double,RelActCalc::PhysModelEnergyConsts> &entry, const double e ){ return entry.first < e; } );
+    return ((pos != end(table)) && (pos->first == energy)) ? &(pos->second) : nullptr;
+  }//phys_model_energy_consts(...)
 
 
   /** Fills `m_fluorescence_depth`: fluorescence x-rays of an element that is part of a curve's self-attenuating
@@ -15008,7 +15099,8 @@ struct RelActAutoCostFcn
 
   template<typename T>
   T relative_eff( const double energy, const size_t rel_eff_index, const std::vector<T> &x,
-                  const PerEvalValues<T> * const per_eval = nullptr ) const
+                  const PerEvalValues<T> * const per_eval = nullptr,
+                  const RelActCalc::PhysModelEnergyConsts * const energy_consts = nullptr ) const
   {
     assert( rel_eff_index < m_options.rel_eff_curves.size() );
     if( rel_eff_index >= m_options.rel_eff_curves.size() )
@@ -15039,7 +15131,7 @@ struct RelActAutoCostFcn
                                                  re_input.external_attens, re_input.det.get(),
                                                  re_input.hoerl_b, re_input.hoerl_c,
                                                  m_corr_lower_energy, m_corr_upper_energy, m_corr_pivot_energy,
-                                                 re_input.corr_fcn );
+                                                 re_input.corr_fcn, energy_consts );
     }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     assert( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel );
@@ -16135,7 +16227,8 @@ struct RelActAutoCostFcn
           assert( nuc || el || rctn );
           
           // We compute the relative efficiency and FWHM based off of "true" energy
-          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x, per_eval )
+          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x, per_eval,
+                                          phys_model_energy_consts( rel_eff_index, gamma.energy ) )
                 * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_profile,
                                                                                   fluor_depth->mu_at( gamma.energy ) )
                                : T(1.0));

@@ -759,17 +759,32 @@ T fluorescence_self_atten_correction( const double mu_f, const std::vector<doubl
 }//fluorescence_self_atten_correction(...)
 
 
+/** The parts of `eval_physical_model_eqn_imp(...)` that depend only on the energy, the detector
+ response, and the shielding materials - table lookups it would otherwise repeat every call.  Each
+ value is used only when the object it was computed for matches the call's; otherwise it is computed. */
+struct PhysModelEnergyConsts
+{
+  /** `drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) )`, for this `drf`. */
+  const DetectorPeakResponse *drf = nullptr;
+  double det_part = 1.0;
+
+  /** `GammaInteractionCalc::transmition_length_coefficient( material, energy ) / material->density`. */
+  std::vector<std::pair<const Material *,double>> material_mu;
+};//struct PhysModelEnergyConsts
+
+
 template<typename T>
 T eval_physical_model_eqn_imp( const double energy,
-                                std::optional<RelActCalc::PhysModelShield<T>> self_atten,
+                                const std::optional<RelActCalc::PhysModelShield<T>> &self_atten,
                                 const std::vector<RelActCalc::PhysModelShield<T>> &external_attens,
                                 const DetectorPeakResponse * const drf,
-                                std::optional<T> b,
-                                std::optional<T> c,
+                                const std::optional<T> &b,
+                                const std::optional<T> &c,
                                 const double corr_lower_energy = 0.0,
                                 const double corr_upper_energy = 0.0,
                                 const double corr_pivot_energy = 0.0,
-                                const RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl )
+                                const RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl,
+                                const PhysModelEnergyConsts * const energy_consts = nullptr )
 {
   using namespace std;
   using namespace ceres; //So we can use the math functions defined in the `ceres` namespace for Jets
@@ -816,8 +831,23 @@ T eval_physical_model_eqn_imp( const double energy,
       throw std::logic_error( "physical-model correction gives eqn NaN or Inf" );
   }//if( correction active )
   
-  const double det_part = drf ? drf->farFieldIntrinsicEfficiency( energyf ) : 1.0;
+  const double det_part = (energy_consts && (energy_consts->drf == drf))
+                          ? energy_consts->det_part
+                          : (drf ? drf->farFieldIntrinsicEfficiency( energyf ) : 1.0);
   answer *= det_part;
+
+  // A shielding material's attenuation coefficient at `energy`, from `energy_consts` if it has it.
+  const auto material_mu = [energy, energy_consts]( const auto * const material ) -> double {
+    if( energy_consts )
+    {
+      for( const std::pair<const Material *,double> &mat_mu : energy_consts->material_mu )
+      {
+        if( mat_mu.first == material )
+          return mat_mu.second;
+      }
+    }//if( energy_consts )
+    return GammaInteractionCalc::transmition_length_coefficient( material, energy ) / material->density;
+  };//material_mu
   
   assert( !isnan(answer) && !isinf(answer) );
   
@@ -825,7 +855,7 @@ T eval_physical_model_eqn_imp( const double energy,
   {
     T mu( 0.0 );
     if( self_atten->material )
-      mu = T( GammaInteractionCalc::transmition_length_coefficient( self_atten->material.get(), energy ) / self_atten->material->density );
+      mu = T( material_mu( self_atten->material.get() ) );
     else
       mu = get_atten_coef_for_an( self_atten->atomic_number, energy );
     
@@ -875,7 +905,7 @@ T eval_physical_model_eqn_imp( const double energy,
     // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
     T mu( 0.0 );
     if( ext_atten.material )
-      mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energy ) / ext_atten.material->density );
+      mu = T( material_mu( ext_atten.material.get() ) );
     else
       mu = get_atten_coef_for_an( ext_atten.atomic_number, energy );
     
