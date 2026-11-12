@@ -13210,13 +13210,13 @@ struct RelActAutoCostFcn
   template<typename P, typename T>
   void set_peak_skew( P &peak, const std::vector<T> &x ) const
   {
-    const size_t skew_start = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
-                              + m_num_fitted_dev_pair_params
-                              + num_parameters(m_options.fwhm_form)
-                              + num_total_rel_eff_coefs()
-                              + num_total_act_coefs()
-                              + 2*m_options.floating_peaks.size();
-    assert( skew_start == m_skew_par_start_index );
+    const size_t skew_start = m_skew_par_start_index;
+    assert( skew_start == (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
+                           + m_num_fitted_dev_pair_params
+                           + num_parameters(m_options.fwhm_form)
+                           + num_total_rel_eff_coefs()
+                           + num_total_act_coefs()
+                           + 2*m_options.floating_peaks.size()) );
     
 #if( PEAK_SKEW_HACK == 2 )
     if( (m_options.skew_type == PeakDef::SkewType::NoSkew)
@@ -13231,8 +13231,6 @@ struct RelActAutoCostFcn
     
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
     assert( x.size() >= (skew_start + 2*num_skew) );
-    vector<T> skew_pars( begin(x)+skew_start, begin(x)+skew_start+num_skew );
-    assert( skew_pars.size() == num_skew );
     
     if( m_skew_has_energy_dependance )
     {
@@ -13240,7 +13238,7 @@ struct RelActAutoCostFcn
       const double upper_energy = m_spectrum->gamma_channel_upper( m_spectrum->num_gamma_channels() - 1 );
       const T mean_frac = (peak.mean() - lower_energy) / (upper_energy - lower_energy);
       
-      for( size_t i = 0; i < skew_pars.size(); ++i )
+      for( size_t i = 0; i < num_skew; ++i )
       {
         const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
         // An energy-dependent parameter may still be given no energy dependence (its upper value is
@@ -13265,7 +13263,7 @@ struct RelActAutoCostFcn
       }
     }else
     {
-      for( size_t i = 0; i < skew_pars.size(); ++i )
+      for( size_t i = 0; i < num_skew; ++i )
       {
         assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9
         const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
@@ -14648,6 +14646,39 @@ struct RelActAutoCostFcn
   };//struct PhysModelRelEqnDef
 
 
+  /** A source's quantities in `peaks_for_energy_range_imp(...)` that depend only on the parameters. */
+  template<typename T>
+  struct SourceEvalValues
+  {
+    bool fixed_age = true;
+    T rel_act;
+    /** The source-depth model for this element's fluorescence lines, if it applies (see
+     setup_fluorescence_depth_model()), and its depth profile. */
+    const FluorescenceDepth *fluor_depth = nullptr;
+    RelActCalc::FluorescenceDepthProfile<T> fluor_profile;
+    /** Only set when the age is fit. */
+    T nuc_age;
+    std::shared_ptr<const vector<NucInputGamma::EnergyYield>> gammas;
+    std::shared_ptr<const AgeDerivativeResult> age_yield_derivatives;
+  };//struct SourceEvalValues
+
+
+  /** The parameter-only quantities every ROI of an evaluation needs; `eval()` computes them once,
+   instead of each ROI (and, for the physical-model inputs, each line) computing them again.  Each is
+   computed by the same code as the per-ROI path, so results are bit-identical. */
+  template<typename T>
+  struct PerEvalValues
+  {
+    /** Indexed `[rel_eff_index][source_index]`, as `m_nuclides`. */
+    std::vector<std::vector<SourceEvalValues<T>>> sources;
+
+    /** Physical-model inputs of each curve (empty for other curve types), or the exception building
+     them threw - rethrown only where the per-line path would have built them. */
+    std::vector<std::optional<PhysModelRelEqnDef<T>>> phys_inputs;
+    std::vector<std::exception_ptr> phys_input_errors;
+  };//struct PerEvalValues
+
+
   /** Returns true when the correction is the Chebyshev basis form, whose 2 coefficients are fit linearly;
    false for Hoerl, whose 'c' coefficient is fit in LOG-space (gamma=log(c), so physical c=exp(gamma); keeps
    the Hoerl exponent linear in the fit parameter and avoids the c>0 bound). */
@@ -14976,7 +15007,8 @@ struct RelActAutoCostFcn
 
 
   template<typename T>
-  T relative_eff( const double energy, const size_t rel_eff_index, const std::vector<T> &x ) const
+  T relative_eff( const double energy, const size_t rel_eff_index, const std::vector<T> &x,
+                  const PerEvalValues<T> * const per_eval = nullptr ) const
   {
     assert( rel_eff_index < m_options.rel_eff_curves.size() );
     if( rel_eff_index >= m_options.rel_eff_curves.size() )
@@ -14995,7 +15027,12 @@ struct RelActAutoCostFcn
       assert( (rel_eff_start_index + num_rel_eff_par) < x.size() );
       assert( m_drf );
       
-      const PhysModelRelEqnDef<T> re_input = make_phys_eqn_input( rel_eff_index, x );
+      std::optional<PhysModelRelEqnDef<T>> computed_input;
+      if( !per_eval )
+        computed_input = make_phys_eqn_input( rel_eff_index, x );
+      else if( per_eval->phys_input_errors[rel_eff_index] )
+        std::rethrow_exception( per_eval->phys_input_errors[rel_eff_index] );
+      const PhysModelRelEqnDef<T> &re_input = per_eval ? *per_eval->phys_inputs[rel_eff_index] : *computed_input;
       
       // TODO: this next call can be a real bottlenck - specifically the `GammaInteractionCalc::transmition_length_coefficient` function can be really slow - we should some-how maybe cache these results
       return RelActCalc::eval_physical_model_eqn_imp( energy, re_input.self_atten,
@@ -15175,8 +15212,83 @@ struct RelActAutoCostFcn
     if( !adjusted_dev_pairs.empty() )
       cache.adjusted_dev_spline = RelActCalcAutoImp::create_cubic_spline( adjusted_dev_pairs );
 
+    if( m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit )
+      set_energy_cal_adjustment( cache, x );
+
     return cache;
   }//compute_energy_cal_splines(...)
+
+
+  /** Fills the `CachedEnergyCalSplines` calibration-adjustment members that
+   `apply_energy_cal_adjustment(...)` maps through. */
+  template<typename T>
+  void set_energy_cal_adjustment( RelActCalcAutoImp::CachedEnergyCalSplines<T> &cache, const std::vector<T> &x ) const
+  {
+    cache.has_cal_adjustment = true;
+    cache.offset_adj = (x[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                            * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+    cache.gain_adj = (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                            * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+    cache.quad_adj = (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2)
+                              ? ((x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                                 * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
+                              : T(0.0);
+
+    const vector<float> &orig_coeffs = m_energy_cal->coefficients();
+    const size_t nchannel = m_energy_cal->num_channels();
+    const double num_channel = static_cast<double>( nchannel );
+    vector<T> &adj_coefs = cache.adjusted_coeffs;
+    adj_coefs.clear();
+
+    switch( m_energy_cal->type() )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      {
+        adj_coefs.resize( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          adj_coefs[i] = T( orig_coeffs[i] );
+        assert( adj_coefs.size() >= 2 );
+        adj_coefs[0] += cache.offset_adj;
+        adj_coefs[1] += (cache.gain_adj / num_channel);
+        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+        {
+          if( adj_coefs.size() > 2 )
+            adj_coefs[2] += (cache.quad_adj / (num_channel*num_channel));
+          else
+            adj_coefs.push_back( cache.quad_adj / (num_channel*num_channel) );
+        }
+        break;
+      }//case polynomial
+
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      {
+        const size_t ncoeffs = std::min( orig_coeffs.size(), size_t(4) );
+        assert( ncoeffs >= 2 );
+        adj_coefs.resize( ncoeffs );
+        for( size_t i = 0; i < ncoeffs; ++i )
+          adj_coefs[i] = T( orig_coeffs[i] );
+        adj_coefs[0] += cache.offset_adj;
+        adj_coefs[1] += cache.gain_adj;
+        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+        {
+          if( adj_coefs.size() > 2 )
+            adj_coefs[2] += cache.quad_adj;
+          else
+            adj_coefs.push_back( cache.quad_adj );
+        }
+        break;
+      }//case FullRangeFraction
+
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        break;
+    }//switch( m_energy_cal->type() )
+
+    cache.orig_coeffs.resize( orig_coeffs.size() );
+    for( size_t i = 0; i < orig_coeffs.size(); ++i )
+      cache.orig_coeffs[i] = T( orig_coeffs[i] );
+  }//set_energy_cal_adjustment(...)
 
 
   /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
@@ -15235,14 +15347,18 @@ struct RelActAutoCostFcn
     // << "gain_delta=" << (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0) << ", "
     //<< "cubic_delta=" << (x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0) << endl;
     
-    const T offest_adj = (x[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
-                            * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
-    const T gain_adj = (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
-                            * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
-    const T quad_adj = (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2)
-                              ? ((x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
-                                 * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
-                              : T(0.0);
+    // The parameter-only part of the mapping is computed once per evaluation; see `set_energy_cal_adjustment`.
+    std::optional<RelActCalcAutoImp::CachedEnergyCalSplines<T>> computed_adjustment;
+    if( !cached_splines.has_cal_adjustment )
+    {
+      computed_adjustment.emplace();
+      set_energy_cal_adjustment( *computed_adjustment, x );
+    }
+    const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cal_adjustment
+                                     = computed_adjustment ? *computed_adjustment : cached_splines;
+    const T &offest_adj = cal_adjustment.offset_adj;
+    const T &gain_adj = cal_adjustment.gain_adj;
+    const T &quad_adj = cal_adjustment.quad_adj;
     
     assert( parameter_scale_factor(0) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
     assert( parameter_scale_factor(1) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
@@ -15257,10 +15373,7 @@ struct RelActAutoCostFcn
     //if( (fabs(x[0]) < 1.0E-9 ) && (fabs(x[1]) < 1.0E-12) )
     //  return energy;
     
-    // Build original calibration representation for channel -> spectrum energy.
-    const vector<float> &orig_coeffs = m_energy_cal->coefficients();
     const size_t nchannel = m_energy_cal->num_channels();
-    const double num_channel = static_cast<double>( nchannel );
 
     const std::vector<CubicSplineNodeT<T>> &orig_dev_spline     = cached_splines.orig_dev_spline;
     const std::vector<CubicSplineNodeT<T>> &adjusted_dev_spline = cached_splines.adjusted_dev_spline;
@@ -15270,25 +15383,12 @@ struct RelActAutoCostFcn
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
-        vector<T> adj_coefs( orig_coeffs.size() );
-        for( size_t i = 0; i < orig_coeffs.size(); ++i )
-          adj_coefs[i] = T( orig_coeffs[i] );
+        const vector<T> &adj_coefs = cal_adjustment.adjusted_coeffs;
         assert( adj_coefs.size() >= 2 );
-        adj_coefs[0] += offest_adj;
-        adj_coefs[1] += (gain_adj / num_channel);
-        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
-        {
-          if( adj_coefs.size() > 2 )
-            adj_coefs[2] += (quad_adj / (num_channel*num_channel));
-          else
-            adj_coefs.push_back( quad_adj / (num_channel*num_channel) );
-        }
 
         const T channel = find_polynomial_channel( T(energy), adj_coefs, nchannel, adjusted_dev_spline );
 
-        vector<T> ocoefs( orig_coeffs.size() );
-        for( size_t i = 0; i < orig_coeffs.size(); ++i )
-          ocoefs[i] = T( orig_coeffs[i] );
+        const vector<T> &ocoefs = cal_adjustment.orig_coeffs;
         const T val = polynomial_energy( channel, ocoefs, orig_dev_spline );
 
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -15458,26 +15558,12 @@ struct RelActAutoCostFcn
 
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
-        const size_t ncoeffs = std::min( orig_coeffs.size(), size_t(4) );
-        assert( ncoeffs >= 2 );
-        vector<T> adj_coefs( ncoeffs );
-        for( size_t i = 0; i < ncoeffs; ++i )
-          adj_coefs[i] = T( orig_coeffs[i] );
-        adj_coefs[0] += offest_adj;
-        adj_coefs[1] += gain_adj;
-        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
-        {
-          if( adj_coefs.size() > 2 )
-            adj_coefs[2] += quad_adj;
-          else
-            adj_coefs.push_back( quad_adj );
-        }
+        const vector<T> &adj_coefs = cal_adjustment.adjusted_coeffs;
+        assert( adj_coefs.size() >= 2 );
 
         const T channel = find_fullrangefraction_channel( T(energy), adj_coefs, nchannel, adjusted_dev_spline );
 
-        vector<T> ocoefs( orig_coeffs.size() );
-        for( size_t i = 0; i < orig_coeffs.size(); ++i )
-          ocoefs[i] = T( orig_coeffs[i] );
+        const vector<T> &ocoefs = cal_adjustment.orig_coeffs;
         return fullrangefraction_energy( channel, ocoefs, nchannel, orig_dev_spline );
       }//case FullRangeFraction
 
@@ -15696,10 +15782,116 @@ struct RelActAutoCostFcn
    @param multithread Wether to use a single, or multiple threads to compute the peaks
    */
   template<typename T>
+  SourceEvalValues<T> source_eval_values( const size_t rel_eff_index, const size_t source_index,
+                                          const std::vector<T> &x, const PerEvalValues<T> * const per_eval ) const
+  {
+    const NucInputGamma &src_info = m_nuclides[rel_eff_index][source_index];
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src_info.source);
+    const SandiaDecay::Element * const el = RelActCalcAuto::element(src_info.source);
+
+    SourceEvalValues<T> answer;
+    answer.fixed_age = ((!nuc) || is_fixed_age(nuc, rel_eff_index));
+    answer.rel_act = relative_activity( src_info.source, rel_eff_index, x );
+
+    for( size_t i = 0; el && (i < m_fluorescence_depth.size()); ++i )
+    {
+      if( (m_fluorescence_depth[i].rel_eff_index == rel_eff_index) && (m_fluorescence_depth[i].element == el) )
+        answer.fluor_depth = &m_fluorescence_depth[i];
+    }
+
+    if( answer.fluor_depth )
+    {
+      const FluorescenceDepth * const fluor_depth = answer.fluor_depth;
+      std::optional<PhysModelRelEqnDef<T>> computed_phys;
+      if( !per_eval )
+        computed_phys = make_phys_eqn_input( rel_eff_index, x );
+      else if( per_eval->phys_input_errors[rel_eff_index] )
+        std::rethrow_exception( per_eval->phys_input_errors[rel_eff_index] );
+      const PhysModelRelEqnDef<T> &phys = per_eval ? *per_eval->phys_inputs[rel_eff_index] : *computed_phys;
+      assert( phys.self_atten.has_value() );
+      vector<T> fluor_weights;
+      for( size_t i = 0; i < fluor_depth->exciting_mu.size(); ++i )
+        fluor_weights.push_back( T(fluor_depth->exciting_base_weight[i])
+                                 * relative_activity( fluor_depth->exciting_source[i], rel_eff_index, x ) );
+      if( phys.self_atten.has_value() )
+        answer.fluor_profile = RelActCalc::fluorescence_depth_profile( fluor_depth->exciting_mu, fluor_weights,
+                                                                       phys.self_atten->areal_density );
+    }//if( fluor_depth )
+
+    if( answer.fixed_age )
+    {
+      answer.gammas = src_info.nominal_gammas;
+      assert( answer.gammas );
+    }else
+    {
+      // If we are here, we are fitting the age - however, automatic differentiation does
+      //  not work with age, so if our template type is a `Jet<>` we will do numeric
+      //  differentiation, and insert this info into the Jet.
+      assert( nuc );
+
+      answer.nuc_age = age(src_info, rel_eff_index, x);
+
+      if constexpr ( !std::is_same_v<T, double> )
+      {
+        const double nuc_age_val = answer.nuc_age.a;
+        answer.gammas = this->decay_gammas( src_info, nuc_age_val, src_info.gammas_to_exclude );
+        assert( answer.gammas );
+        answer.age_yield_derivatives = fitted_age_gamma_yield_derivatives(
+                                    src_info, rel_eff_index, nuc_age_val, answer.gammas );
+        assert( answer.age_yield_derivatives );
+        assert( answer.age_yield_derivatives->derivatives.size() == answer.gammas->size() );
+      }else
+      {
+        const double nuc_age_val = answer.nuc_age;
+        answer.gammas = this->decay_gammas( src_info, nuc_age_val, src_info.gammas_to_exclude );
+        assert( answer.gammas );
+      }
+    }//if( age is fixed ) / else( age may vary )
+
+    return answer;
+  }//source_eval_values(...)
+
+
+  template<typename T>
+  PerEvalValues<T> per_eval_values( const std::vector<T> &x ) const
+  {
+    PerEvalValues<T> answer;
+
+    const size_t num_curves = m_options.rel_eff_curves.size();
+    answer.phys_inputs.resize( num_curves );
+    answer.phys_input_errors.resize( num_curves );
+    for( size_t i = 0; i < num_curves; ++i )
+    {
+      if( m_options.rel_eff_curves[i].rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+      try
+      {
+        answer.phys_inputs[i] = make_phys_eqn_input( i, x );
+      }catch( ... )
+      {
+        answer.phys_input_errors[i] = std::current_exception();
+      }
+    }//for( loop over rel. eff. curves )
+
+    answer.sources.resize( m_nuclides.size() );
+    for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
+    {
+      answer.sources[rel_eff_index].reserve( m_nuclides[rel_eff_index].size() );
+      for( size_t source_index = 0; source_index < m_nuclides[rel_eff_index].size(); ++source_index )
+        answer.sources[rel_eff_index].push_back( source_eval_values( rel_eff_index, source_index, x, &answer ) );
+    }
+
+    return answer;
+  }//per_eval_values(...)
+
+
+  template<typename T>
   RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
                                                        const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cached_splines,
-                                                       const bool multithread ) const
+                                                       const bool multithread,
+                                                       const bool sort_peaks = true,
+                                                       const PerEvalValues<T> * const per_eval = nullptr ) const
   {
     const size_t num_channels = range.num_channels;
 
@@ -15842,7 +16034,6 @@ struct RelActAutoCostFcn
 
 
     size_t num_free_peak_pars = 0;
-    set<const void *> nuclides_used;
     
     RelActCalcAuto::PeaksForEnergyRangeImp<T> answer;
     answer.first_channel = first_channel;
@@ -15877,68 +16068,21 @@ struct RelActAutoCostFcn
         const SandiaDecay::Element * const el = RelActCalcAuto::element(src_info.source);
         const ReactionGamma::Reaction * const rctn = RelActCalcAuto::reaction(src_info.source);
 
-        const bool fixed_age = ((!nuc) || is_fixed_age(nuc, rel_eff_index));
-        double nuc_age_val = -1.0;
-        std::shared_ptr<const vector<NucInputGamma::EnergyYield>> gammas;
-        std::shared_ptr<const AgeDerivativeResult> age_yield_derivatives;
-        
-        const T rel_act = relative_activity( src_info.source, rel_eff_index, x );
-        //cout << "peaks_for_energy_range_imp: Relative activity of " << src_info.name()
-        //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
+        // The source's parameter-only quantities: from `per_eval` when `eval()` computed them once for
+        //  every ROI, else computed here.
+        std::optional<SourceEvalValues<T>> computed_src_vals;
+        if( !per_eval )
+          computed_src_vals = source_eval_values<T>( rel_eff_index, source_index, x, nullptr );
+        const SourceEvalValues<T> &src_vals = per_eval ? per_eval->sources[rel_eff_index][source_index]
+                                                       : *computed_src_vals;
 
-        // The source-depth model for this element's fluorescence lines, if it applies (see setup_fluorescence_depth_model())
-        const FluorescenceDepth *fluor_depth = nullptr;
-        for( size_t i = 0; el && (i < m_fluorescence_depth.size()); ++i )
-        {
-          if( (m_fluorescence_depth[i].rel_eff_index == rel_eff_index) && (m_fluorescence_depth[i].element == el) )
-            fluor_depth = &m_fluorescence_depth[i];
-        }
-        RelActCalc::FluorescenceDepthProfile<T> fluor_profile;
-        if( fluor_depth )
-        {
-          const PhysModelRelEqnDef<T> phys = make_phys_eqn_input( rel_eff_index, x );
-          assert( phys.self_atten.has_value() );
-          vector<T> fluor_weights;
-          for( size_t i = 0; i < fluor_depth->exciting_mu.size(); ++i )
-            fluor_weights.push_back( T(fluor_depth->exciting_base_weight[i])
-                                     * relative_activity( fluor_depth->exciting_source[i], rel_eff_index, x ) );
-          if( phys.self_atten.has_value() )
-            fluor_profile = RelActCalc::fluorescence_depth_profile( fluor_depth->exciting_mu, fluor_weights,
-                                                                    phys.self_atten->areal_density );
-        }//if( fluor_depth )
-        
-        T nuc_age;
-        if( fixed_age )
-        {
-          gammas = src_info.nominal_gammas;
-          assert( gammas );
-        }else
-        {
-          // If we are here, we are fitting the age - however, automatic differentiation does
-          //  not work with age, so if our template type is a `Jet<>` we will do numeric 
-          //  differentiation, and insert this info into the Jet.
-
-          assert( nuc );
-
-          nuc_age = age(src_info, rel_eff_index, x);
-          
-          if constexpr ( !std::is_same_v<T, double> )
-          {
-            nuc_age_val = nuc_age.a;
-            gammas = this->decay_gammas( src_info, nuc_age_val, src_info.gammas_to_exclude );
-            assert( gammas );
-            age_yield_derivatives = fitted_age_gamma_yield_derivatives(
-                                        src_info, rel_eff_index, nuc_age_val, gammas );
-            assert( age_yield_derivatives );
-            assert( age_yield_derivatives->derivatives.size() == gammas->size() );
-          }else
-          {
-            nuc_age_val = nuc_age;
-            gammas = this->decay_gammas( src_info, nuc_age_val, src_info.gammas_to_exclude );
-            assert( gammas );
-          }
-        }//if( age is fixed ) / else( age may vary )
-        
+        const bool fixed_age = src_vals.fixed_age;
+        const T &rel_act = src_vals.rel_act;
+        const FluorescenceDepth * const fluor_depth = src_vals.fluor_depth;
+        const RelActCalc::FluorescenceDepthProfile<T> &fluor_profile = src_vals.fluor_profile;
+        const T &nuc_age = src_vals.nuc_age;
+        const std::shared_ptr<const vector<NucInputGamma::EnergyYield>> &gammas = src_vals.gammas;
+        const std::shared_ptr<const AgeDerivativeResult> &age_yield_derivatives = src_vals.age_yield_derivatives;
         assert( gammas );
 
         for( size_t gamma_index = 0; gamma_index < gammas->size(); ++gamma_index )
@@ -15988,19 +16132,10 @@ struct RelActAutoCostFcn
                  || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma)
                  || (fabs(transition->products[transition_index].energy - energy) < 0.0001) );
           
-          if( nuc )
-            nuclides_used.insert( nuc );
-          else if( el )
-            nuclides_used.insert( el );
-          else if( rctn )
-            nuclides_used.insert( rctn );
-          else
-          {
-            assert( 0 );
-          }
+          assert( nuc || el || rctn );
           
           // We compute the relative efficiency and FWHM based off of "true" energy
-          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x )
+          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x, per_eval )
                 * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_profile,
                                                                                   fluor_depth->mu_at( gamma.energy ) )
                                : T(1.0));
@@ -16040,7 +16175,7 @@ struct RelActAutoCostFcn
 
           if constexpr ( !std::is_same_v<T, double> )
           {
-            if( nuc && !is_fixed_age(nuc, rel_eff_index) )
+            if( !fixed_age )
             {
               // The decay engine is scalar, so attach the independently converged physical-age
               // derivative to every active Jet lane.  A failed identity/sample check deliberately
@@ -16373,9 +16508,13 @@ struct RelActAutoCostFcn
                             + std::to_string(range.upper_energy) + " keV" );
     }//for( const double &val : continuum_coeffs )
 
-    std::sort( begin(peaks), end(peaks), []( const auto &lhs, const auto &rhs ){
-      return lhs.mean() < rhs.mean();
-    } );
+    // `eval()` only uses `peak_counts`, so it skips sorting these (large, for Jets) peak objects.
+    if( sort_peaks )
+    {
+      std::sort( begin(peaks), end(peaks), []( const auto &lhs, const auto &rhs ){
+        return lhs.mean() < rhs.mean();
+      } );
+    }//if( sort_peaks )
     
     return answer;
   }//PeaksForEnergyRange peaks_for_energy_range_imp( const double lower_energy, const double upper_energy ) const
@@ -16688,6 +16827,16 @@ struct RelActAutoCostFcn
     vector<RelActCalcAuto::PeaksForEnergyRangeImp<T>> peaks_in_ranges_imp( m_energy_ranges.size() );
 
     const RelActCalcAutoImp::CachedEnergyCalSplines<T> energy_deviation_splines = compute_energy_cal_splines( x );
+
+    // A failure here is reported the same way a failure inside a ROI task is (see below).
+    PerEvalValues<T> per_eval;
+    try
+    {
+      per_eval = per_eval_values( x );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( e.what() );
+    }
     
     // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `PeakFit::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
     // Only fan out within a ROI when we're allowed >1 thread; when solves run
@@ -16706,10 +16855,11 @@ struct RelActAutoCostFcn
     for( size_t i = 0; i < num_energy_ranges; ++i )
     {
       boost::asio::post( m_pool,
-                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines](){
+                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines,&per_eval](){
         try
         {
-          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines, multhread_each_roi );
+          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines,
+                                                               multhread_each_roi, false, &per_eval );
         }catch( std::exception &e )
         {
           std::lock_guard<std::mutex> lock(cv_mutex);
