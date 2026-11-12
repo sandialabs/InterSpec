@@ -29,6 +29,7 @@
 #include <map>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -37,6 +38,7 @@
 #include <ostream>
 #include <variant>
 #include <optional>
+#include <functional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
@@ -3024,13 +3026,92 @@ struct RelActAutoSolution
 };//struct RelActAutoSolution
 
 
+/** Progress of a `solve(...)`, passed to its optional `progress_fcn`.
+
+ Reports are made synchronously, on the thread calling `solve(...)`, whenever a major step starts and
+ after every Ceres iteration of the reported fits - so possibly many times a second; a consumer
+ wanting a GUI cadence must throttle itself.  The fit of each phase (and the re-fits a model
+ comparison may trigger) report their steps and iterations, but not the trial fits within a step;
+ the profile-likelihood scans only report that their phase started (with `step` empty).
+ */
+struct SolveProgress
+{
+  /** What `solve(...)` as a whole is doing. */
+  enum class Phase : int
+  {
+    InitialFit,
+    /** Re-fitting with ROIs re-sized from the previous fit; `phase_index` of `phase_count`. */
+    RoiRefinement,
+    /** Comparing against the model without a source that fit to near-zero activity. */
+    NestedSourceCheck,
+    /** Comparing a multiple rel. eff. curve fit against a single merged curve. */
+    MergedCurveComparison,
+    /** Comparing a multiple rel. eff. curve fit against one with the same isotopics on every curve. */
+    TiedEnrichmentComparison,
+    ProfileLikelihood
+  };
+
+  /** What the current primary fit is doing. */
+  enum class Step : int
+  {
+    Setup,
+    PeakSearch,
+    InitialEstimate,
+    /** Fits with some parameters held fixed, to get near the solution. */
+    PreFit,
+    MainFit,
+    /** Re-fits from alternate starting points; `step_index` of `step_count`. */
+    AlternateStarts,
+    /** Backward elimination of unneeded parameters; `step_index` is the round. */
+    ModelSimplification,
+    Uncertainties
+  };
+
+  Phase phase = Phase::InitialFit;
+  /** One-based pass within `phase`, or zero if not applicable. */
+  size_t phase_index = 0;
+  /** Planned number of passes of `phase`, or zero if not applicable. */
+  size_t phase_count = 0;
+
+  /** Reset when `phase` changes. */
+  std::optional<Step> step;
+  size_t step_index = 0;
+  /** Zero if unknown or not applicable. */
+  size_t step_count = 0;
+
+  /** Ceres iterations so far within `step`, summed over the minimizations it has done. */
+  size_t num_iterations = 0;
+  /** Lowest chi2 (twice the Ceres cost) seen within `step`, or NaN if none yet.
+   This includes the branching-ratio and physical-model prior terms, so is not the data-only chi2
+   reported for the final answer.  For PreFit and MainFit it follows the fit converging (the PreFit
+   stages hold some parameters fixed); for AlternateStarts and ModelSimplification it comes from
+   trial fits that may be discarded, so is not that of the fit being reported.
+   */
+  double chi2 = std::numeric_limits<double>::quiet_NaN();
+  /** Nominal degrees of freedom of the fit `chi2` is from - its residual rows (including the prior rows
+   `chi2` includes) less its fit parameters - or zero if not known.  The PreFit stages and
+   ModelSimplification hold a few more parameters fixed than this accounts for.
+   */
+  size_t dof = 0;
+
+  /** When `solve(...)` was entered. */
+  std::chrono::steady_clock::time_point start_time;
+  /** When this report was made. */
+  std::chrono::steady_clock::time_point report_time;
+};//struct SolveProgress
+
+/** The callback must be cheap, and must not throw. */
+typedef std::function<void(const SolveProgress &)> SolveProgressFcn;
+
+
 /**
- 
+
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
  @param peak_fit_prefs The peak-fit preferences of the spectrum (e.g., `SpecMeas::peakFitDetPrefs()`);
         if null, those of `drf` are used, if any.  Their skew is used if
         `Options::skew_from_peak_fit_prefs` is set.
+ @param progress_fcn If non-null, called with the progress of the solve; see `SolveProgress`.
 
  TODO: right now live-time normalization is always used for background - but users may have overriden this for e.g., bad or unknown live-times
  */
@@ -3041,7 +3122,8 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr,
-                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = nullptr
+                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = nullptr,
+                         const SolveProgressFcn &progress_fcn = nullptr
                          );
 
 
