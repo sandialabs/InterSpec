@@ -559,6 +559,9 @@ const double ns_decay_act_mult = SandiaDecay::MBq;
 
  The memo is active only inside `run_ceres_solve(...)`: the functor's state (armed profile
  constraints, cascade/skew switches, ...) changes between solves, never during one.
+
+ Within a solve it also computes Jacobians giving auto-diff lanes only to the parameters the solve's
+ manifold leaves free (see `set_packed_jacobian`), so held-constant parameters cost no Jet passes.
  */
 class JacobianMemoCostFunction : public ceres::CostFunction
 {
@@ -590,7 +593,10 @@ public:
       }
     }//for( loop over remembered evaluations )
 
-    const bool success = m_inner->Evaluate( parameters, residuals, jacobians );
+    // Derivative lanes only for the parameters the solve can move (see `set_packed_jacobian`).
+    const bool packed = m_packed_jacobian && !m_free_parameters.empty() && (m_free_parameters.size() < npar);
+    const bool success = packed ? m_packed_jacobian( parameters[0], m_free_parameters, residuals, jacobians[0] )
+                                : m_inner->Evaluate( parameters, residuals, jacobians );
 
     // A cancelled evaluation returns all-zero residuals; never remember it, or a failure.
     if( success && !(m_cancel && m_cancel->load()) )
@@ -606,13 +612,24 @@ public:
     return success;
   }//Evaluate(...)
 
-  /** Starts (true) or ends (false) the span the memo may be used in; both forget what it holds. */
-  void set_active( const bool active ) const
+  /** Starts (true) or ends (false) the span the memo may be used in; both forget what it holds.
+   `free_parameters` (ascending) are the parameters the solve can move; empty means all. */
+  void set_active( const bool active, std::vector<int> free_parameters = {} ) const
   {
     m_active = active;
     for( Entry &entry : m_entries )
       entry.valid = false;
     m_next_entry = 0;
+    m_free_parameters = std::move( free_parameters );
+  }
+
+  /** Evaluates residuals and the full Jacobian giving derivative lanes only to `free_parameters` (the
+   Jacobian columns of the others are zero).  Optional; used only within `run_ceres_solve`. */
+  using PackedJacobianFcn = std::function<bool( const double *x, const std::vector<int> &free_parameters,
+                                                double *residuals, double *jacobian )>;
+  void set_packed_jacobian( PackedJacobianFcn fcn )
+  {
+    m_packed_jacobian = std::move( fcn );
   }
 
 private:
@@ -631,6 +648,9 @@ private:
    it gives up and Ceres accepts the full step. */
   mutable std::array<Entry,4> m_entries;
   mutable size_t m_next_entry = 0;
+
+  PackedJacobianFcn m_packed_jacobian;
+  mutable std::vector<int> m_free_parameters;
 };//class JacobianMemoCostFunction
 
 
@@ -649,13 +669,43 @@ static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Probl
       memos.push_back( memo );
   }
 
+  // The parameters this solve can move: those the parameter block's manifold does not hold constant
+  //  (the rows of its plus-Jacobian that are not all zero).
+  std::vector<int> free_parameters;
+  {
+    std::vector<double *> par_blocks;
+    problem.GetParameterBlocks( &par_blocks );
+    if( par_blocks.size() == 1 )
+    {
+      const int npar = problem.ParameterBlockSize( par_blocks[0] );
+      const ceres::Manifold * const manifold = problem.GetManifold( par_blocks[0] );
+      if( manifold && !problem.IsParameterBlockConstant( par_blocks[0] ) )
+      {
+        const int ntan = manifold->TangentSize();
+        std::vector<double> plus_jac( static_cast<size_t>(npar) * ntan, 0.0 );
+        if( manifold->PlusJacobian( par_blocks[0], plus_jac.data() ) )
+        {
+          for( int row = 0; row < npar; ++row )
+          {
+            bool is_const = true;
+            for( int col = 0; is_const && (col < ntan); ++col )
+              is_const = (plus_jac[static_cast<size_t>(row)*ntan + col] == 0.0);
+            if( !is_const )
+              free_parameters.push_back( row );
+          }
+        }//if( got plus-Jacobian )
+      }//if( a manifold )
+    }//if( a single parameter block )
+  }
+
   struct MemoSpan
   {
     const std::vector<const JacobianMemoCostFunction *> &m_memos;
-    explicit MemoSpan( const std::vector<const JacobianMemoCostFunction *> &memos ) : m_memos( memos )
+    MemoSpan( const std::vector<const JacobianMemoCostFunction *> &memos, const std::vector<int> &free_pars )
+      : m_memos( memos )
     {
       for( const JacobianMemoCostFunction *memo : m_memos )
-        memo->set_active( true );
+        memo->set_active( true, free_pars );
     }
     ~MemoSpan()
     {
@@ -664,7 +714,7 @@ static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Probl
     }
   };//struct MemoSpan
 
-  const MemoSpan span( memos );
+  const MemoSpan span( memos, free_parameters );
   ceres::Solve( options, &problem, &summary );
 }//run_ceres_solve(...)
 
@@ -8820,7 +8870,14 @@ struct RelActAutoCostFcn
       dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
 
       // Owns `dyn_auto_diff_cost_function`; replays Jacobians Ceres asks for twice at the same point.
-      cost_function = new JacobianMemoCostFunction( dyn_auto_diff_cost_function, cost_functor->m_cancel_calc );
+      JacobianMemoCostFunction * const memo_cost_function
+                    = new JacobianMemoCostFunction( dyn_auto_diff_cost_function, cost_functor->m_cancel_calc );
+      const RelActAutoCostFcn * const functor = cost_functor.get();
+      memo_cost_function->set_packed_jacobian( [functor]( const double *x, const std::vector<int> &free_pars,
+                                                         double *residuals, double *jacobian ) -> bool {
+        return functor->evaluate_packed_jacobian( x, free_pars, residuals, jacobian );
+      } );
+      cost_function = memo_cost_function;
     }else
     {
       ceres::NumericDiffOptions num_diff_options;
@@ -16945,33 +17002,50 @@ struct RelActAutoCostFcn
     std::string exception_msg;
     const size_t num_energy_ranges = m_energy_ranges.size();
 
-    for( size_t i = 0; i < num_energy_ranges; ++i )
+    if( m_num_solve_threads <= 1 )
     {
-      boost::asio::post( m_pool,
-                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines,&per_eval](){
+      // A single solve thread: computing each ROI here saves handing it to, and waiting on, the pool.
+      for( size_t i = 0; i < num_energy_ranges; ++i )
+      {
         try
         {
           peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines,
                                                                multhread_each_roi, false, &per_eval );
         }catch( std::exception &e )
         {
-          std::lock_guard<std::mutex> lock(cv_mutex);
           exception_msg = e.what();
         }
+      }//for( size_t i = 0; i < num_energy_ranges; ++i )
+    }else
+    {
+      for( size_t i = 0; i < num_energy_ranges; ++i )
+      {
+        boost::asio::post( m_pool,
+                          [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines,&per_eval](){
+          try
+          {
+            peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines,
+                                                                 multhread_each_roi, false, &per_eval );
+          }catch( std::exception &e )
+          {
+            std::lock_guard<std::mutex> lock(cv_mutex);
+            exception_msg = e.what();
+          }
 
 
-        std::lock_guard<std::mutex> lock(cv_mutex); //lock_guard is simpler than unique_lock, so use it here
-        tasks_completed += 1;
-        cv.notify_one();
-      } );
-    }//for( size_t i = 0; i < num_energy_ranges; ++i )
+          std::lock_guard<std::mutex> lock(cv_mutex); //lock_guard is simpler than unique_lock, so use it here
+          tasks_completed += 1;
+          cv.notify_one();
+        } );
+      }//for( size_t i = 0; i < num_energy_ranges; ++i )
 
-    {//begin wait for things to finish
-      std::unique_lock<std::mutex> lock(cv_mutex);
-      cv.wait(lock, [num_energy_ranges,&tasks_completed]() -> bool {
-          return tasks_completed == num_energy_ranges;
-      } );
-    }//end wait for things to finish
+      {//begin wait for things to finish
+        std::unique_lock<std::mutex> lock(cv_mutex);
+        cv.wait(lock, [num_energy_ranges,&tasks_completed]() -> bool {
+            return tasks_completed == num_energy_ranges;
+        } );
+      }//end wait for things to finish
+    }//if( m_num_solve_threads <= 1 ) / else
     
     if( !exception_msg.empty() )
       throw runtime_error( exception_msg );
@@ -17126,6 +17200,65 @@ struct RelActAutoCostFcn
     
     return true;
   };//bool operator() - for Ceres
+
+
+  /** What `ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,sm_auto_diff_stride_size>`
+   computes for a Jacobian, except derivative lanes go only to `free_parameters` (ascending): parameters
+   the solve's manifold holds constant then cost no lanes, or - when they push the count past a multiple
+   of the stride - no extra pass of the whole model.  Their Jacobian columns are left zero, which the
+   manifold discards anyway.  See `JacobianMemoCostFunction::set_packed_jacobian`.
+
+   Every lane is computed independently of which lane it is, so the free parameters' derivatives are
+   those `DynamicAutoDiffCostFunction` gives (checked bit-for-bit on arm64; elsewhere a vectorized
+   product could conceivably round one lane differently).  One difference: a non-finite derivative
+   with respect to a held-constant parameter no longer makes Ceres reject the evaluation. */
+  bool evaluate_packed_jacobian( const double *x, const std::vector<int> &free_parameters,
+                                 double *residuals, double *jacobian ) const
+  {
+    using JetT = ceres::Jet<double,sm_auto_diff_stride_size>;
+
+    const size_t npar = number_parameters();
+    const size_t nres = number_residuals();
+
+    std::vector<JetT> input( npar ), output( nres );
+    for( size_t i = 0; i < npar; ++i )
+    {
+      input[i].a = x[i];
+      input[i].v.setZero();
+    }
+    std::fill( jacobian, jacobian + nres*npar, 0.0 );
+
+    const JetT *input_ptr = input.data();
+    const size_t nfree = free_parameters.size();
+    const size_t npasses = (std::max)( size_t(1), (nfree + sm_auto_diff_stride_size - 1) / sm_auto_diff_stride_size );
+    for( size_t pass = 0; pass < npasses; ++pass )
+    {
+      const size_t first = pass*sm_auto_diff_stride_size;
+      const size_t last = (std::min)( nfree, first + sm_auto_diff_stride_size );
+      for( size_t k = first; k < last; ++k )
+        input[free_parameters[k]].v[k - first] = 1.0;
+
+      if( !(*this)( &input_ptr, output.data() ) )
+        return false;
+
+      if( pass == 0 )
+      {
+        for( size_t r = 0; r < nres; ++r )
+          residuals[r] = output[r].a;
+      }
+
+      for( size_t r = 0; r < nres; ++r )
+      {
+        for( size_t k = first; k < last; ++k )
+          jacobian[r*npar + free_parameters[k]] = output[r].v[k - first];
+      }
+
+      for( size_t k = first; k < last; ++k )
+        input[free_parameters[k]].v[k - first] = 0.0;
+    }//for( loop over passes )
+
+    return true;
+  }//evaluate_packed_jacobian(...)
 };//struct RelActAutoCostFcn
 
 
