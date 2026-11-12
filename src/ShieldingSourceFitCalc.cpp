@@ -2824,8 +2824,11 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     {
       const vector<ShieldingSourceFitCalc::ShieldingInfo> shield_bases(
                       results->final_shieldings.begin(), results->final_shieldings.end() );
-      const ShieldSourcePullTrend::FitConfigSummary trend_config =
+      ShieldSourcePullTrend::FitConfigSummary trend_config =
         ShieldSourcePullTrend::summarize_fit_config( shield_bases, results->fit_src_info );
+      ShieldSourcePullTrend::set_summing_info( trend_config, chi2Fcn->distance(),
+                                               chi2Fcn->options().correct_for_cascade_summing,
+                                               chi2Fcn->detector(), results->fit_src_info );
       results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
         ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
                                                *results->peak_calc_details,
@@ -2872,6 +2875,40 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     {
       auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
       chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
+
+      // The statistics-only parts of each activity uncertainty, for the reports breakdown
+      const vector<double> &stat_errors = results->paramErrorsStatOnly;
+      const vector<double> &stat_errors_fixed = results->paramErrorsStatFixedOthers;
+      for( GammaInteractionCalc::SourceDetails &src : *shielding_details )
+      {
+        // Note: self-attenuating sources have `activityIsFit` false, even when their mass fraction
+        //  or dimensions are fit, so we go off of there being an uncertainty instead.
+        if( !src.nuclide || (src.activityUncertainty <= 0.0) || (stat_errors.size() != params.size()) )
+          continue;
+
+        try
+        {
+          src.activityUncertStatOnly = chi2Fcn->totalActivityUncertainty( src.nuclide, params, stat_errors );
+
+          // With all other parameters fixed, a point or trace sources activity uncertainty comes
+          //  from just its activity parameter.  A self-attenuating sources activity is a function
+          //  of its mass fraction and shielding dimensions, so there is no single parameter.
+          if( !src.isSelfAttenSource && (stat_errors_fixed.size() == params.size()) )
+          {
+            const size_t act_index = chi2Fcn->activityParameterIndex( src.nuclide );
+            vector<double> own_errors( params.size(), 0.0 );
+            own_errors[act_index] = stat_errors_fixed[act_index];
+            src.activityUncertStatFixedOthers
+                           = chi2Fcn->totalActivityUncertainty( src.nuclide, params, own_errors );
+          }
+        }catch( std::exception &e )
+        {
+          src.activityUncertStatOnly = src.activityUncertStatFixedOthers = -1.0;
+          results->errormsgs.push_back( "Error computing activity uncertainty breakdown for "
+                                        + src.nuclide->symbol + ": " + e.what() );
+        }
+      }//for( GammaInteractionCalc::SourceDetails &src : *shielding_details )
+
       results->source_calc_details = std::move(shielding_details);
     }catch( std::exception &e )
     {
@@ -3650,6 +3687,201 @@ namespace
   };//class CheckCancelCallback
 
 
+  /** Sets up `problem` to vary the `var_indices` entries of `start_full`, with `u` (resized here,
+   and which must outlive `problem`) as its single, internal-coordinate, parameter block.
+
+   @param whiten If not empty, the GLS residual-whitening matrix - see
+          #ShieldSrcCeresCostFcn::m_whiten; empty gives statistics-only residuals.
+   @param[out] transforms The internal<->external transform of each varied parameter.
+   */
+  void setup_ceres_problem( const std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn,
+                            const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
+                            const std::vector<double> &start_full,
+                            const std::vector<size_t> &var_indices,
+                            const std::vector<double> &observed,
+                            const std::vector<double> &observed_uncert,
+                            std::vector<double> whiten,
+                            ceres::Problem &problem,
+                            std::vector<double> &u,
+                            std::vector<BoundTransform> &transforms )
+  {
+    const size_t num_vars = var_indices.size();
+    assert( num_vars > 0 );
+
+    auto functor = std::make_unique<ShieldSrcCeresCostFcn>();
+    functor->m_fcn = chi2Fcn;
+    functor->m_initial_params = start_full;
+    functor->m_variable_indices = var_indices;
+    functor->m_observed = observed;
+    functor->m_observed_uncert = observed_uncert;
+    functor->m_whiten = std::move( whiten );
+
+    // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
+    //  the functor maps them to the bounded physical values - see #BoundTransform.
+    transforms.resize( num_vars );
+    for( size_t i = 0; i < num_vars; ++i )
+      transforms[i] = BoundTransform::from_par( par_defs[var_indices[i]] );
+
+    functor->m_transforms = transforms;
+
+    auto cost_function = std::make_unique<ceres::DynamicAutoDiffCostFunction<ShieldSrcCeresCostFcn,
+                            ShieldSrcCeresCostFcn::sm_auto_diff_stride>>( functor.release() );
+    cost_function->AddParameterBlock( static_cast<int>(num_vars) );
+    cost_function->SetNumResiduals( static_cast<int>(observed.size()) );
+
+    u.resize( num_vars );
+    for( size_t i = 0; i < num_vars; ++i )
+      u[i] = transforms[i].to_internal( start_full[var_indices[i]] );
+
+    problem.AddResidualBlock( cost_function.release(), nullptr, u.data() );  //Problem takes ownership
+
+    // Parameters that didnt get a transform keep their limits as direct bound constraints
+    for( size_t i = 0; i < num_vars; ++i )
+    {
+      if( !transforms[i].use_plain_bounds )
+        continue;
+
+      const ShieldingSourceFitCalc::FitParameter &p = par_defs[var_indices[i]];
+      if( p.has_lower )
+        problem.SetParameterLowerBound( u.data(), static_cast<int>(i), p.lower );
+      if( p.has_upper )
+        problem.SetParameterUpperBound( u.data(), static_cast<int>(i), p.upper );
+    }//for( loop over varied parameters )
+  }//void setup_ceres_problem(...)
+
+
+  /** Computes the 1-sigma uncertainties of the varied (external, physical) parameters at the
+   current value of `u`, the single parameter block of `problem` - see #setup_ceres_problem.
+
+   @param solution_ok If false, no computation is attempted, and the uncertainties are zero.
+   @param[out] var_errors The uncertainties, from the Ceres covariance; zeros if it fails.
+   @param[out] var_errors_fixed_others If non-null, each parameters uncertainty with all other
+               varied parameters held fixed - i.e., 1/sqrt((J^T J)_ii); zeros on failure.
+   @param[out] cov_errmsg If non-null and the covariance fails, a user-displayable note.
+   @returns if the uncertainties were computed.
+   */
+  bool compute_param_errors( ceres::Problem &problem,
+                             const std::vector<double> &u,
+                             const std::vector<BoundTransform> &transforms,
+                             const bool solution_ok,
+                             std::vector<double> &var_errors,
+                             std::vector<double> *var_errors_fixed_others,
+                             std::string *cov_errmsg )
+  {
+    const size_t num_vars = u.size();
+    assert( transforms.size() == num_vars );
+
+    var_errors.assign( num_vars, 0.0 );
+    if( var_errors_fixed_others )
+      var_errors_fixed_others->assign( num_vars, 0.0 );
+
+    try
+    {
+      ceres::Covariance::Options cov_opts;
+      cov_opts.algorithm_type = ceres::DENSE_SVD;
+      cov_opts.null_space_rank = -1;
+
+      ceres::Covariance covariance( cov_opts );
+      std::vector<std::pair<const double *, const double *>> cov_blocks;
+      cov_blocks.emplace_back( u.data(), u.data() );
+
+      // ceres::Covariance (DENSE_SVD) evaluates the Jacobian at `u` and runs Eigen's SVD, which
+      //  null-derefs - a segfault, NOT catchable by the try below - on a non-finite Jacobian.  That
+      //  happens when the fit failed its initial residual/Jacobian evaluation: `u` is then left at a
+      //  point where the forward model is NaN/Inf (a far or degenerate starting point can cause it).
+      //  So only attempt covariance for a usable solution whose residuals are finite; otherwise leave
+      //  the uncertainties at the zero already assigned, exactly as on any other covariance failure.
+      double cov_eval_cost = 0.0;
+      std::vector<double> cov_eval_resids;
+      bool solution_usable = solution_ok
+            && problem.Evaluate( ceres::Problem::EvaluateOptions(), &cov_eval_cost,
+                                 &cov_eval_resids, nullptr, nullptr )
+            && std::isfinite( cov_eval_cost );
+      for( size_t i = 0; solution_usable && (i < cov_eval_resids.size()); ++i )
+        solution_usable = std::isfinite( cov_eval_resids[i] );
+
+      if( !solution_usable || !covariance.Compute(cov_blocks, &problem) )
+      {
+        if( cov_errmsg )
+          *cov_errmsg = "Failed to compute parameter uncertainties (a parameter may be"
+                        " at a limit, or the problem nearly degenerate).";
+        return false;
+      }
+
+      std::vector<double> cov_mat( num_vars*num_vars, 0.0 );
+      covariance.GetCovarianceBlock( u.data(), u.data(), cov_mat.data() );
+
+      // Propagate the internal-parameter uncertainties to the external (physical)
+      //  parameters: sigma_x = |dx/du| * sigma_u  (same as Minuit2 does).
+      for( size_t i = 0; i < num_vars; ++i )
+      {
+        const double sigma_u = std::sqrt( std::max( 0.0, cov_mat[i*num_vars + i] ) );
+        var_errors[i] = std::fabs( transforms[i].derivative( u[i] ) ) * sigma_u;
+      }
+
+      if( var_errors_fixed_others )
+      {
+        // With the other parameters fixed, a parameters variance is 1/(J^T J)_ii (the cost being
+        //  0.5*sum(r^2)), so we only need the column sums-of-squares of the Jacobian.
+        ceres::CRSMatrix jacobian;
+        if( problem.Evaluate( ceres::Problem::EvaluateOptions(), &cov_eval_cost,
+                              nullptr, nullptr, &jacobian ) )
+        {
+          std::vector<double> info_diag( num_vars, 0.0 );
+          for( size_t k = 0; k < jacobian.values.size(); ++k )
+          {
+            const size_t col = static_cast<size_t>( jacobian.cols[k] );
+            if( col < num_vars )
+              info_diag[col] += jacobian.values[k] * jacobian.values[k];
+          }
+
+          for( size_t i = 0; i < num_vars; ++i )
+          {
+            if( (info_diag[i] > 0.0) && std::isfinite(info_diag[i]) )
+              (*var_errors_fixed_others)[i] = std::fabs( transforms[i].derivative( u[i] ) )
+                                              / std::sqrt( info_diag[i] );
+          }
+        }//if( evaluated the Jacobian )
+      }//if( var_errors_fixed_others )
+
+      return true;
+    }catch( std::exception &e )
+    {
+      if( cov_errmsg )
+        *cov_errmsg = "Failed to compute parameter uncertainties: " + std::string(e.what());
+    }
+
+    return false;
+  }//bool compute_param_errors(...)
+
+
+  /** Computes the statistics-only (no detector efficiency uncertainty) uncertainties of the
+   `var_indices` parameters at `params_full`, without fitting; see
+   #ShieldingSourceFitCalc::ModelFitResults::paramErrorsStatOnly and `paramErrorsStatFixedOthers`.
+
+   @returns if the uncertainties were computed; if not, `errmsg` (if non-null) says why.
+   */
+  bool stat_only_param_errors_at( const std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn,
+                                  const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
+                                  const std::vector<double> &params_full,
+                                  const std::vector<size_t> &var_indices,
+                                  const std::vector<double> &observed,
+                                  const std::vector<double> &observed_uncert,
+                                  std::vector<double> &var_errors,
+                                  std::vector<double> &var_errors_fixed_others,
+                                  std::string *errmsg )
+  {
+    ceres::Problem problem;
+    std::vector<double> u;
+    std::vector<BoundTransform> transforms;
+    setup_ceres_problem( chi2Fcn, par_defs, params_full, var_indices, observed, observed_uncert,
+                         std::vector<double>{}, problem, u, transforms );
+
+    return compute_param_errors( problem, u, transforms, true, var_errors,
+                                 &var_errors_fixed_others, errmsg );
+  }//bool stat_only_param_errors_at(...)
+
+
   /** Performs a single Ceres solve of the activity/shielding problem.
 
    @param chi2Fcn The chi2 function (only expected_peak_counts_imp and cancel status used).
@@ -3683,13 +3915,6 @@ namespace
     const size_t num_vars = var_indices.size();
     assert( num_vars > 0 );
 
-    auto functor = std::make_unique<ShieldSrcCeresCostFcn>();
-    functor->m_fcn = chi2Fcn;
-    functor->m_initial_params = start_full;
-    functor->m_variable_indices = var_indices;
-    functor->m_observed = observed;
-    functor->m_observed_uncert = observed_uncert;
-
     // Fold detector-efficiency uncertainty into the fit (correlated GLS) when
     //  requested and the DRF supplies it.  Sigma = diag(stat^2)
     //  + diag(counts) . C_eff_frac . diag(counts); the functor whitens its
@@ -3701,46 +3926,20 @@ namespace
     //  Only state 3 (Likelihood) folds the correlated band into the fit; states None and
     //  ErrorPropagation solve stat-only here (ErrorPropagation's uncertainty inflation is a
     //  post-fit delta method that re-invokes this solver, relying on it being stat-only).
+    std::vector<double> whiten;
     if( chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::Likelihood )
     {
       const std::vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
       const std::vector<double> &cnt = (cov_counts && (cov_counts->size() == observed.size()))
                                        ? *cov_counts : observed;
-      functor->m_whiten = compute_efficiency_whitening( cnt, observed_uncert, eff_cov, 1.0e-10 );
+      whiten = compute_efficiency_whitening( cnt, observed_uncert, eff_cov, 1.0e-10 );
     }//if( drf_uncert_method == Likelihood )
 
-    // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
-    //  the functor maps them to the bounded physical values - see #BoundTransform.
-    std::vector<BoundTransform> transforms( num_vars );
-    for( size_t i = 0; i < num_vars; ++i )
-      transforms[i] = BoundTransform::from_par( par_defs[var_indices[i]] );
-
-    functor->m_transforms = transforms;
-
-    auto cost_function = std::make_unique<ceres::DynamicAutoDiffCostFunction<ShieldSrcCeresCostFcn,
-                            ShieldSrcCeresCostFcn::sm_auto_diff_stride>>( functor.release() );
-    cost_function->AddParameterBlock( static_cast<int>(num_vars) );
-    cost_function->SetNumResiduals( static_cast<int>(observed.size()) );
-
-    std::vector<double> u( num_vars );
-    for( size_t i = 0; i < num_vars; ++i )
-      u[i] = transforms[i].to_internal( start_full[var_indices[i]] );
-
     ceres::Problem problem;
-    problem.AddResidualBlock( cost_function.release(), nullptr, u.data() );  //Problem takes ownership
-
-    // Parameters that didnt get a transform keep their limits as direct bound constraints
-    for( size_t i = 0; i < num_vars; ++i )
-    {
-      if( !transforms[i].use_plain_bounds )
-        continue;
-
-      const ShieldingSourceFitCalc::FitParameter &p = par_defs[var_indices[i]];
-      if( p.has_lower )
-        problem.SetParameterLowerBound( u.data(), static_cast<int>(i), p.lower );
-      if( p.has_upper )
-        problem.SetParameterUpperBound( u.data(), static_cast<int>(i), p.upper );
-    }//for( loop over varied parameters )
+    std::vector<double> u;
+    std::vector<BoundTransform> transforms;
+    setup_ceres_problem( chi2Fcn, par_defs, start_full, var_indices, observed, observed_uncert,
+                         std::move(whiten), problem, u, transforms );
 
     CheckCancelCallback cancel_callback( chi2Fcn.get() );
 
@@ -3889,57 +4088,8 @@ namespace
       final_full[var_indices[i]] = transforms[i].to_external( u[i] );
 
     if( var_errors )
-    {
-      var_errors->assign( num_vars, 0.0 );
-
-      try
-      {
-        ceres::Covariance::Options cov_opts;
-        cov_opts.algorithm_type = ceres::DENSE_SVD;
-        cov_opts.null_space_rank = -1;
-
-        ceres::Covariance covariance( cov_opts );
-        std::vector<std::pair<const double *, const double *>> cov_blocks;
-        cov_blocks.emplace_back( u.data(), u.data() );
-
-        // ceres::Covariance (DENSE_SVD) evaluates the Jacobian at `u` and runs Eigen's SVD, which
-        //  null-derefs - a segfault, NOT catchable by the try below - on a non-finite Jacobian.  That
-        //  happens when the fit failed its initial residual/Jacobian evaluation: `u` is then left at a
-        //  point where the forward model is NaN/Inf (a far or degenerate starting point can cause it).
-        //  So only attempt covariance for a usable solution whose residuals are finite; otherwise leave
-        //  the uncertainties at the zero already assigned, exactly as on any other covariance failure.
-        double cov_eval_cost = 0.0;
-        std::vector<double> cov_eval_resids;
-        bool solution_usable = (best_termination != ceres::FAILURE)
-              && problem.Evaluate( ceres::Problem::EvaluateOptions(), &cov_eval_cost,
-                                   &cov_eval_resids, nullptr, nullptr )
-              && std::isfinite( cov_eval_cost );
-        for( size_t i = 0; solution_usable && (i < cov_eval_resids.size()); ++i )
-          solution_usable = std::isfinite( cov_eval_resids[i] );
-
-        if( solution_usable && covariance.Compute(cov_blocks, &problem) )
-        {
-          std::vector<double> cov_mat( num_vars*num_vars, 0.0 );
-          covariance.GetCovarianceBlock( u.data(), u.data(), cov_mat.data() );
-
-          // Propagate the internal-parameter uncertainties to the external (physical)
-          //  parameters: sigma_x = |dx/du| * sigma_u  (same as Minuit2 does).
-          for( size_t i = 0; i < num_vars; ++i )
-          {
-            const double sigma_u = std::sqrt( std::max( 0.0, cov_mat[i*num_vars + i] ) );
-            (*var_errors)[i] = std::fabs( transforms[i].derivative( u[i] ) ) * sigma_u;
-          }
-        }else if( cov_errmsg )
-        {
-          *cov_errmsg = "Failed to compute parameter uncertainties (a parameter may be"
-                        " at a limit, or the problem nearly degenerate).";
-        }
-      }catch( std::exception &e )
-      {
-        if( cov_errmsg )
-          *cov_errmsg = "Failed to compute parameter uncertainties: " + std::string(e.what());
-      }
-    }//if( var_errors )
+      compute_param_errors( problem, u, transforms, (best_termination != ceres::FAILURE),
+                            *var_errors, nullptr, cov_errmsg );
 
     return best_chi2;
   }//run_ceres_solve(...)
@@ -4733,6 +4883,55 @@ void fit_model( const std::string wtsession,
     for( const auto &index_error : an_scan_errors )
       errors[index_error.first] = index_error.second;
 
+    // The statistics-only parameter uncertainties at the final parameters - both marginal, and with
+    //  the other parameters held fixed - so the reports can break the activity uncertainties into
+    //  their parts.  Done for every DRF-uncertainty method (for Likelihood it is the only way to
+    //  separate out the efficiency part); costs about one extra Jacobian evaluation.
+    vector<double> stat_errors, stat_errors_fixed;
+    if( !final_var_indices.empty() && (var_errors.size() == final_var_indices.size()) )
+    {
+      vector<double> var_stat_errors, var_stat_errors_fixed;
+      if( stat_only_param_errors_at( chi2Fcn, par_defs, fit_full, final_var_indices, observed,
+                                     observed_uncert, var_stat_errors, var_stat_errors_fixed, nullptr ) )
+      {
+        stat_errors.assign( initial_full.size(), 0.0 );
+        stat_errors_fixed.assign( initial_full.size(), 0.0 );
+        for( size_t i = 0; i < final_var_indices.size(); ++i )
+        {
+          stat_errors[final_var_indices[i]] = var_stat_errors[i];
+          stat_errors_fixed[final_var_indices[i]] = var_stat_errors_fixed[i];
+        }
+
+        // Scanned ANs keep their chi2-profile errors (statistics-only, unless Likelihood)
+        for( const auto &index_error : an_scan_errors )
+          stat_errors[index_error.first] = index_error.second;
+
+        // Without Likelihood, the fits own uncertainties are already statistics-only; use them
+        //  exactly, so the efficiency part (or lack of one) is not muddied by numerical noise.
+        if( chi2Fcn->options().drf_uncert_method != DrfUncertaintyMethod::Likelihood )
+          stat_errors = errors;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+        // Without Likelihood, the fits own uncertainties are statistics-only, so should agree.
+        if( chi2Fcn->options().drf_uncert_method != DrfUncertaintyMethod::Likelihood )
+        {
+          for( size_t i = 0; i < final_var_indices.size(); ++i )
+          {
+            const double fit_err = var_errors[i], stat_err = var_stat_errors[i];
+            if( fabs(fit_err - stat_err) > 1.0E-3*std::max(fabs(fit_err), fabs(stat_err)) )
+            {
+              const string msg = "Statistics-only uncertainty of parameter "
+                                 + par_defs[final_var_indices[i]].name + " is "
+                                 + std::to_string(stat_err) + ", but the fit gave "
+                                 + std::to_string(fit_err);
+              log_developer_error( __func__, msg.c_str() );
+            }
+          }//for( loop over varied parameters )
+        }//if( not Likelihood )
+#endif
+      }//if( computed statistics-only uncertainties )
+    }//if( there are varied parameters with uncertainties )
+
     // WI-4 (state 2, ErrorPropagation): inflate the reported parameter uncertainties by the
     //  detector-efficiency band WITHOUT moving the central values - results->paramValues stays
     //  fit_full, so the answer is bit-identical to the None/statistics-only fit.  Numeric eigen-mode
@@ -4889,8 +5088,11 @@ void fit_model( const std::string wtsession,
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
     results->paramValues = fit_full;
     results->paramErrors = errors;
+    results->paramErrorsStatOnly = stat_errors;
+    results->paramErrorsStatFixedOthers = stat_errors_fixed;
     results->num_fcn_calls = static_cast<int>( num_evals );
     results->numDOF = ndof;
+    results->numFitParameters = num_fit_pars;
 
     fill_fit_results( chi2Fcn, fit_full, errors, results );
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )

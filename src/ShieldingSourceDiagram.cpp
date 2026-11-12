@@ -426,7 +426,7 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
 
   Wt::WApplication *app = Wt::WApplication::instance();
   app->require("InterSpec_resources/GltfMini.js?v=2");
-  app->require("InterSpec_resources/Shielding3DView.js?v=8");
+  app->require("InterSpec_resources/Shielding3DView.js?v=9");
   app->useStyleSheet("InterSpec_resources/Shielding3DView.css");
 
   defineJavaScript();
@@ -443,9 +443,48 @@ void Shielding3DView::defineJavaScript()
 
 std::string Shielding3DView::createJsonData() const
 {
-  return createShieldingDiagramJson( m_shieldings, m_sources, m_geometry, m_detectorDistance,
-                                     m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
-}
+  nlohmann::json j = nlohmann::json::parse( createShieldingDiagramJson( m_shieldings, m_sources,
+                      m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] ) );
+
+  // The hover annotations' labels; the offsets are named as the Activity/Shielding fit's fields are
+  //  (see ShieldingSourceDisplay::offsetFieldsForGeometry).
+  InterSpec *viewer = InterSpec::instance();
+  if( viewer )
+    viewer->useMessageResourceBundle( "ShieldingSourceDisplay" );
+
+  const char *offset0_key = "ssd-offset-spherical", *offset1_key = "ssd-offset-spherical";
+  switch( m_geometry )
+  {
+    case GammaInteractionCalc::GeometryType::Spherical:
+      break;
+
+    case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      offset0_key = offset1_key = "ssd-offset-radial";
+      break;
+
+    case GammaInteractionCalc::GeometryType::CylinderSideOn:
+      offset0_key = "ssd-offset-radial";
+      offset1_key = "ssd-offset-axial";
+      break;
+
+    case GammaInteractionCalc::GeometryType::Rectangular:
+      offset0_key = "ssd-offset-width";
+      offset1_key = "ssd-offset-height";
+      break;
+
+    case GammaInteractionCalc::GeometryType::NumGeometryType:
+      assert( 0 );
+      break;
+  }//switch( m_geometry )
+
+  j["labels"]["toSurface"] = WString::tr("ssd-diag-to-surface").toUTF8();
+  j["labels"]["toCenter"] = WString::tr("ssd-diag-to-center").toUTF8();
+  j["labels"]["distance"] = WString::tr("distance-label").toUTF8();
+  j["labels"]["offset0"] = WString::tr(offset0_key).toUTF8();
+  j["labels"]["offset1"] = WString::tr(offset1_key).toUTF8();
+
+  return j.dump( -1, ' ', false, nlohmann::json::error_handler_t::replace );
+}//std::string Shielding3DView::createJsonData() const
 
 
 std::string Shielding3DView::createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf,

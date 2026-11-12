@@ -39,7 +39,7 @@
 #define REGENERATE_MC_VALUES 0
 
 #define BOOST_TEST_MODULE AnalyticCascadeNuclides
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include "cascade/AnalyticCascade.h"
 #include "cascade/SandiaDecayCascade.h"

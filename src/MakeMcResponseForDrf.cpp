@@ -161,7 +161,8 @@ namespace
 
   /** Predicted cumulative wall-seconds after each planned node, in generation order (backbone
    energies ascending, then the angular nodes of each shape energy, then the near-field nodes of
-   each, then the side & back nodes of each); size total + 1, [0] = 0. */
+   each, then the side & back nodes of each, then the side & back near-field nodes of each); size
+   total + 1, [0] = 0. */
   std::vector<double> prior_cumulative_cost( const ceelo::ResponseGenerator::NodePlan &plan,
                                              const ceelo::GenerationOptions &opts,
                                              const McTimeCalibration *calib )
@@ -188,6 +189,10 @@ namespace
     for( const double energy : plan.shape_energies_keV )
       for( int i = 0; i < plan.n_back_cos_theta * plan.n_phi; ++i )
         cum.push_back( cum.back() + node_cost_s( opts.back_precision_scale * prec(4, energy),
+                                                 opts.scans_stop_on_total, opts, calib ) );
+    for( const double energy : plan.shape_energies_keV )
+      for( int i = 0; i < plan.n_back_near_positions; ++i )
+        cum.push_back( cum.back() + node_cost_s( opts.back_precision_scale * prec(5, energy),
                                                  opts.scans_stop_on_total, opts, calib ) );
 
     return cum;
@@ -221,6 +226,23 @@ namespace
 
     return WString::tr("mmr-est-minutes").arg( static_cast<int>( std::ceil(minutes) ) );
   }//duration_phrase(...)
+
+
+  /** Attaches a generated `response` to `drf`, a copy of the seed DRF - or, without one, of the
+   foreground's detector.  The response was made with the seed's efficiency multiple (1 with no seed;
+   see #generationOptions), and the multiple goes with the response (DetectorPeakResponse::
+   setCeeloResponse), so a copy of some other detector takes the response's rather than tripping
+   setCeeloResponse's check that a response was made for the DRF it is attached to.  (A copy that
+   already carries a response adopts the new one's scale on its own.) */
+  void attach_generated_response( DetectorPeakResponse &drf,
+                                  const shared_ptr<const ceelo::DetectorResponse> &response )
+  {
+    assert( response );
+    if( !drf.ceeloResponse() && (drf.efficiencyMultiple() != response->efficiency_scale) )
+      drf.setEfficiencyMultiple( response->efficiency_scale );
+    drf.setCeeloResponse( response );
+    assert( drf.efficiencyMultiple() == response->efficiency_scale );
+  }//attach_generated_response(...)
 }//namespace
 
 
@@ -1491,7 +1513,7 @@ void MakeMcResponseForDrf::updateResponseChart()
                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
   }//if( !preview )
 
-  preview->setCeeloResponse( m_result );
+  attach_generated_response( *preview, m_result );
 
   // Chart source distance (absolute mode); default to 25 cm when unparseable.
   double dist = 25.0 * PhysicalUnits::cm;
@@ -1749,6 +1771,12 @@ void MakeMcResponseForDrf::updateEstimate()
       parts = WString::tr("mmr-est-part-join").arg( parts ).arg( back_part );
     }//if( side & back nodes )
 
+    if( (plan.n_back_near() > 0) && (nE > 0) )
+    {
+      const WString back_near_part = WString::tr("mmr-est-part-back-near").arg( plan.n_back_near_positions ).arg( nE );
+      parts = WString::tr("mmr-est-part-join").arg( parts ).arg( back_near_part );
+    }//if( side & back near-field nodes )
+
     const char *durKey = "mmr-est-dur-model";
     if( m_calibrating )
       durKey = "mmr-est-dur-measuring";
@@ -1852,16 +1880,17 @@ bool MakeMcResponseForDrf::startGeneration()
     const ceelo::AnchorCurve tot_curve
                        = CeeLoUtils::totalTransferAnchorForDrf( m_seedDrf, anchor );
     const string det_name = m_seedDrf ? m_seedDrf->name() : string("user geometry");
+    const double efficiency_scale = m_seedDrf ? m_seedDrf->efficiencyMultiple() : 1.0;
 
     const string sessionId = wApp->sessionId();
     const string widgetId = id();
 
-    auto worker = [gd,anchor,tot_curve,det_name,sessionId,widgetId,generation_id](){
+    auto worker = [gd,anchor,tot_curve,det_name,efficiency_scale,sessionId,widgetId,generation_id](){
       shared_ptr<ceelo::DetectorResponse> response;
       string errmsg;
       try
       {
-        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name );
+        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name, efficiency_scale );
       }catch( std::exception &e )
       {
         errmsg = e.what();
@@ -2111,6 +2140,8 @@ void MakeMcResponseForDrf::refreshProgressText()
       case 1:  stageKey = "mmr-stage-backbone"; break;
       case 2:  stageKey = m_transferAnchors ? "mmr-stage-anchors" : "mmr-stage-angular"; break;
       case 3:  stageKey = "mmr-stage-near"; break;
+      case 4:  stageKey = "mmr-stage-back"; break;
+      case 5:  stageKey = "mmr-stage-back-near"; break;
       default: break;
     }
   }//if( n < N )
@@ -2170,6 +2201,11 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
       case 2:  opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Fine;   break;
       default: opts.back_coverage = ceelo::GenerationOptions::BackCoverage::Coarse; break;
     }
+    // HPGe, NaI and similar detectors keep at least about this much cryostat, photomultiplier or
+    //  electronics behind the crystal face, described or not (pager-sized ones excepted, which do
+    //  not need this precision), so the side & back near field spends no Monte Carlo there.  A
+    //  source can still be placed there, and is then left to the ray-traced geometry.
+    opts.back_body_depth_cm = 15.0;
   }//if( Full MC, or an imported grid's total )
 
   if( selectedMethod() == Method::QuickMc )
@@ -2183,13 +2219,18 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
 
   if( (selectedMethod() == Method::ImportedGrid) && m_gridResponse )
   {
-    // Only the total efficiency is wanted - the grid is the FEP.  The profile still matters: the
-    //  General / Contact near-field scan is what measures the total close in (Far-field leaves it
-    //  carried inward by geometry alone - 1-4% off at grazing angles a few cm out).  The scans stop
-    //  on the total's precision - a 5x5 cm HPGe took 10 minutes instead of about an hour on 4
-    //  threads; only the on-axis backbone, which the grounding to the grid reads, stops on the FEP.
+    // Only the total is wanted - the grid is the FEP - and attachTotalEfficiency takes it as the
+    //  Monte Carlo's total/FEP ratio.  The profile still matters: the General / Contact near-field
+    //  scan is what measures that ratio close in (Far-field leaves it carried inward by geometry
+    //  alone - 1-4% off at grazing angles a few cm out).  The scans stop on the total's precision -
+    //  a 5x5 cm HPGe took 10 minutes instead of about an hour on 4 threads - although the ratio's
+    //  noise follows the FEP's (the FEP counts are a subset of the total's): on the mock pair that
+    //  cost ~0.1% RMS, which is not worth the hour.  Only the on-axis backbone stops on the FEP.
     //  Cover the grid's own energy range, not the default.
     opts.scans_stop_on_total = true;
+    // attachTotalEfficiency reads the total/FEP ratio at the grid's own nodes, none of which are a
+    //  side & back near-field position, so that scan would be spent for nothing.
+    opts.back_near_field = false;
     const ceelo::ResponseProvenance &prov = m_gridResponse->provenance;
     if( (prov.valid_e_min_keV > 0.0) && (prov.valid_e_max_keV > prov.valid_e_min_keV) )
     {
@@ -2199,6 +2240,10 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
   }//if( a total efficiency for an imported grid )
 
   opts.num_threads = CeeLoUtils::monteCarloThreadCount();
+
+  // The seed's multiple (its geometry is one of that many summed elements) - set here, so the
+  //  measured-point grounding that follows generation fits k(E) with it in the model.
+  opts.efficiency_scale = m_seedDrf ? m_seedDrf->efficiencyMultiple() : 1.0;
 
   return opts;
 }//generationOptions()
@@ -2528,7 +2573,7 @@ void MakeMcResponseForDrf::acceptResponse()
     //an incomplete form; the response's own descriptor is still there
   }
 
-  new_det->setCeeloResponse( m_result );
+  attach_generated_response( *new_det, m_result );
 
   m_interspec->detectorChanged().emit( new_det );
 

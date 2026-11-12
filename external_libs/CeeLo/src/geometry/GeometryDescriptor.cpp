@@ -331,6 +331,32 @@ double GeometryDescriptor::Envelope::exit_distance_cm(const Eigen::Vector3d& u) 
     return t;
 }
 
+Eigen::Vector3d GeometryDescriptor::Envelope::position_at_clearance(const Eigen::Vector3d& u,
+                                                                    const double clearance_cm) const {
+    const double t_exit = exit_distance_cm(u);
+    if (!(clearance_cm > 0.0))
+        return t_exit * u;
+    const ConvexSolid outside = solid();
+    const auto clearance_at = [&outside, &u](const double t) {
+        const Eigen::Vector3d p = t * u;
+        return (p - outside.project(p)).norm();
+    };
+    // The distance at the exit point plus c is at most c; double the step until it is past.
+    double lo = t_exit, hi = t_exit + clearance_cm;
+    while (clearance_at(hi) < clearance_cm) {
+        lo = hi;
+        hi = t_exit + 2.0 * (hi - t_exit);
+    }
+    for (int i = 0; (i < 200) && ((hi - lo) > 1.0e-13 * hi); ++i) {
+        const double mid = 0.5 * (lo + hi);
+        if (clearance_at(mid) < clearance_cm)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    return (0.5 * (lo + hi)) * u;
+}
+
 ConvexSolid GeometryDescriptor::Envelope::solid() const {
     const Eigen::Vector3d c(0.0, 0.0, 0.5 * (z_min_cm + z_max_cm));
     const double half_length = 0.5 * (z_max_cm - z_min_cm);
@@ -485,7 +511,9 @@ GeometryDescriptor GeometryDescriptor::from_text(const std::string& text) {
             header = true;
             continue;
         }
-        auto need = [&](auto&... values) {
+        // Explicit captures: MSVC fails to implicitly capture names used next to a
+        // fold expression in a generic lambda (C2065 on number_of_line / key).
+        auto need = [&fields, &number_of_line, &key](auto&... values) {
             if (!((fields >> values) && ...))
                 text_error(number_of_line, "malformed '" + key + "'");
         };

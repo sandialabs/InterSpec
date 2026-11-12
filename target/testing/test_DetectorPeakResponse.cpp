@@ -36,10 +36,12 @@
 #include <iomanip>
 #include <string>
 #include <vector>
+#include <limits>
 #include <memory>
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <functional>
 
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_utils.hpp>
@@ -5248,3 +5250,173 @@ BOOST_AUTO_TEST_CASE( test_convert_fixed_geometry_type )
     BOOST_CHECK_CLOSE( back_setup.fep_scale, 1.0, 1.0E-4 );
   }
 }//test_convert_fixed_geometry_type
+
+
+BOOST_AUTO_TEST_CASE( test_efficiency_multiple )
+{
+  // The efficiency scalar multiple: GADRAS's parameter 18 on import, stored on the CeeLo response
+  //  while one is attached and on the DRF otherwise, and multiplying every efficiency either way.
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Data directory not set (use --datadir=...)" );
+
+  const string src_dir = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors/NaI 3x3" );
+  BOOST_REQUIRE( SpecUtils::is_directory( src_dir ) );
+
+  // The same detector, but four of it summed: parameter 18 set to 4.
+  const string tmp_dir = SpecUtils::temp_file_name( "InterSpec_eff_multiple", SpecUtils::temp_dir() );
+  BOOST_REQUIRE( SpecUtils::create_directory( tmp_dir ) == 1 );
+  {
+    ifstream csv_in( SpecUtils::append_path( src_dir, "Efficiency.csv" ).c_str(), ios::binary );
+    ofstream csv_out( SpecUtils::append_path( tmp_dir, "Efficiency.csv" ).c_str(), ios::binary );
+    csv_out << csv_in.rdbuf();
+
+    ifstream dat_in( SpecUtils::append_path( src_dir, "Detector.dat" ).c_str(), ios::binary );
+    ofstream dat_out( SpecUtils::append_path( tmp_dir, "Detector.dat" ).c_str(), ios::binary );
+    string line;
+    bool replaced = false;
+    while( std::getline( dat_in, line ) )
+    {
+      string first;
+      istringstream( line ) >> first;
+      const size_t pos = line.find( "1.00000" );
+      if( (first == "18") && (pos != string::npos) )
+      {
+        line.replace( pos, 7, "4.00000" );
+        replaced = true;
+      }
+      dat_out << line << "\n";
+    }
+    BOOST_REQUIRE( replaced );
+  }
+
+  DetectorPeakResponse one, four;
+  BOOST_REQUIRE_NO_THROW( one.fromGadrasDirectory( src_dir ) );
+  BOOST_REQUIRE_NO_THROW( four.fromGadrasDirectory( tmp_dir ) );
+  SpecUtils::remove_file( SpecUtils::append_path( tmp_dir, "Efficiency.csv" ) );
+  SpecUtils::remove_file( SpecUtils::append_path( tmp_dir, "Detector.dat" ) );
+  SpecUtils::remove_file( tmp_dir );
+
+  BOOST_CHECK_EQUAL( one.efficiencyMultiple(), 1.0 );
+  BOOST_CHECK_CLOSE( four.efficiencyMultiple(), 4.0, 1.0E-6 );
+  BOOST_REQUIRE( one.ceeloResponse() && four.ceeloResponse() );
+  BOOST_CHECK_EQUAL( one.ceeloResponse()->efficiency_scale, 1.0 );
+  BOOST_CHECK_CLOSE( four.ceeloResponse()->efficiency_scale, 4.0, 1.0E-6 );
+
+  // The stored curve is the one element's - the unscaled import's - and everything evaluated is four times it.
+  BOOST_CHECK( *four.efficiencyCurve() == *one.efficiencyCurve() );
+  const function<float(float)> one_fcn = one.farFieldIntrinsicEfficiencyFcn();
+  const function<float(float)> four_fcn = four.farFieldIntrinsicEfficiencyFcn();
+  for( const float energy : { 100.0f, 661.7f, 1332.5f } )
+  {
+    BOOST_CHECK_CLOSE( four.farFieldIntrinsicEfficiency( energy ), 4.0*one.farFieldIntrinsicEfficiency( energy ), 1.0E-4 );
+    BOOST_CHECK_CLOSE( four_fcn( energy ), 4.0*one_fcn( energy ), 1.0E-4 );
+    BOOST_CHECK_CLOSE( four.intrinsicEfficiencyEval( energy ).value, 4.0*one.intrinsicEfficiencyEval( energy ).value, 1.0E-4 );
+    if( one.hasTotalEfficiency() )
+      BOOST_CHECK_CLOSE( four.totalIntrinsicEfficiency( energy ), 4.0*one.totalIntrinsicEfficiency( energy ), 1.0E-4 );
+
+    for( const double dist : { 5.0*PhysicalUnits::cm, 25.0*PhysicalUnits::cm, 100.0*PhysicalUnits::cm } )
+    {
+      BOOST_CHECK_CLOSE( four.efficiency( energy, dist ), 4.0*one.efficiency( energy, dist ), 1.0E-4 );
+      BOOST_CHECK_CLOSE( four.flatDiskEfficiency( energy, dist ), 4.0*one.flatDiskEfficiency( energy, dist ), 1.0E-4 );
+      if( one.hasAnyTotalEfficiencyInfo() )
+        BOOST_CHECK_CLOSE( four.totalEfficiency( energy, dist ), 4.0*one.totalEfficiency( energy, dist ), 1.0E-4 );
+    }
+  }//for( energies )
+
+  // Detaching a response keeps its scale on the DRF; a producer re-attaching one gives it the multiple.
+  DetectorPeakResponse detached( four );
+  detached.setCeeloResponse( nullptr );
+  BOOST_CHECK( !detached.ceeloResponse() );
+  BOOST_CHECK_CLOSE( detached.efficiencyMultiple(), 4.0, 1.0E-6 );
+  BOOST_CHECK_CLOSE( detached.efficiency( 661.7f, 25.0*PhysicalUnits::cm ),
+                     4.0*one.flatDiskEfficiency( 661.7f, 25.0*PhysicalUnits::cm ), 1.0E-4 );
+  BOOST_CHECK_CLOSE( four.ceeloResponse()->efficiency_scale, 4.0, 1.0E-6 );  //the copy shared, not changed, it
+
+  DetectorPeakResponse reattached( detached );
+  BOOST_REQUIRE( CeeLoUtils::attachCurveTransferResponse( reattached ) );
+  BOOST_CHECK_CLOSE( reattached.ceeloResponse()->efficiency_scale, 4.0, 1.0E-6 );
+  BOOST_CHECK_CLOSE( reattached.efficiency( 661.7f, 10.0*PhysicalUnits::cm ),
+                     four.efficiency( 661.7f, 10.0*PhysicalUnits::cm ), 1.0E-4 );
+
+  // Setting it with a response attached rescales a copy of the response, not the shared one.
+  DetectorPeakResponse two( four );
+  two.setEfficiencyMultiple( 2.0 );
+  BOOST_CHECK_CLOSE( two.efficiencyMultiple(), 2.0, 1.0E-9 );
+  BOOST_CHECK_CLOSE( two.ceeloResponse()->efficiency_scale, 2.0, 1.0E-9 );
+  BOOST_CHECK_CLOSE( four.ceeloResponse()->efficiency_scale, 4.0, 1.0E-6 );
+  BOOST_CHECK_CLOSE( two.efficiency( 661.7f, 10.0*PhysicalUnits::cm ),
+                     0.5*four.efficiency( 661.7f, 10.0*PhysicalUnits::cm ), 1.0E-4 );
+  BOOST_CHECK_NE( two.hashValue(), four.hashValue() );
+  for( const double bad : { 0.0, -1.0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity() } )
+    BOOST_CHECK_THROW( two.setEfficiencyMultiple( bad ), std::invalid_argument );
+
+  // Without a response, 1 is not stored: back at 1, a DRF hashes as it did before having a multiple.
+  {
+    DetectorPeakResponse plain( one );
+    plain.setCeeloResponse( nullptr );
+    const uint64_t plain_hash = plain.hashValue();
+    plain.setEfficiencyMultiple( 3.0 );
+    BOOST_CHECK_NE( plain.hashValue(), plain_hash );
+    plain.setEfficiencyMultiple( 1.0 );
+    BOOST_CHECK_EQUAL( plain.hashValue(), plain_hash );
+  }
+
+  // XML, DB extras and URL all keep it - on the response when there is one, on the DRF otherwise.
+  for( const DetectorPeakResponse *drf : { &four, &detached } )
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+    doc.append_node( parent );
+    drf->toXml( parent, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    BOOST_CHECK( xml.find( "version=\"8\"" ) != string::npos );
+    BOOST_CHECK_EQUAL( xml.find( "<EfficiencyMultiple>" ) != string::npos, !drf->ceeloResponse() );
+
+    DetectorPeakResponse restored;
+    BOOST_REQUIRE_NO_THROW( restored.fromXml( parent->first_node( "DetectorPeakResponse" ) ) );
+    BOOST_CHECK_CLOSE( restored.efficiencyMultiple(), 4.0, 1.0E-6 );
+    BOOST_CHECK_EQUAL( restored.hashValue(), drf->hashValue() );
+    BOOST_CHECK_CLOSE( restored.efficiency( 661.7f, 10.0*PhysicalUnits::cm ),
+                       drf->efficiency( 661.7f, 10.0*PhysicalUnits::cm ), 1.0E-6 );
+
+    DetectorPeakResponse from_db( restored );
+    from_db.setDrfExtraFromXmlString( drf->drfExtraToXmlString() );
+    BOOST_CHECK_CLOSE( from_db.efficiencyMultiple(), 4.0, 1.0E-6 );
+    BOOST_CHECK_EQUAL( !!from_db.ceeloResponse(), !!drf->ceeloResponse() );
+
+    DetectorPeakResponse from_url;
+    BOOST_REQUIRE_NO_THROW( from_url.fromAppUrl( drf->toAppUrl() ) );
+    BOOST_CHECK_CLOSE( from_url.efficiencyMultiple(), 4.0, 1.0E-6 );
+    BOOST_CHECK_CLOSE( from_url.flatDiskEfficiency( 661.7f, 25.0*PhysicalUnits::cm ),
+                       4.0*one.flatDiskEfficiency( 661.7f, 25.0*PhysicalUnits::cm ), 1.0E-3 );
+  }//for( with and without a response )
+
+  // A DRF without a multiple still writes what it always did.
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+    doc.append_node( parent );
+    one.toXml( parent, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    BOOST_CHECK( xml.find( "version=\"8\"" ) == string::npos );
+    BOOST_CHECK( xml.find( "EfficiencyMultiple" ) == string::npos );
+    BOOST_CHECK( xml.find( "EfficiencyScale" ) == string::npos );
+  }
+
+  // Curves sampled from a scaled response are the one element's, so the DRF still reports the whole.
+  {
+    DetectorPeakResponse resampled( four );
+    CeeLoUtils::setLegacyEfficiencyFromResponse( resampled, four.ceeloResponse() );
+    BOOST_CHECK_CLOSE( resampled.farFieldIntrinsicEfficiency( 661.7f ),
+                       four.intrinsicEfficiencyEval( 661.7f ).value, 0.5 );
+
+    const shared_ptr<const DetectorPeakResponse> four_ptr = make_shared<DetectorPeakResponse>( four );
+    const shared_ptr<const DetectorPeakResponse> snapshot
+                                = CeeLoUtils::flatDiskSnapshotAt( four_ptr, 25.0*PhysicalUnits::cm );
+    BOOST_REQUIRE( snapshot && (snapshot != four_ptr) );
+    BOOST_CHECK_CLOSE( snapshot->efficiencyMultiple(), 4.0, 1.0E-6 );
+    BOOST_CHECK_CLOSE( snapshot->efficiency( 661.7f, 25.0*PhysicalUnits::cm ),
+                       four.efficiency( 661.7f, 25.0*PhysicalUnits::cm ), 0.5 );
+  }
+}//test_efficiency_multiple

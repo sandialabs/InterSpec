@@ -554,7 +554,9 @@ ArrivalResponseTable::mu_bin_weights(double lo, double hi) const
     // incidence below ~100 keV (+0.47% at 59.5 keV with 16 nodes).
     std::vector<Weight> out;
     const double width = hi - lo;
-    constexpr std::size_t kPoints = 32;
+    // static: MSVC refuses a capture-less lambda's use of a non-static
+    // constexpr local (C3493), though the standard allows it.
+    static constexpr std::size_t kPoints = 32;
     static const auto rule = [] {
         std::array<std::array<double, kPoints>, 2> r{};
         detail::gauss_legendre_nodes(kPoints, r[0].data(), r[1].data());

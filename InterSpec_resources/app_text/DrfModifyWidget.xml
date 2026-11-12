@@ -331,6 +331,9 @@
   <message id="dmw-info-diam-setback">{1} (setback {2})</message>
   <!-- {1} = the geometry model's crystal, {2} = the stated diameter (setback) the flat-disk curve uses -->
   <message id="dmw-info-diam-flat-differs">{1}; Flat Disk uses {2}</message>
+  <message id="dmw-info-multiple">Scalar multiple</message>
+  <!-- {1} = DetectorPeakResponse::efficiencyMultiple, shown only when it is not 1 -->
+  <message id="dmw-info-multiple-value">×{1} - the efficiency is this many times that of the one detector element described (identical elements combined into one spectrum)</message>
 
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it

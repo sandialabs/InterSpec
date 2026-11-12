@@ -310,12 +310,16 @@ it does not exist in the payload.
   "FitChi2": 12.34,
   "NumberFcnCalls": 187,
   "NumDof": 7,
+  "NumFitParameters": 2,
+  "FitChi2PerDofStr": "1.76",
   "NumSources": 1,
   "HasTraceSource": false,
   "HasSelfAttenSource": false,
   "HasVolumetricSource": false,
   "AnySourceAgeFit": false,
   "AnyShieldingFit": true,
+  "HasActivityUncertBreakdown": true,
+  "HasPerShieldAttenuations": true,
   "FixedGeometryDetector": false,
   "RawFitParameter": { "Values": [...], "Errors": [...] },
   "Detector": { ... },              // §5.2
@@ -368,13 +372,17 @@ it does not exist in the payload.
 | `Warnings`                     | array[string] | Human-readable warning strings. Always emitted (may be empty). |
 | `FitChi2`                      | number  | Final χ² value reported by the fitter. |
 | `NumberFcnCalls`               | int     | Number of objective-function evaluations. |
-| `NumDof`                       | int     | Degrees of freedom (number of free parameters). |
+| `NumDof`                       | int     | Degrees of freedom: the number of peaks fit, minus `NumFitParameters` (zero if that would be negative). |
+| `NumFitParameters`             | int     | Number of parameters varied in the fit. |
+| `FitChi2PerDofStr`             | string  | `FitChi2 / NumDof`, via `printCompact(...,3)`. Only present when `NumDof > 0`. |
 | `NumSources`                   | int     | Number of distinct nuclides being fit. |
 | `HasTraceSource`               | bool    | At least one source is a trace source (§5.6). |
 | `HasSelfAttenSource`           | bool    | At least one source is self-attenuating (§5.6). |
 | `HasVolumetricSource`          | bool    | `HasTraceSource OR HasSelfAttenSource`. |
 | `AnySourceAgeFit`              | bool    | At least one source's age was fitted. |
 | `AnyShieldingFit`              | bool    | At least one shielding dimension or property was fitted. |
+| `HasActivityUncertBreakdown`   | bool    | At least one `Sources[]` entry has an `ActivityUncertBreakdown` (§5.6.1). |
+| `HasPerShieldAttenuations`     | bool    | At least one used peak has a non-empty `ShieldAttenuations` (§5.7) - these are only computed for point sources, so this is false when every source is volumetric. |
 | `FixedGeometryDetector`        | bool    | The DRF has a fixed-geometry efficiency (no `Distance`/`Geometry`). |
 | `RawFitParameter.Values`       | array[number] | Raw parameter vector from the fitter (implementation-defined ordering — for diagnostics). |
 | `RawFitParameter.Errors`       | array[number] | Raw parameter uncertainties (paired with `.Values`). |
@@ -720,6 +728,39 @@ areal too (e.g. µCi/m²), matching `ActivityPostFix`.
 | `UsedSubstitutePeak`        | bool   |     | True when the exemplar's designated line was not fit in this spectrum and a fallback line was used. Always present. |
 | `IsDetected`                | bool   |     | Always present. True if observed source counts ≥ Lc. Report wording (e.g. FRMAC "Approved" / "Less than Lc") is a template concern. Defaults to `true` when no limit was computed. |
 
+#### 5.6.1 `Sources[].ActivityUncertBreakdown`
+
+Splits `ActivityUncert` into parts that add in quadrature to it. Only present if `ActivityIsFit`
+and the fit computed the statistics-only uncertainties (any completed fit does; results re-rendered
+from older data, or the GUI's pre-fit chart, will not have it).
+
+```json
+"ActivityUncertBreakdown": {
+  "HasStatFixedOthers": true,
+  "HasDetEff": true,
+  "StatFixedOthers": { "Uncert": "26.74 nCi", "Uncert_bq": 989.4, "PercentOfActivityStr": "0.848", "VarianceSharePercentStr": "12.2" },
+  "FitCorrelation":  { "Uncert": "0", ... },
+  "StatOnly":        { "Uncert": "26.74 nCi", ... },
+  "DetEff":          { "Uncert": "71.66 nCi", ... },
+  "Total":           { "Uncert": "76.49 nCi", ..., "VarianceSharePercentStr": "100.0" }
+}
+```
+
+| Part | Notes |
+|---|---|
+| `StatFixedOthers` | From the peak-area (and background-subtraction) uncertainties alone, with every other fit parameter held fixed at its fitted value. Only present if `HasStatFixedOthers` - true for point and trace sources; a self-attenuating source's activity depends on several parameters, so it has no single one to hold the rest fixed against. |
+| `FitCorrelation`  | What also fitting the other parameters (shielding, ages, other nuclides sharing peaks) adds: `sqrt(StatOnly² - StatFixedOthers²)`. Only present if `HasStatFixedOthers`. |
+| `StatOnly`        | From the peak-area uncertainties alone, with the other parameters free. Always present. |
+| `DetEff`          | What the detector efficiency uncertainty adds: `sqrt(Total² - StatOnly²)`. Always present; `HasDetEff` is false when it is zero (method `None`, or the DRF has no uncertainty), and `DetectorEff.UncertUsedDescription` (§5.19) says why. With the `Likelihood` method the fit weights the peaks using this uncertainty, so the split is approximate. |
+| `Total`           | Same as `ActivityUncert`. |
+
+Each part has: `Uncert` (best activity units, 2 decimals, `ActivityPostFix` appended; `"0"` when
+zero), `Uncert_bq`, `PercentOfActivityStr` (`100·part/activity`, 3 significant figures), and
+`VarianceSharePercentStr` (`100·part²/Total²`, one decimal - e.g. for a CSS bar width). Parts below
+1E-4 of the total (numerical noise) are reported as zero. Nuclear-data, distance, and geometry
+uncertainties are not part of the fit, so are not included; nor are any of the uncertainties scaled
+by `FitChi2PerDofStr`.
+
 ### 5.7 `Sources[].PeaksThisNucContributesTo[]`
 
 Each element describes one fitted peak that the source contributes gammas to. Built by
@@ -822,14 +863,15 @@ Each element of `Shields[]`:
   "Name": "Lead",
   "ShieldingNumber": 0,
   "IsGeneric": false,
-  "Formula": "Pb",
+  "Formula": "Pb11.34",
+  "CompositionStr": "Pb 100%",
   "Density_gPerCm3": 11.34,
   "DensityStr": "11.34 g/cm3",
   "Thickness":      "5.00 mm",
   "Thickness_mm":   5.0, "Thickness_cm": 0.5, "Thickness_m": 0.005, "Thickness_inch": 0.1969, "Thickness_feet": 0.01641,
   "VolumeCm3": 12.57, "VolumeUncertCm3": 0.21,
   "InnerRadius": "0 mm",  "OuterRadius": "5.0 mm",
-  "InnerDims":   ["0 mm"], "OuterDims": ["5.0 mm"], "Thicknesses": ["5.0 mm"], "ThicknessesUncerts": ["0.08 mm"],
+  "InnerDims":   ["0 mm"], "OuterDims": ["5 mm"], "Thicknesses": ["5 mm"], "ThicknessesUncerts": ["0.08 mm"],
   "InnerDims_mm":         [0.0],   "OuterDims_mm":         [5.0],   "Thicknesses_mm":         [5.0],   "ThicknessesUncerts_mm":   [0.08],
   "InnerDims_cm":         [0.0],   "OuterDims_cm":         [0.5],   "Thicknesses_cm":         [0.5],   "ThicknessesUncerts_cm":   [0.008],
   "InnerDims_m":          [0.0],   "OuterDims_m":          [0.005], "Thicknesses_m":          [0.005], "ThicknessesUncerts_m":    [8e-5],
@@ -848,8 +890,9 @@ Each element of `Shields[]`:
 | `ShieldingNumber`       | int     |          | 0-based index in the array. |
 | `Geometry`              | string  |          | Per-shield geometry, same vocabulary as `Shieldings.Geometry`: `"Spherical"`, `"CylinderEndOn"`, `"CylinderSideOn"`, `"Rectangular"`. (Currently always matches the top-level `Shieldings.Geometry`.) |
 | `IsGeneric`             | bool    |          | True for AN/AD generic shielding; false for material-defined shielding. |
-| `Formula`               | string  |          | Chemical formula of the material. Only present if `!IsGeneric`. |
-| `Density_gPerCm3`       | number  | g/cm³    | Only present if `!IsGeneric`. |
+| `Formula`               | string  |          | The material as InterSpec parses it: each element followed by its partial density in g/cm³, e.g. `"N0.000974337O0.000299022Ar1.6641e-05"` for air. Only present if `!IsGeneric`. |
+| `CompositionStr`        | string  |          | Human-readable composition by mass fraction, largest first, e.g. `"N 75.5%, O 23.2%, Ar 1.29%"`. Only present if `!IsGeneric`. |
+| `Density_gPerCm3`       | number  | g/cm³    | Only present if `!IsGeneric`. The value is from a single-precision float, so prints with spurious digits (e.g. `0.0012900000896201534`); use `DensityStr` or `printCompact(...)` for display. |
 | `DensityStr`            | string  |          | Best-units density. Only present if `!IsGeneric`. |
 | `AN`                    | string  |          | Effective atomic number, formatted. Only present if `IsGeneric` and AN > 0. |
 | `AD`                    | string  |          | Areal density, formatted. Only present if `IsGeneric` and AD > 0. |
@@ -865,10 +908,10 @@ Each element of `Shields[]`:
 | `VolumeUncertCm3`       | number  | cm³      | |
 | `InnerRadius`           | string  |          | Best-units inner radius (sphere/cylinder). |
 | `OuterRadius`           | string  |          | Best-units outer radius (sphere/cylinder). |
-| `InnerDims`             | array[string] |    | Per-axis inner edges, best-units strings (length = `NumDimensions`). |
+| `InnerDims`             | array[string] |    | Per-axis inner edges, best-units strings to 5 significant figures, trailing zeros trimmed (length = `NumDimensions`). |
 | `OuterDims`             | array[string] |    | Per-axis outer edges, best-units strings. |
-| `Thicknesses`           | array[string] |    | Per-axis thickness strings. |
-| `ThicknessesUncerts`    | array[string] |    | Per-axis thickness uncertainty strings. |
+| `Thicknesses`           | array[string] |    | Per-axis thickness strings, e.g. `"74.5 cm"`. |
+| `ThicknessesUncerts`    | array[string] |    | Per-axis thickness uncertainty strings, to 3 significant figures; empty for dimensions not fit. |
 | `InnerDims_mm`          | array[number] | mm | Per-axis inner edge in mm. |
 | `InnerDims_cm`          | array[number] | cm | |
 | `InnerDims_m`           | array[number] | m  | |
@@ -1167,48 +1210,67 @@ members with `existsIn(peak,"ImpliedActivityUncert")` when a zero uncertainty is
 
 ### 5.18 `PullTrend`
 
-An automatic diagnosis of the per-peak pulls ("chi" values, i.e. `(observed-model)/uncertainty`)
-as a function of energy.  The physics: if the model has the wrong *amount* of shielding, the
-attenuation-vs-energy mismatch tilts the pulls monotonically with energy; if it has the wrong
-effective *atomic number*, the photoelectric term (~Z⁴·⁵/E³) versus the nearly Z-independent
-Compton term bends them (a low-energy "hook") even after the fit compensates the overall amount.
-A low-order polynomial is fit to the pulls and the coefficient t-statistics are compared against
-calibrated thresholds.  The GUI shows `Message` under the χ² chart; the bundled templates put it
-in the same place.
+An automatic diagnosis of the per-peak pulls ("chi" values, i.e. `(observed-model)/uncertainty`).
+It asks whether a *physical* change of the shielding would explain the residuals significantly
+better than the fitted model: scaling the shielding amount (or, when the model has no shielding,
+adding a layer of a reference material), or changing the shielding's effective atomic number, with
+every source activity re-solved for each alternative.  Each answer is a profile likelihood-ratio
+significance (in sigma), divided by a residual scale that is never below 2 (real peak fits scatter
+2-5x their statistical uncertainty), with a 2% fractional floor on each peak's uncertainty.  A
+smooth residual trend that no shielding change explains is reported as "other".  The GUI shows
+`Message` under the χ² chart; the bundled templates put it in the same place.
 
 ```json
 "PullTrend": {
   "HasConclusion": true,
-  "Message": "Peak residuals probably indicate too much modeled shielding.",
+  "TestsRun": true,
+  "Message": "Peak residuals strongly indicate the model lacks shielding; the peaks are consistent with roughly 24 g/cm2 of a medium-Z (iron-like) material.",
+  "AmountSigma": 21.4,
+  "AtomicNumberSigma": 0.0,
+  "OtherTrendSigma": 0.3,
+  "ResidualScale": 2.0,
+  "NumPeaksTested": 13,
+  "ModelHasShielding": false,
+  "PossibleCascadeSumming": false,
+  "SuggestedArealDensity": 24.1,
+  "SuggestedArealDensityStr": "24 g/cm²",
+  "SuggestedAtomicNumber": 26,
   "SlopeT": 3.72,
-  "CurvatureT": 0.41,
-  "ReducedChi2": 1.18,
+  "CurvatureT": -4.41,
+  "ReducedChi2": 9.8,
   "NumPeaksUsed": 12,
-  "AtomicNumberDiscriminationPower": 4.83,
-  "AtomicNumberDiscriminable": true
+  "AtomicNumberDiscriminationPower": 0.0,
+  "AtomicNumberDiscriminable": false
 }
 ```
 
 | Field | Type | Notes |
 |---|---|---|
 | `HasConclusion`  | bool   | A conclusion was reached *and* is worth reporting. **Always emitted.** False both when the analysis could not run at all and when it ran but found nothing conclusive — guard `Message` with this. |
-| `Message`        | string | Plain-English one-sentence conclusion, e.g. `"Peak residuals probably indicate too much modeled shielding."`, `"Peak residuals may indicate the shielding's effective atomic number is too low."`, or `"A residual energy trend remains despite fitting shielding; the distance, geometry, source age, or detector response may be slightly off."`  **Always emitted**; empty string when `HasConclusion` is false.  Not localized (the GUI renders its own localized wording from the same result). |
-| `SlopeT`         | number | t-statistic of the fitted linear term.  Large magnitude ⇒ a monotonic pull trend with energy ⇒ the modeled shielding *amount* is likely wrong.  Sign indicates direction. |
-| `CurvatureT`     | number | t-statistic of the fitted quadratic term.  Large magnitude ⇒ the pull *shape* is wrong ⇒ the effective atomic number is likely wrong.  Only asserted as a Z conclusion when `AtomicNumberDiscriminable` is true. |
-| `ReducedChi2`    | number | Reduced χ² of the trend fit itself (a measure of how well the low-order trend describes the pulls).  Values > 1 mean scatter beyond the trend; the coefficient uncertainties are already inflated by `sqrt(max(1,ReducedChi2))` so the t-statistics stay calibrated. |
-| `NumPeaksUsed`   | int    | Number of pull points that survived filtering and entered the trend fit. |
-| `AtomicNumberDiscriminationPower` | number | How well **this dataset** *could* resolve a reference-sized (1.5×) atomic-number error — a property of the peak energies, significances and model shielding, not of the observed pulls.  Above ~250 keV attenuation is Compton-dominated and nearly Z-independent, so only low-energy, high-significance peaks carry Z information.  0 when not computed. |
-| `AtomicNumberDiscriminable`       | bool   | `AtomicNumberDiscriminationPower` cleared the calibrated gate (~2.5).  **When false, a null Z result means "could not tell", not "atomic number is fine"** — and any curvature that does appear is suppressed rather than reported as a Z signature.  Worth saying so explicitly in a report. |
+| `Message`        | string | Plain-English one-sentence conclusion, e.g. `"Peak residuals probably indicate too much modeled shielding; about 9.8 g/cm2 in total would fit best."`, `"Peak residuals may indicate the shielding's effective atomic number is too low; the peaks favor an effective atomic number near 26."`, or `"A residual energy trend remains that changing the shielding does not explain; ..."`; a cascade-summing caveat sentence is appended when `PossibleCascadeSumming`.  **Always emitted**; empty string when `HasConclusion` is false.  Not localized (the GUI renders its own localized wording from the same result). |
+| `TestsRun`       | bool   | Whether the likelihood-ratio tests ran (they do not for self-attenuating or trace sources, or with too few peaks).  When false, the sigma fields are 0 and mean "not tested", not "nothing found". |
+| `AmountSigma`    | number | Likelihood-ratio significance of changing the shielding amount (or adding shielding, when the model has none).  Positive ⇒ the peaks want *more* shielding; negative ⇒ less.  Only used for a conclusion when the amount was not fit. |
+| `AtomicNumberSigma` | number | Significance of changing the effective atomic number (areal density re-fit).  Positive ⇒ the peaks want a *higher* Z than modeled (model Z too low). |
+| `OtherTrendSigma` | number | Significance of a smooth (quadratic in log energy) residual trend beyond the best shielding alternative. |
+| `ResidualScale`  | number | Scale the significances were divided by: the residual scatter about the best alternative, but never below 2 (0 when the tests did not run). |
+| `NumPeaksTested` | int    | Peaks the likelihood-ratio tests used. |
+| `ModelHasShielding` | bool | Whether the model had any shielding with non-zero areal density. |
+| `PossibleCascadeSumming` | bool | The entered distance is under 15 cm, cascade-summing correction is off, a source nuclide emits coincident gammas, and summing cannot be ruled out for this detector. |
+| `SuggestedArealDensity` | number | g/cm².  Present with amount and lacks-shielding conclusions (best-fit total areal density) and atomic-number conclusions (areal density at the favored Z).  `SuggestedArealDensityStr` is the same, formatted. |
+| `SuggestedAtomicNumber` | number | The favored effective atomic number, when the data pin it (lacks-shielding: one of 7, 13, 26, 50, 82; atomic-number conclusions: free fit). |
+| `SlopeT`, `CurvatureT`, `ReducedChi2`, `NumPeaksUsed` | number | The descriptive trend curve drawn on the χ chart (a low-order polynomial in log energy fit to the pulls).  Informational only; it no longer drives the conclusion. |
+| `AtomicNumberDiscriminationPower` | number | How well **this dataset** *could* resolve a reference-sized (1.5×) atomic-number error — the `AtomicNumberSigma` such an error would produce for these peaks and this shielding, independent of the observed pulls.  Above ~250 keV attenuation is Compton-dominated and nearly Z-independent, so only low-energy, significant peaks carry Z information.  0 when not computed (no single shielding in the model). |
+| `AtomicNumberDiscriminable`       | bool   | `AtomicNumberDiscriminationPower` reached 2.5.  Soft ("possibly", 2.5–3.5 sigma) atomic-number calls are only made then.  **When false, a null Z result means "could not tell", not "atomic number is fine".** |
 
-> **Guarding.**  `HasConclusion` and `Message` are always present.  **The other six fields are
-> present only when the trend analysis actually ran** (it is skipped, and may fail, e.g. with too
-> few peaks).  Use `existsIn(PullTrend,"SlopeT")` before touching any of them:
+> **Guarding.**  `HasConclusion` and `Message` are always present.  **The other fields are present
+> only when the analysis actually ran** (and the `Suggested*` ones only with a matching conclusion).
+> Use `existsIn(PullTrend,"AmountSigma")` before touching any of them:
 >
 > ```
 > {% if exists("PullTrend") and PullTrend.HasConclusion %}{{ PullTrend.Message }}{% endif %}
-> {% if exists("PullTrend") and existsIn(PullTrend,"SlopeT") %}
->   (slope t={{ printFixed(PullTrend.SlopeT,1) }}, curvature t={{ printFixed(PullTrend.CurvatureT,1) }},
->    {{ PullTrend.NumPeaksUsed }} points{% if PullTrend.AtomicNumberDiscriminable %}{% else %};
+> {% if exists("PullTrend") and existsIn(PullTrend,"AmountSigma") %}
+>   (amount {{ printFixed(PullTrend.AmountSigma,1) }} sigma, atomic number {{ printFixed(PullTrend.AtomicNumberSigma,1) }} sigma,
+>    {{ PullTrend.NumPeaksTested }} peaks{% if PullTrend.AtomicNumberDiscriminable %}{% else %};
 >    these peaks cannot resolve the effective atomic number{% endif %})
 > {% endif %}
 > ```
@@ -1707,7 +1769,8 @@ are confirmed to work against the bundled templates.  Two of them the detection-
 rely on: **`{% else if %}`** (chained else-if, spelled with a space; one `{% endif %}` closes the
 whole chain, not one per arm) and **string equality** (`{% if x == "SomeValue" %}` against a
 literal). `set_trim_blocks(true)` is on, so
-the first newline after a block is dropped.
+the first newline after a block is dropped - and, in this Inja version, so are any spaces or tabs
+right after the `%}`; see §8.7 before relying on whitespace around `{% %}` tags.
 
 ```jinja
 {# This is a comment.  Inja drops comments before parsing. #}
@@ -1874,6 +1937,30 @@ wouldn't).
 `{% if %} ... {% endif %}` block syntax over the `## for` / `## if` line-statement
 syntax. Both work, but if you stick to `{% %}` you can't accidentally turn a heading
 into a syntax error by adding text starting with `##`.
+
+
+### 8.7 Whitespace after `{% ... %}` tags
+
+With `trim_blocks` on, this Inja drops the spaces and tabs right after every `%}`, **and** the
+newline after them.  So
+
+```jinja
+{{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }}{% endif %}
+Next line
+```
+
+renders as `3.15 uCiwith uncertainty 76.4 nCiNext line`.  Worse, the bundled templates are not
+always parsed the same way: the GUI calculation-log dialog parses the template files with
+`get_default_inja_env()` (trim on), while batch renders `"html"` / `"txt"` through the
+pre-registered includes, which are parsed without trimming.  The bundled templates are written to
+come out the same either way:
+
+- Put a needed space *before* the `{%`, not after the `%}`: `{{ a }} {% if b %}with ...`.
+- If the text after `%}` must start with a space, emit it from an expression, which is never
+  trimmed: `{% if b %}{{ " with " }}...`, or in HTML use `&#32;`.
+- Don't end a line of text output with a `{% ... %}` tag (its newline would be eaten); end it with
+  text or a `{{ ... }}` expression.  For whole-line conditionals and loops use `##` line
+  statements, which consume their own line the same way in both modes.
 
 ## 9. Custom callbacks
 

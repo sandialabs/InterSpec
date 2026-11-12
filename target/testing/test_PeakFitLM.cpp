@@ -702,7 +702,8 @@ BOOST_AUTO_TEST_CASE( test_bortel_independent_skew )
 namespace
 {
   /** A noise-free synthetic HPGe-like spectrum of GADRAS-shaped peaks on a sloped background.
-   `skew` is the six GADRAS skew parameters the peaks are drawn with.
+   `skew` is the six GADRAS skew parameters the peaks are drawn with; `means` the peak energies, and
+   `full_scale_kev` the upper energy of the spectrum.
    */
   struct GadrasSyntheticSpectrum
   {
@@ -710,12 +711,14 @@ namespace
     vector<double> means, sigmas, amps;
   };
 
-  GadrasSyntheticSpectrum make_gadras_spectrum( const double skew[6] )
+  GadrasSyntheticSpectrum make_gadras_spectrum( const double skew[6],
+                                                const vector<double> &means = { 186.21, 351.93, 661.66, 1173.23, 1764.49 },
+                                                const float full_scale_kev = 3000.0f )
   {
     GadrasSyntheticSpectrum answer;
 
     const size_t num_channels = 8192;
-    const float gain = 3000.0f / num_channels;
+    const float gain = full_scale_kev / num_channels;
     auto cal = make_shared<SpecUtils::EnergyCalibration>();
     cal->set_polynomial( num_channels, {0.0f, gain}, {} );
 
@@ -724,7 +727,7 @@ namespace
     for( size_t ch = 0; ch < num_channels; ++ch )
       counts[ch] = 40.0 - 0.01*(*energies)[ch];
 
-    answer.means = { 186.21, 351.93, 661.66, 1173.23, 1764.49 };
+    answer.means = means;
     for( const double mean : answer.means )
     {
       const double sigma = (1.0 + 0.0012*mean) / 2.35482;
@@ -888,3 +891,277 @@ BOOST_AUTO_TEST_CASE( test_fit_gadras_skew_synthetic )
     BOOST_CHECK_EQUAL( result.fit_peaks.size(), spec.means.size() );
   }
 }//test_fit_gadras_skew_synthetic
+
+
+namespace
+{
+  /** A noise-free synthetic spectrum of Bortel-skewed peaks at `means`, on a flat background, with the
+   Bortel skew linear in energy: `skew_at_0 + skew_slope*energy`.
+   */
+  shared_ptr<SpecUtils::Measurement> make_bortel_spectrum( const vector<double> &means,
+                                                           const float full_scale_kev,
+                                                           const double skew_at_0, const double skew_slope )
+  {
+    const size_t num_channels = 8192;
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_polynomial( num_channels, {0.0f, full_scale_kev / num_channels}, {} );
+
+    const shared_ptr<const vector<float>> energies = cal->channel_energies();
+    vector<double> counts( num_channels, 20.0 );
+    for( const double mean : means )
+    {
+      PeakDef peak( mean, (1.0 + 0.0012*mean) / 2.35482, 5.0E4 );
+      peak.setSkewType( PeakDef::SkewType::Bortel );
+      peak.set_coefficient( skew_at_0 + skew_slope*mean, PeakDef::SkewPar0 );
+      peak.gauss_integral( energies->data(), counts.data(), num_channels );
+    }
+
+    auto fcounts = make_shared<vector<float>>( counts.begin(), counts.end() );
+    auto data = make_shared<SpecUtils::Measurement>();
+    data->set_gamma_counts( fcounts, 600.0f, 600.0f );
+    data->set_energy_calibration( cal );
+    return data;
+  }//make_bortel_spectrum(...)
+
+
+  /** Starting peaks for `make_bortel_spectrum(...)`: each in its own ROI symmetric about the peak (so the
+   ROI center, where the fit evaluates the skew, is the peak mean), off the true amplitude and FWHM.
+   */
+  vector<shared_ptr<const PeakDef>> bortel_start_peaks( const vector<double> &means )
+  {
+    vector<shared_ptr<const PeakDef>> peaks;
+    for( const double mean : means )
+    {
+      const double sigma = (1.0 + 0.0012*mean) / 2.35482;
+      auto cont = make_shared<PeakContinuum>();
+      cont->setType( PeakContinuum::OffsetType::Linear );
+      cont->setRange( mean - 15.0*sigma, mean + 15.0*sigma );
+
+      auto peak = make_shared<PeakDef>( mean + 0.1*sigma, 1.05*sigma, 4.0E4 );
+      peak->setContinuum( cont );
+      peaks.push_back( peak );
+    }
+    return peaks;
+  }//bortel_start_peaks(...)
+}//namespace
+
+
+// One spectrum through `fit_peaks_in_spectra_LM` gives what `fit_peaks_in_spectrum_LM` does.
+BOOST_AUTO_TEST_CASE( test_fit_spectra_single_matches_spectrum )
+{
+  const double truth[6] = { 8.0, 2.0, 0.3, 0.0, 0.0, 0.0 };
+  const GadrasSyntheticSpectrum spec = make_gadras_spectrum( truth );
+  const double start[6] = { 3.0, 1.0, 0.3, 0.0, 0.0, 0.0 };
+  const bool fit[6] = { true, true, false, false, false, false };
+  const vector<shared_ptr<const PeakDef>> peaks = gadras_start_peaks( spec, PeakDef::SkewType::GadrasGeneric, start, fit );
+
+  const PeakFitLM::FitPeaksResults single = PeakFitLM::fit_peaks_in_spectrum_LM( peaks, spec.data, 0.0, 0.0,
+                                PeakFitUtils::CoarseResolutionType::High, PeakDef::SkewType::GadrasGeneric );
+  const PeakFitLM::MultiSpectrumFitResults joint = PeakFitLM::fit_peaks_in_spectra_LM( { {spec.data, peaks} },
+                                0.0, 0.0, PeakFitUtils::CoarseResolutionType::High, PeakDef::SkewType::GadrasGeneric );
+
+  BOOST_REQUIRE( single.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+  BOOST_REQUIRE_MESSAGE( joint.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success, joint.error_message );
+  BOOST_REQUIRE_EQUAL( joint.spectra.size(), 1 );
+  BOOST_REQUIRE( single.skew_relation.has_value() && joint.skew_relation.has_value() );
+  BOOST_CHECK( !joint.spectra[0].skew_relation.has_value() );
+
+  const vector<shared_ptr<const PeakDef>> &joint_peaks = joint.spectra[0].fit_peaks;
+  BOOST_REQUIRE_EQUAL( joint_peaks.size(), single.fit_peaks.size() );
+  for( size_t i = 0; i < joint_peaks.size(); ++i )
+  {
+    BOOST_CHECK_EQUAL( joint_peaks[i]->mean(), single.fit_peaks[i]->mean() );
+    BOOST_CHECK_EQUAL( joint_peaks[i]->sigma(), single.fit_peaks[i]->sigma() );
+    BOOST_CHECK_EQUAL( joint_peaks[i]->amplitude(), single.fit_peaks[i]->amplitude() );
+    BOOST_CHECK_EQUAL( joint_peaks[i]->chi2dof(), single.fit_peaks[i]->chi2dof() );
+  }
+
+  for( size_t k = 0; k < 6; ++k )
+  {
+    BOOST_REQUIRE( joint.skew_relation->non_energy_dependent_skew_pars[k].has_value() );
+    BOOST_CHECK_EQUAL( joint.skew_relation->non_energy_dependent_skew_pars[k]->first,
+                       single.skew_relation->non_energy_dependent_skew_pars[k]->first );
+  }
+}//test_fit_spectra_single_matches_spectrum
+
+
+// GADRAS skew fit across two spectra (different energy calibrations), each with some of the lines: the
+//  six GADRAS values are shared (they have no linear energy dependence - the shape's own power terms
+//  give it), and each spectrum's peaks come back with its own results.
+BOOST_AUTO_TEST_CASE( test_fit_spectra_gadras_two_spectra )
+{
+  const double truth[6] = { 8.0, 2.0, 0.3, 0.0, 0.0, 0.0 };
+  const GadrasSyntheticSpectrum spec_a = make_gadras_spectrum( truth, { 186.21, 661.66, 1764.49 }, 3000.0f );
+  const GadrasSyntheticSpectrum spec_b = make_gadras_spectrum( truth, { 351.93, 1173.23 }, 2000.0f );
+  const PeakDef::SkewType skew_type = PeakDef::SkewType::GadrasGeneric;
+
+  // The tail amplitudes, and the low-tail power (the GADRAS energy dependence), from a wrong start
+  const double start[6] = { 3.0, 1.0, 0.0, truth[3], truth[4], truth[5] };
+  const bool fit[6] = { true, true, true, false, false, false };
+
+  const vector<PeakFitLM::SpectrumPeaks> spectra = {
+    { spec_a.data, gadras_start_peaks( spec_a, skew_type, start, fit ) },
+    { spec_b.data, gadras_start_peaks( spec_b, skew_type, start, fit ) }
+  };
+
+  const PeakFitLM::MultiSpectrumFitResults result = PeakFitLM::fit_peaks_in_spectra_LM( spectra, 0.0, 0.0,
+                                                PeakFitUtils::CoarseResolutionType::High, skew_type );
+  BOOST_REQUIRE_MESSAGE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success, result.error_message );
+  BOOST_REQUIRE_EQUAL( result.spectra.size(), 2 );
+  BOOST_REQUIRE( result.skew_relation.has_value() );
+
+  const PeakFitLM::FitPeaksResults::SkewRelation &sr = *result.skew_relation;
+  BOOST_REQUIRE( sr.energy_range.has_value() );
+  BOOST_CHECK_SMALL( sr.energy_range->first, 1.0E-6 );
+  BOOST_CHECK_CLOSE( sr.energy_range->second, 3000.0, 1.0E-4 );
+
+  for( size_t k = 0; k < 6; ++k )
+  {
+    BOOST_TEST_INFO( "k=" << k );
+    BOOST_REQUIRE( sr.non_energy_dependent_skew_pars[k].has_value() );
+    BOOST_CHECK( !sr.energy_dependent_skew_pars[k].has_value() );
+  }
+
+  BOOST_TEST_INFO( "low=" << sr.non_energy_dependent_skew_pars[0]->first );
+  BOOST_CHECK_CLOSE( sr.non_energy_dependent_skew_pars[0]->first, truth[0], 3.0 );
+  BOOST_TEST_INFO( "high=" << sr.non_energy_dependent_skew_pars[1]->first );
+  BOOST_CHECK_CLOSE( sr.non_energy_dependent_skew_pars[1]->first, truth[1], 5.0 );
+  BOOST_TEST_INFO( "low power=" << sr.non_energy_dependent_skew_pars[2]->first );
+  BOOST_CHECK_SMALL( sr.non_energy_dependent_skew_pars[2]->first - truth[2], 0.03 );
+
+  const GadrasSyntheticSpectrum * const specs[2] = { &spec_a, &spec_b };
+  for( size_t s = 0; s < 2; ++s )
+  {
+    const PeakFitLM::FitPeaksResults &spec_result = result.spectra[s];
+    BOOST_CHECK( spec_result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+    BOOST_CHECK( !spec_result.skew_relation.has_value() );
+    BOOST_REQUIRE_EQUAL( spec_result.fit_peaks.size(), specs[s]->means.size() );
+    for( size_t i = 0; i < spec_result.fit_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &p = spec_result.fit_peaks[i];
+      BOOST_TEST_INFO( "spectrum " << s << ", peak " << i );
+      BOOST_CHECK( p->skewType() == skew_type );
+      BOOST_CHECK_SMALL( p->mean() - specs[s]->means[i], 0.05 );
+      BOOST_CHECK_CLOSE( p->peakArea(), specs[s]->amps[i], 1.0 );
+      BOOST_CHECK_EQUAL( p->coefficient( PeakDef::SkewPar0 ), sr.non_energy_dependent_skew_pars[0]->first );
+    }
+  }//for( loop over spectra )
+}//test_fit_spectra_gadras_two_spectra
+
+
+// The same spectrum, with the very same peak objects (so continua), given twice: nothing is merged, or
+//  culled as a "duplicate", across spectra, and the fit is the single-spectrum one.
+BOOST_AUTO_TEST_CASE( test_fit_spectra_same_peaks_twice )
+{
+  const double truth[6] = { 8.0, 2.0, 0.3, 0.0, 0.0, 0.0 };
+  const GadrasSyntheticSpectrum spec = make_gadras_spectrum( truth );
+  const PeakDef::SkewType skew_type = PeakDef::SkewType::GadrasGeneric;
+  const double start[6] = { 3.0, 1.0, 0.3, 0.0, 0.0, 0.0 };
+  const bool fit[6] = { true, true, false, false, false, false };
+  const vector<shared_ptr<const PeakDef>> peaks = gadras_start_peaks( spec, skew_type, start, fit );
+
+  const PeakFitLM::MultiSpectrumFitResults single = PeakFitLM::fit_peaks_in_spectra_LM( { {spec.data, peaks} },
+                                0.0, 0.0, PeakFitUtils::CoarseResolutionType::High, skew_type );
+  const PeakFitLM::MultiSpectrumFitResults twice = PeakFitLM::fit_peaks_in_spectra_LM(
+                                { {spec.data, peaks}, {spec.data, peaks} },
+                                0.0, 0.0, PeakFitUtils::CoarseResolutionType::High, skew_type );
+
+  BOOST_REQUIRE( single.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+  BOOST_REQUIRE_MESSAGE( twice.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success, twice.error_message );
+  BOOST_REQUIRE_EQUAL( twice.spectra.size(), 2 );
+  BOOST_REQUIRE( single.skew_relation.has_value() && twice.skew_relation.has_value() );
+
+  for( size_t k = 0; k < 2; ++k )
+    BOOST_CHECK_CLOSE( twice.skew_relation->non_energy_dependent_skew_pars[k]->first,
+                       single.skew_relation->non_energy_dependent_skew_pars[k]->first, 0.1 );
+
+  for( const PeakFitLM::FitPeaksResults &spec_result : twice.spectra )
+  {
+    BOOST_REQUIRE_EQUAL( spec_result.fit_peaks.size(), peaks.size() );
+    BOOST_CHECK( spec_result.lost_peaks.empty() );
+    for( size_t i = 0; i < peaks.size(); ++i )
+      BOOST_CHECK_CLOSE( spec_result.fit_peaks[i]->peakArea(), single.spectra[0].fit_peaks[i]->peakArea(), 0.1 );
+  }
+
+  // The input peaks are untouched, and the spectra's results are distinct ROIs
+  BOOST_CHECK( twice.spectra[0].fit_peaks[0]->continuum() != twice.spectra[1].fit_peaks[0]->continuum() );
+  BOOST_CHECK( twice.spectra[0].fit_peaks[0]->continuum() != peaks[0]->continuum() );
+}//test_fit_spectra_same_peaks_twice
+
+
+// An energy-dependent (Bortel) skew, where each spectrum alone spans too little energy (< 100 keV) to fit
+//  the energy dependence, but the two together do.
+BOOST_AUTO_TEST_CASE( test_fit_spectra_energy_dependence_across_spectra )
+{
+  const double skew_at_0 = 0.3, skew_slope = 0.0006;  // Bortel skew of 0.36 at 100 keV, 0.9 at 1000 keV
+  const vector<double> means_a = { 100.0, 140.0, 185.0 }, means_b = { 900.0, 950.0, 1000.0 };
+  const shared_ptr<SpecUtils::Measurement> data_a = make_bortel_spectrum( means_a, 400.0f, skew_at_0, skew_slope );
+  const shared_ptr<SpecUtils::Measurement> data_b = make_bortel_spectrum( means_b, 3000.0f, skew_at_0, skew_slope );
+  const PeakDef::SkewType skew_type = PeakDef::SkewType::Bortel;
+  const PeakFitUtils::CoarseResolutionType res_type = PeakFitUtils::CoarseResolutionType::High;
+
+  // Alone, a spectrum's ROIs share one skew value
+  const PeakFitLM::MultiSpectrumFitResults only_a = PeakFitLM::fit_peaks_in_spectra_LM(
+                                  { {data_a, bortel_start_peaks( means_a )} }, 0.0, 0.0, res_type, skew_type );
+  BOOST_REQUIRE_MESSAGE( only_a.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success, only_a.error_message );
+  BOOST_REQUIRE( only_a.skew_relation.has_value() );
+  BOOST_CHECK( !only_a.skew_relation->energy_dependent_skew_pars[0].has_value() );
+  BOOST_CHECK( only_a.skew_relation->non_energy_dependent_skew_pars[0].has_value() );
+
+  const PeakFitLM::MultiSpectrumFitResults result = PeakFitLM::fit_peaks_in_spectra_LM(
+                                  { {data_a, bortel_start_peaks( means_a )}, {data_b, bortel_start_peaks( means_b )} },
+                                  0.0, 0.0, res_type, skew_type );
+  BOOST_REQUIRE_MESSAGE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success, result.error_message );
+  BOOST_REQUIRE( result.skew_relation.has_value() );
+
+  const PeakFitLM::FitPeaksResults::SkewRelation &sr = *result.skew_relation;
+  BOOST_REQUIRE( sr.energy_dependent_skew_pars[0].has_value() );
+  BOOST_REQUIRE( sr.energy_range.has_value() );
+  BOOST_CHECK_SMALL( sr.energy_range->first, 1.0E-6 );
+  BOOST_CHECK_CLOSE( sr.energy_range->second, 3000.0, 1.0E-4 );
+
+  for( const double energy : { 100.0, 185.0, 900.0, 1000.0 } )
+  {
+    const optional<double> value = sr.value_at( 0, energy );
+    BOOST_REQUIRE( value.has_value() );
+    BOOST_TEST_INFO( "energy=" << energy << ", fit skew=" << *value );
+    BOOST_CHECK_CLOSE( *value, skew_at_0 + skew_slope*energy, 3.0 );
+  }
+
+  const vector<double> * const means[2] = { &means_a, &means_b };
+  for( size_t s = 0; s < 2; ++s )
+  {
+    BOOST_REQUIRE_EQUAL( result.spectra[s].fit_peaks.size(), means[s]->size() );
+    for( size_t i = 0; i < means[s]->size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &p = result.spectra[s].fit_peaks[i];
+      BOOST_TEST_INFO( "spectrum " << s << ", peak at " << (*means[s])[i] );
+      BOOST_CHECK_SMALL( p->mean() - (*means[s])[i], 0.05 );
+      BOOST_CHECK_CLOSE( p->peakArea(), 5.0E4, 1.0 );
+    }
+  }//for( loop over spectra )
+}//test_fit_spectra_energy_dependence_across_spectra
+
+
+BOOST_AUTO_TEST_CASE( test_skew_relation_value_at )
+{
+  PeakFitLM::FitPeaksResults::SkewRelation sr;
+  sr.skew_type = PeakDef::SkewType::DoubleBortel;
+  sr.energy_range = make_pair( 50.0, 2950.0 );
+  sr.energy_dependent_skew_pars[0] = make_pair( 0.1, 0.7 );
+  sr.non_energy_dependent_skew_pars[1] = make_pair( 2.5, 0.1 );
+
+  // Exact at the anchors, linear between, and beyond
+  BOOST_CHECK_EQUAL( sr.value_at( 0, 50.0 ).value(), 0.1 );
+  BOOST_CHECK_EQUAL( sr.value_at( 0, 2950.0 ).value(), 0.7 );
+  BOOST_CHECK_CLOSE( sr.value_at( 0, 1500.0 ).value(), 0.4, 1.0E-9 );
+  BOOST_CHECK_CLOSE( sr.value_at( 0, 5850.0 ).value(), 1.3, 1.0E-9 );
+
+  // Energy-independent values are the same everywhere
+  BOOST_CHECK_EQUAL( sr.value_at( 1, 50.0 ).value(), 2.5 );
+  BOOST_CHECK_EQUAL( sr.value_at( 1, 1000.0 ).value(), 2.5 );
+
+  // Parameters not fit, or out of range
+  BOOST_CHECK( !sr.value_at( 2, 100.0 ).has_value() );
+  BOOST_CHECK( !sr.value_at( 6, 100.0 ).has_value() );
+}//test_skew_relation_value_at

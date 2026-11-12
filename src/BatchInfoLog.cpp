@@ -754,6 +754,51 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     const double act_uncert_percent = 100.0 * src.activityUncertainty / src.activity;
     src_json["ActivityUncertPercent"] = SpecUtils::printCompact( act_uncert_percent, 4 );
+
+    // The parts of the activity uncertainty, which add in quadrature to the total: counting
+    //  statistics with all other parameters fixed, then what fitting the other parameters (shielding,
+    //  age, other nuclides) adds, then what the detector efficiency uncertainty adds.
+    const double total = src.activityUncertainty;
+    if( (src.activityUncertStatOnly >= 0.0) && (total > 0.0) )
+    {
+      // Differences from numerical noise (ex., a single fit parameter) are shown as zero
+      const auto quad_diff = [total]( const double larger, const double smaller ) -> double {
+        const double diff = std::sqrt( std::max( 0.0, larger*larger - smaller*smaller ) );
+        return (diff > 1.0E-4*total) ? diff : 0.0;
+      };
+
+      const auto add_part = [&]( const char *name, const double uncert ){
+        auto &part = src_json["ActivityUncertBreakdown"][name];
+        part["Uncert"] = (uncert > 0.0)
+                           ? (PhysicalUnits::printToBestActivityUnits( uncert, 2, !useBq ) + act_postfix)
+                           : string("0");
+        part["Uncert_bq"] = uncert / PhysicalUnits::bq;
+        part["PercentOfActivityStr"] = (src.activity > 0.0)
+                                         ? SpecUtils::printCompact( 100.0*uncert/src.activity, 3 )
+                                         : string("--");
+        char buffer[32] = { '\0' };
+        snprintf( buffer, sizeof(buffer), "%.1f", 100.0*uncert*uncert/(total*total) );
+        part["VarianceSharePercentStr"] = string(buffer);
+      };//add_part lambda
+
+      const double stat = std::min( src.activityUncertStatOnly, total );
+      const double det_eff = quad_diff( total, stat );
+      const bool has_fixed = (src.activityUncertStatFixedOthers >= 0.0);
+
+      auto &breakdown = src_json["ActivityUncertBreakdown"];
+      breakdown["HasStatFixedOthers"] = has_fixed;
+      breakdown["HasDetEff"] = (det_eff > 0.0);
+
+      if( has_fixed )
+      {
+        const double stat_fixed = std::min( src.activityUncertStatFixedOthers, stat );
+        add_part( "StatFixedOthers", stat_fixed );
+        add_part( "FitCorrelation", quad_diff( stat, stat_fixed ) );
+      }
+      add_part( "StatOnly", stat );
+      add_part( "DetEff", det_eff );
+      add_part( "Total", total );
+    }//if( we have the statistics-only uncertainty )
   }else
   {
     assert( src.activityUncertainty <= 0.0 );
@@ -1104,7 +1149,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     data["EstimatedDistanceToMinimum"] = -1.0;
     data["NumberFcnCalls"] = results.num_fcn_calls;
     data["NumDof"] = results.numDOF;
-    
+    data["NumFitParameters"] = results.numFitParameters;
+    if( (results.numDOF > 0) && (results.chi2 >= 0.0) )
+      data["FitChi2PerDofStr"] = SpecUtils::printCompact( results.chi2 / results.numDOF, 3 );
+
     auto &fit_pars = data["RawFitParameter"];
     fit_pars["Values"] = results.paramValues;
     fit_pars["Errors"] = results.paramErrors;
@@ -1132,6 +1180,21 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         const string trend_msg = ShieldSourcePullTrend::conclusion_report_text( trend );
         tj["Message"] = trend_msg;
         tj["HasConclusion"] = !trend_msg.empty();
+        tj["TestsRun"] = trend.testsRun;
+        tj["AmountSigma"] = trend.amountT;
+        tj["AtomicNumberSigma"] = trend.atomicNumberT;
+        tj["OtherTrendSigma"] = trend.otherT;
+        tj["ResidualScale"] = trend.residualScale;
+        tj["NumPeaksTested"] = static_cast<int>( trend.numPeaksTested );
+        tj["ModelHasShielding"] = trend.modelHasShielding;
+        tj["PossibleCascadeSumming"] = trend.possibleCascadeSumming;
+        if( trend.suggestedArealDensity > 0.0 )
+        {
+          tj["SuggestedArealDensity"] = trend.suggestedArealDensity / (PhysicalUnits::g / PhysicalUnits::cm2);
+          tj["SuggestedArealDensityStr"] = ShieldSourcePullTrend::areal_density_txt( trend.suggestedArealDensity );
+        }
+        if( (trend.suggestedAtomicNumber > 0.0) && trend.suggestedAtomicNumberResolved )
+          tj["SuggestedAtomicNumber"] = trend.suggestedAtomicNumber;
         tj["SlopeT"] = trend.slopeT;
         tj["CurvatureT"] = trend.curvatureT;
         tj["ReducedChi2"] = trend.redChi2;
@@ -1199,6 +1262,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
 
     int num_sources = 0;
     bool hasAnyTraceSrc = false, hasAnyVolumetricSrc = false, hasFitAnyAge = false;
+    bool hasAnyUncertBreakdown = false;
     if( results.source_calc_details )
     {
       for( const GammaInteractionCalc::SourceDetails &src : *results.source_calc_details )
@@ -1212,6 +1276,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         hasFitAnyAge |= src.ageIsFit;
         
         add_basic_src_details( src, drf, useBq, results.shield_calc_details.get(), src_json );
+        hasAnyUncertBreakdown |= src_json.contains( "ActivityUncertBreakdown" );
         
         // We wont put peaks into this struct, but instead when we make the JSON, we'll
         //  insert peaks from `PeakDetail` as `PeakDetailSrc::nuclide` match this nuclide.
@@ -1255,6 +1320,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     data["HasSelfAttenSource"] = hasAnyVolumetricSrc;
     data["HasVolumetricSource"] = (hasAnyTraceSrc || hasAnyVolumetricSrc);
     data["AnySourceAgeFit"] = hasFitAnyAge;
+    data["HasActivityUncertBreakdown"] = hasAnyUncertBreakdown;
     
     auto &shieldings_json = data["Shieldings"];
     shieldings_json["Geometry"] = GammaInteractionCalc::to_str(results.geometry);
@@ -1304,6 +1370,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         if( !shield.m_is_generic )
         {
           shield_json["Formula"] = shield.m_chemical_formula;
+          shield_json["CompositionStr"] = shield.m_composition;
           const double density = shield.m_density * PhysicalUnits::cm3 / PhysicalUnits::g;
           shield_json["Density_gPerCm3"] = density;
           shield_json["DensityStr"] = SpecUtils::printCompact(density, 5) + " g/cm3";
@@ -1345,6 +1412,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         const vector<double> inner_dims{ shield.m_inner_dimensions, shield.m_inner_dimensions + shield.m_num_dimensions };
         const vector<double> outer_dims{ shield.m_outer_dimensions, shield.m_outer_dimensions + shield.m_num_dimensions };
         vector<double> thicknesses( shield.m_num_dimensions );
+        for( unsigned int dim = 0; dim < shield.m_num_dimensions; ++dim )
+          thicknesses[dim] = outer_dims[dim] - inner_dims[dim];
         const vector<double> dim_uncerts( shield.m_dimension_uncert, shield.m_dimension_uncert + shield.m_num_dimensions );
         
         vector<double> inner_dims_mm = inner_dims;
@@ -1370,12 +1439,11 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         for( unsigned int dim = 0; dim < shield.m_num_dimensions; ++dim )
         {
           fitAnyShielding |= fit_dim[dim];
-          thicknesses[dim] = outer_dims[dim] - inner_dims[dim];
-          thicknesses_strs[dim] = PhysicalUnits::printToBestLengthUnits( thicknesses[dim], 5 );
-          inner_dims_strs[dim] = PhysicalUnits::printToBestLengthUnits( inner_dims[dim], 5 );
-          outer_dims_strs[dim] = PhysicalUnits::printToBestLengthUnits( outer_dims[dim], 5 );
+          thicknesses_strs[dim] = PhysicalUnits::printToBestLengthUnitsCompact( thicknesses[dim], 5 );
+          inner_dims_strs[dim] = PhysicalUnits::printToBestLengthUnitsCompact( inner_dims[dim], 5 );
+          outer_dims_strs[dim] = PhysicalUnits::printToBestLengthUnitsCompact( outer_dims[dim], 5 );
           if( fit_dim[dim] )
-            dim_uncerts_strs[dim] = PhysicalUnits::printToBestLengthUnits( dim_uncerts[dim], 5 );
+            dim_uncerts_strs[dim] = PhysicalUnits::printToBestLengthUnitsCompact( dim_uncerts[dim], 3 );
           
           inner_dims_mm[dim] /= PhysicalUnits::mm;
           outer_dims_mm[dim] /= PhysicalUnits::mm;
@@ -1497,6 +1565,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     
     // Add Peak Details to JSON
+    // Per-shielding attenuation factors are only computed for point sources
+    bool anyPerShieldAttenuations = false;
     if( results.peak_calc_details )
     {
       auto &peaks_json = data["PeaksUsedForActivityFitting"];
@@ -1506,6 +1576,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         peaks_json["Peaks"].push_back( {} );
         nlohmann::basic_json<> &peak_json = peaks_json["Peaks"].back();
         add_basic_peak_info( peak, peak_json );
+        anyPerShieldAttenuations |= !peak.m_attenuations.empty();
         
         for( const GammaInteractionCalc::PeakDetailSrc &pksrc : peak.m_sources )
         {
@@ -1574,7 +1645,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
          */
       }//for( loop over results.peak_calc_details )
     }//if( results.peak_calc_details )
-                                      
+
+    data["HasPerShieldAttenuations"] = anyPerShieldAttenuations;
+
     auto add_detector_to_json = []( nlohmann::json &data, const shared_ptr<const DetectorPeakResponse> &drf ){
       if( !drf || !drf->isValid() )
         return;

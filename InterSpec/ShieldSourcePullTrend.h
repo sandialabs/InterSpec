@@ -25,11 +25,14 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <utility>
 
 // Forward declarations
+class DetectorPeakResponse;
+
 namespace GammaInteractionCalc
 {
   struct PeakDetail;
@@ -43,23 +46,27 @@ namespace ShieldingSourceFitCalc
 }//namespace ShieldingSourceFitCalc
 
 
-/** Fits a low-order trend to the per-peak pulls ("chi" values) of an activity/shielding fit,
- and interprets the slope/curvature to diagnose likely model problems.
+/** Diagnoses likely shielding-model problems from the per-peak pulls ("chi" values) of an
+ activity/shielding fit.
 
- Physics background: the pull for each peak is (observed-model)/uncertainty.  When the model
- shielding amount is wrong (and was not fit for), the attenuation-vs-energy mismatch produces
- a monotonic trend of the pulls with energy.  When the effective atomic number is wrong,
- photoelectric absorption (~Z^4.5/E^3) vs the nearly Z-independent Compton scattering means
- the *shape* of attenuation vs energy is wrong even after the fit compensates the overall
- amount - producing curvature (a low-energy "hook") in the pulls.
+ The decision uses profile likelihood-ratio tests along the PHYSICAL directions a wrong shielding
+ model can be off in, evaluated from what the fit already reported for each peak (its observed and
+ model counts, the per-nuclide model contributions, and the model shielding optical depth):
+  - amount: scale the model shieldings optical depth - or, when the model has no shielding, add a
+    reference layer (Z 7, 13, 26, 50 or 82) - re-solving every nuclides activity;
+  - atomic number: free the effective Z and areal density of a single-shield model;
+  - "other": a shared smooth (quadratic in log energy) efficiency multiplier beyond the best of those.
+ Each test is the signed square root of the chi2 improvement, divided by a residual scale estimated
+ from the fit (never below a prior of 2, since real peak fits scatter 2-5x their statistical
+ uncertainty), with a 2% fractional uncertainty floor so a few very strong peaks cannot decide alone.
 
- Under a correct model each pull is ~N(0,1), so an unweighted polynomial least-squares fit
- gives coefficient t-statistics with an (approximately) known null distribution; thresholds
- on those t-statistics decide when a conclusion is warranted.
+ A low-order polynomial is still fit to the pulls vs log(energy), but only to draw a descriptive
+ trend curve on the chi chart; it no longer decides anything.  (Its uncertainties are inflated by its
+ own residual scatter, so a large step-shaped error - the usual signature of wrong shielding - used to
+ mask itself; and its curvature pre-empted amount calls.)
 
- For multiple nuclides a joint fit is performed: a separate intercept per nuclide (each
- nuclide's activity was independently fit, so its pulls center near zero), with slope and
- curvature shared across nuclides (all peaks see the same shielding-induced shape).
+ Calibrated by scratch/20261111_pull_trend_study (BASELINE.md): GADRAS inject corpus truth, re-
+ attenuated truth and real FitPeaksForNuclides fits, across 19 detectors and 30-1800 s live times.
  */
 namespace ShieldSourcePullTrend
 {
@@ -95,20 +102,18 @@ namespace ShieldSourcePullTrend
     ShieldingAmountTooLow,
     /** The model appears to have more shielding than is actually present. */
     ShieldingAmountTooHigh,
-    /** The shielding's effective atomic number appears lower than reality.  The calibration
-     study (scratch/chi_trend_study) confirmed the pull curvature (in log-energy) is concave-
-     down when the model Z is too low - once poorly-converged fits are down-weighted via the
-     residual-variance scaling.
-     */
+    /** The shielding's effective atomic number appears lower than reality. */
     AtomicNumberTooLow,
-    /** The shielding's effective atomic number appears higher than reality (pull curvature
-     concave-up).
-     */
+    /** The shielding's effective atomic number appears higher than reality. */
     AtomicNumberTooHigh,
-    /** Both atomic number and areal density were fit, yet a trend remains - something
-     else (distance, geometry, source age, detector response) may be off.
+    /** A smooth residual energy trend remains that the shielding changes do not explain - the
+     distance, geometry, source age, or detector response may be off.
      */
-    OtherModelInconsistency
+    OtherModelInconsistency,
+    /** The model has no shielding, but the peaks clearly want some (see
+     TrendResult::suggestedArealDensity and TrendResult::suggestedAtomicNumber).
+     */
+    ModelLacksShielding
   };//enum class TrendConclusion
 
 
@@ -118,9 +123,8 @@ namespace ShieldSourcePullTrend
    */
   enum class TrendConfidence : int
   {
-    /** A soft advisory ("possibly"): the observed trend is weak (t ~ 1.5-2.5) but the data
-     demonstrably HAS the power to resolve the effect, so it is worth mentioning.  Only reachable
-     for atomic-number calls, which are gated on the discrimination-power check.
+    /** A soft advisory ("possibly"): an atomic-number signal of 2.5-3.5 sigma, only reported when
+     the data demonstrably have the power to resolve a Z error.  Only reachable for atomic-number calls.
      */
     Tentative,
     Weak,
@@ -148,6 +152,17 @@ namespace ShieldSourcePullTrend
      attenuation reasoning does not apply, so conclusions are suppressed (curves still drawn).
      */
     bool hasSelfAttenOrTraceSrc = false;
+
+    /** A source age was fit; age changes line ratios in ways the shielding tests do not model, so
+     only the "other" conclusion is possible.
+     */
+    bool anyAgeFit = false;
+
+    /** The source is close to the detector (see #set_summing_info), cascade-summing correction is
+     off, and a nuclide has coincident gammas: the residuals may partly be summing, so any message
+     carries a caveat.  Filled by #set_summing_info (false otherwise).
+     */
+    bool possibleCascadeSumming = false;
   };//struct FitConfigSummary
 
 
@@ -155,6 +170,15 @@ namespace ShieldSourcePullTrend
   FitConfigSummary summarize_fit_config(
                       const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                       const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources );
+
+  /** Sets FitConfigSummary::possibleCascadeSumming: true when `distance` (source to detector face)
+   is under 15 cm, `summing_corrected` is false, some source nuclide (or its progeny) emits coincident
+   gammas, and the detector's maximum summing magnitude is at least ~1% (or cannot be estimated
+   because the DRF has no total-efficiency information).  Cheap; never throws.
+   */
+  void set_summing_info( FitConfigSummary &config, const double distance, const bool summing_corrected,
+                         const std::shared_ptr<const DetectorPeakResponse> &drf,
+                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources );
 
 
   /** The trend curve for one nuclide - the shared shape offset by this nuclides intercept. */
@@ -180,7 +204,7 @@ namespace ShieldSourcePullTrend
   };//struct NuclideTrend
 
 
-  /** Result of the joint pull-trend fit. */
+  /** Result of the pull-trend diagnosis. */
   struct TrendResult
   {
     TrendBasis basis = TrendBasis::LogEnergy;
@@ -209,28 +233,58 @@ namespace ShieldSourcePullTrend
     /** Total pull points used in the fit (after nuclide-ambiguity and validity filtering). */
     size_t numPointsUsed = 0;
 
+    /** Profile likelihood-ratio statistics that drive the conclusion (normal-equivalent sigma).
+     amountT > 0: the peaks want MORE shielding than the model has (< 0: less).
+     atomicNumberT > 0: the peaks want a HIGHER effective atomic number than the model (model Z too
+     low); < 0: lower.  otherT >= 0: a smooth residual trend beyond the best physical alternative.
+     */
+    double amountT = 0.0, atomicNumberT = 0.0, otherT = 0.0;
+
+    /** Whether the likelihood-ratio tests ran (not for self-attenuating or trace sources, or with
+     too few peaks); when false the statistics below are 0 and mean "not tested", not "nothing found".
+     */
+    bool testsRun = false;
+
+    /** Residual scale the statistics were divided by (>= the prior of 2); 0 when the tests did not run. */
+    double residualScale = 0.0;
+
+    /** Peaks (after validity filtering) the likelihood-ratio tests used. */
+    size_t numPeaksTested = 0;
+
+    /** Whether the model had any shielding with non-zero areal density. */
+    bool modelHasShielding = false;
+
+    /** Best-fit total areal density (PhysicalUnits) of the amount alternative - the added layer when
+     the model had no shielding, else the scaled model shielding; 0 if not computed.
+     */
+    double suggestedArealDensity = 0.0;
+
+    /** Best-fit effective atomic number: of the added layer (ModelLacksShielding), or of the free-Z
+     alternative (atomic-number conclusions); 0 if not computed.
+     */
+    double suggestedAtomicNumber = 0.0;
+
+    /** For ModelLacksShielding: whether the reference-Z layers are distinguishable enough to name a
+     Z class (otherwise only an iron-equivalent areal density is meaningful).
+     */
+    bool suggestedAtomicNumberResolved = false;
+
+    /** Copied from FitConfigSummary::possibleCascadeSumming. */
+    bool possibleCascadeSumming = false;
+
     std::vector<NuclideTrend> nuclideTrends;
 
-    /** Atomic-number DISCRIMINATION POWER: the curvature t-statistic that a reference effective-Z
-     error (a factor #sm_an_reference_z_factor change) WOULD produce for this exact peak set
-     (energies + significances) and model shielding, if it existed.  It is a design property of
-     the data, not of the observed pulls.
-
-     Physics: above ~250 keV attenuation is Compton-dominated and nearly Z-independent in shape,
-     so only low-energy, high-significance peaks carry an atomic-number signal.  A large value
-     means the data could resolve a Z error; a small value (roughly < the power gate, calibrated
-     to ~2.5) means it could not - so a null result is "inconclusive", not "atomic number
-     consistent", and a curvature that DOES appear cannot be a Z signature (it is suppressed).
-
-     Computed unit-robustly from the model per-peak optical depth (-ln of the shield attenuation
-     fraction) and the mu(Z_ref)/mu(Z_model) ratio, so it does not depend on the fitted areal
-     density.  0 when not computed (no shielding in the model, or fewer than a few points).
+    /** Atomic-number DISCRIMINATION POWER: the atomicNumberT that a reference effective-Z error (a
+     factor 1.5, either direction) WOULD produce for this exact peak set and model shielding, if it
+     existed - a design property of the data, not of the observed pulls.  Above ~250 keV attenuation
+     is Compton-dominated and nearly Z-independent in shape, so only low-energy, significant peaks
+     carry Z information; a small power means a null result is "inconclusive", not "Z consistent".
+     0 when not computed (no single shielding in the model, or too few peaks).
      */
     double anDiscriminationT = 0.0;
 
-    /** True when #anDiscriminationT reaches the calibrated power gate, i.e. the data could actually
-     resolve a reference-sized atomic-number error (calibration: detection of a 1.5x Z error
-     becomes reliable at power ~2.5).  Atomic-number conclusions are only asserted when this is true.
+    /** True when #anDiscriminationT reaches the power gate (2.5): soft (2.5-3.5 sigma) atomic-number
+     calls are only made then; firmer ones (>= 3.5 sigma) speak for themselves.
      */
     bool anDiscriminable = false;
 
@@ -239,14 +293,15 @@ namespace ShieldSourcePullTrend
   };//struct TrendResult
 
 
-  /** Fits the joint pull-vs-energy trend: per-nuclide intercepts plus shared slope
-   (and shared quadratic term, when statistically determined), in centered/scaled
-   `basis` coordinates.
+  /** Diagnoses the fit's per-peak pulls (see the namespace description), and fits the descriptive
+   pull-vs-energy curve (per-nuclide intercepts plus shared slope/curvature, in centered/scaled `basis`
+   coordinates) that the chi chart draws.
 
    \param peak_comparisons Per-peak pull info, as from ShieldingSourceChi2Fcn::energy_chi_contributions
    \param peak_details Parallel per-peak details (for nuclide assignment and source fractions);
           must correspond index-for-index with `peak_comparisons` (extra entries in either are ignored)
-   \param shieldings The model shieldings; only used when `basis` is TrendBasis::MuModel (may be empty otherwise)
+   \param shieldings The model shieldings (as fit).  Required: the amount and atomic-number tests are
+          anchored on them; an empty vector means "the model has no shielding".
    \param config What the fit varied - gates the possible conclusions
    \param basis The regressor transform of energy
 
@@ -261,7 +316,8 @@ namespace ShieldSourcePullTrend
 
 
   /** Localization key (in ShieldingSourceDisplay.xml) for the conclusion message; the message
-   takes the qualifier text (see #confidence_txt_key) as argument {1}.
+   takes the qualifier text (see #confidence_txt_key) as argument {1}, and the hint (see
+   #message_hint) as argument {2} (an empty string when there is no hint).
    Returns nullptr for TrendConclusion::NoConclusion.
    */
   const char *conclusion_txt_key( const TrendConclusion conclusion );
@@ -271,11 +327,29 @@ namespace ShieldSourcePullTrend
    */
   const char *confidence_txt_key( const TrendConfidence confidence );
 
-  /** Plain (English) one-sentence conclusion text, for non-GUI reports/logs (batch and inja
-   templates) that are not localized.  Mirrors the GUI message (conclusion + confidence wording).
+  /** The optional hint clause of the message: a localization key whose argument {1} is #value_txt
+   (and {2} the localization key #zclass_key, when not null).  `key` is nullptr when there is no hint.
+   */
+  struct MessageHint
+  {
+    const char *key = nullptr;
+    std::string value_txt;
+    const char *zclass_key = nullptr;
+  };
+
+  MessageHint message_hint( const TrendResult &trend );
+
+  /** Localization key of the sentence appended when TrendResult::possibleCascadeSumming. */
+  const char *summing_caveat_txt_key();
+
+  /** Plain (English) one-sentence conclusion text (plus the summing caveat), for non-GUI reports/logs
+   (batch and inja templates) that are not localized.  Mirrors the GUI message.
    Returns an empty string for TrendConclusion::NoConclusion.
    */
   std::string conclusion_report_text( const TrendResult &trend );
+
+  /** Areal density formatted for messages, e.g. "25 g/cm²" (two significant figures). */
+  std::string areal_density_txt( const double areal_density );
 }//namespace ShieldSourcePullTrend
 
 #endif //ShieldSourcePullTrend_h

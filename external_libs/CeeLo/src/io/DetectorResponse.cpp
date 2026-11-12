@@ -75,7 +75,11 @@ namespace ceelo {
 // v4 = side & back coverage: eta tables with nodes below cos theta = 0.  A pre-v4 reader would
 // interpolate one PCHIP across the front and back node sets (EtaTable::eval_ln keeps them apart),
 // changing values in FRONT of the face too, so only covered responses are stamped v4.
-const int DetectorResponse::sm_xmlSerializationVersion = 4;
+//
+// v5 = efficiency_scale != 1.  A pre-v5 reader skips the unknown element and would report the one
+// modeled element's efficiency for the whole detector (a factor of 4 for a 2x2 array), so only
+// scaled responses are stamped v5.
+const int DetectorResponse::sm_xmlSerializationVersion = 5;
 
 namespace {
 
@@ -804,6 +808,7 @@ void TotEffPayload::finalize() {
     if (tier == TotEffTier::EtaTotTable)
         eta_tot.finalize();
     near_field.finalize();  // tolerates empty (no near-field total)
+    back_near_field.finalize();
 }
 
 double TotEffPayload::ln_b_at(double energy_keV) const {
@@ -901,6 +906,9 @@ double GroundingBlock::var_ln_k(double energy_keV) const {
 // ---------------------------------------------------------------------------
 
 void DetectorResponse::finalize() {
+    if (!(efficiency_scale > 0.0) || !std::isfinite(efficiency_scale))
+        throw std::runtime_error("DetectorResponse: efficiency_scale must be finite and > 0");
+
     geometry_ = descriptor.build_geometry(owned_materials_);
     geometry_built_ = true;
 
@@ -918,9 +926,30 @@ void DetectorResponse::finalize() {
         mat_to_mu_.push_back({owned_materials_[mi].get(), table});
     }
 
+    // The side & back near-field tables live behind the face plane, and their ln N is relative to
+    //  a covered eta table's back columns.
+    const bool covered = !eta_fep.empty() && !eta_fep.cos_thetas.empty()
+                         && (eta_fep.cos_thetas.front() < 0.0);
+    for (const NearFieldModel* m : {&back_near_field, &tot_eff.back_near_field}) {
+        if (m->empty())
+            continue;
+        if (!covered)
+            throw std::runtime_error("DetectorResponse: a BackNearField table needs side & back"
+                                     " coverage in EtaFep");
+        if (m->cos_thetas.empty() || !(m->cos_thetas.back() < 0.0))
+            throw std::runtime_error("DetectorResponse: BackNearField cos thetas must be < 0");
+    }
+
     eta_fep.finalize();
     tot_eff.finalize();
     near_field.finalize();  // tolerates empty (far-field profile)
+    back_near_field.finalize();
+}
+
+GeometryDescriptor::Envelope DetectorResponse::back_near_body() const {
+    GeometryDescriptor::Envelope body = descriptor.outer_envelope();
+    body.z_max_cm = std::max(body.z_max_cm, provenance.back_body_depth_cm);
+    return body;
 }
 
 Eigen::Vector3d DetectorResponse::query_position(double theta_rad,
@@ -1136,6 +1165,11 @@ struct DetectorResponse::EvalCommon {
     //  a + the clearance past the detector's outside - from the face-centre origin a source
     //  touching the side wall or the back is d >~ L away, which says nothing about how near it is.
     double d_near_cm = 0.0;
+    // Behind the face plane on a response with side & back near-field tables: a + the clearance
+    //  past back_near_body() (their distance axis), and whether the source is outside that body -
+    //  inside it the tables do not apply.
+    double d_back_cm = 0.0;
+    bool back_tables = false;
     bool near_regime = false;
     ResponseFlag flag = ResponseFlag::Ok;
     SigmaBudget budget;         // geometry-only terms filled here; the rest per quantity
@@ -1181,6 +1215,12 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
         ec.d_near_cm = ec.a_cm + clearance;
         behind_back_plane = (!descriptor.dimensions_cm.empty())
                             && (src_cm.z() > descriptor.dimensions_cm.back());
+        if (!back_near_field.empty() || !tot_eff.back_near_field.empty()) {
+            const ConvexSolid body = back_near_body().solid();
+            const double body_clearance = (src_cm - body.project(src_cm)).norm();
+            ec.back_tables = (body_clearance > 0.0);
+            ec.d_back_cm = ec.a_cm + body_clearance;
+        }
     }
     ec.near_regime = ec.d_near_cm < floors.near_regime_a * ec.a_cm;
 
@@ -1290,33 +1330,47 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
     // unmodeled (far-field profile).  The gate is the near-field model's own breakpoint (energy
     // and angle dependent) or the provenance floor - NOT the floor regime `near_regime`.
     ln_N = 0.0;
-    // Behind the face plane the near-field table has no nodes: the boost is the kernel's alone,
-    //  and the gate measures how near the source is to the detector's outside (d_near_cm).
     const bool behind = (ec.cos_theta < 0.0);
-    const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
-    double d_gate = std::max(d_break, provenance.min_distance_cm);
-    // With no near-field table the gate would be provenance.min_distance_cm, which the
-    // generator sets to 2a - but the boost the response cannot represent is still
-    // 1.75-2.07% out at 2.4-3a (measured on the goldens' ln_n), a regime where this term
-    // switched off and nothing else covered it.  Widen it to the floor's own near regime.
-    if (near_field.empty())
-        d_gate = std::max(d_gate, floors.near_regime_a * ec.a_cm);
-    if (ec.d_near_cm < d_gate) {
-        if (!near_field.empty() && !behind) {
-            ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
+    if (behind && ec.back_tables && !back_near_field.empty()) {
+        // Behind the face plane, outside the assumed body: the side & back table, on its own
+        //  distance (a + clearance past the body) and up to its own ln N = 0 anchor row.
+        const double d_gate = std::max(back_near_field.breakpoint_d_cm(energy_keV, ec.cos_theta),
+                                       provenance.min_distance_cm);
+        if (ec.d_back_cm < d_gate) {
+            ln_N = back_near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_back_cm);
             const double nf_sig =
-                near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
+                back_near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_back_cm);
             b.node2 += nf_sig * nf_sig;
-        } else {
-            raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
-            // Charge this ONCE.  A curve transfer has no near-field table AND carries a
-            // model_transfer, so it used to pay near_unmodeled here and the transfer's
-            // near ramp in common_eval for the same physics - the ray-traced kernel
-            // cannot know the near-field boost, which is one limitation, not two.  The
-            // 2026-09 corpus measured both at ~4% and they are the same measurement.
-            // Where there is no model_transfer to carry it, this term still applies.
-            if (!model_transfer)
-                b.model[SigmaBudget::NearUnmodeled] = model_sigma::near_unmodeled;
+        }
+    } else {
+        // Behind the face plane without that table (or inside the assumed body) there are no
+        //  near-field nodes: the boost is the kernel's alone, and the gate measures how near the
+        //  source is to the detector's outside (d_near_cm).
+        const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
+        double d_gate = std::max(d_break, provenance.min_distance_cm);
+        // With no near-field table the gate would be provenance.min_distance_cm, which the
+        // generator sets to 2a - but the boost the response cannot represent is still
+        // 1.75-2.07% out at 2.4-3a (measured on the goldens' ln_n), a regime where this term
+        // switched off and nothing else covered it.  Widen it to the floor's own near regime.
+        if (near_field.empty())
+            d_gate = std::max(d_gate, floors.near_regime_a * ec.a_cm);
+        if (ec.d_near_cm < d_gate) {
+            if (!near_field.empty() && !behind) {
+                ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
+                const double nf_sig =
+                    near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
+                b.node2 += nf_sig * nf_sig;
+            } else {
+                raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
+                // Charge this ONCE.  A curve transfer has no near-field table AND carries a
+                // model_transfer, so it used to pay near_unmodeled here and the transfer's
+                // near ramp in common_eval for the same physics - the ray-traced kernel
+                // cannot know the near-field boost, which is one limitation, not two.  The
+                // 2026-09 corpus measured both at ~4% and they are the same measurement.
+                // Where there is no model_transfer to carry it, this term still applies.
+                if (!model_transfer)
+                    b.model[SigmaBudget::NearUnmodeled] = model_sigma::near_unmodeled;
+            }
         }
     }
 
@@ -1343,6 +1397,16 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
 double DetectorResponse::total_near_ln(double energy_keV, EvalCommon& ec) const {
     // Gated on the table's own breakpoint, as the FEP's is; the outermost distance node is an
     // ln N = 0 anchor, so the correction fades to nothing there.
+    if (ec.cos_theta < 0.0) {
+        // Behind the face plane: the side & back table, outside the assumed body, as fep_budget.
+        const NearFieldModel& bn = tot_eff.back_near_field;
+        if (bn.empty() || !ec.back_tables
+            || (ec.d_back_cm >= bn.breakpoint_d_cm(energy_keV, ec.cos_theta)))
+            return 0.0;
+        const double sig = bn.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_back_cm);
+        ec.budget.node2 += sig * sig;
+        return bn.ln_boost(energy_keV, ec.cos_theta, ec.d_back_cm);
+    }
     const NearFieldModel& nf = tot_eff.near_field;
     if (nf.empty() || (ec.cos_theta < 0.0)
         || (ec.d_cm >= nf.breakpoint_d_cm(energy_keV, ec.cos_theta)))
@@ -1366,7 +1430,7 @@ EffResult DetectorResponse::fep_prefactor(
     fep_budget(energy_keV, ec, ln_N, ln_k);
 
     EffResult res;
-    res.value = std::exp(ln_eta + ln_N + ln_k);
+    res.value = efficiency_scale * std::exp(ln_eta + ln_N + ln_k);
     const double model2 = ec.budget.model2();
     res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
     res.sigma_model = res.value * std::sqrt(model2);
@@ -1422,7 +1486,7 @@ EffResult DetectorResponse::total_prefactor(
 
     EffResult res;
     ec.budget.node2 = node_sig * node_sig;
-    res.value = value * std::exp(total_near_ln(energy_keV, ec));
+    res.value = efficiency_scale * value * std::exp(total_near_ln(energy_keV, ec));
     ec.budget.model[SigmaBudget::Floor] = ec.near_regime ? floors.tot_near : floors.tot_far;
     const double model2 = ec.budget.model2();
     res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
@@ -1496,7 +1560,7 @@ EffResult DetectorResponse::eps_total_impl(
     }
 
     ec.budget.node2 = node_sig * node_sig;
-    value *= std::exp(total_near_ln(energy_keV, ec));
+    value *= efficiency_scale * std::exp(total_near_ln(energy_keV, ec));
 
     EffResult res;
     res.value = value;
@@ -1642,9 +1706,11 @@ void eta_to_xml(XmlDoc& doc, XmlNode* parent, const char* name,
     append_value_node(doc, n, "FracSigma", join_doubles(t.frac_sigma));
 }
 
-// The FEP's near-field table and the total's share one layout.
-void near_field_to_xml(XmlDoc& doc, XmlNode* parent, const NearFieldModel& m) {
-    XmlNode* nf = append_node(doc, parent, "NearField");
+// The FEP's near-field tables and the total's, in front of the face plane and behind it, share one
+//  layout.
+void near_field_to_xml(XmlDoc& doc, XmlNode* parent, const NearFieldModel& m,
+                       const char* element = "NearField") {
+    XmlNode* nf = append_node(doc, parent, element);
     append_value_node(doc, nf, "Energies", join_doubles(m.energies_keV));
     append_value_node(doc, nf, "CosThetas", join_doubles(m.cos_thetas));
     append_value_node(doc, nf, "DistsCm", join_doubles(m.dists_cm));
@@ -1962,8 +2028,11 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         const bool needs_v4 = (!eta_fep.cos_thetas.empty() && (eta_fep.cos_thetas.front() < 0.0))
                               || (!tot_eff.eta_tot.empty() && !tot_eff.eta_tot.cos_thetas.empty()
                                   && (tot_eff.eta_tot.cos_thetas.front() < 0.0));
+        // v5 = an efficiency scale (see sm_xmlSerializationVersion).
+        const bool needs_v5 = (efficiency_scale != 1.0);
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%i", needs_v4 ? 4 : (needs_v3 ? 3 : (needs_v2 ? 2 : 1)));
+        std::snprintf(buf, sizeof(buf), "%i",
+                      needs_v5 ? 5 : (needs_v4 ? 4 : (needs_v3 ? 3 : (needs_v2 ? 2 : 1))));
         append_attrib(doc, root, "version", buf);
     }
 
@@ -1981,6 +2050,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
             append_attrib(doc, p, "backCoverage", to_string(*provenance.back_coverage));
         if (provenance.n_anchor_angles)
             append_attrib(doc, p, "anchorAngles", std::to_string(*provenance.n_anchor_angles));
+        if (provenance.back_body_depth_cm > 0.0)
+            append_attrib(doc, p, "backBodyDepthCm", fmt_double(provenance.back_body_depth_cm));
         append_attrib(doc, p, "fepWindowKeV",
                       fmt_double(provenance.fep_window_keV));
         append_attrib(doc, p, "generationSeed",
@@ -1995,6 +2066,9 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
                           fmt_double(provenance.min_distance_cm));
         append_attrib(doc, p, "method", to_string(provenance.method));
     }
+
+    if (efficiency_scale != 1.0)
+        append_value_node(doc, root, "EfficiencyScale", fmt_double(efficiency_scale));
 
     // Detector geometry
     write_detector_node(doc, root, descriptor);
@@ -2018,6 +2092,9 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
 
     if (!near_field.empty())
         near_field_to_xml(doc, root, near_field);
+    // Only when present, so every response without one keeps its bytes and content_hash.
+    if (!back_near_field.empty())
+        near_field_to_xml(doc, root, back_near_field, "BackNearField");
 
     {
         XmlNode* te = append_node(doc, root, "TotalEfficiency");
@@ -2039,6 +2116,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         // Only when present, so every response without one keeps its bytes and content_hash.
         if (!tot_eff.near_field.empty())
             near_field_to_xml(doc, te, tot_eff.near_field);
+        if (!tot_eff.back_near_field.empty())
+            near_field_to_xml(doc, te, tot_eff.back_near_field, "BackNearField");
     }
 
     if (!grounding.empty()) {
@@ -2179,6 +2258,7 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             if ((end != v) && (*end == '\0') && (n > 0) && (n < 1000))
                 pr.n_anchor_angles = static_cast<int>(n);
         }
+        pr.back_body_depth_cm = std::max(0.0, attrib_double(p, "backBodyDepthCm", 0.0));
         pr.fep_window_keV =
             attrib_double(p, "fepWindowKeV", kDefaultFepWindowKeV);
         if (const char* v = attrib_value(p, "generationSeed"))
@@ -2200,6 +2280,13 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             else
                 pr.method = ProductionMethod::FullMc;
         }
+    }
+
+    if (const char* v = child_value(root, "EfficiencyScale")) {
+        char* end = nullptr;
+        resp->efficiency_scale = std::strtod(v, &end);
+        if ((end == v) || !(resp->efficiency_scale > 0.0) || !std::isfinite(resp->efficiency_scale))
+            throw std::runtime_error("CeeLoResponse: invalid EfficiencyScale");
     }
 
     const XmlNode* d = root->first_node("Detector");
@@ -2225,6 +2312,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
 
     if (const XmlNode* nf = root->first_node("NearField"))
         near_field_from_xml(nf, resp->near_field);
+    if (const XmlNode* nf = root->first_node("BackNearField"))
+        near_field_from_xml(nf, resp->back_near_field);
 
     if (const XmlNode* te = root->first_node("TotalEfficiency")) {
         const char* tier = attrib_value(te, "tier");
@@ -2243,6 +2332,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             eta_from_xml(et, resp->tot_eff.eta_tot);
         if (const XmlNode* nf = te->first_node("NearField"))
             near_field_from_xml(nf, resp->tot_eff.near_field);
+        if (const XmlNode* nf = te->first_node("BackNearField"))
+            near_field_from_xml(nf, resp->tot_eff.back_near_field);
     }
 
     if (const XmlNode* g = root->first_node("Grounding")) {
@@ -2379,6 +2470,10 @@ uint64_t DetectorResponse::content_hash() const {
         h.tag("anchorAngles");
         h.integer(*provenance.n_anchor_angles);
     }
+    if (provenance.back_body_depth_cm > 0.0) {
+        h.tag("backBodyDepthCm");
+        h.number(provenance.back_body_depth_cm);
+    }
     h.number(provenance.fep_window_keV);
     h.integer(static_cast<int64_t>(provenance.generation_seed));
     h.integer(provenance.kernel_n_rays);
@@ -2387,6 +2482,11 @@ uint64_t DetectorResponse::content_hash() const {
     h.number(provenance.valid_e_max_keV);
     h.number(provenance.min_distance_cm);
     h.text(to_string(provenance.method));
+
+    if (efficiency_scale != 1.0) {
+        h.tag("EfficiencyScale");
+        h.number(efficiency_scale);
+    }
 
     hash_detector(h, descriptor);
 
@@ -2409,6 +2509,10 @@ uint64_t DetectorResponse::content_hash() const {
         h.tag("NearField");
         hash_near_field(h, near_field);
     }
+    if (!back_near_field.empty()) {
+        h.tag("BackNearField");
+        hash_near_field(h, back_near_field);
+    }
 
     h.integer(static_cast<int64_t>(tot_eff.tier));
     if (scatter_in_recapture != 0.0) {
@@ -2423,6 +2527,10 @@ uint64_t DetectorResponse::content_hash() const {
     if (!tot_eff.near_field.empty()) {
         h.tag("TotalNearField");
         hash_near_field(h, tot_eff.near_field);
+    }
+    if (!tot_eff.back_near_field.empty()) {
+        h.tag("TotalBackNearField");
+        hash_near_field(h, tot_eff.back_near_field);
     }
 
     if (!grounding.empty()) {

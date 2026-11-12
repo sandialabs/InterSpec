@@ -124,6 +124,36 @@ namespace
     dst.truthAgeTolerance = src.truthAgeTolerance;
 #endif
   }
+
+
+  /** Returns the materials composition by mass fraction, largest first, ex. "N 75.5%, O 23.2%". */
+  string material_composition_str( const Material &mat )
+  {
+    vector<pair<string,double>> components;
+    for( const Material::NuclideFractionPair &nuc_frac : mat.nuclides )
+    {
+      if( nuc_frac.first && (nuc_frac.second > 0.0f) )
+        components.emplace_back( nuc_frac.first->symbol, nuc_frac.second );
+    }
+
+    for( const Material::ElementFractionPair &el_frac : mat.elements )
+    {
+      if( el_frac.first && (el_frac.second > 0.0f) )
+        components.emplace_back( el_frac.first->symbol, el_frac.second );
+    }
+
+    std::stable_sort( begin(components), end(components),
+      []( const pair<string,double> &lhs, const pair<string,double> &rhs ){
+        return lhs.second > rhs.second;
+    } );
+
+    string answer;
+    for( const pair<string,double> &comp : components )
+      answer += (answer.empty() ? "" : ", ") + comp.first + " "
+                + SpecUtils::printCompact( 100.0*comp.second, 3 ) + "%";
+
+    return answer;
+  }//string material_composition_str( const Material &mat )
 }//unnamed namespace
 
 rapidxml::xml_node<char> *ShieldSourceConfig::serialize( rapidxml::xml_node<char> *base_node ) const
@@ -1119,7 +1149,8 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( m_detector, *geom, 0.0 );
       const ceelo::AnchorCurve tot_curve = CeeLoUtils::totalTransferAnchorForDrf( m_detector, anchor );
       return CeeLoUtils::makeTransferResponse( *geom, anchor, tot_curve,
-                                               m_detector->name() + " (EFFTRAN transfer)" );
+                                               m_detector->name() + " (EFFTRAN transfer)",
+                                               m_detector->efficiencyMultiple() );
     }catch( std::exception &e )
     {
       m_volEffResolveNote = std::string("EFFTRAN transfer unavailable (") + e.what() + ")";
@@ -3491,8 +3522,7 @@ double ShieldingSourceChi2Fcn::activity( const SandiaDecay::Nuclide *nuclide,
   if( isSelfAttenSource(nuclide) )
     return activityOfSelfAttenSource( nuclide, params );
   
-  const size_t ind = nuclideIndex( nuclide );  
-  return params[2*ind] * sm_activityUnits;
+  return params[activityParameterIndex(nuclide)] * sm_activityUnits;
 }//double activity(...)
 
 
@@ -3574,9 +3604,9 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
         // A zero-thickness (zero-volume) self-attenuating shell yields zero mass -> zero activity
         //  by design; no division by volume here, so nothing to guard.
         const double mass_grams = iso_density * vol;
-        const double massUncertaintySquared_grams = iso_density * volUncert * volUncert;
+        const double massUncertainty_grams = iso_density * volUncert;
         const double thisActivity = mass_grams * activity_per_gram;
-        const double thisActivityUncertaintySquared = massUncertaintySquared_grams * activity_per_gram;
+        const double thisActivityUncertaintySquared = std::pow( massUncertainty_grams * activity_per_gram, 2.0 );
         
         //cout << src->symbol << ": sqrt(thisActivityUncertaintySquared)=" << sqrt(thisActivityUncertaintySquared) << endl
         //<< "\tvolumeUncertDueToInnerRad=" << volumeUncertDueToInnerRad
@@ -3718,6 +3748,13 @@ size_t ShieldingSourceChi2Fcn::nuclideIndex( const SandiaDecay::Nuclide *nuclide
 
   return (pos - m_nuclides.begin());
 }//size_t index( const SandiaDecay::Nuclide *nuclide ) const
+
+
+size_t ShieldingSourceChi2Fcn::activityParameterIndex( const SandiaDecay::Nuclide *nuclide ) const
+{
+  // Each nuclide has an (activity, age) pair of parameters, at the start of the parameter list
+  return 2*nuclideIndex( nuclide );
+}//size_t activityParameterIndex( const SandiaDecay::Nuclide *nuclide ) const
 
   
 size_t ShieldingSourceChi2Fcn::numNuclides() const
@@ -6253,6 +6290,7 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
         
         shieldInfo.m_name = material ? material->name : string("null");
         shieldInfo.m_chemical_formula = material ? material->chemicalFormula() : string("null");
+        shieldInfo.m_composition = material ? material_composition_str( *material ) : string();
         shieldInfo.m_density = material ? material->density : 0.0f;
         
         shieldInfo.m_ad = (shieldInfo.m_density * thickness);

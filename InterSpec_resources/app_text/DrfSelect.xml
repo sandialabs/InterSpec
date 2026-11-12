@@ -159,6 +159,7 @@
   <message id="ds-chip-tt-mc-back-yes"> Side &amp; back incidence: characterized.</message>
   <message id="ds-chip-tt-mc-back-coarse"> Side &amp; back incidence: characterized (Coarse).</message>
   <message id="ds-chip-tt-mc-back-fine"> Side &amp; back incidence: characterized (Fine).</message>
+  <message id="ds-chip-tt-mc-back-near"> Close beside and behind it too: measured down to the housing at the sides, and from 15 cm behind the crystal face directly behind.</message>
   <message id="ds-chip-tt-no-mc">No Monte-Carlo parameterization - efficiencies are on-axis far-field only. Use "Characterize by MC..." to add one.</message>
   <message id="ds-chip-transfer">Transfer</message>
   <message id="ds-chip-tt-transfer">Efficiency-transfer response (an anchored efficiency curve carried to other distances/angles through the exact ray-traced detector geometry; valid {1}-{2} keV). Best accuracy on-axis at distances beyond {3}; closer or well off-axis queries are flagged and carry an honestly inflated uncertainty. For the best near-field / off-axis accuracy run a Full MC characterization ("Modify...", Geom &amp; MC tab).</message>

@@ -1649,7 +1649,7 @@ void DrfModifyWidget::buildInfoTable( Wt::WContainerWidget *parent )
 
   const char *labelKeys[NumInfoRow] = {
     "dmw-info-eff", "dmw-info-geom", "dmw-info-support", "dmw-info-uncert",
-    "dmw-info-fwhm", "dmw-info-total", "dmw-info-range", "dmw-info-diam"
+    "dmw-info-fwhm", "dmw-info-total", "dmw-info-range", "dmw-info-diam", "dmw-info-multiple"
   };
 
   for( int row = 0; row < NumInfoRow; ++row )
@@ -1957,6 +1957,12 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
   {
     set_row( InfoDiameter, WString() );
   }
+
+  const double multiple = drf ? drf->efficiencyMultiple() : 1.0;
+  set_row( InfoMultiple, (multiple != 1.0)
+                           ? WString::tr("dmw-info-multiple-value")
+                               .arg( WString::fromUTF8( SpecUtils::printCompact( multiple, 4 ) ) )
+                           : WString() );
 }//void fillInfoTable(...)
 
 

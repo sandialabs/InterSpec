@@ -39,6 +39,7 @@
 #include <sstream>
 #include <utility>
 #include <sstream>
+#include <optional>
 #include <stdexcept>
 #include <functional>
 #include <type_traits>
@@ -1100,8 +1101,36 @@ public:
    Clearing one adopts its descriptor as #geometry when no geometry was stated separately, so
    putting a detector back on the flat-disk model does not make it forget what it physically is.
    Neither clearing nor attaching one changes #geometryDisabled.
+
+   The #efficiencyMultiple goes with the response: attaching one adopts its scale (a response is
+   created already carrying the multiple of the detector it describes - see #efficiencyMultiple),
+   and clearing one keeps the scale it had.
    */
   void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
+
+  /** The efficiency scalar multiple: every efficiency this DRF reports - FEP and total, intrinsic
+   and absolute, at any position - is this times that of the ONE detector element its efficiency
+   curves, geometry and response describe.  Either the number of identical elements whose events go
+   into one spectrum, with one live time (4 for an H3D M400's 2x2 CZT array characterized as one
+   crystal; GADRAS's Detector.dat parameter 18), or an empirical scale.  1.0 for nearly every DRF -
+   including detectors recorded as separate spectra (e.g. a portal's eight panels under their own
+   detector names): summing those adds their live times too, so the sum's counts per live second,
+   and so its efficiency, are already one detector's.
+
+   Stored in exactly one place: an attached #ceeloResponse's `efficiency_scale`, else
+   #m_efficiencyMultiple - never both.  So the stored curves are per element, while measured points
+   (#measuredPoints) and everything this class evaluates are the whole detector; a producer making
+   a response from this DRF is given the multiple (CeeLoUtils::makeTransferResponse,
+   ceelo::GenerationOptions::efficiency_scale) and fits against whole-detector efficiencies.
+   */
+  double efficiencyMultiple() const;
+
+  /** Sets #efficiencyMultiple; must be finite and > 0 (throws std::invalid_argument otherwise).
+   With a response attached, replaces it with a copy carrying the new scale - which rescales a
+   response grounded to measured points away from them, so set this before characterizing.
+   Recomputes the hash.
+   */
+  void setEfficiencyMultiple( const double multiple );
 
   /** This detectors physical geometry - shape, crystal dimensions and material,
    dead layer, endcap layers, collimator - or nullptr when it is not known.
@@ -1774,9 +1803,16 @@ protected:
   CeeloQueryCache &ceeloCache() const;
 
   /** Sets #m_ceeloResponse and gives it a fresh #m_ceeloCache - the only way either is assigned.
-   Does not recompute the hash.
+   Also moves the #efficiencyMultiple to its one owner: an attached response's scale (clearing
+   #m_efficiencyMultiple), or on detaching, #m_efficiencyMultiple.  Does not recompute the hash.
    */
   void assignCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
+
+  /** The #efficiencyMultiple when no #m_ceeloResponse is attached, and nullopt whenever one is (its
+   `efficiency_scale` is the multiple then).  nullopt also means 1.0; 1.0 itself is never stored, so
+   DRFs without a multiple keep their XML and hash.
+   */
+  std::optional<double> m_efficiencyMultiple;
 
   /** See #flatDiskSnapshotDistance - negative for every DRF that is not a snapshot.
    Deliberately absent from #computeHash, #operator== and #equalEnough: it says how this

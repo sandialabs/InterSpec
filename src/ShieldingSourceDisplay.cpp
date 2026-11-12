@@ -7087,13 +7087,27 @@ void ShieldingSourceDisplay::updateTrendMessage( const std::shared_ptr<const Shi
   {
     m_trendTxt->hide();
     m_trendTxt->setText( WString() );
+    m_trendTxt->setToolTip( WString() );
     return;
   }
 
-  // The driving statistics (slope/curvature t, atomic-number discrimination power) are not shown
-  //  here - the reports carry them, from `ModelFitResults::pull_trend`.
+  // The driving statistics (likelihood-ratio sigmas, atomic-number discrimination power) are not
+  //  shown here - the reports carry them, from `ModelFitResults::pull_trend`.
   const char * const conf_key = ShieldSourcePullTrend::confidence_txt_key( trend->confidence );
-  m_trendTxt->setText( WString::tr(key).arg( WString::tr(conf_key) ) );
+  const ShieldSourcePullTrend::MessageHint hint = ShieldSourcePullTrend::message_hint( *trend );
+  WString hint_txt;
+  if( hint.key )
+  {
+    hint_txt = WString::tr( hint.key ).arg( WString::fromUTF8( hint.value_txt ) );
+    if( hint.zclass_key )
+      hint_txt.arg( WString::tr( hint.zclass_key ) );
+  }
+
+  WString msg = WString::tr(key).arg( WString::tr(conf_key) ).arg( hint_txt );
+  if( trend->possibleCascadeSumming )
+    msg = WString("{1} {2}").arg( msg ).arg( WString::tr( ShieldSourcePullTrend::summing_caveat_txt_key() ) );
+  m_trendTxt->setText( msg );
+  m_trendTxt->setToolTip( msg );  //the line may be clamped to two lines
   m_trendTxt->show();
 }//updateTrendMessage(...)
 

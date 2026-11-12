@@ -640,7 +640,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
         },
         "conversation": {
           "type": "string",
-          "description": "Optional, for foreground loads: what happens to the assistant conversation. \"resume\" continues the conversation saved in the file ({% if mcp_server == \"multi_session\" %}an N42 from export_analysis{% else %}an N42 saved by InterSpec{% endif %}) - only use it for files you {% if mcp_server == \"multi_session\" %}exported{% else %}saved{% endif %} yourself; \"keep\" keeps the current conversation; \"new\" starts an empty one.  Default is {% if mcp_server == \"desktop\" %}\"resume\"{% else %}\"keep\"{% endif %}.",
+          "description": "Optional, for foreground loads: what happens to the assistant conversation. \"resume\" continues the conversation saved in the file ({% if mcp_server == \"multi_session\" %}an N42 from export_analysis{% else %}an N42 saved by InterSpec{% endif %}) - only use it for files you {% if mcp_server == \"multi_session\" %}exported{% else %}saved{% endif %} yourself; \"keep\" keeps the current conversation; \"new\" starts an empty one.  Default is {% if mcp_server == \"desktop\" %}\"resume\"{% else %}\"keep\"{% endif %}.  To start a new conversation, use \"new\" with the current foreground's path (keeping it, and its peaks and other work), or with no path (unloading any foreground; works with no foreground loaded too).",
           "enum": ["keep", "resume", "new"]
         }
       },

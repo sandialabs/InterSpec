@@ -131,11 +131,7 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
   { SpecUtils::SaveSpectrumAsType::Uri, "QR-code" },
 #endif
 };//sm_file_type_to_uri_name
-}//namespace
 
-#if( USE_QR_CODES )
-namespace
-{
   const int ns_min_screen_width_for_wide_layout = 750;
   
 std::string clean_uuid( string uuid )
@@ -157,8 +153,11 @@ std::string clean_uuid( string uuid )
   
   return uuid;
 }//std::string clean_uuid( string uuid )
+}//namespace
 
-
+#if( USE_QR_CODES )
+namespace
+{
   void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls,
                        const size_t index,
                        std::function<void()> successfullyDone,
@@ -2395,8 +2394,10 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
 {
   const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
   
+#if( USE_QR_CODES )
   if( (save_format == SpecUtils::SaveSpectrumAsType::Uri) && !spec )
     spec = currentlySelectedFile();
+#endif
   
   return maxRecordsInCurrentSaveType( save_format, spec );
 }//uint16_t maxRecordsInCurrentSaveType() const

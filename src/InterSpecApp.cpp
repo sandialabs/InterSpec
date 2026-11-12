@@ -434,6 +434,11 @@ void InterSpecApp::setupDomEnvironment()
     let code = 0;
     if( e.ctrlKey || e.metaKey )
     {
+      // A held key auto-repeating is not a shortcut (except undo/redo), so holding S and then pressing
+      //  Ctrl, to Ctrl-drag a peak fit in the secondary spectrum, will not Store
+      if( e.repeat && (e.key !== 'z') && (e.key !== 'Z') )
+        return;
+
       switch( e.key ){
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
         case 'h': // Help dialog
@@ -1662,6 +1667,25 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     RemoteRid::handleShowingRemoteRidRefLines(m_viewer,signal);
     return;
   }//if( signal == "showRemoteRidRefLines-" )
+#endif
+  
+#if( USE_DB_TO_STORE_SPECTRA )
+  if( SpecUtils::istarts_with( signal, "loadAutoSavedState-" ) )
+  {
+    // From the notification posted by `InterSpec::notifyOfAutoSavedWork(...)`
+    try
+    {
+      const string prefix = "loadAutoSavedState-";
+      const long long int stateId = std::stoll( signal.substr( prefix.size() ) );
+      if( m_viewer )
+        m_viewer->loadNewestAutoSavedWork( stateId );
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "Invalid loadAutoSavedState signal '" << signal << "': " << e.what();
+    }//try / catch
+    
+    return;
+  }//if( SpecUtils::istarts_with( signal, "loadAutoSavedState-" ) )
 #endif
   
   if( SpecUtils::istarts_with( signal, "showMultimedia-" ) )

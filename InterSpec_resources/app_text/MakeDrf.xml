@@ -125,6 +125,9 @@
   <message id="md-tt-geom-mode">How much you know about the detector. The crystal diameter is all that is required; describing the crystal material and dimensions (and endcap) lets the response be evaluated correctly close to the detector and off-axis, and lets you optionally characterize it by Monte Carlo.</message>
   <message id="md-geom-guidance">Usually the crystal diameter is all you need. If you also know the crystal material, length and endcap, switch to &quot;Detector geometry&quot; for better near-field and off-axis answers.</message>
   <message id="md-det-setback-ph">optional, e.g. 0.5 cm</message>
+  <message id="md-eff-multiple">Scalar multiple</message>
+  <message id="md-tt-eff-multiple">The number of identical detector elements combined into each spectrum (one spectrum, one live time), when the diameter or geometry describes just one of them - for example 4 for an H3D M400's 2x2 CZT array modeled as one crystal.  The fitted efficiency is of one element, and every efficiency the detector response reports is this many times it.  Leave blank (1) for an ordinary detector, and for detectors recorded as separate spectra (e.g., 8 detectors of a portal): InterSpec sums those with their live times, so their sum already has one detector's efficiency.</message>
+  <message id="md-err-eff-multiple-invalid">The scalar multiple must be a number greater than zero; no efficiency was fit.</message>
   <message id="md-tt-det-diam">Diameter of the active detector crystal (not the housing). The setback is the distance from the outside face of the detector to the crystal; leave it blank if unknown.</message>
   <message id="md-options-title">Options</message>
   <message id="md-fit-warning-birge">The efficiency points scatter more than their stated uncertainties allow, so the coefficient uncertainties have been inflated by {1}x to match.</message>

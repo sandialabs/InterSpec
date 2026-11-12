@@ -1,128 +1,175 @@
-{% if exists("foreground") %}Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}{% else %}No foreground spectrum{% endif %}
-{% if HasFitResults %}{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.
-{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}
-{% endif %}{% endif %}{% if exists("Detector") %}{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}
-{% endif %}{% endif %}{% if HasFitResults %}{% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak
-{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak
-{% endif %}{% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement
-{% endif %}{% endif %}
-{% if HasErrorMessage %}
-
+## if exists("foreground")
+Foreground live time: {{ printFixed(foreground.LiveTime_s,3) }} seconds ({{ foreground.LiveTime }})
+## else
+No foreground spectrum
+## endif
+## if exists("Detector")
+## if Detector.Radius_cm > 0.0
+Detector: {{ Detector.Name }}, radius {{ printFixed(Detector.Radius_cm,1) }} cm
+## else
+Detector: {{ Detector.Name }}
+## endif
+## endif
+## if HasFitResults
+## if FixedGeometryDetector
+Results given as {{ ActShieldFitSetup.FixedGeometryType }}.
+## else
+Geometry: {{ ActShieldFitSetup.Geometry }}, with the source center {{ ActShieldFitSetup.Distance }} from the detector
+## endif
+## if ActShieldFitSetup.FitOptions.InterferenceCorrection
+Allowing multiple nuclides being fit for to potentially contribute to the same photopeak
+## else
+Not allowing multiple nuclides being fit for to contribute to the same photopeak
+## endif
+## if ActShieldFitSetup.FitOptions.DecayDuringMeasurement
+Branching ratios are being corrected for nuclide decay during measurement
+## endif
+## endif
+## if HasErrorMessage
 
 Error Message: {{ ErrorMessage }}
-{% endif %}
-{% if HasWarnings %}
+## endif
+## if HasWarnings
+
 Warnings:
 ## for warning in Warnings
   {{ warning }}
 ## endfor
-{% endif %}
-{% if exists("PullTrend") and PullTrend.HasConclusion %}
+## endif
+## if exists("PullTrend") and PullTrend.HasConclusion
+
 Pull-trend interpretation: {{ PullTrend.Message }}
-{% endif %}
-{% if exists("DetectorEff") %}
-Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %} [{{ DetectorEff.Note }}]{% endif %}
+## endif
+## if exists("DetectorEff")
+
+Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %}{{ " [" }}{{ DetectorEff.Note }}]{% endif %}.
 Detector efficiency uncertainty used: {{ DetectorEff.UncertUsedDescription }}
-{% endif %}
-{% if exists("Sources") %}
+## endif
+## if exists("Sources")
+
 Sources:
 ## for src in Sources
-  For {{ src.Nuclide }} at age {{ src.Age }}{% if src.AgeIsFit %} +- {{ src.AgeUncert }} {% endif %} with activity {{ src.Activity }}{% if src.ActivityIsFit %} +- {{ src.ActivityUncert }} {% endif %}{% if src.IsTraceSource %}(src.TraceDisplayActivity{% if src.ActivityIsFit %} +- {{ src.TraceDisplayActivityUncert }} {% endif %}){% endif %}:
+  For {{ src.Nuclide }} at age {{ src.Age }}{% if src.AgeIsFit %}{{ " +- " }}{{ src.AgeUncert }}{% endif %}, with activity {{ src.Activity }}{% if src.ActivityIsFit %}{{ " +- " }}{{ src.ActivityUncert }}{% endif %}{% if src.IsTraceSource and (src.TraceDisplayActivity != src.Activity) %}{{ " (" }}{{ src.TraceDisplayActivity }}{% if src.ActivityIsFit %}{{ " +- " }}{{ src.TraceDisplayActivityUncert }}{% endif %}){% endif %}:
 ## for peak in src.PeaksThisNucContributesTo
 ## for gamma in peak.ThisNucsGammasForPeak
-    Peak attributed to {{ peak.DecayParticleEnergy }} keV received {{ gamma.PredictedCounts }} from {{ gamma.Energy }} keV line{% if existsIn(gamma,"DecayCorrection") %} (decay correction {{ gamma.DecayCorrection }}){% endif %}, which has I={{ gamma.BranchingRatio }}
-##endfor
-##endfor
-##endfor
-{% endif %}
-
-{% if exists("Shieldings") %}
-{% if existsIn(Shieldings,"Shields") %}
-Shieldings:
-## for shield in Shieldings.Shields
-{% if shield.IsGeneric %}
-    Generic AN={{ shield.AN }}, AD={{ shield.AD }} g/cm2:
-{% else %}
-    {{ shield.Name }}{% if existsIn(shield,"Formula") %}, {{ shield.Formula }},{% endif %} density={{ shield.Density_gPerCm3 }} g/cm3, {{ Shieldings.Geometry }}: [{% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }}_thickness={{at(shield.Thicknesses,dimNum)}}{% endfor %}]
-{% endif %}
-{% if exists("PeaksUsedForActivityFitting") %}
-## for peak in PeaksUsedForActivityFitting.Peaks
-        {% if (shield.ShieldingNumber < length(peak.ShieldAttenuations)) %}{%
-            if (at(peak.ShieldAttenuations,shield.ShieldingNumber) > 0.0) 
-            %}For peak at {{ peak.Energy}} keV, attenuation multiple of {{ at(peak.ShieldAttenuations,shield.ShieldingNumber) }}{% 
-        endif %}{% endif %}
-
-##endfor
-{% endif %}
-
-##endfor
-{% endif %}
-{% endif %}
-
-
-Detector Efficiency Effects:
-{% if exists("PeaksUsedForActivityFitting") %}
-## for peak in PeaksUsedForActivityFitting.Peaks
-    {{ peak.Energy }} keV photopeak reduced by {{ peak.DetectorSolidAngleFraction }} * {{ peak.DetectorIntrinsicEff }} = {{ peak.DetectorEff}} ((solid angle)*(det intrinsic eff)=eff){% if existsIn(peak,"CascadeCorrection") %}
-    {{ peak.Energy }} keV cascade summing multiplier {{ peak.CascadeCorrection.NetMultStr }} (summing-out {{ peak.CascadeCorrection.SummingOutStr }}, summing-in +{{ peak.CascadeCorrection.SummingInStr }})
-{%- endif %}
-##endfor
-{% endif %}
-
-
-Chi2 Contributions Of Peaks:
-{% if exists("PeaksUsedForActivityFitting") %}
-## for peak in PeaksUsedForActivityFitting.Peaks
-    At {{ peak.Energy }} keV expected {{ peak.PredictedCounts }} counts, recieved {{ peak.SignalCounts }} +- {{ peak.SignalCountsUncert }}{% if existsIn(peak,"DrfEffFracUncert") %} (uncert incl. {{ peak.DrfEffFracUncertPercentStr }}% detector-efficiency uncert){% endif %}. giving (observed-expected)/uncert={{ peak.PredictedNumSigmaOff }}
-##endfor
-{% endif %}
-
-{% if HasFitResults %}
-There were {{ NumDof }} parameters fit for
-It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }}
-## if exists("Sources")
-## for src in Sources
-{{ src.Nuclide }} fit activity {{ src.Activity }} {% if src.ActivityIsFit %}with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %}at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %}age {{ src.Age }}
+    Peak attributed to {{ peak.DecayParticleEnergy }} keV received {{ gamma.PredictedCountsStr }} counts from {{ gamma.Energy }} keV line{% if existsIn(gamma,"DecayCorrectionStr") %}{{ " (decay correction " }}{{ gamma.DecayCorrectionStr }}){% endif %}, which has I={{ gamma.BranchingRatioStr }}
+## endfor
+## endfor
 ## endfor
 ## endif
-{% if HasFitResults %}
-Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.
-{% else %}{{ ActShieldFitSetup.Geometry }}
-{% endif %}{% endif %}{% if exists("Shieldings") %}
-Shieldings:
-{% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
-## for shield in Shieldings.Shields
-{% if shield.IsGeneric %}
-    Generic shielding AN={{ shield.AN }}, AD={{ shield.AD }} g/cm3
-{% else %}
-    {{ shield.Name }} has density {{ shield.Density_gPerCm3 }} g/cm3 and dimensions {% for i in range(shield.NumDimensions) %} {{ at(Shieldings.DimensionMeanings,i) }}: {{ at(shield.Thicknesses, i) }}{% if at(shield.DimensionIsFit, i) %} (+-{{ at(shield.ThicknessesUncerts,i) }}) {% endif %} {% endfor %}
-{% endif %}
-##endfor
-{% else %}
-    None
-{% endif %}
-{% endif %}
-{% endif %}
+## if exists("Shieldings") and existsIn(Shieldings,"Shields")
 
-{% if exists("NotFitPeaks") %}
+Shieldings:
+## for shield in Shieldings.Shields
+## if shield.IsGeneric
+    Generic: AN={{ shield.AN }}{% if shield.FitAN %}{{ " (fit)" }}{% endif %}, AD={{ shield.AD }} g/cm2{% if shield.FitAD %}{{ " (fit)" }}{% endif %}.
+## else
+    {{ shield.Name }}{% if existsIn(shield,"CompositionStr") %}{{ " (" }}{{ shield.CompositionStr }}){% endif %}, density {{ shield.DensityStr }}, {{ Shieldings.Geometry }}: {% for dimNum in range(Shieldings.NumDimensions) %}{% if dimNum %}, {% endif %}{{ at(Shieldings.DimensionMeanings,dimNum) }} {{ at(shield.Thicknesses,dimNum) }}{% if at(shield.DimensionIsFit,dimNum) %}{{ " +- " }}{{ at(shield.ThicknessesUncerts,dimNum) }} (fit){% endif %}{% endfor %}.
+## endif
+## if exists("HasPerShieldAttenuations") and HasPerShieldAttenuations and exists("PeaksUsedForActivityFitting")
+## for peak in PeaksUsedForActivityFitting.Peaks
+## if shield.ShieldingNumber < length(peak.ShieldAttenuations)
+        For peak at {{ peak.Energy }} keV, attenuation multiple of {{ printCompact(at(peak.ShieldAttenuations,shield.ShieldingNumber),4) }}
+## endif
+## endfor
+## endif
+## endfor
+## endif
+## if exists("PeaksUsedForActivityFitting")
+
+Detector Efficiency Effects:
+## for peak in PeaksUsedForActivityFitting.Peaks
+    {{ peak.Energy }} keV photopeak reduced by {{ printCompact(peak.DetectorSolidAngleFraction,4) }} * {{ printCompact(peak.DetectorIntrinsicEff,4) }} = {{ printCompact(peak.DetectorEff,4) }} ((solid angle)*(det intrinsic eff)=eff)
+## if existsIn(peak,"CascadeCorrection")
+    {{ peak.Energy }} keV cascade summing multiplier {{ peak.CascadeCorrection.NetMultStr }} (summing-out {{ peak.CascadeCorrection.SummingOutStr }}, summing-in +{{ peak.CascadeCorrection.SummingInStr }})
+## endif
+## endfor
+
+Chi2 Contributions Of Peaks:
+## for peak in PeaksUsedForActivityFitting.Peaks
+    At {{ peak.Energy }} keV expected {{ printCompact(peak.PredictedCounts,5) }} counts, received {{ peak.SignalCountsStr }} +- {{ peak.SignalCountsUncertStr }}{% if existsIn(peak,"DrfEffFracUncert") %}{{ " (uncert incl. " }}{{ peak.DrfEffFracUncertPercentStr }}% detector-efficiency uncert){% endif %}, giving (observed-expected)/uncert={{ printFixed(peak.PredictedNumSigmaOff,3) }}
+## endfor
+## endif
+## if HasFitResults
+
+Chi2 = {{ printCompact(FitChi2,4) }} for {{ NumDof }} degrees of freedom{% if exists("FitChi2PerDofStr") %}{{ " (chi2/dof = " }}{{ FitChi2PerDofStr }}){% endif %}.
+## if exists("NumFitParameters")
+{{ NumFitParameters }} parameter{% if NumFitParameters != 1 %}s{% endif %}{{ " fit, with " }}{{ NumberFcnCalls }} model evaluations.
+## else
+{{ NumberFcnCalls }} model evaluations.
+## endif
+## if exists("Sources")
+## for src in Sources
+{{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %}{{ " with uncertainty " }}{{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}%){% endif %}, at {% if src.AgeIsFit %}fit age {{ src.Age }} +- {{ src.AgeUncert }}{% else %}assumed age {{ src.Age }}{% endif %}.
+## if existsIn(src,"ActivityUncertBreakdown")
+    Activity uncertainty breakdown (the parts add in quadrature):
+## if src.ActivityUncertBreakdown.HasStatFixedOthers
+      Counting statistics, with all else fixed: {{ src.ActivityUncertBreakdown.StatFixedOthers.Uncert }} ({{ src.ActivityUncertBreakdown.StatFixedOthers.PercentOfActivityStr }}%)
+      Fitting other parameters:                 {{ src.ActivityUncertBreakdown.FitCorrelation.Uncert }} ({{ src.ActivityUncertBreakdown.FitCorrelation.PercentOfActivityStr }}%)
+## else
+      Counting statistics, incl. fitting other parameters: {{ src.ActivityUncertBreakdown.StatOnly.Uncert }} ({{ src.ActivityUncertBreakdown.StatOnly.PercentOfActivityStr }}%)
+## endif
+## if src.ActivityUncertBreakdown.HasDetEff
+      Detector efficiency:                      {{ src.ActivityUncertBreakdown.DetEff.Uncert }} ({{ src.ActivityUncertBreakdown.DetEff.PercentOfActivityStr }}%)
+## else
+      Detector efficiency:                      not included
+## endif
+## endif
+## endfor
+## if HasActivityUncertBreakdown
+    (Nuclear data, and the source distance and geometry, are taken as exact; uncertainties are not scaled by chi2/dof.)
+## endif
+## endif
+## endif
+## if exists("NotFitPeaks")
+
 Exemplar peaks that could not be fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}, and their detection limits{% endif %}:
 ## for peak in NotFitPeaks.Peaks
-    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}{% if existsIn(peak,"Mda") %}: {{ peak.Mda.Description }}{% if peak.Mda.DeconAttempted %}{% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}  The deconvolution method {% if peak.Mda.DeconIsPredictedSensitivity and existsIn(peak.Mda,"DeconSampleExposure_s") %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for a {{ printFixed(peak.Mda.DeconSampleExposure_s,1) }} second measurement.{% else if peak.Mda.DeconIsPredictedSensitivity %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for the planned measurement{% else if peak.Mda.DeconLimitType == "CentralInterval" %}gives a {{ peak.Mda.ConfidenceLevelStr }} central-interval upper endpoint of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}.{% else %}gives a one-sided upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level.{% endif %}{% else %}  The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.{% endif %}{% else %}  The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.{% endif %}{% endif %}{% endif %}
+## if existsIn(peak,"Mda")
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %}{{ " (" }}{{ peak.SourceName }}){% endif %}: {{ peak.Mda.Description }}
+## if peak.Mda.DeconAttempted
+## if peak.Mda.DeconComputed and peak.Mda.DeconFoundUpperLimit
+## if peak.Mda.DeconIsPredictedSensitivity and existsIn(peak.Mda,"DeconSampleExposure_s")
+      The deconvolution method predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}{{ " at the " }}{{ peak.Mda.ConfidenceLevelStr }} confidence level for a {{ printFixed(peak.Mda.DeconSampleExposure_s,1) }} second measurement.
+## else if peak.Mda.DeconIsPredictedSensitivity
+      The deconvolution method predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}{{ " at the " }}{{ peak.Mda.ConfidenceLevelStr }} confidence level for the planned measurement.
+## else if peak.Mda.DeconLimitType == "CentralInterval"
+      The deconvolution method gives a {{ peak.Mda.ConfidenceLevelStr }} central-interval upper endpoint of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}.
+## else
+      The deconvolution method gives a one-sided upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}{{ " at the " }}{{ peak.Mda.ConfidenceLevelStr }} confidence level.
+## endif
+## else
+      The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.
+## endif
+## endif
+## else if peak.SourceName
+    {{ printFixed(peak.PeakMean,2) }} keV ({{ peak.SourceName }})
+## else
+    {{ printFixed(peak.PeakMean,2) }} keV
+## endif
 ## endfor
-{% endif %}
+## endif
 ## if exists("SupplementalPeakInfo")
 ## if SupplementalPeakInfo.AnyPeakNotUsedForFit
 
 Peaks that were fit, but not used for the activity fit; the activity each implies on its own:
 ## for peak in SupplementalPeakInfo.PeaksNotUsedForFit.Peaks
-    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}: {% if peak.HasNominalActivity %}{{ peak.Description }}{% else %}No activity could be derived: {{ peak.NotEvaluatedReason }}.{% endif %}
+## if peak.HasNominalActivity
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %}{{ " (" }}{{ peak.SourceName }}){% endif %}: {{ peak.Description }}
+## else
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %}{{ " (" }}{{ peak.SourceName }}){% endif %}: No activity could be derived: {{ peak.NotEvaluatedReason }}.
+## endif
 ## endfor
 ## endif
 ## if SupplementalPeakInfo.HasCurrieChecks
 
 Detection-limit check of each peak:
 ## for peak in SupplementalPeakInfo.AllPeaks.Peaks
-    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}: {{ peak.CurrieCheck.ShortDescription }}{% if peak.CurrieCheck.CurrieComputed %} (Lc={{ peak.CurrieCheck.DecisionThresholdStr }}, Ld={{ peak.CurrieCheck.DetectionLimitStr }}, net={{ peak.CurrieCheck.SourceCountsStr }} counts, best est.={{ peak.CurrieCheck.BestEstimateCountsStr }} +- {{ peak.CurrieCheck.BestEstimateCountsUncertStr }} counts){% endif %}
+## if peak.CurrieCheck.CurrieComputed
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %}{{ " (" }}{{ peak.SourceName }}){% endif %}: {{ peak.CurrieCheck.ShortDescription }} (Lc={{ peak.CurrieCheck.DecisionThresholdStr }}, Ld={{ peak.CurrieCheck.DetectionLimitStr }}, net={{ peak.CurrieCheck.SourceCountsStr }} counts, best est.={{ peak.CurrieCheck.BestEstimateCountsStr }} +- {{ peak.CurrieCheck.BestEstimateCountsUncertStr }} counts)
+## else
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %}{{ " (" }}{{ peak.SourceName }}){% endif %}: {{ peak.CurrieCheck.ShortDescription }}
+## endif
 ## endfor
 ## endif
 ## endif

@@ -22,6 +22,7 @@
  */
 #include "InterSpec_config.h"
 
+#include <map>
 #include <cmath>
 #include <ctime>
 #include <chrono>
@@ -75,6 +76,7 @@
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/BatchPeak.h"
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/DetectorEffG2kPar.h"
 
@@ -2423,7 +2425,7 @@ std::shared_ptr<DetectorPeakResponse> make_synthetic_nai_drf( const bool attach_
   {
     const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, gd, -1.0 );
     det->setCeeloResponse( CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{},
-                                                             "synthetic NaI" ) );
+                                                             "synthetic NaI" , 1.0) );
     BOOST_REQUIRE( det->ceeloResponse() );
   }
 
@@ -2839,6 +2841,297 @@ BOOST_AUTO_TEST_CASE( DrfUncertAssumedPartIsOptIn )
   BOOST_CHECK( !stated_out.drops );
   BOOST_CHECK( stated_out.used == DrfUncertUsed::Stated );
 }//BOOST_AUTO_TEST_CASE( DrfUncertAssumedPartIsOptIn )
+
+
+namespace
+{
+/** The bundled activity/shielding reports, rendered both ways InterSpec renders them: the GUI
+ calculation-log dialog parses the template files with the default environment (trim_blocks on),
+ while batch includes the pre-registered copies (which are parsed with trim_blocks off).
+ */
+struct RenderedActReports
+{
+  string html_gui, html_batch, txt_gui, txt_batch;
+};
+
+RenderedActReports render_act_reports_both_ways( const nlohmann::json &data )
+{
+  RenderedActReports answer;
+  const string tmplt_dir = BatchInfoLog::default_template_dir();
+  BatchPeak::BatchPeakFitOptions options;
+  const BatchInfoLog::TemplateRenderType type = BatchInfoLog::TemplateRenderType::ActShieldIndividual;
+
+  inja::Environment batch_env = BatchInfoLog::get_default_inja_env( tmplt_dir );
+  answer.html_batch = BatchInfoLog::render_template( "html", batch_env, type, options, data );
+  answer.txt_batch = BatchInfoLog::render_template( "txt", batch_env, type, options, data );
+
+  inja::Environment gui_env = BatchInfoLog::get_default_inja_env( tmplt_dir );
+  answer.html_gui = gui_env.render_file( "act_fit.tmplt.html", data );
+  answer.txt_gui = gui_env.render_file( "std_fit_log.tmplt.txt", data );
+
+  return answer;
+}//render_act_reports_both_ways(...)
+
+
+/** The text a browser shows for `html`: scripts, styles, and tags removed, whitespace collapsed. */
+string visible_html_text( string html )
+{
+  for( const string block : { "script", "style" } )
+  {
+    for( size_t start = html.find( "<" + block ); start != string::npos; start = html.find( "<" + block, start ) )
+    {
+      const size_t end = html.find( "</" + block + ">", start );
+      html.erase( start, (end == string::npos) ? string::npos : (end + block.size() + 3 - start) );
+    }
+  }
+
+  // The templates use this entity for spaces that must survive whitespace trimming
+  SpecUtils::ireplace_all( html, "&#32;", " " );
+
+  string text;
+  bool in_tag = false;
+  for( const char c : html )
+  {
+    if( c == '<' )
+      in_tag = true;
+    else if( c == '>' )
+      in_tag = false;
+
+    const bool is_space = in_tag || (c == '>') || std::isspace( static_cast<unsigned char>(c) );
+    if( !is_space )
+      text += c;
+    else if( !text.empty() && (text.back() != ' ') )
+      text += ' ';
+  }//for( const char c : html )
+
+  return text;
+}//visible_html_text(...)
+
+
+/** Some context around where `lhs` and `rhs` first differ, for test messages. */
+string first_difference( const string &lhs, const string &rhs )
+{
+  size_t pos = 0;
+  while( (pos < lhs.size()) && (pos < rhs.size()) && (lhs[pos] == rhs[pos]) )
+    ++pos;
+  const size_t start = (pos > 60) ? (pos - 60) : 0;
+  return "'" + lhs.substr( start, 120 ) + "' vs '" + rhs.substr( start, 120 ) + "'";
+}//first_difference(...)
+
+
+shared_ptr<ShieldingSourceFitCalc::ModelFitResults> run_final_fit(
+                   const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input )
+{
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                     = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+  const auto inputPrams = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, [](){}, results, [](){} );
+  BOOST_REQUIRE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE( results->source_calc_details && !results->source_calc_details->empty() );
+  return results;
+}//run_final_fit(...)
+}//namespace
+
+
+/** The reports break each activity uncertainty into counting statistics (with everything else held
+ fixed), what fitting the other parameters adds, and what the detector efficiency adds.  Check the
+ parts are consistent with the total for every detector-efficiency-uncertainty method, that a
+ fitted shielding thickness shows up as its own part, and that the reports show it - rendering the
+ same text whether the GUI or batch whitespace handling is used.
+ */
+BOOST_AUTO_TEST_CASE( ActivityUncertBreakdown )
+{
+  set_data_dir();
+  using ShieldingSourceFitCalc::DrfUncertaintyMethod;
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  // A DRF stating its own (fully energy-correlated) efficiency uncertainty, of 3%
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+  {
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->setNodeCovariance( { 10.0f, 3000.0f }, { 0.0009f, 0.0009f, 0.0009f, 0.0009f } );
+    det->setEfficiencyUncert( uncert );
+  }
+
+  map<DrfUncertaintyMethod,GammaInteractionCalc::SourceDetails> srcs;
+  for( const DrfUncertaintyMethod method : { DrfUncertaintyMethod::None,
+              DrfUncertaintyMethod::ErrorPropagation, DrfUncertaintyMethod::Likelihood } )
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+                     = make_ba133_point_input( det, 50.0*PhysicalUnits::cm, 0.0, VolumetricEffMethod::Auto );
+    input.config.options.drf_uncert_method = method;
+
+    const shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results = run_final_fit( input );
+    BOOST_CHECK_EQUAL( results->numFitParameters, 1 );
+    BOOST_CHECK_EQUAL( results->numDOF, 4 );
+    BOOST_REQUIRE_EQUAL( results->paramErrorsStatOnly.size(), results->paramErrors.size() );
+    BOOST_REQUIRE_EQUAL( results->paramErrorsStatFixedOthers.size(), results->paramErrors.size() );
+
+    const GammaInteractionCalc::SourceDetails &src = results->source_calc_details->front();
+    BOOST_REQUIRE_GT( src.activityUncertStatOnly, 0.0 );
+    BOOST_REQUIRE_GT( src.activityUncertStatFixedOthers, 0.0 );
+
+    // Only the activity is fit, so holding "everything else" fixed changes nothing
+    BOOST_CHECK_CLOSE( src.activityUncertStatFixedOthers, src.activityUncertStatOnly, 1.0E-3 );
+    srcs[method] = src;
+  }//for( loop over DRF uncertainty methods )
+
+  const GammaInteractionCalc::SourceDetails &none = srcs[DrfUncertaintyMethod::None];
+  const GammaInteractionCalc::SourceDetails &prop = srcs[DrfUncertaintyMethod::ErrorPropagation];
+  const GammaInteractionCalc::SourceDetails &like = srcs[DrfUncertaintyMethod::Likelihood];
+
+  // Without efficiency uncertainty, the total is all statistics
+  BOOST_CHECK_CLOSE( none.activityUncertStatOnly, none.activityUncertainty, 1.0E-9 );
+
+  // ErrorPropagation fits exactly as None does, then adds the efficiency part - which here, with
+  //  five peaks of 1E4 counts and a fully correlated 3% efficiency uncertainty, dominates.
+  BOOST_CHECK_CLOSE( prop.activityUncertStatOnly, none.activityUncertainty, 1.0E-6 );
+  BOOST_CHECK_GT( prop.activityUncertainty, 2.0*prop.activityUncertStatOnly );
+
+  // Likelihood weights the peaks by the efficiency uncertainty too, so its best fit (and with it
+  //  the statistics part) moves a little.
+  BOOST_CHECK_GT( like.activityUncertainty, 2.0*like.activityUncertStatOnly );
+  BOOST_CHECK_CLOSE( like.activityUncertStatOnly, none.activityUncertainty, 10.0 );
+
+
+  // A fitted shielding thickness is correlated with the activity, so holding it fixed must give a
+  //  smaller statistical uncertainty.  Data are the model expectation for 1 cm of iron.
+  const shared_ptr<const Material> iron = MaterialDB::instance()->material( "Fe (iron)" );
+  BOOST_REQUIRE( iron );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+                     = make_ba133_point_input( det, 50.0*PhysicalUnits::cm, 0.0, VolumetricEffMethod::Auto );
+  input.config.options.drf_uncert_method = DrfUncertaintyMethod::ErrorPropagation;
+
+  ShieldingSourceFitCalc::ShieldingInfo iron_shield;
+  iron_shield.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  iron_shield.m_isGenericMaterial = false;
+  iron_shield.m_forFitting = true;
+  iron_shield.m_material = make_shared<Material>( *iron );
+  iron_shield.m_dimensions[0] = 1.0*PhysicalUnits::cm;
+  iron_shield.m_dimensions[1] = iron_shield.m_dimensions[2] = 0.0;
+  iron_shield.m_fitDimensions[0] = iron_shield.m_fitDimensions[1] = iron_shield.m_fitDimensions[2] = false;
+  input.config.shieldings = { iron_shield };
+  input.foreground_peaks = peaks_with_model_expected_areas( input );
+
+  input.config.shieldings[0].m_dimensions[0] = 0.7*PhysicalUnits::cm;
+  input.config.shieldings[0].m_fitDimensions[0] = true;
+  input.config.sources[0].activity *= 0.7;
+
+  const shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results = run_final_fit( input );
+  BOOST_CHECK_EQUAL( results->numFitParameters, 2 );
+
+  const GammaInteractionCalc::SourceDetails &src = results->source_calc_details->front();
+  BOOST_CHECK_LT( src.activityUncertStatFixedOthers, 0.9*src.activityUncertStatOnly );
+  BOOST_CHECK_LT( src.activityUncertStatOnly, src.activityUncertainty );
+
+  // What the reports get
+  nlohmann::json data;
+  data["Filename"] = "test.n42";
+  data["HasFitResults"] = true;
+  data["HasErrorMessage"] = false;
+  for( const char *asset : { "D3_JS", "SpectrumChart_JS", "SpectrumChart_CSS",
+                             "ShieldingSourceFitPlot_JS", "ShieldingSourceFitPlot_CSS" } )
+    data[asset] = "";
+  BatchInfoLog::add_exe_info_to_json( data );
+  BatchInfoLog::shield_src_fit_results_to_json( *results, det, false, data );
+
+  BOOST_CHECK_EQUAL( data["NumFitParameters"].get<int>(), 2 );
+  BOOST_CHECK( data["HasActivityUncertBreakdown"].get<bool>() );
+  BOOST_CHECK( data["HasPerShieldAttenuations"].get<bool>() );
+  const nlohmann::json &breakdown = data["Sources"][0]["ActivityUncertBreakdown"];
+  BOOST_REQUIRE( breakdown.is_object() );
+  BOOST_CHECK( breakdown["HasStatFixedOthers"].get<bool>() );
+  BOOST_CHECK( breakdown["HasDetEff"].get<bool>() );
+  BOOST_CHECK_GT( breakdown["FitCorrelation"]["Uncert_bq"].get<double>(), 0.0 );
+  BOOST_CHECK_EQUAL( data["Shieldings"]["Shields"][0]["CompositionStr"].get<string>(), "Fe 100%" );
+  BOOST_CHECK_CLOSE( data["Shieldings"]["Shields"][0]["Thicknesses_cm"][0].get<double>(),
+                     data["Shieldings"]["Shields"][0]["Thickness_cm"].get<double>(), 1.0E-6 );
+
+  RenderedActReports rpts;
+  BOOST_REQUIRE_NO_THROW( rpts = render_act_reports_both_ways( data ) );
+
+  const string html_text = visible_html_text( rpts.html_batch );
+  const string gui_html_text = visible_html_text( rpts.html_gui );
+  BOOST_CHECK_MESSAGE( html_text == gui_html_text,
+                       "GUI and batch HTML reports differ: " << first_difference(html_text, gui_html_text) );
+  BOOST_CHECK_MESSAGE( rpts.txt_batch == rpts.txt_gui,
+                       "GUI and batch text reports differ: " << first_difference(rpts.txt_batch, rpts.txt_gui) );
+
+  for( const string &expected : { "Activity uncertainty breakdown", "Fitting other parameters",
+                                  "Fraction of each peak", "2 parameters fit", "at assumed age",
+                                  "Fe 100%" } )
+  {
+    BOOST_CHECK_MESSAGE( html_text.find(expected) != string::npos,
+                         "HTML report is missing '" << expected << "'" );
+  }
+
+  for( const string &expected : { "Activity uncertainty breakdown", "2 parameters fit", "at assumed age" } )
+  {
+    BOOST_CHECK_MESSAGE( rpts.txt_batch.find(expected) != string::npos,
+                         "Text report is missing '" << expected << "':\n" << rpts.txt_batch );
+  }
+
+  BOOST_CHECK( html_text.find("parameters fit for") == string::npos );
+  BOOST_CHECK( rpts.txt_batch.find("src.") == string::npos );
+  BOOST_CHECK_MESSAGE( rpts.txt_batch.find("\n\n\n") == string::npos,
+                       "Text report has runs of blank lines:\n" << rpts.txt_batch );
+}//BOOST_AUTO_TEST_CASE( ActivityUncertBreakdown )
+
+
+/** For a self-attenuating source whose mass fraction is not fit, activity is proportional to the
+ source volume, so its relative uncertainty must equal the volumes. */
+BOOST_AUTO_TEST_CASE( SelfAttenActivityUncertFromVolume )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string n42 = SpecUtils::append_path( g_test_file_dir, "../analysis_tests/u_np_1kg.n42" );
+  BOOST_REQUIRE( SpecUtils::is_file(n42) );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
+  BOOST_REQUIRE( load_simple_analyst_n42( n42, input ) );
+
+  // Keep fitting the uranium thickness, but not the mass fractions
+  bool fitting_a_dimension = false;
+  for( ShieldingSourceFitCalc::ShieldingInfo &shield : input.config.shieldings )
+  {
+    fitting_a_dimension |= shield.m_fitDimensions[0];
+    for( auto &el_nucs : shield.m_nuclideFractions_ )
+    {
+      for( tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_frac : el_nucs.second )
+        std::get<2>(nuc_frac) = false;
+    }
+  }//for( loop over shieldings )
+  BOOST_REQUIRE( fitting_a_dimension );
+
+  const shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results = run_final_fit( input );
+  BOOST_REQUIRE( results->shield_calc_details && !results->shield_calc_details->empty() );
+
+  const GammaInteractionCalc::ShieldingDetails &shield = results->shield_calc_details->front();
+  BOOST_REQUIRE_GT( shield.m_volume, 0.0 );
+  BOOST_REQUIRE_GT( shield.m_volume_uncert, 0.0 );
+  const double vol_frac_uncert = shield.m_volume_uncert / shield.m_volume;
+
+  size_t num_checked = 0;
+  for( const GammaInteractionCalc::SourceDetails &src : *results->source_calc_details )
+  {
+    if( !src.isSelfAttenSource || (src.activity <= 0.0) )
+      continue;
+
+    ++num_checked;
+    BOOST_CHECK_CLOSE( src.activityUncertainty / src.activity, vol_frac_uncert, 0.1 );
+
+    // No single parameter to hold the rest fixed against
+    BOOST_CHECK_LT( src.activityUncertStatFixedOthers, 0.0 );
+    BOOST_CHECK_GT( src.activityUncertStatOnly, 0.0 );
+  }//for( loop over sources )
+
+  BOOST_CHECK_GT( num_checked, 0 );
+}//BOOST_AUTO_TEST_CASE( SelfAttenActivityUncertFromVolume )
 
 
 /** A point source and a vanishingly small volumetric (trace) source at the same place must give
@@ -4053,7 +4346,7 @@ BOOST_AUTO_TEST_CASE( EffTranByNameFailureKeepsAttachedResponse )
   //  transfer rather than reuse this one.
   const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, *gd, -1.0 );
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( *gd, anchor, ceelo::AnchorCurve{}, "synthetic NaI (posing as MC)" );
+        = CeeLoUtils::makeTransferResponse( *gd, anchor, ceelo::AnchorCurve{}, "synthetic NaI (posing as MC)" , 1.0);
   BOOST_REQUIRE( resp );
   resp->provenance.method = ceelo::ProductionMethod::FullMc;
   det->setCeeloResponse( resp );

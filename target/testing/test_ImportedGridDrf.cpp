@@ -46,6 +46,7 @@
 #include <boost/test/included/unit_test.hpp>
 
 #include <cmath>
+#include <ctime>
 #include <string>
 #include <vector>
 #include <memory>
@@ -243,6 +244,37 @@ namespace
     return grid.eps_fep_at( energy, grid_pos ).value * donor.eps_total_at( energy, donor_pos ).value
            / donor.eps_fep_at( energy, donor_pos ).value;
   }
+
+
+  /** Whether node (c, d) of the total's close-in table `tn` is one of the grid's rungs inside the
+   endcap - which makeDrf, and so attachTotalEfficiency, reads at the endcap face in front of it. */
+  bool endcap_rung( const ceelo::DetectorResponse &grid, const ceelo::NearFieldModel &tn, const size_t c, const size_t d )
+  {
+    const ceelo::NearFieldModel &gn = grid.near_field;
+    return (d < gn.dists_cm.size()) && (gn.dists_cm[d] == tn.dists_cm[d])
+           && (gn.frac_sigma[gn.index( 0, c, d )] >= 1.0);
+  }
+
+
+  /** The endcap-face point in front of `pos`, both in `gd`'s crystal frame - where an endcap rung is read. */
+  Eigen::Vector3d face_point_in_front( const ceelo::GeometryDescriptor &gd, const Eigen::Vector3d &pos )
+  {
+    const Eigen::Vector3d face = CeeLoUtils::detectorFacePosition( gd );
+    return CeeLoUtils::sourcePositionFromFace( gd, 0.5 * 3.14159265358979323846, 0.0,
+                                               std::hypot( pos.x() - face.x(), pos.y() - face.y() ) );
+  }
+
+
+  /** As above, with the caller's quadratures - built once per position, for loops over a lattice.
+   A quadrature only serves the response instance that made it (it keys that instance's materials). */
+  double grid_fep_times_donor_ratio( const ceelo::DetectorResponse &grid, const Eigen::Vector3d &grid_pos,
+                                     const ceelo::ApertureQuadrature &q_grid,
+                                     const ceelo::DetectorResponse &donor, const Eigen::Vector3d &donor_pos,
+                                     const ceelo::ApertureQuadrature &q_donor, const double energy )
+  {
+    return grid.eps_fep_at( energy, grid_pos, q_grid ).value * donor.eps_total_at( energy, donor_pos, q_donor ).value
+           / donor.eps_fep_at( energy, donor_pos, q_donor ).value;
+  }
 }//namespace
 
 
@@ -408,19 +440,33 @@ BOOST_AUTO_TEST_CASE( MockPairImports )
 
 
 /** On the grid's own geometry the total is the grid's FEP times the donor's total/FEP: exactly at
- the far-field pin's nodes (same kernel, same nodes), and closer in to what the distance table's
- interpolation of the grid's own close-in FEP allows - while the FEP stays the grid's to the bit;
- stripping it restores the import.  The gates sit a little above the printed figures. */
+ the far-field pin's nodes (same kernel, same nodes), and - its close-in table being on the grid's
+ own lattice - between them too, wherever the donor's ratio does not vary with distance (this
+ donor's does not), while the FEP stays the grid's to the bit; stripping it restores the import.
+ The gates sit a little above the printed figures. */
 BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
 {
   const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
   const shared_ptr<ceelo::DetectorResponse> donor = total_donor( *grid, grid->descriptor );
 
+  const std::clock_t cpu_start = std::clock();
   shared_ptr<ceelo::DetectorResponse> with_total;
   BOOST_REQUIRE_NO_THROW( with_total = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() ) );
+  const double cpu_s = static_cast<double>( std::clock() - cpu_start ) / CLOCKS_PER_SEC;
   BOOST_REQUIRE( with_total );
   BOOST_CHECK( DetEffG2kPar::isGridResponse( with_total ) );
   BOOST_CHECK( with_total->tot_eff.characterized() );
+
+  // The total's close-in table is on the grid's own lattice.
+  const ceelo::NearFieldModel &gn = grid->near_field, &tn = with_total->tot_eff.near_field;
+  BOOST_CHECK( tn.cos_thetas == gn.cos_thetas );
+  for( const double energy : gn.energies_keV )
+    BOOST_CHECK( std::find( begin(tn.energies_keV), end(tn.energies_keV), energy ) != end(tn.energies_keV) );
+  BOOST_TEST_MESSAGE( "attachTotalEfficiency: " << cpu_s << " s CPU; total near-field table "
+                      << tn.energies_keV.size() << " x " << tn.cos_thetas.size() << " x " << tn.dists_cm.size()
+                      << " (the grid's " << gn.energies_keV.size() << " x " << gn.cos_thetas.size() << " x "
+                      << gn.dists_cm.size() << "); serialized " << grid->to_xml_string().size() << " -> "
+                      << with_total->to_xml_string().size() << " bytes" );
 
   const double d_pin = (std::max)( 1000.0 * grid->descriptor.transverse_half_extent(), 100.0 );
   for( size_t i = 0; i < grid->eta_fep.energies_keV.size(); i += 5 )
@@ -431,9 +477,29 @@ BOOST_AUTO_TEST_CASE( TotalOnImportedGeometry )
                               grid_fep_times_donor_ratio( *grid, pos, *donor, pos, energy ) ), 1.0e-9 );
   }
 
-  //  Measured: 0.27, 0.74, 0.16, 0.16, 0.13 % - the distance table interpolating the grid's own
-  //  close-in FEP structure, and eta_tot interpolating in energy.
-  const vector<pair<double,double>> gates{ {1.0, 0.004}, {5.0, 0.009}, {25.0, 0.0025}, {50.0, 0.0025}, {200.0, 0.002} };
+  // Past the pin, between the eta nodes: both tables' energy and angle interpolation.
+  {
+    double worst_far = 0.0;
+    const vector<double> &energies = grid->eta_fep.energies_keV;
+    for( const double cos_theta : { 1.0, 0.83, 0.5, 0.1 } )
+    {
+      const Eigen::Vector3d pos = ceelo::source_position( 3.0 * d_pin, cos_theta );
+      for( size_t i = 0; (i + 1) < energies.size(); i += 3 )
+      {
+        const double energy = std::sqrt( energies[i] * energies[i + 1] );
+        worst_far = (std::max)( worst_far, rel_diff( with_total->eps_total_at( energy, pos ).value,
+                                                     grid_fep_times_donor_ratio( *grid, pos, *donor, pos, energy ) ) );
+      }
+    }
+    BOOST_TEST_MESSAGE( "Total on the imported geometry, past the pin: worst |graft/(grid FEP x donor ratio) - 1| = "
+                        << worst_far );
+    BOOST_CHECK_LT( worst_far, 1.0e-6 );   //measured ~1e-16
+  }
+
+  //  Measured: 0.031 % at 1 cm - where the grazing rungs inside the endcap take the ratio at the
+  //  endcap face in front of them - and ~1e-16 from 5 cm out.  (On a lattice of its own, which
+  //  re-sampled the grid's close-in FEP: 0.27, 0.74, 0.16, 0.16, 0.13 %.)
+  const vector<pair<double,double>> gates{ {1.0, 0.0005}, {5.0, 1.0e-6}, {25.0, 1.0e-6}, {50.0, 1.0e-6}, {200.0, 1.0e-6} };
   for( const pair<double,double> &gate : gates )
   {
     const double d_cm = gate.first;
@@ -607,13 +673,19 @@ BOOST_AUTO_TEST_CASE( TotalFromGroundedCompactTierDonor )
       for( size_t c = 0; c < tn.cos_thetas.size(); ++c )
         for( size_t d = 0; (d + 1) < tn.dists_cm.size(); ++d )
         {
+          if( endcap_rung( *grid, tn, c, d ) )
+            continue;   //read at the endcap face: checked in TotalOnEditedGeometry
           const Eigen::Vector3d pos = ceelo::source_position( tn.dists_cm[d], tn.cos_thetas[c] );
+          const ceelo::ApertureQuadrature q_ours = with_total->make_quadrature( pos );
+          const ceelo::ApertureQuadrature q_grid = grid->make_quadrature( pos );
+          const ceelo::ApertureQuadrature q_donor = ungrounded->make_quadrature( pos );
           for( size_t e = 0; e < tn.energies_keV.size(); e += 3 )
           {
             if( tn.frac_sigma[tn.index( e, c, d )] >= 1.0 )
               continue;   //held: the donor had nothing there
-            worst_node = (std::max)( worst_node, rel_diff( with_total->eps_total_at( tn.energies_keV[e], pos ).value,
-                                         grid_fep_times_donor_ratio( *grid, pos, *ungrounded, pos, tn.energies_keV[e] ) ) );
+            const double energy = tn.energies_keV[e];
+            worst_node = (std::max)( worst_node, rel_diff( with_total->eps_total_at( energy, pos, q_ours ).value,
+                                         grid_fep_times_donor_ratio( *grid, pos, q_grid, *ungrounded, pos, q_donor, energy ) ) );
           }
         }
       BOOST_TEST_MESSAGE( "Grounded BCurve donor, at the near-field nodes: worst |graft/(grid FEP x ungrounded ratio) - 1| = "
@@ -640,7 +712,8 @@ BOOST_AUTO_TEST_CASE( TotalFromGroundedCompactTierDonor )
 /** A donor on an EDITED geometry - the corrected core and bulletizing - with its own near-field
  total, as a General-profile Monte Carlo of it would have.  The grid's total is its own FEP times the
  donor's total/FEP: exactly at the far-field pin and at every node of its own distance table, and
- between nodes to what interpolation allows; the gates sit a little above the printed figures. */
+ between nodes to what interpolating the donor's ratio allows; the gates sit a little above the
+ printed figures. */
 BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
 {
   const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
@@ -665,30 +738,47 @@ BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
                               grid_fep_times_donor_ratio( *grid, pos, *donor, donor_pos( pos ), energy ) ), 1.0e-6 );
   }
 
-  // At every node of the grid's own near-field total table.
+  // At every node of the grid's own near-field total table - which is the grid's lattice.  A rung
+  //  inside the endcap takes the donor's total/FEP at the endcap face in front of it, where makeDrf
+  //  read the grid's FEP for it, rather than at a point inside the can.
   const ceelo::NearFieldModel &tn = with_total->tot_eff.near_field;
   BOOST_REQUIRE( !tn.empty() );
+  BOOST_CHECK( tn.cos_thetas == grid->near_field.cos_thetas );
   double worst_node = 0.0;
+  size_t n_endcap_rungs = 0;
   for( size_t c = 0; c < tn.cos_thetas.size(); ++c )
     for( size_t d = 0; (d + 1) < tn.dists_cm.size(); ++d )
     {
       const Eigen::Vector3d pos = ceelo::source_position( tn.dists_cm[d], tn.cos_thetas[c] );
+      const bool in_endcap = endcap_rung( *grid, tn, c, d );
+      n_endcap_rungs += in_endcap ? 1 : 0;
+      const Eigen::Vector3d ratio_pos = donor_pos( in_endcap ? face_point_in_front( grid->descriptor, pos ) : pos );
+      const ceelo::ApertureQuadrature q_ours = with_total->make_quadrature( pos );
+      const ceelo::ApertureQuadrature q_grid = grid->make_quadrature( pos );
+      const ceelo::ApertureQuadrature q_donor = donor->make_quadrature( ratio_pos );
       for( size_t e = 0; e < tn.energies_keV.size(); e += 3 )
       {
-        if( tn.frac_sigma[tn.index( e, c, d )] >= 1.0 )
+        if( (tn.frac_sigma[tn.index( e, c, d )] >= 1.0) && !in_endcap )
           continue;   //held: the donor had nothing there
-        worst_node = (std::max)( worst_node, rel_diff( with_total->eps_total_at( tn.energies_keV[e], pos ).value,
-                                     grid_fep_times_donor_ratio( *grid, pos, *donor, donor_pos( pos ), tn.energies_keV[e] ) ) );
+        const double energy = tn.energies_keV[e];
+        const double tot = donor->eps_total_at( energy, ratio_pos, q_donor ).value;
+        const double fep = donor->eps_fep_at( energy, ratio_pos, q_donor ).value;
+        BOOST_REQUIRE( (tot > 0.0) && (fep > 0.0) );
+        worst_node = (std::max)( worst_node, rel_diff( with_total->eps_total_at( energy, pos, q_ours ).value,
+                                                       grid->eps_fep_at( energy, pos, q_grid ).value * tot / fep ) );
       }
     }
-  BOOST_TEST_MESSAGE( "Total on the edited geometry, at the near-field nodes: worst |graft/(grid FEP x donor ratio) - 1| = "
-                      << worst_node );
+  BOOST_TEST_MESSAGE( "Total on the edited geometry, at the near-field nodes (" << n_endcap_rungs
+                      << " rungs inside the endcap): worst |graft/(grid FEP x donor ratio) - 1| = " << worst_node );
+  BOOST_CHECK_GT( n_endcap_rungs, 0 );
   BOOST_CHECK_LT( worst_node, 1.0e-6 );
 
   // Between nodes: at the same place relative to the endcap face.
-  //  Measured: 0.34, 1.13, 0.37, 0.25, 0.27, 0.19, 0.05 % - interpolation between table nodes.
-  const vector<pair<double,double>> gates{ {1.0, 0.005}, {2.0, 0.014}, {5.0, 0.006}, {10.0, 0.004},
-                                           {25.0, 0.004}, {100.0, 0.003}, {300.0, 0.001} };
+  //  Measured: 0.015, 0.047, 0.018, 0.012, 0.004 %, then ~1e-16 past the donor's own table (28 cm),
+  //  where its ratio no longer varies with distance.  (On a lattice of its own, which re-sampled the
+  //  grid's close-in FEP: 0.34, 1.13, 0.37, 0.25, 0.27, 0.19, 0.05 %.)
+  const vector<pair<double,double>> gates{ {1.0, 0.0003}, {2.0, 0.0007}, {5.0, 0.0003}, {10.0, 0.0002},
+                                           {25.0, 0.0001}, {100.0, 1.0e-6}, {300.0, 1.0e-6} };
   for( const pair<double,double> &gate : gates )
   {
     const double d_cm = gate.first;
@@ -707,6 +797,68 @@ BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
     BOOST_CHECK_MESSAGE( worst_d < gate.second, "at " << d_cm << " cm: " << worst_d << " vs gate " << gate.second );
   }
 }//BOOST_AUTO_TEST_CASE( TotalOnEditedGeometry )
+
+
+/** Between the close-in table's nodes - densely, from contact out, grazing to on-axis, at the file's
+ energies and between them - the graft's total/FEP is the donor's ratio: the grid's own close-in FEP
+ structure, interpolated the same way in both tables, cancels.  So the total cannot fall below the
+ FEP where a (physical) donor's ratio is at least 1.  On the edited geometry, with the donor's own
+ near-field total; the gate sits a little above the printed figure. */
+BOOST_AUTO_TEST_CASE( TotalToPeakBetweenNodes )
+{
+  const shared_ptr<const ceelo::DetectorResponse> grid = mock_drf()->ceeloResponse();
+  const ceelo::GeometryDescriptor corrected = corrected_geometry();
+  const shared_ptr<ceelo::DetectorResponse> donor = total_donor( *grid, corrected, true );
+
+  shared_ptr<ceelo::DetectorResponse> with_total;
+  BOOST_REQUIRE_NO_THROW( with_total = DetEffG2kPar::attachTotalEfficiency( *grid, donor.get() ) );
+
+  // The file's energies (every one is a node of the grid's close-in table) and the midpoints between them.
+  const DetEffG2kPar::ParFile par = DetEffG2kPar::parseParFile( det_eff_path( "mock.par" ) );
+  vector<double> energies;
+  for( size_t i = 0; i < par.energies_keV.size(); ++i )
+  {
+    energies.push_back( par.energies_keV[i] );
+    if( (i + 1) < par.energies_keV.size() )
+      energies.push_back( std::sqrt( par.energies_keV[i] * par.energies_keV[i + 1] ) );
+  }
+
+  double worst = 0.0, worst_e = 0.0, worst_d = 0.0, worst_theta = 0.0;
+  for( const double theta_deg : { 0.0, 12.0, 27.0, 41.0, 55.0, 66.0, 75.0, 82.0, 87.0 } )
+  {
+    const double theta = theta_deg * pi / 180.0;
+    for( const double d_cm : { 0.3, 0.7, 1.3, 2.2, 3.7, 6.0, 9.5, 16.0, 27.0, 45.0, 80.0, 150.0 } )
+    {
+      const Eigen::Vector3d grid_pos = CeeLoUtils::sourcePositionFromFace( grid->descriptor, theta, 0.0, d_cm );
+      const Eigen::Vector3d other_pos = CeeLoUtils::sourcePositionFromFace( corrected, theta, 0.0, d_cm );
+      const ceelo::ApertureQuadrature q_ours = with_total->make_quadrature( grid_pos );
+      const ceelo::ApertureQuadrature q_grid = grid->make_quadrature( grid_pos );
+      const ceelo::ApertureQuadrature q_donor = donor->make_quadrature( other_pos );
+      for( const double energy : energies )
+      {
+        const double ours = with_total->eps_total_at( energy, grid_pos, q_ours ).value;
+        const double expected = grid_fep_times_donor_ratio( *grid, grid_pos, q_grid, *donor, other_pos, q_donor, energy );
+        if( !(expected > 0.0) )
+          continue;
+        BOOST_REQUIRE( std::isfinite( ours ) );
+        const double diff = rel_diff( ours, expected );
+        if( diff > worst )
+        {
+          worst = diff;
+          worst_e = energy;
+          worst_d = d_cm;
+          worst_theta = theta_deg;
+        }
+      }
+    }
+  }
+
+  //  Measured: 0.13 %, at 40 keV, 0.7 cm and 87 deg - the grazing near-contact corner, where rungs
+  //  inside the endcap take the ratio at the face in front of them.
+  BOOST_TEST_MESSAGE( "Total/FEP between nodes, edited geometry: worst |graft/(grid FEP x donor ratio) - 1| = "
+                      << worst << " (" << worst_e << " keV, " << worst_d << " cm, " << worst_theta << " deg)" );
+  BOOST_CHECK_LT( worst, 2.0e-3 );
+}//BOOST_AUTO_TEST_CASE( TotalToPeakBetweenNodes )
 
 
 /** Grounding points and transfer anchors for a grid come from the grid itself, at 50 cm - not from

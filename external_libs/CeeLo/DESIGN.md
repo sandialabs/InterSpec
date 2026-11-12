@@ -601,8 +601,35 @@ A source beside or behind the detector (theta > 90 deg from the crystal-face ori
   (`EfficiencyCalculator::enable_general_cone_sampling`: the outer envelope's bounding cone about
   its own axis, rather than the isotropic fallback whenever the source's z lies within the
   detector's). Its columns are prepended to `eta_fep` / `eta_tot` (cos theta < 0). FullMc
-  fixed-grid only; `closed_loop` refuses it. There is no near-field table behind the face plane:
-  the kernel carries the distance dependence there.
+  fixed-grid only; `closed_loop` refuses it.
+- **Side & back near field** (`GenerationOptions::back_near_field`, on by default; General and
+  Contact profiles only): stage 5, its own node ids, measures `DetectorResponse::back_near_field`
+  and its total twin `TotEffPayload::back_near_field` exactly as stage 3 measures the front table -
+  ln N = ln(MC / (eta K)) at each node, an ln N = 0 anchor row - on (shape energy x the back-coverage
+  angles x clearance), General 0.05 / 0.3 / 1 / 2 a, Contact eight rows 0.05-3.3 a.  The direction
+  of the crystal's back rim is added as an angle when none lies within 4 degrees of it: close beside
+  the detector the near field changes sharply as a source passes the crystal's back end (+8% at the
+  rim of a 6.5 x 5 cm HPGe, between the 135 and 155 degree nodes, before it was added).  The distance
+  axis is d = a + the CLEARANCE past `DetectorResponse::back_near_body()` (nearest point), not the
+  distance from the face-centre origin, so no node can fall inside the detector and beside a long
+  detector the axis says how near a source is; nodes are placed with
+  `Envelope::position_at_clearance`.  The anchor row sits at the nearest far-field back node (where
+  the back eta was measured, so ln N is 0 there); rows within 1.3x of it are dropped (long
+  detectors).
+  - **Assumed body** (`GenerationOptions::back_body_depth_cm`, recorded as
+    `provenance.back_body_depth_cm`): the envelope's back face is moved to at least that z, so no
+    node is spent where a real detector keeps its cryostat, PMT or electronics (InterSpec: 15 cm
+    behind the crystal face).  It is not a placement limit: a source inside it - outside the
+    described detector - is left to the kernel (`NearFieldUnmodeled`), as on a response without the
+    tables, so there is a seam at the body's back face.  Dropped (0) when a far back node of the
+    detector itself falls inside it.
+  - **Shadow skip:** a node whose direct transmission is below `model_sigma::shadow_refuse_s` -
+    where the evaluator refuses whatever the table says, and the MC would run to the CPU cap - runs
+    no MC.  It, and any node with no full-energy counts or > 50% uncertainty, takes the nearest
+    measured clearance at its energy and angle - else no correction - with a 100% sigma.  Never
+    another angle's value: a shadowed column filled from beside the detector put a step at the
+    body's back face that the line path's prefactor grid read as 0.5% (60 keV, GEM35-70).
+  - phi = 0 only, as the front table; boxes reuse it at every azimuth.
 - **Evaluation:** `EtaTable::eval_ln` interpolates the front and back node sets separately, so a
   covered response's front values, uncertainties and flags equal an uncovered one's, bit for bit -
   below the grazing node too, where both clamp to it.  Behind the face plane the gap from the last
@@ -625,11 +652,25 @@ A source beside or behind the detector (theta > 90 deg from the crystal-face ori
   A back node the MC could not measure (no full-energy counts, or > 50% uncertainty) is held from
   its nearest measured neighbour with a 100% sigma.
   With that, `behind_extrapolation` = 0.05 leaves every region's RMS pull <= 0.77 over 2332
-  points. `back_structure_approx` (0.10) is the cost of a reasonable back description only:
+  points.
+  With the side & back near-field tables, a query past the face plane and outside the assumed body
+  applies the table (`ln_boost` at d = a + clearance past the body, its node sigma, no
+  `NearFieldUnmodeled`) up to its anchor row; a query inside the body takes exactly the path above.
+  Against the same truth (InterSpec `test_BackIncidence`, 2026-11-05: Coarse, General profile, 0.5%
+  nodes, 15 cm body; s >= 0.3, outside the body), over GEM35-70, Detective-X and a 3x3 NaI: median
+  |model/MC - 1| 0.5-1.0% and p95 1.5-2.4% behind and beside at clearances >= 0.3 a (without the
+  tables 0.7-1.2%, p95 2.5-4.4%), and at contact (0.05 a) median 0.4-0.7%, p95 <= 3.1% (without:
+  2.6-5.0%, p95 to 10%), RMS pulls 0.57-0.87 with no new sigma term.  The stage costs 4-10% of such a run (shadow-
+  skipped nodes 4-14%).  A 2x4x16 in NaI log improves at the median (contact 4.2% -> 1.5%) but
+  keeps a 17% p95 behind (see TODO.md). `back_structure_approx` (0.10) is the cost of a reasonable back description only:
   leaving 2 cm of steel out of an HPGe's back changed its efficiency directly behind 30-fold at
   122 keV.
 - **Serialization:** a response with back nodes is stamped version 4, which older readers refuse
-  (they would interpolate across the seam); everything else keeps its version and hash.
+  (they would interpolate across the seam); everything else keeps its version and hash.  The side &
+  back near-field tables are optional `<BackNearField>` elements (under the root and under
+  `<TotalEfficiency>`) plus the `backBodyDepthCm` provenance attribute, written and hashed only when
+  present; `finalize()` refuses one on a response without back eta columns.  A version-4 reader that
+  predates them ignores the elements and answers as without the tables.
 - **Clearance:** `geometry/ConvexSeparation.h` measures the distance between convex solids
   (`convex_separation`: a point, sphere, cylinder about any axis, or rotated box, by alternating
   projections) and where a ray enters one (`convex_entry_distance`).
@@ -667,6 +708,28 @@ contact; off-axis ~3.5% median from one anchor, <1% median with `n_anchor_angles
 on-axis ≤0.6%; the HPGe total still drifts off axis (use the few-anchor mode). Bottom line
 for a host: a viable "quick DRF" and measured-curve → other-geometry estimator, ≤1%
 on-axis far, a few % near/off-axis with honest inflated σ, full MC as the upgrade.
+
+### Efficiency scale (`DetectorResponse::efficiency_scale`, `CEELO_BUILD_RESPONSE`)
+
+One constant multiplying every efficiency a response gives - FEP and total in every tier, and
+`fep_prefactor` / `total_prefactor`, so hosts assembling their own kernel sums (volumetric
+sources) get it too - over the one crystal the descriptor describes: the number of identical
+detector elements whose events go into one spectrum with one live time (a 2×2 CZT array modeled
+as one of its crystals; GADRAS's Detector.dat parameter 18) or an empirical factor - not elements
+recorded as separate spectra and summed afterward with their live times, whose sum has one element's
+efficiency. Fractional quantities (sigmas relative to the value,
+`frac_covariance`, flags) do not change. Producers are given it -
+`GenerationOptions::efficiency_scale` (stamped on the finished response, so node MC,
+closed-loop refinement and the certificate all run on the one element; `certify` scores the
+probes' MC × scale) and `TransferResponseOptions::efficiency_scale` (eta and b(E) are the
+anchors ÷ scale) - and `ground_to_points` evaluates the model with it, so measured points are
+the whole detector's efficiency and k(E) stays the physics correction to the element. It must
+be finite and > 0 (`finalize()` throws otherwise). Written as `<EfficiencyScale>` and hashed
+only when ≠ 1, and such a response is stamped version 5: a pre-v5 reader would skip the element
+and report one element's efficiency for the whole detector. Modeling the array as one larger
+crystal (scale 1) is the better choice near the detector, where the elements' positions matter.
+Tests: `test_detector_response_io` (`efficiency_scale_*`), `test_efficiency_transfer`
+(`transfer_with_efficiency_scale`), `test_response_generator_smoke`.
 
 ## Cone Biasing Policy
 

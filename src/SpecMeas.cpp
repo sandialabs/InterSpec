@@ -136,6 +136,7 @@ SpecMeas::SpecMeas()
   m_displayedDetectors = make_shared<vector<string>>();
   
   m_fileWasFromInterSpec = false;
+  m_dbStateId = -1;
 }
 
 
@@ -606,7 +607,8 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   
   m_fileWasFromInterSpec = rhs.m_fileWasFromInterSpec;
   
-  m_dbUserStateIndexes = rhs.m_dbUserStateIndexes;
+  // A copy is a different file, so must not be connected to the database state of the original
+  m_dbStateId = -1;
 }//void uniqueCopyContents( const SpecMeas &rhs )
 
 
@@ -1013,72 +1015,6 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
   }
 }//void addPeaksFromXml( ::rapidxml::xml_node<char> *peaksnode );
 
-
-/*
-void SpecMeas::addDbStateIdsToXml( ::rapidxml::xml_node<char> *db_state_index_node ) const
-{
-  auto doc = db_state_index_node ? db_state_index_node->document() : nullptr;
-  assert( doc );
-  if( !doc )
-    return;
-  
-  for( const auto &index_id : m_dbUserStateIndexes )
-  {
-    rapidxml::xml_node<char> *state_node = doc->allocate_node( rapidxml::node_element, "SamplesToUserState" );
-    db_state_index_node->append_node( state_node );
-    
-    const vector<int> vsamples( begin(index_id.first), end(index_id.first) );
-    stringstream samples_strm;
-    for( size_t i = 0; i < vsamples.size(); ++i )
-      samples_strm << (i?" ":"") << vsamples[i];
-    
-    const char *val = doc->allocate_string( samples_strm.str().c_str() );
-    rapidxml::xml_node<char> *samples_node = doc->allocate_node( rapidxml::node_element, "Samples", val );
-    state_node->append_node( samples_node );
-    
-    val = doc->allocate_string( std::to_string(index_id.second).c_str() );
-    rapidxml::xml_node<char> *index_node = doc->allocate_node( rapidxml::node_element, "DbIndex", val );
-    state_node->append_node( index_node );
-  }//for( const auto &index_id : m_dbUserStateIndexes )
-}//void addDbStateIdsToXml( ::rapidxml::xml_node<char> *peaksnode ) const
-
-
-void SpecMeas::addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *node )
-{
-  if( !node )
-    return;
-  
-  assert( SpecUtils::xml_name_str(node) == "DbUserStateIndexes" );
-  
-  XML_FOREACH_CHILD( state_node, node, "SamplesToUserState")
-  {
-    try
-    {
-      const rapidxml::xml_node<char> * const samples = XML_FIRST_NODE( state_node, "Samples" );
-      const rapidxml::xml_node<char> * const index = XML_FIRST_NODE( state_node, "DbIndex" );
-      if( !samples || !index || !samples->value_size() || !index->value_size() )
-        throw runtime_error( "Invalid UserStates xml node" );
-      
-      vector<int> contents;
-      if( !SpecUtils::split_to_ints( samples->value(), samples->value_size(), contents ) )
-        throw runtime_error( "Invalid list of sample numbers" );
-      
-      const set<int> sample_set( begin(contents), end(contents) );
-      if( sample_set.empty() )
-        throw runtime_error( "Empty list of sample numbers" );
-      
-      long long int index_value = -1;
-      if( !(stringstream( SpecUtils::xml_value_str(index) ) >> index_value) || (index_value < 0) )
-        throw runtime_error( "Invalid index value" );
-      
-      m_dbUserStateIndexes[sample_set] = index_value;
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to parse UserStates XML node: " << e.what() << endl;
-    }//try / catch
-  }//XML_FOREACH_CHILD( state_node , node, "SamplesToUserState")
-}//void addDbStateIdsFromXml( const ::rapidxml::xml_node<char> *db_state_index_node );
-*/
 
 rapidxml::xml_document<char> *SpecMeas::shieldingSourceModel()
 {
@@ -2146,10 +2082,9 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }//if( !filename_.empty() )
   
   
-  m_dbUserStateIndexes.clear();
-  //node = XML_FIRST_NODE( interspecnode, "DbUserStateIndexes" );
-  //if( node )
-  //  addDbStateIdsFromXml( node );
+  // The database state id is never read from file (a file loaded from the filesystem must not be
+  //  connected to a stored state); it is set when loading a state from the database.
+  m_dbStateId = -1;
 }//void decodeSpecMeasStuffFromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -2333,13 +2268,6 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     xml_node<char> *node = doc->allocate_node( node_element, "FileName", val );
     interspec_node->append_node( node );
   }//if( !filename_.empty() )
-  
-  //if( !m_dbUserStateIndexes.empty() )
-  //{
-  //  xml_node<char> *db_state_index_node = doc->allocate_node( node_element, "DbUserStateIndexes" );
-  //  interspec_node->append_node( db_state_index_node );
-  //  addDbStateIdsToXml( db_state_index_node );
-  //}//if( !m_dbUserStateIndexes.empty() )
   
   return interspec_node;
 }//appendSpecMeasStuffToXml(...);
@@ -2910,47 +2838,23 @@ void SpecMeas::setModified()
 }
 
 
-long long int SpecMeas::dbStateId( const set<int> &samplenums ) const
+long long int SpecMeas::dbStateId() const
 {
-  const auto pos = m_dbUserStateIndexes.find(samplenums);
-  if( pos == end(m_dbUserStateIndexes) )
-    return -1;
-  return pos->second;
-}//long long int dbStateId( const set<int> &samplenums ) const
+  return m_dbStateId;
+}//long long int dbStateId() const
 
 
-void SpecMeas::setDbStateId( const long long int db_id, const std::set<int> &samplenums )
+void SpecMeas::setDbStateId( const long long int db_id )
 {
-  if( db_id < 0 )
-  {
-    const auto pos = m_dbUserStateIndexes.find(samplenums);
-    if( pos != end(m_dbUserStateIndexes) )
-      m_dbUserStateIndexes.erase(pos);
-    return;
-  }//if( db_id < 0 )
-  
-  m_dbUserStateIndexes[samplenums] = db_id;
-}//void setDbStateId( const long long int db_id, const std::set<int> &samplenums )
-
-
-void SpecMeas::clearAllDbStateId()
-{
-  m_dbUserStateIndexes.clear();
-}
-
-
-const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
-{
-  return m_dbUserStateIndexes;
-}//const map<set<int>,long long int> &dbUserStateIndexs() const
+  m_dbStateId = (db_id < 0) ? -1 : db_id;
+}//void setDbStateId( const long long int db_id )
 
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
   // Check for any of the SpecMeas specific things keyed by sample number (see
   //  change_sample_numbers_spec_meas_stuff(...)).
-  bool has_specific_info = !m_dbUserStateIndexes.empty()
-                           || (m_displayedSampleNumbers && !m_displayedSampleNumbers->empty());
+  bool has_specific_info = (m_displayedSampleNumbers && !m_displayedSampleNumbers->empty());
 #if( USE_LLM_INTERFACE )
   has_specific_info = has_specific_info || !m_llmConversationHistory.empty();
 #endif
@@ -2995,7 +2899,7 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
     // Do cleanup - which _could_ change some of the Measurements sample numbers
     SpecFile::cleanup_after_load( use_flags );
 
-    // Now fixup m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes to use the newly assigned sample numbers
+    // Now fixup m_peaks, m_autoSearchPeaks, etc. to use the newly assigned sample numbers
     vector<pair<int,int>> from_to_sample_nums;
     for( const pair<int,shared_ptr<const SpecUtils::Measurement>> &samplenum_meas : orig_sample_nums )
     {
@@ -3078,7 +2982,7 @@ void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sampl
 void SpecMeas::change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums )
 {
   // The SpecMeas specific things keyed by sample number are m_peaks, m_autoSearchPeaks,
-  //  m_dbUserStateIndexes, m_displayedSampleNumbers, and m_llmConversationHistory.
+  //  m_displayedSampleNumbers, and m_llmConversationHistory.
   //  The runtime-only m_autoSearchInFlight and m_bgRecoveredForForeground are left alone: they are
   //  empty while a file is being loaded or copied (when sample numbers get changed), and this
   //  function may be called with `mutex_` held, so taking `m_autoSearchMutex` here would invert
@@ -3110,7 +3014,6 @@ void SpecMeas::change_sample_numbers_spec_meas_stuff( const std::vector<std::pai
     update_map( *m_peaks );
   
   update_map( m_autoSearchPeaks );
-  update_map( m_dbUserStateIndexes );
   
   if( m_displayedSampleNumbers )
     *m_displayedSampleNumbers = new_samples( *m_displayedSampleNumbers );

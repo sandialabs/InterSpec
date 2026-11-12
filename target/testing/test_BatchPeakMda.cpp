@@ -910,6 +910,17 @@ BOOST_AUTO_TEST_CASE( DefaultTemplatesRender )
     for( const char *type : { "txt", "html" } )
       render( type, BatchInfoLog::TemplateRenderType::ActShieldIndividual, act_data );
 
+    // The GUI calculation-log dialog renders the template files directly, which (unlike the
+    //  batch includes) parses them with trim_blocks on; the text report must come out the same.
+    {
+      inja::Environment gui_env = BatchInfoLog::get_default_inja_env( tmplt_dir );
+      string gui_txt;
+      BOOST_CHECK_NO_THROW( gui_txt = gui_env.render_file( "std_fit_log.tmplt.txt", act_data ) );
+      const string batch_txt = render( "txt", BatchInfoLog::TemplateRenderType::ActShieldIndividual, act_data );
+      BOOST_CHECK_MESSAGE( gui_txt == batch_txt, "GUI text report differs from batch:\n" << gui_txt
+                           << "\n---- vs ----\n" << batch_txt );
+    }
+
     for( const char *type : { "csv", "html" } )
       render( type, BatchInfoLog::TemplateRenderType::ActShieldSummary, act_summary );
 

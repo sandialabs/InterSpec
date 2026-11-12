@@ -496,6 +496,7 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
     // this attribute so I dont have to see this warning so much
     string msg_utf8 = msg.toUTF8();
     const auto onclick_pos = msg_utf8.find( "onclick=\"");
+    const bool hadOnClick = (onclick_pos != string::npos);
     if( onclick_pos != string::npos )
     {
       const auto end_pos = msg_utf8.find( "return false;\"", onclick_pos );
@@ -515,7 +516,9 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
     if( !Wt::Utils::removeScript(sanitized) )
       sanitized = Wt::Utils::htmlEncode( sanitized, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
     
-    if( (level == WarningMsgShowOnBoardRiid)
+    // Remove "buttons" (they dont do anything in the log, once their onclick is removed)
+    if( hadOnClick
+       || (level == WarningMsgShowOnBoardRiid)
 #if( USE_REMOTE_RID )
        || (level == WarningMsgExternalRiid)
 #endif
@@ -537,7 +540,7 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
   } // if( m_active[ level ] )
   
   if( displayActive )
-    displayPopupMessageUnsafe( msg, level, 5000 );
+    displayPopupMessageUnsafe( msg, level, num_millies );
 }//addMessageUnsafe(...)
 
 
