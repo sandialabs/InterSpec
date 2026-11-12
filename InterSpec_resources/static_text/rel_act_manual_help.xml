@@ -46,7 +46,10 @@ the uncertainties you are shown are arrived at:
 </ul>
 <p>
 On the chart, the data-point error bars and the shaded band around the fitted curve are both
-1-sigma.  The point error bars are statistical only.
+1-sigma.  The point error bars are statistical only.  Drag right across the chart to zoom in on an
+energy range, or left to zoom back out; hold <kbd>Cmd</kbd> (macOS) or <kbd>Alt</kbd>
+(Windows/Linux) and drag down to zoom in on the y-axis, or up to zoom out.  The mouse wheel also
+zooms the energy axis, and a sideways scroll pans it.
 </p>
 
 <h2>Profile likelihood uncertainties</h2>

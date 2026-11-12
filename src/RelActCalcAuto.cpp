@@ -589,6 +589,86 @@ static void solve_stopping_creep( const ceres::Solver::Options &options,
 }//solve_stopping_creep(...)
 
 
+/** Tracks the progress of one `RelActCalcAuto::solve(...)`, passing every change on to the caller's
+ `SolveProgressFcn`.
+
+ `solve(...)` owns this, and hands it to the `solve_ceres` calls of each phase (but not to the
+ trial fits within a step), which set the step and add this to their Ceres callbacks so every
+ iteration of the frame's minimizations is reported.  All of a solve's Ceres minimizations run on the
+ thread that called `solve(...)`, so there is no locking.
+ */
+class SolveProgressReporter : public ceres::IterationCallback
+{
+  const RelActCalcAuto::SolveProgressFcn m_fcn;
+  RelActCalcAuto::SolveProgress m_progress;
+
+  void report()
+  {
+    m_progress.report_time = std::chrono::steady_clock::now();
+    m_fcn( m_progress );
+  }
+
+  void reset_step_tallies()
+  {
+    m_progress.num_iterations = 0;
+    m_progress.chi2 = std::numeric_limits<double>::quiet_NaN();
+  }
+
+public:
+  explicit SolveProgressReporter( const RelActCalcAuto::SolveProgressFcn &fcn )
+   : m_fcn( fcn )
+  {
+    assert( m_fcn );
+    m_progress.start_time = std::chrono::steady_clock::now();
+  }
+
+  void set_phase( const RelActCalcAuto::SolveProgress::Phase phase,
+                  const size_t index = 0, const size_t count = 0 )
+  {
+    m_progress.phase = phase;
+    m_progress.phase_index = index;
+    m_progress.phase_count = count;
+    m_progress.step.reset();
+    m_progress.step_index = m_progress.step_count = 0;
+    reset_step_tallies();
+    report();
+  }
+
+  void set_step( const RelActCalcAuto::SolveProgress::Step step,
+                 const size_t index = 0, const size_t count = 0 )
+  {
+    m_progress.step = step;
+    m_progress.step_index = index;
+    m_progress.step_count = count;
+    reset_step_tallies();
+    report();
+  }
+
+  /** Set by each reporting `solve_ceres` frame once its problem is built; not reported by itself. */
+  void set_dof( const size_t dof )
+  {
+    m_progress.dof = dof;
+  }
+
+  virtual ceres::CallbackReturnType operator()( const ceres::IterationSummary &iteration )
+  {
+    // Iteration zero is the evaluation at the starting point, not a step.
+    if( iteration.iteration > 0 )
+      m_progress.num_iterations += 1;
+
+    // Non-monotonic steps let the cost rise, so keep the lowest seen.
+    const double chi2 = 2.0*iteration.cost;
+    if( (iteration.step_is_successful || (iteration.iteration == 0))
+       && std::isfinite(chi2) && (std::isnan(m_progress.chi2) || (chi2 < m_progress.chi2)) )
+      m_progress.chi2 = chi2;
+
+    report();
+
+    return ceres::CallbackReturnType::SOLVER_CONTINUE;
+  }
+};//class SolveProgressReporter
+
+
 // Forward declaration
 struct RelActAutoCostFcn;
 
@@ -4711,6 +4791,10 @@ struct RelActAutoCostFcn
 
   /** Solve the problem, using the Ceres optimizer.
 
+   @param progress If non-null, this frame's steps and Ceres iterations are reported to it; the trial
+          fits within a step (e.g., alternate starting points) do not pass it, so do not overwrite
+          the step being reported.
+
    TODO: currently we always live-time normalize the background spectrum - should add explicit argument for background normalization incase the user has set a custom one (e.g., bad or missing live time in a spectrum).
    */
   static RelActCalcAuto::RelActAutoSolution solve_ceres( RelActCalcAuto::Options options,
@@ -4727,9 +4811,12 @@ struct RelActAutoCostFcn
                                                         const std::vector<std::pair<double,double>> *frozen_peak_ranges_with_uncert = nullptr,
                                                         const FrozenModelPolicy *frozen_model_policy = nullptr,
                                                         const bool all_peaks_are_frozen = false,
-                                                        const bool may_host_profile = false
+                                                        const bool may_host_profile = false,
+                                                        SolveProgressReporter * const progress = nullptr
                                                         )
   {
+    if( progress )
+      progress->set_step( RelActCalcAuto::SolveProgress::Step::Setup );
 
     // Note: once the cost functor has resolved the ROIs, their resolved form replaces the input ROIs in
     //  both `caller_options` and `options` (see below).
@@ -4872,10 +4959,16 @@ struct RelActAutoCostFcn
           && !all_peaks_are_frozen )
       {
         cout << "Will search for peaks: " << endl;
+        if( progress )
+          progress->set_step( RelActCalcAuto::SolveProgress::Step::PeakSearch );
+
         // If the DRF has no preferences, search_for_peaks creates a local default and infers the
         // coarse detector class from the spectrum (the same behavior in Debug and Release).
         std::shared_ptr<const PeakFitDetPrefs> fitPrefs = input_drf ? input_drf->peakFitDetPrefs() : nullptr;
         all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, fitPrefs );
+
+        if( progress )
+          progress->set_step( RelActCalcAuto::SolveProgress::Step::Setup );
 
         for( const auto &p : all_peaks )
           cout << "  auto peak: energy=" << p->mean() << ", fwhm=" << p->fwhm() << ", area=" << p->peakArea()
@@ -5687,6 +5780,9 @@ struct RelActAutoCostFcn
         default:
           break;
       }//switch( options.fwhm_form )
+
+      if( progress )
+        progress->set_step( RelActCalcAuto::SolveProgress::Step::InitialEstimate );
 
       // We may have two peaks really close together (like ~1.5 sigma or less - sometimes caused by peak skew), that
       // become hard to correctly assign gammas to, and then end up with a with like a large peak with a tiny BR.
@@ -8796,6 +8892,16 @@ struct RelActAutoCostFcn
       terminate_callback.reset( new RelActAutoCostFcn::CheckCeresTerminateCallback(cancel_calc) );
       ceres_options.callbacks.push_back( terminate_callback.get() );
     }
+
+    // Added before any copies of `ceres_options` are made, so every minimization of this frame reports.
+    if( progress )
+    {
+      ceres_options.callbacks.push_back( progress );
+
+      const size_t num_residuals = cost_functor->number_residuals();
+      const size_t num_fit_pars = num_pars - constant_parameters.size();
+      progress->set_dof( (num_residuals > num_fit_pars) ? (num_residuals - num_fit_pars) : size_t(0) );
+    }//if( progress )
     
     
     //RelActAutoCostFcn::CeresStepSummaryCallback step_summary_callback( cost_functor.get() );
@@ -8817,6 +8923,9 @@ struct RelActAutoCostFcn
 #if( TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE )
     if( cost_functor->m_options.rel_eff_curves.size() <= 1 )
     {
+      if( progress )
+        progress->set_step( RelActCalcAuto::SolveProgress::Step::PreFit );
+
       /* To help get to the correct solution, we will first fix a number of currently-not-fixed parameters, get
        an initial solution, then release some of these fixed paramters, get a hopefully improved solution, then
        
@@ -9070,6 +9179,9 @@ struct RelActAutoCostFcn
     // Kept so the check after the polish can ask the only unambiguous question about a solve
     // that reported convergence without accepting anything: did the answer actually move?
     const vector<double> pre_solve_parameters = parameters;
+
+    if( progress )
+      progress->set_step( RelActCalcAuto::SolveProgress::Step::MainFit );
 
     solve_stopping_creep( ceres_options, problem, summary );
     //std::cout << summary.BriefReport() << "\n";
@@ -9796,12 +9908,21 @@ struct RelActAutoCostFcn
         const std::uint64_t pre_elimination_model_hash
             = frozen_model_policy_hash( applied_frozen_model_policy );
 
+        size_t num_alternate_starts = 0, alternate_start_index = 0;
+        for( const SearchSeedVariant variant : search_seed_variants() )
+          num_alternate_starts += ((variant != SearchSeedVariant::Default) && applicable(variant));
+
         for( const SearchSeedVariant variant : search_seed_variants() )
         {
           if( (variant == SearchSeedVariant::Default) || !applicable(variant) )
             continue; //deterministic applicability screening; applicable candidates are never suppressed
           if( cancel_calc && cancel_calc->load() )
             break;
+
+          alternate_start_index += 1;
+          if( progress )
+            progress->set_step( RelActCalcAuto::SolveProgress::Step::AlternateStarts,
+                                alternate_start_index, num_alternate_starts );
 
           try
           {
@@ -10092,6 +10213,9 @@ struct RelActAutoCostFcn
 
       while( !candidates.empty() )
       {
+        if( progress )
+          progress->set_step( RelActCalcAuto::SolveProgress::Step::ModelSimplification, as_fixed.size() + 1 );
+
         const vector<double> parent_parameters = parameters;
         vector<BackwardEliminationScore> trial_scores;
         vector<size_t> trial_candidates;
@@ -10194,7 +10318,10 @@ struct RelActAutoCostFcn
 
     solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     solution.m_num_microseconds_in_eval = static_cast<int>( cost_functor->m_nanoseconds_spent_in_eval / 1000 );  //convert from nanoseconds to micro
-    
+
+    if( progress )
+      progress->set_step( RelActCalcAuto::SolveProgress::Step::Uncertainties );
+
 #ifndef NDEBUG
     {
       const auto now_time = std::chrono::high_resolution_clock::now();
@@ -29554,7 +29681,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
                          const unsigned rescue_depth = 0,
-                         std::shared_ptr<const RelActAutoSolution> *merged_out = nullptr );
+                         std::shared_ptr<const RelActAutoSolution> *merged_out = nullptr,
+                         RelActCalcAutoImp::SolveProgressReporter * const progress = nullptr );
 
 static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                          const Options &orig_options,
@@ -29565,7 +29693,8 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
                          const unsigned rescue_depth = 0,
-                         std::shared_ptr<const RelActAutoSolution> merged_sol = nullptr );
+                         std::shared_ptr<const RelActAutoSolution> merged_sol = nullptr,
+                         RelActCalcAutoImp::SolveProgressReporter * const progress = nullptr );
 
 
 /** The nuisance-parameter seed handed to the merged null: the multi-curve solution, with its
@@ -29768,7 +29897,8 @@ static bool rescue_multi_curve_fit( RelActAutoSolution &sol,
                          const std::shared_ptr<const DetectorPeakResponse> &drf,
                          const std::vector<std::shared_ptr<const PeakDef>> &peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
-                         const std::shared_ptr<std::atomic_bool> &cancel_calc )
+                         const std::shared_ptr<std::atomic_bool> &cancel_calc,
+                         RelActCalcAutoImp::SolveProgressReporter * const progress )
 {
   const bool use_matrix = (strategy == MultiCurveRescueStrategy::CandidateMatrix);
   if( use_matrix && orig_options.robust_solve )
@@ -29792,7 +29922,7 @@ static bool rescue_multi_curve_fit( RelActAutoSolution &sol,
                         det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
                         /*force_candidate_search=*/use_matrix, warm_start,
                         /*allow_candidate_search=*/true, nullptr, nullptr, true,
-                        RelActCalcAutoImp::solve_may_profile(orig_options) );
+                        RelActCalcAutoImp::solve_may_profile(orig_options), progress );
 
     if( !RelActAutoSolution::is_usable_status(rescued.m_status)
         || !std::isfinite(rescued.m_chi2_data)
@@ -29850,7 +29980,8 @@ static void add_nested_source_guard( RelActAutoSolution &sol,
                          const std::shared_ptr<const SpecUtils::Measurement> &foreground,
                          const std::shared_ptr<const SpecUtils::Measurement> &background,
                          const PeakFitUtils::CoarseResolutionType det_type,
-                         const std::shared_ptr<std::atomic_bool> &cancel_calc )
+                         const std::shared_ptr<std::atomic_bool> &cancel_calc,
+                         RelActCalcAutoImp::SolveProgressReporter * const progress )
 {
   if( !RelActAutoSolution::is_usable_status(sol.m_status)
      || !sol.m_cost_functor
@@ -29861,6 +29992,9 @@ static void add_nested_source_guard( RelActAutoSolution &sol,
      || (sol.m_param_at_bound.size() != sol.m_final_parameters.size())
      || (sol.m_param_bound_side.size() != sol.m_final_parameters.size()) )
     return;
+
+  if( progress )
+    progress->set_phase( SolveProgress::Phase::NestedSourceCheck );
 
   const RelEffCurveInput &curve = orig_options.rel_eff_curves[0];
 
@@ -29985,7 +30119,8 @@ static void add_nested_source_guard( RelActAutoSolution &sol,
       const RelActAutoSolution reduced_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                           reduced, foreground, background, sol.m_drf, sol.m_spectrum_peaks,
                           det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
-                          false, nullptr, true, frozen_br_ranges, model_policy_ptr, true, false );
+                          false, nullptr, true, frozen_br_ranges, model_policy_ptr, true, false,
+                          progress );
       count_effort( reduced_sol, 1 );
 
       const bool reduced_is_better = RelActAutoSolution::is_usable_status(reduced_sol.m_status)
@@ -30021,7 +30156,7 @@ static void add_nested_source_guard( RelActAutoSolution &sol,
                           fixed_rois, foreground, background, sol.m_drf, sol.m_spectrum_peaks,
                           det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
                           false, &seed, true, frozen_br_ranges, model_policy_ptr, true,
-                          RelActCalcAutoImp::solve_may_profile(orig_options) );
+                          RelActCalcAutoImp::solve_may_profile(orig_options), progress );
 
       if( cancel_calc && cancel_calc->load() )
       {
@@ -30082,7 +30217,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
                          const unsigned rescue_depth,
-                         std::shared_ptr<const RelActAutoSolution> *merged_out )
+                         std::shared_ptr<const RelActAutoSolution> *merged_out,
+                         RelActCalcAutoImp::SolveProgressReporter * const progress )
 {
   // Every solve() return path calls this exactly once, so the separation status (which folds in the
   //  comparison computed below) is finalized here whether or not the comparison itself applies.
@@ -30092,6 +30228,9 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
       || !RelActAutoSolution::is_usable_status(sol.m_status)
       || sol.m_merged_single_curve_comparison.has_value() )
     return;
+
+  if( progress )
+    progress->set_phase( SolveProgress::Phase::MergedCurveComparison );
 
   RelActAutoSolution::MergedCurveComparison comparison;
   comparison.multi_chi2_data = sol.m_chi2_data;
@@ -30395,7 +30534,7 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                         merged, foreground, background, retained_drf, retained_peaks,
                         det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
                         false,&nuisance_seed,true,nullptr,nullptr,true,
-                        /*may_host_profile=*/false );
+                        /*may_host_profile=*/false, progress );
 
     if( merged_sol.m_cost_functor
         && !merged_sol.m_cost_functor->exact_retained_inputs_match(
@@ -30454,7 +30593,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
       if( cancel_calc && cancel_calc->load() )
         break;
       if( !rescue_multi_curve_fit( sol, strategy, merged_restart_seed, orig_options, foreground,
-                                   background, retained_drf, retained_peaks, det_type, cancel_calc ) )
+                                   background, retained_drf, retained_peaks, det_type, cancel_calc,
+                                   progress ) )
         continue;
 
       // `merged_out` must be forwarded: it was already written above, against the solution this
@@ -30468,7 +30608,7 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
         merged_out->reset();
       add_merged_single_curve_comparison( sol, orig_options, foreground, background, input_drf,
                                           all_peaks, det_type, cancel_calc, rescue_depth + 1,
-                                          merged_out );
+                                          merged_out, progress );
       return;
     }//for( each rescue strategy, cheapest first )
 
@@ -30508,7 +30648,8 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
                          const unsigned rescue_depth,
-                         std::shared_ptr<const RelActAutoSolution> merged_sol )
+                         std::shared_ptr<const RelActAutoSolution> merged_sol,
+                         RelActCalcAutoImp::SolveProgressReporter * const progress )
 {
   const DoWorkOnDestruct finalize_status( [&sol](){ sol.finalize_curve_separation_status(); } );
 
@@ -30517,6 +30658,9 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
       || !RelActAutoSolution::is_usable_status(sol.m_status)
       || sol.m_tied_enrichment_comparison.has_value() )
     return;
+
+  if( progress )
+    progress->set_phase( SolveProgress::Phase::TiedEnrichmentComparison );
 
   RelActAutoSolution::TiedEnrichmentComparison comparison;
   comparison.free_chi2_data = sol.m_chi2_data;
@@ -30760,7 +30904,8 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
         tied_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                         tied, foreground, background, retained_drf, retained_peaks,
                         det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
-                        false, &sol, true, nullptr, nullptr, true, /*may_host_profile=*/false );
+                        false, &sol, true, nullptr, nullptr, true, /*may_host_profile=*/false,
+                        progress );
       }catch( const std::exception &e )
       {
         add_note( "tied fit at the " + candidate.first + " failed (" + string(e.what()) + ")" );
@@ -30827,7 +30972,7 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                           best_options, foreground, background, retained_drf, retained_peaks,
                           det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
                           false, &merged_seed.value(), true, nullptr, nullptr, true,
-                          /*may_host_profile=*/false );
+                          /*may_host_profile=*/false, progress );
           if( RelActAutoSolution::is_usable_status(retried.m_status)
               && std::isfinite(retried.m_chi2_data)
               && (retried.m_chi2_data < best_tied->m_chi2_data) )
@@ -30915,7 +31060,7 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                       rescue, foreground, background, retained_drf, retained_peaks,
                       det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
                       false, best_tied, true, nullptr, nullptr, true,
-                      RelActCalcAutoImp::solve_may_profile(orig_options) );
+                      RelActCalcAutoImp::solve_may_profile(orig_options), progress );
 
       if( RelActAutoSolution::is_usable_status(rescued.m_status)
           && std::isfinite(rescued.m_chi2_data)
@@ -30934,10 +31079,10 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
         sol.m_tied_enrichment_comparison.reset();
         std::shared_ptr<const RelActAutoSolution> new_merged;
         add_merged_single_curve_comparison( sol, orig_options, foreground, background, input_drf,
-                                            all_peaks, det_type, cancel_calc, 0, &new_merged );
+                                            all_peaks, det_type, cancel_calc, 0, &new_merged, progress );
         add_tied_enrichment_comparison( sol, orig_options, foreground, background, input_drf,
                                         all_peaks, det_type, cancel_calc, rescue_depth + 1,
-                                        new_merged );
+                                        new_merged, progress );
         return;
       }
     }//if( the restricted model beat the model containing it )
@@ -31076,9 +31221,15 @@ RelActAutoSolution solve( const Options input_options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
-                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs
+                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs,
+                         const SolveProgressFcn &progress_fcn
                          )
 {
+  std::optional<RelActCalcAutoImp::SolveProgressReporter> reporter;
+  if( progress_fcn )
+    reporter.emplace( progress_fcn );
+  RelActCalcAutoImp::SolveProgressReporter * const progress = reporter ? &(*reporter) : nullptr;
+
   // Note: `auto_simplify_model` (backward-eliminating redundant degrees of freedom at identity values)
   //  is handled warm, inside solve_ceres(), right after the converged full fit - not here.  When the
   //  ROIs are re-sized below, the re-solve replays that selected model rather than re-selecting it
@@ -31109,6 +31260,9 @@ RelActAutoSolution solve( const Options input_options,
   // host its conditional optimizations in place; see `solve_may_profile`.
   const bool may_host_profile = RelActCalcAutoImp::solve_may_profile( options );
 
+  if( progress )
+    progress->set_phase( SolveProgress::Phase::InitialFit );
+
   // The first fit uses ROIs sized from the starting peak shape (see `RelActAutoCostFcn`s constructor).
   RelActAutoSolution current_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                      options,
@@ -31120,7 +31274,7 @@ RelActAutoSolution solve( const Options input_options,
                      cancel_calc,
                      RelActCalcAutoImp::SearchSeedVariant::Default,
                      false,nullptr,true,nullptr,nullptr,false,
-                     may_host_profile );
+                     may_host_profile, progress );
 
   // ROIs that are not fixed are re-sized from the fitted peak shape (and broken-up ROIs are reduced
   //  to their significant lines), automatic continua are chosen, and the problem re-solved if that
@@ -31190,6 +31344,9 @@ RelActAutoSolution solve( const Options input_options,
       const std::optional<RelActCalcAutoImp::FrozenModelPolicy> model_policy
                                      = split_by_lines ? std::nullopt : selected_model_policy( current_sol );
 
+      if( progress )
+        progress->set_phase( SolveProgress::Phase::RoiRefinement, refinement + 1, max_refinements );
+
       // The re-fit starts from the converged fit, so the deterministic candidate search only runs if the
       //  re-fit shows a pathology (forcing it for every ROI change would multiply the run time).
       RelActAutoSolution updated_sol;
@@ -31199,7 +31356,8 @@ RelActAutoSolution solve( const Options input_options,
             updated_options, foreground, background, current_sol.m_drf,
             current_sol.m_spectrum_peaks, det_type, cancel_calc,
             RelActCalcAutoImp::SearchSeedVariant::Default, false, &current_sol,
-            true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile );
+            true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile,
+            progress );
 
         // A warm start can land on a flat spot the trust region cannot leave, and Ceres then reports
         // CONVERGENCE having moved nothing (see `m_optimizer_returned_seed`).  Accepting that over the
@@ -31212,7 +31370,8 @@ RelActAutoSolution solve( const Options input_options,
               updated_options, foreground, background, current_sol.m_drf,
               current_sol.m_spectrum_peaks, det_type, cancel_calc,
               RelActCalcAutoImp::SearchSeedVariant::Default, false, nullptr,
-              true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile );
+              true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile,
+              progress );
 
           if( !RelActAutoSolution::is_usable_status(cold_sol.m_status)
              || cold_sol.m_optimizer_returned_seed )
@@ -31298,14 +31457,20 @@ RelActAutoSolution solve( const Options input_options,
 
   current_sol.m_input_rois = options.rois;
 
+  // The comparisons report their own phase, if they apply; the profile scans do not report their fits.
   // A source at or near zero activity: check against the same model without it (a nested model).
-  add_nested_source_guard( current_sol, options, foreground, background, det_type, cancel_calc );
+  add_nested_source_guard( current_sol, options, foreground, background, det_type, cancel_calc,
+                           progress );
 
   std::shared_ptr<const RelActAutoSolution> merged_sol;
   add_merged_single_curve_comparison( current_sol, options, foreground, background,
-                                      input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
+                                      input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol,
+                                      progress );
   add_tied_enrichment_comparison( current_sol, options, foreground, background,
-                                  input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
+                                  input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol,
+                                  progress );
+  if( progress && may_host_profile )
+    progress->set_phase( SolveProgress::Phase::ProfileLikelihood );
   add_mass_fraction_profiles( current_sol, foreground, background, input_drf,
                               all_peaks, det_type, cancel_calc );
   add_bound_limit_messages( current_sol );

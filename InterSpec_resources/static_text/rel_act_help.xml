@@ -21,6 +21,13 @@ data points are both <b>1-sigma</b>.  The point error bars are statistical only,
 the uncertainty of the fitted curve itself.  The same convention is used by the
 &quot;<em>Isotopics from peaks</em>&quot; tool, and in the HTML reports this tool exports.
 </p>
+<p>
+To zoom, drag right across the chart to zoom in on that energy range, or drag left to zoom back out.
+Holding <kbd>Cmd</kbd> (macOS) or <kbd>Alt</kbd> (Windows/Linux) while dragging zooms the y-axis
+instead: drag down to zoom in on the swept range, or up to zoom out (a short drag zooms out 2x, a
+longer one 4x, and a long one all the way) - useful when one outlying point squashes everything else.
+The mouse wheel also zooms the energy axis about the mouse position, and a sideways scroll pans it.
+</p>
 </div>
 
 

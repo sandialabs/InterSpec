@@ -70,6 +70,7 @@ namespace Wt
 {
   class WMenu;
   class WText;
+  class WTimer;
   class WCheckBox;
   class WComboBox;
   class WInPlaceEdit;
@@ -123,6 +124,10 @@ public:
                       const size_t calc_number );
   void handleCalcException( std::shared_ptr<std::string> message,
                            std::shared_ptr<std::atomic_bool> cancel_flag );
+
+  /** Shows the latest progress of the running calculation in `m_status_indicator`; called by
+   `m_progress_timer`. */
+  void updateCalcProgressText();
   
   
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
@@ -509,6 +514,13 @@ protected:
 
   
   Wt::WText *m_status_indicator;
+
+  /** Latest progress of the running calculation; written by the calculation thread, so is shared with it. */
+  struct CalcProgress;
+  std::shared_ptr<CalcProgress> m_calc_progress;
+
+  /** Updates `m_status_indicator` from `m_calc_progress` while calculating. */
+  Wt::WTimer *m_progress_timer;
   
   D3SpectrumDisplayDiv *m_spectrum;
   std::shared_ptr<PeakModel> m_peak_model;

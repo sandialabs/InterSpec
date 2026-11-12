@@ -239,6 +239,85 @@ BOOST_AUTO_TEST_CASE( single_line_roi_extent_from_peak_shape )
 }//single_line_roi_extent_from_peak_shape
 
 
+BOOST_AUTO_TEST_CASE( solve_reports_progress )
+{
+  using RelActCalcAuto::SolveProgress;
+
+  set_data_dir();
+  const shared_ptr<DetectorPeakResponse> drf = make_drf();
+  const shared_ptr<SpecUtils::Measurement> spectrum = make_spectrum( *drf, 0.0 );
+  const RelActCalcAuto::Options options = make_options();
+
+  vector<SolveProgress> reports;
+  const RelActCalcAuto::SolveProgressFcn progress_fcn = [&reports]( const SolveProgress &progress ){
+    reports.push_back( progress );
+  };
+
+  const RelActCalcAuto::RelActAutoSolution sol
+            = RelActCalcAuto::solve( options, spectrum, nullptr, drf, {},
+                                     PeakFitUtils::CoarseResolutionType::High, nullptr, nullptr, progress_fcn );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status( sol.m_status ),
+                         "solve failed: " << sol.m_error_message );
+
+  // Reporting must not change the answer, or how it was reached.
+  const RelActCalcAuto::RelActAutoSolution plain_sol = solve( options, spectrum, drf );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status( plain_sol.m_status ) );
+  BOOST_CHECK_EQUAL( sol.m_chi2, plain_sol.m_chi2 );
+  BOOST_CHECK_EQUAL( sol.m_num_function_eval_total, plain_sol.m_num_function_eval_total );
+
+  // The solve starts by announcing its phase, then the first fit's first step.
+  BOOST_REQUIRE_GE( reports.size(), 2 );
+  BOOST_CHECK( reports[0].phase == SolveProgress::Phase::InitialFit );
+  BOOST_CHECK( !reports[0].step );
+  BOOST_CHECK( reports[1].phase == SolveProgress::Phase::InitialFit );
+  BOOST_CHECK( reports[1].step && (*reports[1].step == SolveProgress::Step::Setup) );
+
+  // (On this noiseless spectrum the pre-fit can reach the minimum, leaving the main fit nothing to do.)
+  bool fit_iterated = false, had_main_fit = false, had_uncertainties = false;
+  for( size_t i = 0; i < reports.size(); ++i )
+  {
+    const SolveProgress &report = reports[i];
+    BOOST_CHECK( report.start_time == reports[0].start_time );
+    BOOST_CHECK( report.report_time >= report.start_time );
+
+    const bool is_main_fit = (report.step && (*report.step == SolveProgress::Step::MainFit));
+    const bool is_fit = (is_main_fit || (report.step && (*report.step == SolveProgress::Step::PreFit)));
+    fit_iterated |= (is_fit && (report.num_iterations > 0) && std::isfinite(report.chi2) && (report.dof > 0));
+    had_main_fit |= is_main_fit;
+    had_uncertainties |= (report.step && (*report.step == SolveProgress::Step::Uncertainties));
+
+    if( i == 0 )
+      continue;
+
+    // Within a step, the iteration count only goes up, and the reported (lowest) chi2 only down.
+    const SolveProgress &prev = reports[i-1];
+    BOOST_CHECK( report.report_time >= prev.report_time );
+    if( (report.phase == prev.phase) && (report.phase_index == prev.phase_index)
+       && (report.step == prev.step) && (report.step_index == prev.step_index) )
+    {
+      BOOST_CHECK_GE( report.num_iterations, prev.num_iterations );
+      if( std::isfinite(prev.chi2) )
+        BOOST_CHECK_LE( report.chi2, prev.chi2 );
+    }
+  }//for( size_t i = 0; i < reports.size(); ++i )
+
+  // The sequence of reports, to diagnose failures.
+  string summary;
+  for( const SolveProgress &report : reports )
+    summary += "\n  phase=" + std::to_string( static_cast<int>(report.phase) )
+               + " " + std::to_string( report.phase_index ) + "/" + std::to_string( report.phase_count )
+               + ", step=" + (report.step ? std::to_string( static_cast<int>(*report.step) ) : string("none"))
+               + " " + std::to_string( report.step_index ) + "/" + std::to_string( report.step_count )
+               + ", iterations=" + std::to_string( report.num_iterations )
+               + ", chi2=" + std::to_string( report.chi2 )
+               + ", dof=" + std::to_string( report.dof );
+
+  BOOST_CHECK_MESSAGE( fit_iterated, "no PreFit or MainFit report with iterations, a chi2, and a DOF:" << summary );
+  BOOST_CHECK_MESSAGE( had_main_fit, "no MainFit report:" << summary );
+  BOOST_CHECK_MESSAGE( had_uncertainties, "no Uncertainties report:" << summary );
+}//solve_reports_progress
+
+
 BOOST_AUTO_TEST_CASE( initial_rois_sized_from_spectrum_peaks )
 {
   set_data_dir();
