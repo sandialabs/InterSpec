@@ -23,14 +23,26 @@
 
 #include "InterSpec_config.h"
 
+#include <regex>
+#include <cctype>
 #include <memory>
+#include <string>
+#include <vector>
 #include <cassert>
+#include <algorithm>
 
+#include <Wt/WDate.h>
+#include <Wt/WPanel.h>
 #include <Wt/WServer.h>
 #include <Wt/WWidget.h>
+#include <Wt/WDateEdit.h>
+#include <Wt/WFormWidget.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
+#include <Wt/WDateValidator.h>
 #include <Wt/WContainerWidget.h>
+
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/WidgetUtils.h"
@@ -175,5 +187,251 @@ void applyButtonRole( Wt::WPushButton *button, ButtonRole role )
     case ButtonRole::Destructive: button->addStyleClass( "DialogBtnDestructive" ); break;
   }//switch( role )
 }//void applyButtonRole( Wt::WPushButton *button, ButtonRole role )
+
+
+void setInputValueError( Wt::WFormWidget *w, const bool error )
+{
+  if( !w || (w->hasStyleClass("InputValueError") == error) )
+    return;
+
+  w->toggleStyleClass( "InputValueError", error );
+  w->setAttributeValue( "aria-invalid", error ? "true" : "false" );
+}//void setInputValueError( Wt::WFormWidget *w, const bool error )
+
+
+void revealAndFocus( Wt::WFormWidget *w )
+{
+  if( !w )
+    return;
+
+  for( Wt::WWidget *p = w->parent(); p; p = p->parent() )
+  {
+    Wt::WPanel * const panel = dynamic_cast<Wt::WPanel *>( p );
+    if( panel && panel->isCollapsible() && panel->isCollapsed() )
+      panel->setCollapsed( false );
+  }//for( loop over ancestors )
+
+  w->setFocus( true );
+  w->doJavaScript( "setTimeout(function(){"
+                     "var e=" + w->jsRef() + ";"
+                     "if(e&&e.scrollIntoView)e.scrollIntoView({block:'center',inline:'nearest'});"
+                   "},0);" );
+}//void revealAndFocus( Wt::WFormWidget *w )
+
+
+void compensateRowHandleLeak( Wt::WContainerWidget *layoutOwner )
+{
+  if( !layoutOwner )
+    return;
+
+  // Counts the handles each time, so is correct (0) when no row is resizable.
+  layoutOwner->setJavaScriptMember( "wtGetPS",
+    "function(c,w,d,r){"
+      "if(d!==1)return 0;"
+      "var n=w.querySelectorAll(':scope > .Wt-hrh2').length;"
+      "return -n*5;"
+    "}" );
+}//void compensateRowHandleLeak( Wt::WContainerWidget *layoutOwner )
+
+
+namespace
+{
+  /** The (1-based) month a word names, or 0.  English names and abbreviations of at least three
+   letters ("Jan", "janu", "September", "Sept"), plus the session locale's names when there is one.
+   */
+  int month_from_name( std::string word )
+  {
+    SpecUtils::to_lower_ascii( word );
+    if( word.size() < 3 )
+      return 0;
+
+    static const char * const english[12] = { "january", "february", "march", "april", "may",
+      "june", "july", "august", "september", "october", "november", "december" };
+    for( int i = 0; i < 12; ++i )
+    {
+      const std::string name = english[i];
+      if( (word.size() <= name.size()) && (name.compare( 0, word.size(), word ) == 0) )
+        return i + 1;
+    }
+
+    // The localized names come from the message bundles, so only when there is a session.
+    if( Wt::WApplication::instance() )
+    {
+      for( int i = 1; i <= 12; ++i )
+      {
+        for( std::string name : { Wt::WDate::longMonthName(i).toUTF8(), Wt::WDate::shortMonthName(i).toUTF8() } )
+        {
+          SpecUtils::to_lower_ascii( name );
+          if( name == word )
+            return i;
+        }
+      }
+    }//if( Wt::WApplication::instance() )
+
+    return 0;
+  }//int month_from_name( std::string word )
+
+
+  /** The order the year ('y'), month ('M') and day ('d') appear in a WDate format, e.g. "yMd" for
+   "yyyy-MM-dd", or an empty string if the format does not have each of them once. */
+  std::string format_field_order( const std::string &format )
+  {
+    std::string order;
+    for( size_t i = 0; i < format.size(); ++i )
+    {
+      const char c = format[i];
+      if( (c != 'y') && (c != 'M') && (c != 'd') )
+        continue;
+      if( (i > 0) && (format[i-1] == c) )
+        continue;  //rest of the same field
+      if( order.find(c) != std::string::npos )
+        return "";
+      order += c;
+    }//for( loop over format characters )
+
+    return (order.size() == 3) ? order : std::string();
+  }//std::string format_field_order( const std::string &format )
+}//namespace
+
+
+DateParse parseLenientDate( const std::string &input, const std::string &format, Wt::WDate &result )
+{
+  std::string text = input;
+  SpecUtils::trim( text );
+  if( text.empty() )
+    return DateParse::Empty;
+
+  // Ignore a trailing time - a pasted timestamp ("2019-01-05T13:24:00", "2019-01-05 13:24")
+  {
+    const std::regex time_re( R"(^(.+?)(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d*)?)?\s*(?:[AaPp][Mm])?\s*(?:Z|[+-]\d{2}:?\d{2})?)$)" );
+    std::smatch mtch;
+    if( std::regex_match( text, mtch, time_re ) )
+    {
+      text = mtch[1].str();
+      SpecUtils::trim( text );
+    }
+  }
+
+  auto make_date = [&result]( const int year, const int month, const int day ) -> DateParse {
+    // Checked before constructing the WDate, which logs a warning for an out-of-range field
+    if( (year < 1000) || (year > 9999) || (month < 1) || (month > 12) || (day < 1) || (day > 31) )
+      return DateParse::Invalid;
+    const Wt::WDate date( year, month, day );
+    if( !date.isValid() )
+      return DateParse::Invalid;
+    result = date;
+    return DateParse::Valid;
+  };//make_date
+
+  // 1) Exactly the expected format
+  if( !format.empty() )
+  {
+    const Wt::WDate exact = Wt::WDate::fromString( Wt::WString::fromUTF8(text), Wt::WString::fromUTF8(format) );
+    if( exact.isValid() )
+    {
+      result = exact;
+      return DateParse::Valid;
+    }
+  }//if( !format.empty() )
+
+  std::smatch mtch;
+
+  // 2) "yyyyMMdd"
+  if( std::regex_match( text, mtch, std::regex( R"(^(\d{4})(\d{2})(\d{2})$)" ) ) )
+    return make_date( std::stoi(mtch[1].str()), std::stoi(mtch[2].str()), std::stoi(mtch[3].str()) );
+
+  // 3) Three groups of digits
+  if( std::regex_match( text, mtch, std::regex( R"(^(\d{1,4})\s*[-/. ]\s*(\d{1,4})\s*[-/. ]\s*(\d{1,4})$)" ) ) )
+  {
+    const std::string a = mtch[1].str(), b = mtch[2].str(), c = mtch[3].str();
+    const int va = std::stoi(a), vb = std::stoi(b), vc = std::stoi(c);
+
+    // Year first is unambiguous - nobody writes year-day-month.
+    if( a.size() == 4 )
+      return ((b.size() <= 2) && (c.size() <= 2)) ? make_date( va, vb, vc ) : DateParse::Invalid;
+
+    if( c.size() != 4 )
+      return ((b.size() <= 2) && (a.size() <= 2)) ? DateParse::Ambiguous : DateParse::Invalid;
+
+    // Year last: only the field's own order is assumed; "1/5/2019" in a "yyyy-MM-dd" field could be
+    //  either January 5th or May 1st.
+    const std::string order = format_field_order( format );
+    if( order == "Mdy" )
+      return make_date( vc, va, vb );
+    if( order == "dMy" )
+      return make_date( vc, vb, va );
+    return DateParse::Ambiguous;
+  }//if( three groups of digits )
+
+  // 4) A month name, a 4-digit year, and a day - in any order
+  {
+    std::vector<std::string> tokens;
+    SpecUtils::split( tokens, text, "-/., \t" );
+    tokens.erase( std::remove_if( begin(tokens), end(tokens),
+                                  []( const std::string &t ){ return t.empty(); } ), end(tokens) );
+
+    if( tokens.size() == 3 )
+    {
+      int year = -1, month = -1, day = -1;
+      bool ok = true;
+      for( std::string t : tokens )
+      {
+        // "5th", "1st" - drop an English ordinal suffix from a day
+        if( (t.size() > 2) && std::isdigit(static_cast<unsigned char>(t[0]))
+           && std::regex_match( t, std::regex( R"(^\d{1,2}(st|nd|rd|th)$)", std::regex::icase ) ) )
+          t = t.substr( 0, t.size() - 2 );
+
+        const bool all_digits = (t.find_first_not_of("0123456789") == std::string::npos);
+        if( all_digits && (t.size() == 4) && (year < 0) )
+          year = std::stoi( t );
+        else if( all_digits && (t.size() <= 2) && (day < 0) )
+          day = std::stoi( t );
+        else if( !all_digits && (month < 0) && (month_from_name(t) > 0) )
+          month = month_from_name( t );
+        else
+          ok = false;
+      }//for( std::string t : tokens )
+
+      if( ok && (year > 0) && (month > 0) && (day > 0) )
+        return make_date( year, month, day );
+
+      // e.g. "5 Jan 19" - a month name, but a 2-digit year
+      if( (month > 0) && (year < 0) )
+        return DateParse::Ambiguous;
+    }//if( tokens.size() == 3 )
+  }
+
+  return DateParse::Invalid;
+}//DateParse parseLenientDate(...)
+
+
+void setupDateEdit( Wt::WDateEdit *edit, const Wt::WString &format )
+{
+  if( !edit )
+    return;
+
+  edit->setFormat( format );
+
+  std::string placeholder = format.toUTF8();
+  SpecUtils::to_lower_ascii( placeholder );
+  edit->setPlaceholderText( Wt::WString::fromUTF8( placeholder ) );
+
+  edit->setBottom( Wt::WDate( 1900, 1, 1 ) );
+  edit->setTop( Wt::WDate( 2200, 12, 31 ) );
+}//void setupDateEdit( Wt::WDateEdit *edit, const Wt::WString &format )
+
+
+DateParse normalizeDateEdit( Wt::WDateEdit *edit )
+{
+  if( !edit )
+    return DateParse::Invalid;
+
+  Wt::WDate date;
+  const DateParse status = parseLenientDate( edit->text().toUTF8(), edit->format().toUTF8(), date );
+  if( (status == DateParse::Valid) && (date.toString( edit->format() ) != edit->text()) )
+    edit->setDate( date );  //re-writes the text in the edits format, which re-validates
+
+  return status;
+}//DateParse normalizeDateEdit( Wt::WDateEdit *edit )
 
 }//namespace WidgetUtils

@@ -6,8 +6,9 @@
 function drfChartFormatSigFigs(d, sigFigs) {
   if (d === 0) return "0";
   const absD = Math.abs(d);
-  if (absD > 1.0) {
-    // For values above 1, plain fixed notation is always compact enough.
+  if ((absD > 1.0) && (absD < 1.0e5)) {
+    // For moderate values above 1, plain fixed notation is compact enough; past that toFixed()
+    // gives long strings of digits (and, from 1e21, every digit of an exponent form).
     const decimalPlaces = Math.max(0, sigFigs - Math.floor(Math.log10(absD)) - 1);
     return d.toFixed(decimalPlaces);
   }
@@ -270,6 +271,15 @@ DrfChart.prototype.updateDimensions = function() {
   const right = oneQuantity ? Math.min(12, this.options.margins.right) : this.options.margins.right;
   this.chartAreaWidth = Math.max(0, parentWidth - this.options.margins.computedLeft - right);
   this.chartAreaHeight = Math.max(0, parentHeight - this.options.margins.top - this.options.margins.bottom);
+
+  // Fewer ticks when the chart is small, so their labels dont run into each other.  (The axes do
+  // not exist yet on the first call, from the constructor.)
+  if (this.xAxis)
+    this.xAxis.ticks(Math.max(2, Math.floor(this.chartAreaWidth / 70)));
+  if (this.leftYAxis)
+    this.leftYAxis.ticks(Math.max(2, Math.floor(this.chartAreaHeight / 35)));
+  if (this.rightYAxis)
+    this.rightYAxis.ticks(Math.max(2, Math.floor(this.chartAreaHeight / 35)));
   
   // Update chart area background dimensions if it exists
   if (this.chartAreaBg) {
@@ -585,11 +595,10 @@ DrfChart.prototype.updateMainEfficiencyLine = function(refPoints) {
     let ptExt = this.pointValueExtent("eff");
     if (refPoints.length)
       ptExt = d3.extent((ptExt || []).concat(refPoints.map(d => d.efficiency)));
-    if (ptExt) {
-      this.efficiencyScale.domain( drfChartEfficiencyDomain(ptExt) );
-      this.leftYAxisGroup.call(this.leftYAxis);
-      this.adjustLeftMargin();
-    }
+    // With nothing at all to show, go back to a plain default rather than keep a stale range
+    this.efficiencyScale.domain( ptExt ? drfChartEfficiencyDomain(ptExt) : [0, 1] );
+    this.leftYAxisGroup.call(this.leftYAxis);
+    this.adjustLeftMargin();
     return;
   }
 
@@ -645,15 +654,25 @@ DrfChart.prototype.updateMainEfficiencyLine = function(refPoints) {
   // updateAngleSeries owns the efficiency domain).  Include the upper band so
   // the envelope is not clipped off the top of the plot.
   if (!angleMode) {
-    let effValues = efficiencyPoints.map(d => d.efficiency);
-    if (modelBandPoints.length)
-      effValues = effValues.concat(modelBandPoints.map(d => d.upper));
-    else if (bandPoints.length)
-      effValues = effValues.concat(bandPoints.map(d => d.upper));
+    // The axis follows what was measured: the curve over the measured energies, the points, and
+    // any compared-against curve.  Past the measured energies the curve is an extrapolation, and the
+    // band can be enormous for a poor fit; neither may stretch the axis more than a few times past
+    // the rest, or everything that was measured is squashed flat against the x-axis.
+    const range = this.dataRange;
+    const inRange = d => !range || ((d.energy >= range[0]) && (d.energy <= range[1]));
+    let core = efficiencyPoints.filter(inRange).map(d => d.efficiency);
     const ptExt = this.pointValueExtent("eff");
     if (ptExt)
-      effValues = effValues.concat(ptExt);
-    effValues = effValues.concat(refPoints.map(d => d.efficiency));
+      core = core.concat(ptExt);
+    core = core.concat(refPoints.map(d => d.efficiency));
+    if (!core.length)
+      core = efficiencyPoints.map(d => d.efficiency);
+    const coreMax = d3.max(core);
+    const capped = v => (coreMax > 0) ? Math.min(v, 2.5 * coreMax) : v;
+
+    let effValues = core.concat(efficiencyPoints.map(d => capped(d.efficiency)));
+    const band = modelBandPoints.length ? modelBandPoints : bandPoints;
+    effValues = effValues.concat(band.map(d => capped(d.upper)));
     const efficiencyExtent = d3.extent(effValues);
     if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
       this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
@@ -1293,7 +1312,7 @@ DrfChart.prototype.pointValueExtent = function(which) {
     const v = p[which], s = p[sigKey] > 0 ? p[sigKey] : 0;
     if (!(v > 0)) continue;
     lo = Math.min(lo, v - s);
-    hi = Math.max(hi, v + s);
+    hi = Math.max(hi, v + Math.min(s, 2 * v));  // a huge error bar shouldnt set the scale
   }
   return (lo <= hi) ? [Math.max(0, lo), hi] : null;
 };

@@ -51,6 +51,47 @@ using namespace std;
 using namespace Wt;
 
 
+namespace
+{
+  /** The detector-type combo's item for each type - one place, so the combo, the label and the
+   summary cannot drift apart. */
+  int det_type_to_index( const PeakFitUtils::CoarseResolutionType type )
+  {
+    switch( type )
+    {
+      case PeakFitUtils::CoarseResolutionType::Low:         return 0;
+      case PeakFitUtils::CoarseResolutionType::LaBr:        return 1;
+      case PeakFitUtils::CoarseResolutionType::CZT:         return 2;
+      case PeakFitUtils::CoarseResolutionType::MedRes:      return 3;
+      case PeakFitUtils::CoarseResolutionType::LowOrMedRes: return 4;
+      case PeakFitUtils::CoarseResolutionType::High:        return 5;
+      case PeakFitUtils::CoarseResolutionType::Unknown:     return 6;
+    }//switch( type )
+    return 6;
+  }//det_type_to_index(...)
+
+
+  PeakFitUtils::CoarseResolutionType index_to_det_type( const int index )
+  {
+    switch( index )
+    {
+      case 0:  return PeakFitUtils::CoarseResolutionType::Low;
+      case 1:  return PeakFitUtils::CoarseResolutionType::LaBr;
+      case 2:  return PeakFitUtils::CoarseResolutionType::CZT;
+      case 3:  return PeakFitUtils::CoarseResolutionType::MedRes;
+      case 4:  return PeakFitUtils::CoarseResolutionType::LowOrMedRes;
+      case 5:  return PeakFitUtils::CoarseResolutionType::High;
+      default: return PeakFitUtils::CoarseResolutionType::Unknown;
+    }//switch( index )
+  }//index_to_det_type(...)
+
+
+  /** Message ids of the detector-type combo items, in combo order. */
+  const char * const sm_det_type_label_ids[7] = { "pfdpg-det-nai", "pfdpg-det-labr", "pfdpg-det-czt",
+    "pfdpg-det-medres", "pfdpg-det-lowormedres", "pfdpg-det-hpge", "pfdpg-det-unknown" };
+}//namespace
+
+
 PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMode )
   : WContainerWidget(),
     m_viewer( viewer ),
@@ -139,14 +180,9 @@ void PeakFitDetPrefsGui::init()
 
   m_detTypeCombo = contentDiv->addNew<WComboBox>();
   m_detTypeCombo->addStyleClass( "PfdpgCombo");
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-nai" ));        // 0 => Low
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-labr" ));       // 1 => LaBr
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-czt" ));        // 2 => CZT
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-medres" ));     // 3 => MedRes
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-lowormedres" )); // 4 => LowOrMedRes
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-hpge" ));       // 5 => High
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-unknown" ));    // 6 => Unknown
-  m_detTypeCombo->setCurrentIndex( 6);
+  for( const char *label_id : sm_det_type_label_ids )  //see det_type_to_index()
+    m_detTypeCombo->addItem( WString::tr( label_id ) );
+  m_detTypeCombo->setCurrentIndex( det_type_to_index( PeakFitUtils::CoarseResolutionType::Unknown ) );
   m_detTypeCombo->activated().connect( this, [this](){
     if( !m_programmaticUpdate )
       userChangedValue();
@@ -595,17 +631,7 @@ void PeakFitDetPrefsGui::userChangedValue()
   shared_ptr<PeakFitDetPrefs> newPrefs = make_shared<PeakFitDetPrefs>();
 
   // Detector type: combo index maps to CoarseResolutionType
-  const int detIdx = m_detTypeCombo->currentIndex();
-  switch( detIdx )
-  {
-    case 0:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::Low;        break;
-    case 1:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::LaBr;       break;
-    case 2:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::CZT;        break;
-    case 3:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::MedRes;     break;
-    case 4:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::LowOrMedRes; break;
-    case 5:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;       break;
-    default: newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::Unknown;    break;
-  }
+  newPrefs->m_det_type = index_to_det_type( m_detTypeCombo->currentIndex() );
 
   // Skew type
   const int skewIdx = m_skewTypeCombo->currentIndex();
@@ -706,7 +732,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   if( !meas )
   {
     setControlsEnabled( false);
-    m_detTypeCombo->setCurrentIndex( 4); // Unknown
+    m_detTypeCombo->setCurrentIndex( det_type_to_index( PeakFitUtils::CoarseResolutionType::Unknown ) );
     m_fwhmMethodCombo->setCurrentIndex( 0); // Normal
     m_skewTypeCombo->setCurrentIndex( 0); // NoSkew
     updateSkewParamRows();
@@ -721,7 +747,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
 
   if( !prefs )
   {
-    m_detTypeCombo->setCurrentIndex( 6);
+    m_detTypeCombo->setCurrentIndex( det_type_to_index( PeakFitUtils::CoarseResolutionType::Unknown ) );
     m_fwhmMethodCombo->setCurrentIndex( 0);
     m_skewTypeCombo->setCurrentIndex( 0);
     updateSkewParamRows();
@@ -732,16 +758,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   }
 
   // Set detector type combo
-  switch( prefs->m_det_type )
-  {
-    case PeakFitUtils::CoarseResolutionType::Low:        m_detTypeCombo->setCurrentIndex( 0); break;
-    case PeakFitUtils::CoarseResolutionType::LaBr:       m_detTypeCombo->setCurrentIndex( 1); break;
-    case PeakFitUtils::CoarseResolutionType::CZT:        m_detTypeCombo->setCurrentIndex( 2); break;
-    case PeakFitUtils::CoarseResolutionType::MedRes:     m_detTypeCombo->setCurrentIndex( 3); break;
-    case PeakFitUtils::CoarseResolutionType::LowOrMedRes: m_detTypeCombo->setCurrentIndex( 4); break;
-    case PeakFitUtils::CoarseResolutionType::High:       m_detTypeCombo->setCurrentIndex( 5); break;
-    case PeakFitUtils::CoarseResolutionType::Unknown:    m_detTypeCombo->setCurrentIndex( 6); break;
-  }//switch( prefs->m_det_type )
+  m_detTypeCombo->setCurrentIndex( det_type_to_index( prefs->m_det_type ) );
 
   // Set FWHM method combo
   // If DetFwhm/DetPlusRefine but DRF lacks FWHM info, force Normal
@@ -805,6 +822,39 @@ void PeakFitDetPrefsGui::setControlsEnabled( const bool enabled )
 
   m_skewParamsGrid->setEditable( enabled );
 }//void setControlsEnabled( bool )
+
+
+Wt::WString PeakFitDetPrefsGui::summaryText() const
+{
+  // A foreground with no prefs set yet shows the defaults the combos were set to
+  const shared_ptr<const SpecMeas> meas = m_viewer
+    ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+    : nullptr;
+  if( !meas )
+    return WString::tr( "pfdpg-summary-no-fg" );
+
+  const WString skew = (m_skewTypeCombo->currentIndex() <= 0)
+                         ? WString::tr( "pfdpg-summary-no-skew" )
+                         : m_skewTypeCombo->currentText();
+
+  return WString::tr( "pfdpg-summary" )
+           .arg( m_detTypeCombo->currentText() )
+           .arg( m_fwhmMethodCombo->currentText() )
+           .arg( skew );
+}//Wt::WString summaryText() const
+
+
+Wt::WString PeakFitDetPrefsGui::detectorTypeLabel( const PeakFitUtils::CoarseResolutionType type )
+{
+  // The "PeakFitDetPrefsGui" bundle is loaded by any instance of this class
+  return WString::tr( sm_det_type_label_ids[det_type_to_index(type)] );
+}//Wt::WString detectorTypeLabel(...)
+
+
+Wt::WComboBox *PeakFitDetPrefsGui::detectorTypeCombo()
+{
+  return m_detTypeCombo;
+}//Wt::WComboBox *detectorTypeCombo()
 
 
 shared_ptr<const PeakFitDetPrefs> PeakFitDetPrefsGui::currentPrefs() const

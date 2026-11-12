@@ -41,6 +41,7 @@
 #include <utility>
 #include <sstream>
 #include <numeric>
+#include <algorithm>
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
@@ -2537,7 +2538,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   
   try
   {
-    string name = fields[0] + " (" + fields[1] + ")";
+    string name = fields[1].empty() ? fields[0] : (fields[0] + " (" + fields[1] + ")");
     SpecUtils::ireplace_all( name, "%20", " " );
     SpecUtils::trim( name );
 
@@ -3126,9 +3127,28 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEff
       if( have_line )
         line = pending_line;
 
+      vector<vector<float>> cov_rows;  //the "# Cov row i,..." lines: the coefficient covariance
+
       while( (have_line || SpecUtils::safe_get_line(csvfile, line, max_line_length)) && (++nlineschecked < 200) )
       {
         have_line = false;
+
+        if( SpecUtils::istarts_with( line, "# Cov row" ) )
+        {
+          vector<string> cov_fields;
+          split_escaped_csv( cov_fields, line );
+          vector<float> row;
+          try
+          {
+            for( size_t i = 1; i < cov_fields.size(); ++i )
+              row.push_back( std::stof( cov_fields[i] ) );
+          }catch( std::exception & )
+          {
+            row.clear();
+          }
+          cov_rows.push_back( std::move(row) );
+          continue;
+        }//if( a coefficient covariance row )
 
         if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
         {
@@ -3234,6 +3254,31 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEff
           break;
         }
       }//while( getline )
+
+      // The coefficient covariance, when it is all there and is a possible set of errors - else the
+      //  per-coefficient uncertainties stand alone, as before it was written
+      const size_t ncoef = coefs.size();
+      const bool have_cov = (cov_rows.size() == ncoef)
+                            && std::all_of( begin(cov_rows), end(cov_rows),
+                                            [ncoef]( const vector<float> &r ){ return r.size() == ncoef; } );
+      if( have_cov )
+      {
+        vector<float> cov;
+        for( const vector<float> &row : cov_rows )
+          cov.insert( end(cov), begin(row), end(row) );
+
+        try
+        {
+          const shared_ptr<const DetectorEfficiencyUncert> prev = det->efficiencyUncert();
+          auto uncert = prev ? make_shared<DetectorEfficiencyUncert>( *prev )
+                             : make_shared<DetectorEfficiencyUncert>();
+          uncert->setCoefficientCovariance( cov );
+          det->setEfficiencyUncert( uncert );
+        }catch( std::exception &e )
+        {
+          cerr << "parseInterSpecRelEffCsv: ignoring coefficient covariance: " << e.what() << endl;
+        }
+      }//if( have_cov )
 
       return det;
     }catch( std::exception &e )
@@ -6648,6 +6693,30 @@ float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
                                                        coefs.data(), coefs.size() );
   return (answer >= 0.0) ? static_cast<float>(answer) : 0.0f;
 }//float expOfLogPowerSeriesEfficiency(...)
+
+
+double DetectorPeakResponse::expOfLogPowerSeriesEfficiencyUncert( const float energy,
+                                                const std::vector<float> &coefs,
+                                                const std::vector<float> &covariance )
+{
+  const size_t ncoef = coefs.size();
+  if( !ncoef || (covariance.size() != ncoef*ncoef) || !(energy > 0.0f) )
+    return -1.0;
+
+  const double eff = expOfLogPowerSeriesEfficiency( energy, coefs );
+  const double lnx = std::log( static_cast<double>(energy) );
+
+  vector<double> jac( ncoef );
+  for( size_t i = 0; i < ncoef; ++i )
+    jac[i] = eff * std::pow( lnx, static_cast<double>(i) );
+
+  double variance = 0.0;
+  for( size_t i = 0; i < ncoef; ++i )
+    for( size_t j = 0; j < ncoef; ++j )
+      variance += jac[i] * jac[j] * covariance[i*ncoef + j];
+
+  return (std::isfinite(variance) && (variance >= 0.0)) ? std::sqrt( variance ) : -1.0;
+}//expOfLogPowerSeriesEfficiencyUncert(...)
 
 
 float DetectorPeakResponse::farFieldIntrinsicEfficiency( const float energy ) const

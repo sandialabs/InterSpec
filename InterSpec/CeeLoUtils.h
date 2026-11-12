@@ -39,6 +39,7 @@ struct AngleOutxContents;
 class DetectorPeakResponse;
 
 namespace SandiaDecay{ class SandiaDecayDataBase; }
+namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 
 /** Small shared helpers for mapping InterSpec objects onto the CeeLo
  Monte-Carlo library's types.  Used by the detector-geometry MC UI
@@ -483,6 +484,11 @@ namespace CeeLoUtils
    peak-fit detector type.  Never guesses among scintillators the evidence does not separate.
    */
   std::string crystalNameFromDrfEvidence( const DetectorPeakResponse &drf );
+
+  /** The crystal a coarse detector class stands for - HPGe, LaBr3, CZT, or NaI for the low-resolution
+   class - or empty for the classes that do not say (medium resolution, unknown).
+   */
+  std::string crystalNameForResolutionType( const PeakFitUtils::CoarseResolutionType type );
 
   /** A stand-in material for a GADRAS attenuator, which is specified only as an
    effective atomic number and an areal density (g/cm2) - never a composition or

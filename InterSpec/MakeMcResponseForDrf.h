@@ -299,6 +299,28 @@ public:
    progress and cancel controls are unaffected. */
   void setGenerateButtonHidden( bool hidden );
 
+  /** Whether the instant measured-curve transfer rebuilds itself on each geometry change (the
+   default).  An owner that builds the transfer from its own fit when it assembles the DRF (Make
+   Detector Response) turns this off: the rebuild runs before the owner re-fits, so it would anchor
+   on a stale curve - or, for a first usable geometry, on no curve at all. */
+  void setAutoBuildTransfer( const bool build );
+
+  /** Offers "Import geometry from file..." even while the form holds a usable geometry; by default
+   it is offered only while it does not.  For an owner whose form starts as a guess, so a
+   replaced geometry is nothing the user loses (Make Detector Response). */
+  void setImportGeometryAlwaysOffered( const bool always );
+
+  /** Hides the transfer-anchor summary and its reference-distance input, for an owner that anchors
+   the transfer itself (Make Detector Response). */
+  void setAnchorHidden( const bool hidden );
+
+  /** A dialog to upload a detector file (DRF XML, ANGLE, Detector.dat) and take just its geometry;
+   emits #geometryImported when it does. */
+  void showImportGeometryDialog();
+
+  /** Emitted after a geometry is imported from a file (after the form change it makes). */
+  Wt::Signal<> &geometryImported();
+
 
   /** A snapshot of this tools GUI state (plus the response it currently holds), for an owner that
    records undo/redo steps for the dialog this tool is a section of. */
@@ -372,12 +394,9 @@ protected:
   void handleGeometryChanged();
   void handleMethodChanged();
 
-  /** Shows the import-geometry link only while there is no usable geometry, and not for an imported
-   grid (whose geometry comes with it). */
+  /** Shows the import-geometry link only while there is no usable geometry (unless
+   #setImportGeometryAlwaysOffered), and not for an imported grid (whose geometry comes with it). */
   void updateImportGeometryLink();
-
-  /** A dialog to upload a detector file (DRF XML, ANGLE, Detector.dat) and take just its geometry. */
-  void showImportGeometryDialog();
 
   /** Puts the geometry of an uploaded file in the form, or says why there is none; the form change
    is a user edit (one undo step for an owner listening to #userChanged). */
@@ -393,9 +412,15 @@ protected:
 
   void updateEstimate();
 
-  /** Refreshes the measured-curve anchor description row (source label +
-   reference-distance edit) from the seed DRF and current geometry. */
+  /** Refreshes the measured-curve anchor description row from the seed DRF and current geometry,
+   and shows the reference-distance edit only where a typed distance changes the transfer. */
   void updateAnchorInfo();
+
+  /** Whether #transferAnchor anchors on the seed's curve with its covariance
+   (CeeLoUtils::curveAnchorWithCovarianceForDrf).  That carries the curve out through the same
+   geometry kernel that defines it as intrinsic, so the reference distance cancels and none is
+   offered. */
+  bool anchorsOnCurveCovariance() const;
 
   /** The measured-curve transfer anchor for the seed DRF and `gd`: the DRF's fitted curve with
    its covariance when the curve carries one (CeeLoUtils::curveAnchorWithCovarianceForDrf), else
@@ -532,6 +557,12 @@ protected:
   /** When true, m_generate stays hidden regardless of method/geometry (an embedding owner drives
       generation with its own control) - see setGenerateButtonHidden(). */
   bool m_hideGenerateButton;
+  /** See #setAutoBuildTransfer. */
+  bool m_autoBuildTransfer;
+  /** See #setImportGeometryAlwaysOffered. */
+  bool m_alwaysOfferImport;
+  /** See #setAnchorHidden. */
+  bool m_anchorHidden;
   Wt::WPushButton *m_cancelBtn;
   Wt::WProgressBar *m_progress;
   Wt::WText *m_status;
@@ -569,6 +600,7 @@ protected:
   Wt::Signal<bool> m_validationChanged;
   Wt::Signal<> m_userChanged;
   Wt::Signal<> m_geometryChanged;
+  Wt::Signal<> m_geometryImported;
   Wt::Signal<> m_userChangedNoRegen;
   bool m_hideChart;
   Wt::Signal<std::shared_ptr<ceelo::DetectorResponse>> m_responseGenerated;

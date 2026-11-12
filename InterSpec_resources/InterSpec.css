@@ -47,6 +47,31 @@ input[type="text"], input[type="number"], textarea:not(.pm-textarea) {
   color: var(--interspec-text-color);
 }
 
+/* An input that cannot be used.  Wt's validators toggle `Wt-invalid` client-side as the user types
+   (and put the reason in the tooltip); `InputValueError` is what the server sets for text that is
+   well-formed but unusable (see WidgetUtils::setInputValueError) - kept separate so the client-side
+   validation, which only knows the regex, cannot clear it.
+   The `!important`s are deliberate: component rules like `.DrfFormulaForm input[type="text"]` are
+   more specific, and an invalid field must look invalid wherever it is.  Only the background
+   *colour* changes: date edits and spin boxes draw their buttons as a background image. */
+input.Wt-invalid, textarea.Wt-invalid, select.Wt-invalid,
+input.InputValueError, textarea.InputValueError, select.InputValueError {
+  background-color: var(--interspec-error-background) !important;
+  border-color: var(--interspec-error-color) !important;
+}
+
+/* Anything else Wt-invalid is toggled on by hand (e.g. a table of values) */
+.Wt-invalid:not(input):not(textarea):not(select) {
+  background-color: var(--interspec-error-background);
+}
+
+/* A short message beside or under the input it is about */
+.FieldErrorMsg {
+  color: var(--interspec-error-color);
+  font-size: 90%;
+  white-space: pre-line;
+}
+
 textarea, select {
   outline: none;
   color: var(--interspec-text-color);

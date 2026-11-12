@@ -16,7 +16,6 @@
 
   <message id="md-det-diam">डिटेक्टर व्यास</message>
   <message id="md-det-setback">Det. सेटबैक</message>
-  <message id="md-eff-type">दक्षता प्रकार</message>
   <message id="md-eqn-in-kev">समीकरण keV में</message>
   <message id="md-eqn-in-mev">समीकरण MeV में</message>
   <message id="md-geom-intrinsic-eff">आंतरिक दक्षता</message>
@@ -37,7 +36,6 @@
     <br />
     निश्चित प्रति ग्राम: प्रति cm2 के समान, लेकिन स्रोत के प्रति ग्राम के लिए।
   </message>
-  <message id="md-fwhm-eqn-form-label">FWHM समीकरण</message>
   <message id="md-fwhm-gadras">Gadras समीकरण</message>
   <message id="md-sqrt-series">वर्गमूल शक्ति श्रृंखला</message>
   <message id="md-atten-for-air-cb">वायु के लिए क्षीणन</message>
@@ -48,7 +46,6 @@
     यह कम ऊर्जा पर, या बड़ी अंशांकन दूरी पर अधिक प्रभाव है।
   </message>
   <message id="md-show-fwhm-markers">FWHM बिंदु दिखाएं</message>
-  <message id="md-mi-chart-phone">चार्ट/विकल्प</message>
   <message id="md-mi-peaks-phone">उपयोग के लिए शिखर</message>
   <message id="md-export-btn">संग्रहीत/निर्यात...</message>
   <message id="md-export-window-title">DRF संग्रहीत/निर्यात</message>
@@ -91,7 +88,6 @@
   <message id="md-peak-counts">{1} {2} keV, शिखर {3} गणना</message>
   <message id="md-peak-no-nuc">कोई संबद्ध न्यूक्लाइड नहीं, {1} keV, शिखर {2} गणना</message>
   
-  <message id="md-err-some-src">कुछ स्रोतों में त्रुटियां थीं।</message>
   <message id="md-n-fit-pars">{1} फिट पैरामीटर</message>
   <message id="md-html-eff-table-caption">पूर्ण-ऊर्जा पहचान दक्षता (% कुल गामा)</message>
   <message id="md-html-Intrinsic">आंतरिक</message>

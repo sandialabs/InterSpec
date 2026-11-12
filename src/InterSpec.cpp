@@ -1037,12 +1037,7 @@ InterSpec::InterSpec()
   // wtGetPS for the vertical direction grows cSize by that amount, letting the
   // stretchable cell absorb the leak.  Counts Wt-hrh2 children dynamically so
   // it correctly reports 0 when no row is resizable.
-  setJavaScriptMember( "wtGetPS",
-    "function(c,w,d,r){"
-      "if(d!==1)return 0;"
-      "var n=w.querySelectorAll(':scope > .Wt-hrh2').length;"
-      "return -n*5;"
-    "}" );
+  WidgetUtils::compensateRowHandleLeak( this );
 
   if( m_menuDiv )
     m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), m_layout->rowCount(), 0 );

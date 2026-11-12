@@ -77,13 +77,25 @@ DetectorGeometryDiagram = function( elem, options )
   this.updateRoom();
 };
 
+/* Whether the drawing is below the form rather than beside it (DetectorGeometryInput::setDiagramBelow,
+   which makes the row a column). */
+DetectorGeometryDiagram.prototype.isBelowForm = function()
+{
+  const parent = this.container.parentElement;
+  return !!parent && (window.getComputedStyle( parent ).flexDirection === 'column');
+};
+
 /* Width left for the drawing in the row it shares with the form: the row's width, less every other
-   item in it and the gaps between them.  Valid whether or not the drawing is currently showing. */
+   item in it and the gaps between them - or all of it, when the drawing is below the form.  Valid
+   whether or not the drawing is currently showing. */
 DetectorGeometryDiagram.prototype.availableWidth = function()
 {
   const parent = this.container.parentElement;
   if( !parent )
     return this.container.clientWidth;
+
+  if( this.isBelowForm() )
+    return parent.clientWidth;
 
   const style = window.getComputedStyle( parent );
   const gap = parseFloat( style.columnGap ) || parseFloat( style.gap ) || 0;
@@ -103,9 +115,12 @@ DetectorGeometryDiagram.prototype.availableWidth = function()
   return parent.clientWidth - used - gaps;
 };
 
-/* Height available to the drawing: the row's, since this element stretches to it. */
+/* Height available to the drawing: the row's, since this element stretches to it - unless it is
+   below the form, where the CSS gives it a height of its own. */
 DetectorGeometryDiagram.prototype.availableHeight = function()
 {
+  if( this.isBelowForm() )
+    return Infinity;
   const parent = this.container.parentElement;
   return parent ? parent.clientHeight : this.container.clientHeight;
 };

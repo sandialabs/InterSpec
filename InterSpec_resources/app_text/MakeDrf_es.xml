@@ -16,7 +16,6 @@
   
   <message id="md-det-diam">Diám. det.</message>
   <message id="md-det-setback">Retroceso det.</message>
-  <message id="md-eff-type">Tipo eficiencia</message>
   <message id="md-eqn-in-kev">Ecu. en keV</message>
   <message id="md-eqn-in-mev">Ecu. en MeV</message>
   <message id="md-geom-intrinsic-eff">Ef. intrínseca</message>
@@ -40,7 +39,6 @@
     <br />
     Fijo por gramo: similar a por cm2, pero para por gramo de fuente.
   </message>
-  <message id="md-fwhm-eqn-form-label">Ecu. FWHM</message>
   <message id="md-fwhm-gadras">Ecuación Gadras</message>
   <message id="md-sqrt-series">Serie potencias sqrt</message>
   <message id="md-atten-for-air-cb">Aten. para aire</message>
@@ -51,7 +49,6 @@
     Este es un efecto mayor a energías menores, o distancias de calibración mayores.
   </message>
   <message id="md-show-fwhm-markers">Mostrar puntos FWHM</message>
-  <message id="md-mi-chart-phone">Gráfico/opciones</message>
   <message id="md-mi-peaks-phone">Picos a usar</message>
   <message id="md-export-btn">Almacenar/exportar...</message>
   <message id="md-export-window-title">Almacenar/exportar DRF</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} keV, pico {3} cuentas</message>
   <message id="md-peak-no-nuc">Sin nucleído asoc., {1} keV, pico {2} cuentas</message>
   
-  <message id="md-err-some-src">Algunas fuentes tuvieron errores.</message>
   <message id="md-n-fit-pars">{1} parámetros ajuste</message>
   <message id="md-html-eff-table-caption">Eficiencia de detección de energía completa (% gammas totales)</message>
   <message id="md-html-Intrinsic">Intrínseca</message>

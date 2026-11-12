@@ -33,7 +33,10 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include <Wt/WDate.h>
+
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -280,3 +283,72 @@ BOOST_AUTO_TEST_CASE( sources_in_lib ) {
     BOOST_CHECK( info.size() == 3 );
   }
 }//BOOST_AUTO_TEST_CASE( sources_in_lib )
+
+
+// The date parsing the source widget uses to accept loosely typed dates (WidgetUtils::parseLenientDate)
+BOOST_AUTO_TEST_CASE( lenient_date_parse )
+{
+  using WidgetUtils::DateParse;
+
+  auto check = []( const string &txt, const string &format, const DateParse expected,
+                   const int y = 0, const int m = 0, const int d = 0 ){
+    Wt::WDate date;
+    const DateParse result = WidgetUtils::parseLenientDate( txt, format, date );
+    BOOST_CHECK_MESSAGE( result == expected, "'" << txt << "' (format '" << format << "') gave "
+                         << static_cast<int>(result) << ", expected " << static_cast<int>(expected) );
+    if( (expected == DateParse::Valid) && (result == DateParse::Valid) )
+    {
+      BOOST_CHECK_MESSAGE( date == Wt::WDate(y, m, d), "'" << txt << "' parsed to "
+                           << date.year() << "-" << date.month() << "-" << date.day() );
+    }
+  };//check
+
+  const string iso = "yyyy-MM-dd";
+
+  // Year first, with whatever separators and digit counts people type
+  check( "2019-01-05", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019-1-5", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019-1-15", iso, DateParse::Valid, 2019, 1, 15 );
+  check( "2019/01/5", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019.1.5", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019 1 5", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "  2019-01-05  ", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "20190105", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019-01-05T13:24:00", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019-01-05 13:24", iso, DateParse::Valid, 2019, 1, 5 );
+
+  // Month names, in any order
+  check( "5 Jan 2019", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "05-Jan-2019", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "Jan 5, 2019", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "January 5th, 2019", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "2019-Jan-05", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "05-JANUARY-2019", iso, DateParse::Valid, 2019, 1, 5 );
+  check( "25-Aug-2022", iso, DateParse::Valid, 2022, 8, 25 );
+  check( "5 Sept 2019", iso, DateParse::Valid, 2019, 9, 5 );
+
+  // Day and month order unknowable, or a 2-digit year: never guessed
+  check( "1/5/2019", iso, DateParse::Ambiguous );
+  check( "13/5/2019", iso, DateParse::Ambiguous );
+  check( "1/5/19", iso, DateParse::Ambiguous );
+  check( "5 Jan 19", iso, DateParse::Ambiguous );
+
+  // ...unless the field says which order it uses
+  check( "1/5/2019", "MM/dd/yyyy", DateParse::Valid, 2019, 1, 5 );
+  check( "01/05/2019", "MM/dd/yyyy", DateParse::Valid, 2019, 1, 5 );
+  check( "1/5/2019", "dd.MM.yyyy", DateParse::Valid, 2019, 5, 1 );
+  check( "2019-1-5", "MM/dd/yyyy", DateParse::Valid, 2019, 1, 5 );
+
+  // Not dates
+  check( "", iso, DateParse::Empty );
+  check( "   ", iso, DateParse::Empty );
+  check( "2019-13-40", iso, DateParse::Invalid );
+  check( "2019-02-30", iso, DateParse::Invalid );
+  check( "2019-02-29", iso, DateParse::Invalid );
+  check( "2020-02-29", iso, DateParse::Valid, 2020, 2, 29 );
+  check( "abc", iso, DateParse::Invalid );
+  check( "2019-01", iso, DateParse::Invalid );
+  check( "5 Foo 2019", iso, DateParse::Invalid );
+  check( "12/13/2019", "MM/dd/yyyy", DateParse::Valid, 2019, 12, 13 );
+  check( "13/12/2019", "MM/dd/yyyy", DateParse::Invalid );
+}//BOOST_AUTO_TEST_CASE( lenient_date_parse )

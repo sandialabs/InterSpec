@@ -784,6 +784,15 @@ add_test( NAME TMakeDrfFit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Create-DRF: each source peak to an absolute-efficiency point (line clustering, decay during the
+#  measurement, shielding/air, background subtraction, unusable-source guard).
+add_executable( test_MakeDrfSamplePoints test_MakeDrfSamplePoints.cpp )
+target_link_libraries( test_MakeDrfSamplePoints PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfSamplePoints
+  COMMAND $<TARGET_FILE:test_MakeDrfSamplePoints> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # Create-DRF path validated end-to-end against a stored CeeLo Monte-Carlo truth table (fit,
 #  covariance calibration, mixed distances, and an activity fit through the made DRF).  The
 #  table regenerates with INTERSPEC_REGEN_MAKEDRF_MC_TRUTH=1 (minutes of MC).

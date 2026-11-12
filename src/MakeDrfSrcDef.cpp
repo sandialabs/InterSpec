@@ -42,6 +42,7 @@
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WDoubleSpinBox.h>
+#include <Wt/WDateValidator.h>
 #include <Wt/WDoubleValidator.h>
 #include <Wt/WRegExpValidator.h>
 #include <Wt/WContainerWidget.h>
@@ -60,6 +61,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/UserLibrary.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
@@ -86,6 +88,10 @@ namespace
   const int sm_decayed_info_row    = 8;
   const int sm_shield_material_row = 9;
   const int sm_options_row         = 10;
+  const int sm_problems_row        = 11;
+
+  /** The format the date fields are entered in. */
+  const char * const sm_date_format = "yyyy-MM-dd";
   
   
   // Returns if the candidate source is already in the vector of sources
@@ -366,6 +372,8 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
               const boost::posix_time::ptime &measDate )
 : WContainerWidget(),
   m_table( nullptr ),
+  m_effGeomType( static_cast<int>(DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) ),
+  m_problemsTxt( nullptr ),
   m_nuclide( nuc ),
   m_nuclideLabel( nullptr ),
   m_distanceLabel( nullptr ),
@@ -398,10 +406,9 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   setNuclide( m_nuclide );
   
   if( !measDate.is_special() )
-  {
     m_drfMeasurementDate->setDate( WDateTime::fromTime_t( boost::posix_time::to_time_t(measDate) ).date() );
-    validateDateFields();
-  }
+
+  validate();
 }//MakeDrfSrcDef constructor
 
 
@@ -504,7 +511,7 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
     m_useAgeInfo->show();
   }else
   {
-    m_nuclideLabel->setText( "Non-specified Nuclide" );
+    m_nuclideLabel->setText( WString::tr("msd-non-specified-nuc") );
     m_useAgeInfo->setUnChecked();
     m_distanceEdit->setValueText( "25 cm" );
     
@@ -571,10 +578,11 @@ void MakeDrfSrcDef::create()
   m_distanceLabel->setBuddy( m_distanceEdit );
   auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
   distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  distValidator->setInvalidNoMatchText( WString::tr("msd-tt-dist-format") );
   m_distanceEdit->setValidator( distValidator );
   m_distanceEdit->setText( "50 cm" );
-  m_distanceEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
-  m_distanceEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
+  m_distanceEdit->changed().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_distanceEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserInput );
 
   // Optional distance uncertainty: fully correlated for all this source's peaks, it propagates
   //  into the efficiency uncertainty through the geometric factor's distance slope.
@@ -592,8 +600,8 @@ void MakeDrfSrcDef::create()
   m_distanceUncertLabel->setBuddy( m_distanceUncertEdit );
   m_distanceUncertEdit->setValidator( distValidator );
   m_distanceUncertEdit->setPlaceholderText( WString::tr("msd-distance-uncert-ph") );
-  m_distanceUncertEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedDistanceUncert );
-  m_distanceUncertEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedDistanceUncert );
+  m_distanceUncertEdit->changed().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_distanceUncertEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserInput );
   
   
   cell = m_table->elementAt(sm_activity_row,0);
@@ -613,11 +621,12 @@ void MakeDrfSrcDef::create()
   
   auto val = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_activityRegex );
   val->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  val->setInvalidNoMatchText( WString::tr("msd-tt-act-format") );
   m_activityEdit->setValidator( val );
   const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_activityEdit->setText( useCi ? "100 uCi" : "3.7 MBq" );
-  m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
-  m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
+  m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserInput );
 
   cell = m_table->elementAt(sm_activity_uncert_row,0);
   WLabel *label = cell->addNew<WLabel>( WString::tr("msd-act-uncert") );
@@ -637,8 +646,8 @@ void MakeDrfSrcDef::create()
   m_activityUncertainty->setRange( 0.0, 100.0 );
   m_activityUncertainty->setSingleStep( 1.0 );
   
-  m_activityUncertainty->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivityUncertainty );
-  m_activityUncertainty->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivityUncertainty );
+  m_activityUncertainty->changed().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_activityUncertainty->enterPressed().connect( this, &MakeDrfSrcDef::handleUserInput );
   
   //WDoubleValidator *percentVal = new WDoubleValidator( this );
   //percentVal->setRange( 0.0, 100.0 );
@@ -648,18 +657,17 @@ void MakeDrfSrcDef::create()
   label = cell->addNew<WLabel>( WString::tr("msd-assay-date") );
   cell = m_table->elementAt(sm_assay_date_row,1);
   m_assayDate = cell->addNew<WDateEdit>();
-  //m_assayDate->setTextSize( 9 );
+  WidgetUtils::setupDateEdit( m_assayDate, sm_date_format );
   label->setBuddy( m_assayDate );
-  m_assayDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
+  m_assayDate->changed().connect( this, [this](){ handleDateInput( m_assayDate ); } );
   
   cell = m_table->elementAt(sm_spec_date_row,0);
   label = cell->addNew<WLabel>( WString::tr("msd-spec-date") );
   cell = m_table->elementAt(sm_spec_date_row,1);
   m_drfMeasurementDate = cell->addNew<WDateEdit>();
-  //m_drfMeasurementDate->setTextSize( 10 );
-  //The right padding is 40px, could reduce down to 30.
+  WidgetUtils::setupDateEdit( m_drfMeasurementDate, sm_date_format );
   label->setBuddy( m_drfMeasurementDate );
-  m_drfMeasurementDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
+  m_drfMeasurementDate->changed().connect( this, [this](){ handleDateInput( m_drfMeasurementDate ); } );
   
   
   cell = m_table->elementAt(sm_age_at_assay_row,0);
@@ -674,17 +682,19 @@ void MakeDrfSrcDef::create()
   m_sourceAgeAtAssay->setAttributeValue( "spellcheck", "off" );
 #endif
   label->setBuddy( m_sourceAgeAtAssay );
-  m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
-  m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
-  
+  m_sourceAgeAtAssay->setPlaceholderText( WString::tr("msd-age-at-assay-ph") );
+  m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserInput );
+
   val = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
   val->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  val->setInvalidNoMatchText( WString::tr("msd-tt-age-format") );
   m_sourceAgeAtAssay->setValidator( val );
   m_sourceAgeAtAssay->setText( "0s" );
   
   
   cell = m_table->elementAt(sm_decayed_info_row,0);
-  label = cell->addNew<WLabel>( WString::fromUTF8("Aging Res.") );
+  label = cell->addNew<WLabel>( WString::tr("msd-aging-res") );
   cell = m_table->elementAt(sm_decayed_info_row,1);
   m_sourceInfoAtMeasurement = cell->addNew<WText>();
   
@@ -703,19 +713,16 @@ void MakeDrfSrcDef::create()
   m_lib_src_menu->setAutoHide( true, 2500 );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-  const char *tooltip = "Sources defined in Source.lib file in your users data directory.<br/>"
-  "When clicked, this button will display a menu with all sources for this nuclide - and when"
-  " on of the items is selected, its information will be populated.";
-  HelpSystem::attachToolTipOn( m_lib_src_btn, tooltip, showToolTips );
-  
-  m_useAgeInfo = cell->addNew<WCheckBox>( WString::fromUTF8("Age?") );
+  HelpSystem::attachToolTipOn( m_lib_src_btn, WString::tr("msd-tt-lib-src"), showToolTips );
+
+  m_useAgeInfo = cell->addNew<WCheckBox>( WString::tr("msd-use-age-cb") );
   m_useAgeInfo->setFloatSide( Wt::Side::Right );
   m_useAgeInfo->setChecked( false );
   m_useAgeInfo->checked().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
   m_useAgeInfo->unChecked().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
   
   cell = m_table->elementAt(sm_options_row,1);
-  m_useShielding = cell->addNew<WCheckBox>( WString::fromUTF8("Shielded?") );
+  m_useShielding = cell->addNew<WCheckBox>( WString::tr("msd-shielded-cb") );
   m_useShielding->setFloatSide( Wt::Side::Right );
   m_useShielding->setChecked( false );
   m_useShielding->checked().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
@@ -726,12 +733,20 @@ void MakeDrfSrcDef::create()
   cell->setColumnSpan( 2 );
   
   m_shieldingSelect = cell->addNew<ShieldingSelect>();
-  m_shieldingSelect->materialModified().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
-  m_shieldingSelect->materialChanged().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
-  m_shieldingSelect->addingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
-  m_shieldingSelect->removingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
+  m_shieldingSelect->materialModified().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_shieldingSelect->materialChanged().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_shieldingSelect->addingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserInput );
+  m_shieldingSelect->removingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserInput );
   m_shieldingSelect->hide();
-  
+
+  // What is wrong with the inputs, if anything - see validate()
+  cell = m_table->elementAt(sm_problems_row,0);
+  cell->setColumnSpan( 2 );
+  m_problemsTxt = cell->addNew<WText>( "", Wt::TextFormat::Plain );
+  m_problemsTxt->addStyleClass( "FieldErrorMsg SrcProblems" );
+  m_problemsTxt->setInline( false );
+  m_table->rowAt(sm_problems_row)->hide();
+
   useAgeInfoUserToggled();
 }//void create()
 
@@ -739,36 +754,49 @@ void MakeDrfSrcDef::create()
 void MakeDrfSrcDef::useAgeInfoUserToggled()
 {
   const bool useAge = m_useAgeInfo->isChecked();
-  m_activityEdit->label()->setText( useAge ? "Assay Act." : "Activity" );
-  
+
   m_table->rowAt(sm_assay_date_row)->setHidden( !useAge );
   m_table->rowAt(sm_spec_date_row)->setHidden( !useAge );
-  
+
   const bool notMuchEvolution = (!m_nuclide || PeakDef::ageFitNotAllowed(m_nuclide));
   m_table->rowAt(sm_age_at_assay_row)->setHidden( !useAge || notMuchEvolution );
-  
+
   m_table->rowAt(sm_decayed_info_row)->setHidden( !useAge );
-  
+
   m_assayDate->setDisabled( !useAge );
   m_drfMeasurementDate->setDisabled( !useAge );
   m_sourceInfoAtMeasurement->setDisabled( !useAge );
   m_sourceAgeAtAssay->setDisabled( !useAge );
-  
-  if( useAge )
-  {
-    // If the text fields are empty, the red error background wont show up, so we'll at least put
-    //  a space there
-    if( m_assayDate->text().empty() )
-      m_assayDate->setText( " " );
-    
-    if( m_drfMeasurementDate->text().empty() )
-      m_drfMeasurementDate->setText( " " );
-    
-    validateDateFields();
-  }//if( useAge )
-  
+
+  // While aging is used both dates are needed, so Wt marks an empty one just like bad text.
+  m_assayDate->dateValidator()->setMandatory( useAge );
+  m_drfMeasurementDate->dateValidator()->setMandatory( useAge );
+
+  updateActivityLabel();
+  validate();
+  updateAgedText();
+
   m_updated.emit();
 }//void useAgeInfoUserToggled()
+
+
+void MakeDrfSrcDef::updateActivityLabel()
+{
+  const char *key = "msd-activity";
+  switch( static_cast<DetectorPeakResponse::EffGeometryType>(m_effGeomType) )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+      key = (m_useAgeInfo && m_useAgeInfo->isChecked()) ? "msd-assay-act" : "msd-activity";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:   key = "msd-total-act";    break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:  key = "msd-act-per-cm2";  break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:   key = "msd-act-per-m2";   break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram: key = "msd-act-per-gram"; break;
+  }//switch( effective geometry type )
+
+  m_activityLabel->setText( WString::tr(key) );
+}//void updateActivityLabel()
 
 
 void MakeDrfSrcDef::updateAgedText()
@@ -794,152 +822,245 @@ void MakeDrfSrcDef::updateAgedText()
     m_sourceInfoAtMeasurement->setText( WString::fromUTF8(txt) );
   }catch( std::exception & )
   {
-    m_sourceInfoAtMeasurement->setText( "" );
+    // The inputs it is computed from have a problem, which validate() shows below
+    m_sourceInfoAtMeasurement->setText( WString::fromUTF8("\xe2\x80\x94") );  //em dash
   }
 }//void updateAgedText()
 
 
-void MakeDrfSrcDef::handleUserChangedDistance()
+void MakeDrfSrcDef::handleUserInput()
 {
+  validate();
+  updateAgedText();
+  m_updated.emit();
+}//void handleUserInput()
+
+
+void MakeDrfSrcDef::handleDateInput( Wt::WDateEdit *edit )
+{
+  // "2019-1-5" and the like become "2019-01-05"; text that isnt a date is left for validate() to flag
+  WidgetUtils::normalizeDateEdit( edit );
+  handleUserInput();
+}//void handleDateInput( Wt::WDateEdit *edit )
+
+
+std::vector<MakeDrfSrcDef::InputProblem> MakeDrfSrcDef::validate()
+{
+  vector<InputProblem> problems;
+  auto add = [&problems]( WFormWidget *field, const WString &msg ){
+    InputProblem p;
+    p.field = field;
+    p.message = msg;
+    problems.push_back( std::move(p) );
+  };//add
+
+  auto trimmed = []( const WString &txt ) -> string {
+    return SpecUtils::trim_copy( txt.toUTF8() );
+  };
+
+  // Distance, and its optional uncertainty - not shown for fixed geometries
+  if( !m_distanceEdit->isHidden() )
+  {
+    double dist = -1.0;
+    const string txt = trimmed( m_distanceEdit->text() );
+    if( txt.empty() )
+    {
+      add( m_distanceEdit, WString::tr("msd-err-dist-missing") );
+    }else
+    {
+      try
+      {
+        dist = PhysicalUnits::stringToDistance( txt );
+        if( !(dist > 0.0) || IsInf(dist) )
+          add( m_distanceEdit, WString::tr("msd-err-dist-nonpos") );
+      }catch( std::exception & )
+      {
+        add( m_distanceEdit, WString::tr("msd-err-dist-invalid") );
+      }
+    }//if( txt.empty() ) / else
+
+    const string uncert_txt = trimmed( m_distanceUncertEdit->text() );
+    if( !uncert_txt.empty() )
+    {
+      try
+      {
+        const double uncert = PhysicalUnits::stringToDistance( uncert_txt );
+        if( (uncert < 0.0) || IsNan(uncert) || IsInf(uncert) )
+          add( m_distanceUncertEdit, WString::tr("msd-err-dist-uncert-invalid") );
+        else if( (dist > 0.0) && (uncert >= dist) )
+          add( m_distanceUncertEdit, WString::tr("msd-err-dist-uncert-range") );
+      }catch( std::exception & )
+      {
+        add( m_distanceUncertEdit, WString::tr("msd-err-dist-uncert-invalid") );
+      }
+    }//if( !uncert_txt.empty() )
+  }//if( !m_distanceEdit->isHidden() )
+
+  // Activity: an activity of zero would make the efficiency infinite
+  {
+    const string txt = trimmed( m_activityEdit->text() );
+    if( txt.empty() )
+    {
+      add( m_activityEdit, WString::tr("msd-err-act-missing") );
+    }else
+    {
+      try
+      {
+        const double act = PhysicalUnits::stringToActivity( txt );
+        if( !(act > 0.0) || IsInf(act) )
+          add( m_activityEdit, WString::tr("msd-err-act-nonpos") );
+      }catch( std::exception & )
+      {
+        add( m_activityEdit, WString::tr("msd-err-act-invalid") );
+      }
+    }//if( txt.empty() ) / else
+  }
+
   try
   {
-    distance();
-    if( m_distanceEdit->hasStyleClass( "SrcInputError" ) )
-      m_distanceEdit->removeStyleClass( "SrcInputError" );
+    fractionalActivityUncertainty();
   }catch( std::exception & )
   {
-    if( !m_distanceEdit->hasStyleClass( "SrcInputError" ) )
-      m_distanceEdit->addStyleClass( "SrcInputError" );
+    add( m_activityUncertainty, WString::tr("msd-err-act-uncert") );
   }
-  
-  m_updated.emit();
-}//void handleUserChangedDistance()
 
-
-void MakeDrfSrcDef::handleUserChangedActivity()
-{
-  try
+  // The assay and spectrum dates, and age at assay, when the activity is decayed
+  if( m_nuclide && m_useAgeInfo->isChecked() )
   {
-    enteredActivity();
-    if( m_activityEdit->hasStyleClass( "SrcInputError" ) )
-      m_activityEdit->removeStyleClass( "SrcInputError" );
-  }catch( std::exception & )
-  {
-    if( !m_activityEdit->hasStyleClass( "SrcInputError" ) )
-      m_activityEdit->addStyleClass( "SrcInputError" );
-  }
-  
-  if( m_useAgeInfo->isChecked() )
-    updateAgedText();
-  
-  m_updated.emit();
-}//void handleUserChangedActivity()
+    auto check_date = [&]( WDateEdit *edit, const char *missing_key, const char *label_key ) -> WDate {
+      const string txt = trimmed( edit->text() );
+      WDate date;
+      switch( WidgetUtils::parseLenientDate( txt, sm_date_format, date ) )
+      {
+        case WidgetUtils::DateParse::Empty:
+          add( edit, WString::tr(missing_key) );
+          return WDate();
 
+        case WidgetUtils::DateParse::Ambiguous:
+          add( edit, WString::tr("msd-err-date-ambiguous").arg( WString::tr(label_key) ).arg( txt ) );
+          return WDate();
 
-void MakeDrfSrcDef::handleUserChangedActivityUncertainty()
-{
-  if( WValidator::State::Valid == m_activityUncertainty->validate() )
-  {
-    if( m_activityUncertainty->hasStyleClass( "SrcInputError" ) )
-      m_activityUncertainty->removeStyleClass( "SrcInputError" );
-  }else
-  {
-    if( !m_activityUncertainty->hasStyleClass( "SrcInputError" ) )
-      m_activityUncertainty->addStyleClass( "SrcInputError" );
-  }
-  
-  m_updated.emit();
-}//void handleUserChangedActivityUncertainty();
+        case WidgetUtils::DateParse::Invalid:
+          add( edit, WString::tr("msd-err-date-invalid").arg( WString::tr(label_key) ) );
+          return WDate();
 
+        case WidgetUtils::DateParse::Valid:
+          break;
+      }//switch( parse the date )
 
-void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
-{
-  string agestr = m_sourceAgeAtAssay->text().toUTF8();
-  SpecUtils::trim( agestr );
-  
+      // Readable, but not (yet) re-written into the fields format - which is what the getters read
+      if( !edit->date().isValid() )
+      {
+        add( edit, WString::tr("msd-err-date-invalid").arg( WString::tr(label_key) ) );
+        return WDate();
+      }
 
-  if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
-  {
-    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    m_sourceAgeAtAssay->setText( useCi ? "0 uCi" : "0 bq" );
-  }else
-  {
-    try
+      return date;
+    };//check_date
+
+    const WDate assay = check_date( m_assayDate, "msd-err-assay-date-missing", "msd-assay-date" );
+    const WDate meas = check_date( m_drfMeasurementDate, "msd-err-spec-date-missing", "msd-spec-date" );
+    if( assay.isValid() && meas.isValid() && (assay > meas) )
+      add( m_assayDate, WString::tr("msd-err-assay-after-spec")
+                          .arg( assay.toString(sm_date_format) )
+                          .arg( meas.toString(sm_date_format) ) );
+
+    if( !m_table->rowAt(sm_age_at_assay_row)->isHidden() )
     {
-      const double hl = m_nuclide ? m_nuclide->halfLife : -1.0;
-      PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, hl );
-      if( m_activityEdit->hasStyleClass( "SrcInputError" ) )
-        m_activityEdit->removeStyleClass( "SrcInputError" );
-    }catch( std::exception &e )
+      // Blank, or just zeros, means no age - see ageAtSpectrumTime()
+      const string agestr = trimmed( m_sourceAgeAtAssay->text() );
+      if( !agestr.empty() && (agestr.find_first_not_of("+-0.") != string::npos) )
+      {
+        try
+        {
+          const double age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, m_nuclide->halfLife );
+          if( (age < 0.0) || IsNan(age) || IsInf(age) )
+            add( m_sourceAgeAtAssay, WString::tr("msd-err-age-neg") );
+        }catch( std::exception & )
+        {
+          add( m_sourceAgeAtAssay, WString::tr("msd-err-age-invalid") );
+        }
+      }//if( an age was entered )
+    }//if( age at assay is shown )
+  }//if( m_nuclide && m_useAgeInfo->isChecked() )
+
+  // Shielding between source and detector
+  if( m_useShielding->isChecked() && m_shieldingSelect )
+  {
+    if( m_shieldingSelect->isGenericMaterial() )
     {
-      if( !m_activityEdit->hasStyleClass( "SrcInputError" ) )
-        m_activityEdit->addStyleClass( "SrcInputError" );
-    }
-  }//if( zero / else )
-  
-  updateAgedText();
-  
-  m_updated.emit();
-}//void handleUserChangedAgeAtAssay()
+      try
+      {
+        m_shieldingSelect->atomicNumber();
+      }catch( std::exception & )
+      {
+        add( m_shieldingSelect->atomicNumberEdit(), WString::tr("msd-err-shield-an") );
+      }
 
+      try
+      {
+        m_shieldingSelect->arealDensity();
+      }catch( std::exception & )
+      {
+        add( m_shieldingSelect->arealDensityEdit(), WString::tr("msd-err-shield-ad") );
+      }
+    }else if( !m_shieldingSelect->material() )
+    {
+      add( m_shieldingSelect->materialEdit(), WString::tr("msd-err-shield-material") );
+    }else
+    {
+      try
+      {
+        m_shieldingSelect->thickness();
+      }catch( std::exception & )
+      {
+        add( m_shieldingSelect->thicknessEdit(), WString::tr("msd-err-shield-thick") );
+      }
+    }//if( generic material ) / else
+  }//if( shielding is used )
 
-void MakeDrfSrcDef::validateDateFields()
-{
-  // Only validate if we are actually using the date fields
-  if( !m_useAgeInfo->isChecked() )
-    return;
-  
-  string txt = m_drfMeasurementDate->text().toUTF8();
-  if( (txt.length() > 1) && std::isspace(txt[0]) )
-    m_drfMeasurementDate->setText( WString::fromUTF8( SpecUtils::trim_copy(txt) ) );
-  
-  txt = m_assayDate->text().toUTF8();
-  if( (txt.length() > 1) && std::isspace(txt[0]) )
-    m_assayDate->setText( WString::fromUTF8( SpecUtils::trim_copy(txt) ) );
-  
-  if( m_drfMeasurementDate->validate() == Wt::WValidator::State::Valid )
+  // Mark the fields.  Text a fields own validator rejects is marked by Wt itself ("Wt-invalid", as
+  //  the user types); a field whose text is well-formed, but whose value is not usable, gets
+  //  "InputValueError".  The activity uncertainty spin-box is left to Wt: its validator does not
+  //  give the right answer in the request that created it (see fractionalActivityUncertainty()).
+  vector<WFormWidget *> fields{ m_distanceEdit, m_distanceUncertEdit, m_activityEdit,
+                                m_assayDate, m_drfMeasurementDate, m_sourceAgeAtAssay };
+  if( m_shieldingSelect )
   {
-    if( m_drfMeasurementDate->hasStyleClass( "SrcInputError" ) )
-      m_drfMeasurementDate->removeStyleClass( "SrcInputError" );
-  }else
-  {
-    if( !m_drfMeasurementDate->hasStyleClass( "SrcInputError" ) )
-      m_drfMeasurementDate->addStyleClass( "SrcInputError" );
-  }
+    fields.push_back( m_shieldingSelect->materialEdit() );
+    fields.push_back( m_shieldingSelect->thicknessEdit() );
+    fields.push_back( m_shieldingSelect->atomicNumberEdit() );
+    fields.push_back( m_shieldingSelect->arealDensityEdit() );
+  }//if( m_shieldingSelect )
 
-  if( m_assayDate->validate() == Wt::WValidator::State::Valid )
+  for( WFormWidget *field : fields )
   {
-    if( m_assayDate->hasStyleClass( "SrcInputError" ) )
-      m_assayDate->removeStyleClass( "SrcInputError" );
-  }else
-  {
-    if( !m_assayDate->hasStyleClass( "SrcInputError" ) )
-      m_assayDate->addStyleClass( "SrcInputError" );
-  }
-}//void validateDateFields();
+    if( !field )
+      continue;
 
+    const bool has_problem = std::any_of( begin(problems), end(problems),
+                                [field]( const InputProblem &p ){ return p.field == field; } );
+    const bool value_problem = has_problem && (field->validate() == ValidationState::Valid);
+    WidgetUtils::setInputValueError( field, value_problem );
+  }//for( WFormWidget *field : fields )
 
-void MakeDrfSrcDef::handleEnteredDatesUpdated()
-{
-  validateDateFields();
-  
-  updateAgedText();
-  
-  m_updated.emit();
-}//void handleEnteredDatesUpdated()
+  string txt;
+  for( const InputProblem &p : problems )
+    txt += (txt.empty() ? "" : "\n") + p.message.toUTF8();
+
+  m_problemsTxt->setText( WString::fromUTF8(txt) );
+  m_table->rowAt(sm_problems_row)->setHidden( txt.empty() );
+  toggleStyleClass( "SrcDefHasError", !problems.empty() );
+
+  return problems;
+}//std::vector<InputProblem> validate()
 
 
 void MakeDrfSrcDef::useShieldingInfoUserToggled()
 {
   m_shieldingSelect->setHidden( !m_useShielding->isChecked() );
-  m_updated.emit();
+  handleUserInput();
 }//void useShieldingInfoUserToggled()
-
-
-void MakeDrfSrcDef::handleUserChangedShielding()
-{
-  m_updated.emit();
-}
 
 
 double MakeDrfSrcDef::enteredActivity() const
@@ -1068,6 +1189,7 @@ ShieldingSelect *MakeDrfSrcDef::shielding()
 void MakeDrfSrcDef::setDistance( const double dist )
 {
   m_distanceEdit->setText( PhysicalUnits::printToBestLengthUnits(dist) );
+  validate();
 }//void setDistance( const double dist );
 
 
@@ -1094,24 +1216,8 @@ void MakeDrfSrcDef::setDistanceUncertainty( const double uncert )
     m_distanceUncertEdit->setText( PhysicalUnits::printToBestLengthUnits(uncert) );
   else
     m_distanceUncertEdit->setText( "" );
+  validate();
 }//setDistanceUncertainty(...)
-
-
-void MakeDrfSrcDef::handleUserChangedDistanceUncert()
-{
-  string txt = m_distanceUncertEdit->text().toUTF8();
-  SpecUtils::trim( txt );
-  bool valid = txt.empty();
-  if( !valid )
-  {
-    try{ PhysicalUnits::stringToDistance( txt ); valid = true; }catch( std::exception & ){ valid = false; }
-  }
-  if( valid && m_distanceUncertEdit->hasStyleClass( "SrcInputError" ) )
-    m_distanceUncertEdit->removeStyleClass( "SrcInputError" );
-  else if( !valid && !m_distanceUncertEdit->hasStyleClass( "SrcInputError" ) )
-    m_distanceUncertEdit->addStyleClass( "SrcInputError" );
-  m_updated.emit();
-}//handleUserChangedDistanceUncert()
 
 
 std::string MakeDrfSrcDef::assayInfoString() const
@@ -1141,6 +1247,7 @@ void MakeDrfSrcDef::setActivity( const double act )
   const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   const int ndecimals = 4;
   m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(act, ndecimals, useCi) );
+  validate();
   updateAgedText();
 }//void MakeDrfSrcDef::setActivity( const double dist )
 
@@ -1161,7 +1268,7 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
     m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity, ndecimals, useCi) );
   }
 
-  validateDateFields();
+  validate();
   updateAgedText();
 
   m_updated.emit();
@@ -1231,7 +1338,7 @@ void MakeDrfSrcDef::setAgeAtMeas( const double age )
   
   m_sourceAgeAtAssay->setText( PhysicalUnitsLocalized::printToBestTimeUnits(age-assayToMeasTime) );
 
-  validateDateFields();
+  validate();
   updateAgedText();
 }//void setAgeAtMeas( const double age );
 
@@ -1241,6 +1348,7 @@ void MakeDrfSrcDef::setShielding( const float atomic_number, const float areal_d
   m_useShielding->setChecked();
   m_shieldingSelect->setHidden( false );
   m_shieldingSelect->setAtomicNumberAndArealDensity( atomic_number, areal_density );
+  validate();
 }//void setShielding( const float atomic_number, const float areal_density )
 
 
@@ -1254,38 +1362,18 @@ void MakeDrfSrcDef::setIsEffGeometryType( const int drf_eff_geom_type )
          || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2)
          || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram) );
   
-  bool hide_distance = false;
-  const char *text = "msd-activity";
-  switch( type )
-  {
-    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-      hide_distance = false;
-      text = "msd-activity";
-      break;
-    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-      hide_distance = true;
-      text = "msd-total-act";
-      break;
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-      hide_distance = true;
-      text = "msd-act-per-cm2";
-      break;
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-      hide_distance = true;
-      text = "msd-act-per-m2";
-      break;
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-      hide_distance = true;
-      text = "msd-act-per-gram";
-      break;
-  }//switch( type )
-  
-  m_activityLabel->setText( WString::tr(text) );
+  m_effGeomType = drf_eff_geom_type;
+
+  const bool hide_distance = ((type != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                              && (type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute));
+
+  updateActivityLabel();
   m_distanceEdit->setHidden( hide_distance );
   m_distanceLabel->setHidden( hide_distance );
   m_distanceUncertEdit->setHidden( hide_distance );
   m_distanceUncertLabel->setHidden( hide_distance );
+
+  validate();
 }//void setIsEffGeometryType( const bool is_fixed )
 
 
@@ -1337,7 +1425,9 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
       }//if( mat )
     }//if( shield->isGenericMaterial() ) / else
     
-    answer += "{" + std::to_string(an) + "," + std::to_string(ad) + "}";
+    // GADRAS convention, and what MakeDrf reads back: {atomic number, areal density in g/cm2}
+    const double ad_g_cm2 = ad / (PhysicalUnits::gram / PhysicalUnits::cm2);
+    answer += "{" + std::to_string(an) + "," + std::to_string(ad_g_cm2) + "}";
   }//if( user is using shielding )
   
   const bool mayEvolve = (m_nuclide && !PeakDef::ageFitNotAllowed(m_nuclide));
@@ -1347,7 +1437,8 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
   
   try
   {
-    const double dist = distance();
+    // A fixed geometry has no distance (and distance() asserts against being asked)
+    const double dist = m_distanceEdit->isHidden() ? 0.0 : distance();
     if( dist > 0.0 )
       answer += " Distance=" + PhysicalUnits::printToBestLengthUnits( dist, 6 );
     const double dist_uncert = distanceUncertainty();

@@ -72,6 +72,17 @@ public:
    */
   std::shared_ptr<const PeakFitDetPrefs> currentPrefs() const;
 
+  /** One line saying what the controls are set to, e.g. "HPGe · FWHM: Normal · no skew", for
+   showing in place of the controls when they are collapsed away. */
+  Wt::WString summaryText() const;
+
+  /** The name the detector-type combo uses for a detector type, e.g. "NaI/CsI".  Its message
+   bundle is loaded when the first PeakFitDetPrefsGui is made. */
+  static Wt::WString detectorTypeLabel( const PeakFitUtils::CoarseResolutionType type );
+
+  /** The detector-type combo, e.g. to take the user to it. */
+  Wt::WComboBox *detectorTypeCombo();
+
 protected:
   void init();
 

@@ -711,6 +711,32 @@ BOOST_AUTO_TEST_CASE( MakeDrfCsvFullExport )
     check_drf( DetectorPeakResponse::parseInterSpecRelEffCsv( strm ), false );
   }
 
+  // The coefficient covariance written after the uncertainties is read back; one that is not a
+  //  possible set of errors is left off, without losing the DRF.
+  {
+    const string cov =
+      "# Coefficient covariance matrix (row-major, c0..c2)\r\n"
+      "# Cov row 0,0.01,-0.0015,0.0001\r\n"
+      "# Cov row 1,-0.0015,0.0004,-0.00003\r\n"
+      "# Cov row 2,0.0001,-0.00003,0.000009\r\n";
+
+    std::istringstream strm( header + uncerts + cov + rest + fwhm );
+    const shared_ptr<DetectorPeakResponse> drf = DetectorPeakResponse::parseInterSpecRelEffCsv( strm );
+    check_drf( drf, true );
+    BOOST_REQUIRE( drf->efficiencyUncert() );
+    const vector<float> &read_cov = drf->efficiencyUncert()->coefficientCovariance();
+    BOOST_REQUIRE_EQUAL( read_cov.size(), 9 );
+    BOOST_CHECK_CLOSE( read_cov[1], -0.0015f, 1.0E-4 );
+    BOOST_CHECK_CLOSE( read_cov[8], 0.000009f, 1.0E-4 );
+
+    string impossible = cov;  //a correlation of 1.5 between c0 and c1
+    SpecUtils::ireplace_all( impossible, "-0.0015", "0.003" );
+    std::istringstream bad_strm( header + uncerts + impossible + rest + fwhm );
+    const shared_ptr<DetectorPeakResponse> bad_drf = DetectorPeakResponse::parseInterSpecRelEffCsv( bad_strm );
+    check_drf( bad_drf, true );
+    BOOST_CHECK( !bad_drf->efficiencyUncert() || bad_drf->efficiencyUncert()->coefficientCovariance().empty() );
+  }
+
   // An unusable intrinsic table must not fall through to the absolute one after it
   {
     string bad = header + uncerts + rest + fwhm;

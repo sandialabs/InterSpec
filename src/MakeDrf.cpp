@@ -27,8 +27,11 @@
 #include <set>
 #include <regex>
 #include <deque>
+#include <limits>
 #include <fstream>
+#include <algorithm>
 
+#include <Wt/Utils.h>
 #include <Wt/WText.h>
 #include <Wt/WPoint.h>
 #include <Wt/WImage.h>
@@ -47,6 +50,7 @@
 #include <Wt/WTemplate.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WTableCell.h>
+#include <Wt/WFormWidget.h>
 #include <Wt/WTabWidget.h>
 #include <Wt/WIOService.h>
 #include <Wt/WGridLayout.h>
@@ -63,6 +67,9 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -86,6 +93,7 @@
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/MakeDrfCalc.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/WidgetUtils.h"
@@ -121,9 +129,6 @@ using namespace Wt;
 
 namespace
 {
-  //const float ns_NaI3x3IntrinsicEff_661 = 0.422605; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
-  const float ns_NaI3x3IntrinsicEff_1332 = 0.24291f;
-
   /** Sets a flag for the life of the scope; used to block a re-fit while the source widgets are
    only part-way through a bulk update.
    */
@@ -134,7 +139,49 @@ namespace
     ~BlockSourceUpdates(){ m_flag = false; }
   };//struct BlockSourceUpdates
 
-  
+
+  /** Width of the "Make Detector Response" window, for an app `app_width` pixels wide. */
+  int make_drf_dialog_width( const int app_width )
+  {
+    return std::min( 1200, (app_width > 840) ? (9*app_width)/10 : (app_width - 20) );
+  }
+
+
+  /** The coarse kind of detector a crystal material is - for the ones that are clear-cut; Unknown
+   for the rest.  `name` is one of `CeeLoUtils::crystalMaterialNames()`. */
+  PeakFitUtils::CoarseResolutionType crystal_resolution_type( std::string name )
+  {
+    SpecUtils::to_lower_ascii( name );
+    if( (name == "hpge") || (name == "ge") )
+      return PeakFitUtils::CoarseResolutionType::High;
+    if( (name == "nai") || (name == "csi") || (name == "bgo") || (name == "pvt") )
+      return PeakFitUtils::CoarseResolutionType::Low;
+    if( SpecUtils::istarts_with( name, "labr" ) || SpecUtils::istarts_with( name, "cebr" )
+       || SpecUtils::istarts_with( name, "lacl" ) )
+      return PeakFitUtils::CoarseResolutionType::LaBr;
+    if( (name == "czt") || (name == "cdte") )
+      return PeakFitUtils::CoarseResolutionType::CZT;
+    return PeakFitUtils::CoarseResolutionType::Unknown;
+  }//crystal_resolution_type(...)
+
+
+  /** Whether two detector kinds plainly disagree: one is HPGe and the other is a scintillator or
+   CZT.  The fuzzier kinds (medium resolution, low-or-medium, unknown) never disagree. */
+  bool resolution_types_conflict( const PeakFitUtils::CoarseResolutionType a,
+                                  const PeakFitUtils::CoarseResolutionType b )
+  {
+    auto is_hpge = []( PeakFitUtils::CoarseResolutionType t ){
+      return (t == PeakFitUtils::CoarseResolutionType::High);
+    };
+    auto is_not_hpge = []( PeakFitUtils::CoarseResolutionType t ){
+      return (t == PeakFitUtils::CoarseResolutionType::Low)
+             || (t == PeakFitUtils::CoarseResolutionType::LaBr)
+             || (t == PeakFitUtils::CoarseResolutionType::CZT);
+    };
+    return (is_hpge(a) && is_not_hpge(b)) || (is_not_hpge(a) && is_hpge(b));
+  }//resolution_types_conflict(...)
+
+
   bool source_info_from_lib_file( string srcname, const string &filename,
                                   double &activity, boost::posix_time::ptime &activityDate, string &comments )
   {
@@ -340,11 +387,22 @@ namespace
   };//class CalFileDownloadResource
   
   
-  float effEqnUncert( const float energy, vector<float> coefs, const vector<float> &uncerts )
+  /** Uncertainty of the efficiency equation at `energy` (in the equation's units); negative if it
+   can not be computed.  With the coefficient covariance (row-major) this is linear propagation;
+   without it, only the individual uncertainties are combined - which greatly overstates it, since
+   the coefficients are strongly correlated. */
+  float effEqnUncert( const float energy, vector<float> coefs, const vector<float> &uncerts,
+                      const vector<float> &cov )
   {
     assert( coefs.size() == uncerts.size() );
     
     const float eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, coefs );
+
+    if( cov.size() == coefs.size()*coefs.size() )
+    {
+      const double uncert = DetectorPeakResponse::expOfLogPowerSeriesEfficiencyUncert( energy, coefs, cov );
+      return (uncert >= 0.0) ? static_cast<float>( uncert ) : -999.9f;
+    }
     
     double neguncert = 0.0, posuncert = 0.0;
     
@@ -412,10 +470,21 @@ namespace
       
       if( filename.empty() )
         filename = "drf";
-      filename += "_";
+      filename += fileNameSeparator();
       filename += fileEnding();
+
+      // The DRF name may hold characters a file name cant (as DrfLibraryWidgets' export replaces)
+      for( char &c : filename )
+      {
+        if( string("\\/:?\"<>|*").find( c ) != string::npos )
+          c = '_';
+      }
+
       suggestFileName( filename, ContentDisposition::Attachment );
     }
+
+    /** Between the DRF name and #fileEnding in the suggested file name. */
+    virtual const char *fileNameSeparator() const { return "_"; }
     
     void setDescription( const string &desc )
     {
@@ -497,6 +566,56 @@ namespace
         m_makedrf->writeRefSheet( response.out(), m_filename, m_description );
     }//void handleRequest(...)
   };//class RefSheetDownloadResource
+
+
+  /** The DRF as InterSpec's own XML - what the DRF library stores, and what "Detector Response
+   Select" imports - named "<name>.drf.xml" like the library's own export. */
+  class DrfXmlDownloadResource : public DrfSummaryBase
+  {
+  public:
+    DrfXmlDownloadResource( MakeDrf *parent )
+     : DrfSummaryBase( parent )
+    {
+      suggestFileName( fileEnding(), ContentDisposition::Attachment );
+    }
+
+    virtual const char *fileEnding() const { return "drf.xml"; }
+    virtual const char *fileNameSeparator() const { return "."; }
+
+    virtual void handleRequest( const Wt::Http::Request &request,
+                               Wt::Http::Response &response )
+    {
+      WApplication::UpdateLock lock( m_app );
+      if( !lock )
+      {
+        log("error") << "Failed to WApplication::UpdateLock in DrfXmlDownloadResource.";
+        response.out() << "Error grabbing application lock to form DrfXmlDownloadResource resource; please report to InterSpec@sandia.gov.";
+        response.setStatus(500);
+        assert( 0 );
+        return;
+      }//if( !lock )
+
+      try
+      {
+        const shared_ptr<DetectorPeakResponse> drf
+             = m_makedrf->assembleDrf( m_filename.empty() ? string("Created DRF") : m_filename,
+                                       m_description );
+        if( !drf || !drf->isValid() )
+          throw runtime_error( "the response is not valid" );
+
+        response.setMimeType( "application/octet-stream" );
+        rapidxml::xml_document<char> doc;
+        drf->toXml( &doc, &doc );
+        rapidxml::print( response.out(), doc, 0 );
+      }catch( std::exception &e )
+      {
+        log("error") << "Failed to write DRF XML: " << e.what();
+        response.setMimeType( "text/plain" );
+        response.setStatus( 500 );
+        response.out() << "Could not create the detector response: " << e.what();
+      }//try / catch
+    }//void handleRequest(...)
+  };//class DrfXmlDownloadResource
   
 
   class DrfPeak : public WContainerWidget
@@ -531,7 +650,7 @@ namespace
       m_isBackground( false )
     {
       addStyleClass( "DrfPeak" );
-      m_useForEffCb = addNew<WCheckBox>( WString::fromUTF8("Use") );
+      m_useForEffCb = addNew<WCheckBox>( WString::tr("dp-use-cb") );
       m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
       char buffer[256];
@@ -649,9 +768,10 @@ namespace
     void setBackgroundBeingSubtractedInfo( const bool beingsubtracted, const float background_cps )
     {
       const bool wasSubtractedFrom = !m_backSubTxt->isHidden();
-      if( wasSubtractedFrom == beingsubtracted )
+      if( !wasSubtractedFrom && !beingsubtracted )
         return;
-      
+
+      // The rate can change while it stays subtracted (e.g., a background peak is toggled)
       if( beingsubtracted )
       {
         char buffer[64];
@@ -776,6 +896,8 @@ namespace
   {
     std::shared_ptr<SpecMeas> m_meas;
     set<int> m_samples;
+    double m_livetime;  ///< Summed over the samples and detectors
+    double m_realtime;  ///< Summed over the samples; the detectors count at the same time
 
     WContainerWidget *m_peaks;
     WContainerWidget *m_sources;
@@ -881,6 +1003,8 @@ namespace
     : WPanel(),
       m_meas( meas ),
       m_samples( samples ),
+      m_livetime( 0.0 ),
+      m_realtime( 0.0 ),
       m_peaks( nullptr ),
       m_sources( nullptr ),
       m_background( nullptr ),
@@ -909,6 +1033,7 @@ namespace
       m_backgroundTxt->hide();
 
       m_sources = body->addNew<WContainerWidget>();
+      m_sources->addStyleClass( "DrfSampleSources" );
       
       setCollapsible( true );
       
@@ -919,20 +1044,24 @@ namespace
       assert( peaks && !peaks->empty() );
       
       string title;
-      double livetime = 0.0;
       //ToDo: The peaks may not belong to all the detectors (the user may have
       //      chosen to not show some detectors)
       const vector<string> &detnames = meas->detector_names();
       for( const int sample : samples )
       {
+        double sample_realtime = 0.0;
         for( const string &detname : detnames )
         {
           shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, detname );
           if( m && !m->title().empty() )
             title = m->title();
           if( m && m->num_gamma_channels() > 5 )
-            livetime += m->live_time();
+          {
+            m_livetime += m->live_time();
+            sample_realtime = std::max( sample_realtime, static_cast<double>(m->real_time()) );
+          }
         }//
+        m_realtime += sample_realtime;
       }//for( const int sample : samples )
       
       std::shared_ptr<const SpecUtils::Measurement> summed_meas;
@@ -948,7 +1077,7 @@ namespace
       {
         // Wt4: the DrfPeak ctor ignores its (commented-out) parent arg, so `new DrfPeak(...)`
         //  would be orphaned (leaked + never rendered).  addNew<> constructs and parents it to m_peaks.
-        DrfPeak *p = m_peaks->addNew<DrfPeak>( peak, livetime, summed_meas );
+        DrfPeak *p = m_peaks->addNew<DrfPeak>( peak, m_livetime, summed_meas );
         ++npeaks;
         p->m_useForEffCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
         if( p->m_userBr )
@@ -1095,7 +1224,9 @@ namespace
                 if( (closeCurlyPos != string::npos) && ((openCurlyPos+4)<closeCurlyPos) )
                 {
                   shielding = remark.substr(openCurlyPos+1, closeCurlyPos-openCurlyPos-1);
-                  remark = remark.substr(0,openCurlyPos);
+                  // Keep what follows the shielding too - MakeDrfSrcDef::toGadrasLikeSourceString
+                  //  writes " Age=... Distance=..." after it.
+                  remark = remark.substr(0,openCurlyPos) + " " + remark.substr(closeCurlyPos+1);
                   SpecUtils::trim(remark);
                   
                   commapos = remark.find(',');
@@ -1114,7 +1245,7 @@ namespace
               SpecUtils::ireplace_all( dist_regex, "^", "" );
               SpecUtils::ireplace_all( dist_regex, "$", "" );
               
-              std::regex dist_expr( string(".+([dist|distance]\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
+              std::regex dist_expr( string(".*\\b((?:distance|dist)\\s*\\=\\s*(") + dist_regex + ")).*?", std::regex::icase );
               
               if( std::regex_match( remark, dist_mtch, dist_expr ) )
               {
@@ -1419,6 +1550,23 @@ namespace
     
     std::shared_ptr<const SpecMeas> measurement() { return m_meas; }
     const set<int> &samples(){ return m_samples; }
+    double liveTime() const { return m_livetime; }
+    double realTime() const { return m_realtime; }
+
+    /** Where this sample is, for messages: "file.n42", or "file.n42, Sample 3" when the file has
+     more than one sample.  Plain text. */
+    std::string locationLabel() const
+    {
+      string answer = m_meas ? SpecUtils::filename( m_meas->filename() ) : string();
+      if( m_meas && (m_meas->sample_numbers().size() > 1) && !m_samples.empty() )
+      {
+        const string samples = (m_samples.size() == 1)
+                                ? (WString::tr("dsfs-sample").toUTF8() + " " + std::to_string(*begin(m_samples)))
+                                : (WString::tr("dsfs-samples").toUTF8() + " " + SpecUtils::sequencesToBriefString(m_samples));
+        answer += (answer.empty() ? "" : ", ") + samples;
+      }
+      return answer;
+    }//std::string locationLabel() const
     
   };//class DrfSpecFileSample
   
@@ -1506,11 +1654,11 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer )
   const int wh = viewer->renderedHeight();
   if( ww > 100 && wh > 100 )
   {
-    const int width = std::min( 3*ww/4, 900 );
+    const int width = make_drf_dialog_width( ww );
     const int height = ((wh < 420) ? wh : (19*wh)/20 );
     
     resizeWindow( width, height );
-    setMinimumSize( std::min(width,640), std::min(height,480) );
+    setMinimumSize( std::min(width,720), std::min(height,480) );
   }//if( ww > 100 && wh > 100 )
     
   auto toolOwned = std::make_unique<MakeDrf>( viewer );
@@ -1526,7 +1674,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer )
 
   WPushButton *saveAs = footer()->addNew<WPushButton>( WString::tr("md-export-btn") );
   WidgetUtils::applyButtonRole( saveAs, WidgetUtils::ButtonRole::Neutral );
-  saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
+  saveAs->clicked().connect( m_tool, &MakeDrf::requestStoreExport );
   m_tool->farFieldIntrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
 
@@ -1562,15 +1710,17 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_finished(),
   m_chart( nullptr ),
   m_files( nullptr ),
-  m_geomPanel( nullptr ),
+  m_sidebar( nullptr ),
+  m_detSection( nullptr ),
+  m_detSectionBody( nullptr ),
+  m_detNotUsedTxt( nullptr ),
   m_geomMode( nullptr ),
   m_geomGuidance( nullptr ),
   m_diameterDiv( nullptr ),
   m_mcTool( nullptr ),
   m_geomSeeded( false ),
-  m_mainLayout( nullptr ),
+  m_phoneTabs( nullptr ),
   m_blockSourceUpdates( false ),
-  m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
   m_detSetback( nullptr ),
   m_geometry( nullptr ),
@@ -1578,17 +1728,31 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_fwhmOptionGroup( nullptr ),
   m_fwhmEqnType( nullptr ),
   m_sqrtEqnOrder( nullptr ),
+  m_sqrtEqnOrderLabel( nullptr ),
   m_effEqnOrder( nullptr ),
   m_effEqnUnits( nullptr ),
   m_effOptionGroup( nullptr ),
   m_airAttenuate( nullptr ),
+  m_fitNeedsDataTxt( nullptr ),
+  m_pfpPanel( nullptr ),
   m_chartRangeSet( false ),
-  m_errorMsg( nullptr ),
+  m_statusArea( nullptr ),
+  m_statusSummary( nullptr ),
+  m_problemList( nullptr ),
   m_intrinsicEffAnswer( nullptr ),
+  m_inputProblems{},
+  m_fitProblems{},
+  m_numPeaksSelected( 0 ),
+  m_numPeaksUsed( 0 ),
+  m_peaksResolutionType( PeakFitUtils::CoarseResolutionType::Unknown ),
+  m_storeAfterGenerationId( -1 ),
   m_fwhmFitId( 0 ),
   m_effEqnFitId( 0 ),
   m_fwhmEqnChi2( -999.9 ),
   m_effEqnChi2( -999.9 ),
+  m_effEqnDof( 0 ),
+  m_effEqnUserTerms( -1 ),
+  m_sqrtEqnUserTerms( -1 ),
   m_effLowerEnergy( 0.0f ),
   m_effUpperEnergy( 0.0f ),
   m_effBirgeScale( 1.0 ),
@@ -1605,59 +1769,64 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   addStyleClass( "MakeDrf" );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", m_interspec );
-  
-  auto upperLayoutOwned = std::make_unique<WGridLayout>();
-  WGridLayout *upperLayout = upperLayoutOwned.get();
-  upperLayout->setContentsMargins( 0, 0, 0, 0 );
-  upperLayout->setVerticalSpacing( 0 );
-  upperLayout->setHorizontalSpacing( 0 );
+  const bool isPhone = m_interspec->isPhone();
 
-  // --- Left column: how the detector is described - just a diameter, or its full geometry ---
-  auto geomPanelOwned = std::make_unique<WContainerWidget>();
-  m_geomPanel = geomPanelOwned.get();
-  m_geomPanel->addStyleClass( "MakeDrfGeomPanel" );
-  m_geomPanel->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
-  upperLayout->addWidget( std::move(geomPanelOwned), 0, 0 );
+  // ===== Left: the setup sidebar - what the detector is, how to fit, peak fit preferences =====
+  //  The scrolling is on an inner div rather than on the layout item: Wt force-sets the size of a
+  //  layout item that has a scroll-bar, after which it no longer follows updateSidebarWidth().
+  auto sidebarOwned = std::make_unique<WContainerWidget>();
+  m_sidebar = sidebarOwned.get();
+  m_sidebar->addStyleClass( "MakeDrfSidebar" );
+  WContainerWidget *sidebarScroll = m_sidebar->addNew<WContainerWidget>();
+  sidebarScroll->addStyleClass( "MakeDrfSidebarScroll" );
 
-  WContainerWidget *modeRow = m_geomPanel->addNew<WContainerWidget>();
+  // Adds a "label: widget" row to a two-column form grid
+  auto add_form_row = []( WContainerWidget *grid, const WString &label, WFormWidget *input ) -> WLabel * {
+    WLabel *l = grid->insertWidget( grid->count() - 1, std::make_unique<WLabel>( label ) );
+    l->setBuddy( input );
+    return l;
+  };
+
+  // --- Detector: just its diameter, or its full geometry ---
+  m_detSection = sidebarScroll->addNew<GroupBox>( WString::tr("md-section-detector") );
+  m_detSection->addStyleClass( "MakeDrfSection" );
+  m_detSectionBody = m_detSection->addNew<WContainerWidget>();
+
+  WContainerWidget *modeRow = m_detSectionBody->addNew<WContainerWidget>();
   modeRow->addStyleClass( "MakeDrfGeomModeRow" );
   m_geomMode = modeRow->addNew<SwitchCheckbox>( WString::tr("md-geom-mode-diameter"),
                                                  WString::tr("md-geom-mode-geometry") );
   m_geomMode->setChecked( false );
   m_geomMode->checked().connect( this, &MakeDrf::handleGeometryModeChanged );
   m_geomMode->unChecked().connect( this, &MakeDrf::handleGeometryModeChanged );
-  HelpSystem::attachToolTipOn( modeRow, WString::tr("md-tt-geom-mode"), showToolTips,
-                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( modeRow, WString::tr("md-tt-geom-mode"), showToolTips );
 
-  // Tells the user what the "Detector geometry" mode buys them, so only shown in diameter mode -
-  //  where there is also room for it.
-  m_geomGuidance = m_geomPanel->addNew<WText>( WString::tr("md-geom-guidance") );
+  // Tells the user what the "Detector geometry" mode buys them; only shown in diameter mode
+  m_geomGuidance = m_detSectionBody->addNew<WText>( WString::tr("md-geom-guidance") );
   m_geomGuidance->addStyleClass( "MakeDrfGeomGuidance" );
   m_geomGuidance->setInline( false );
 
-  m_diameterDiv = m_geomPanel->addNew<WContainerWidget>();
-  m_diameterDiv->addStyleClass( "MakeDrfDiameterDiv" );
-  
-  m_detDiamGroup = m_diameterDiv->addNew<GroupBox>( WString::tr("md-det-diam") );
-  m_detDiameter = m_detDiamGroup->addNew<WLineEdit>();
+  m_diameterDiv = m_detSectionBody->addNew<WContainerWidget>();
+  m_diameterDiv->addStyleClass( "MakeDrfFormGrid MakeDrfDiameterDiv" );
+
   auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
   distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  distValidator->setInvalidNoMatchText( WString::tr("msd-tt-dist-format") );
+
+  m_detDiameter = m_diameterDiv->addNew<WLineEdit>();
+  add_form_row( m_diameterDiv, WString::tr("md-det-diam"), m_detDiameter );
   m_detDiameter->setValidator( distValidator );
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
   m_detDiameter->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
   m_detDiameter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detDiameter->setAttributeValue( "autocorrect", "off" );
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  WLabel *setbackLabel = m_detDiamGroup->addNew<WLabel>( WString::tr("md-det-setback") );
-  setbackLabel->setInline( false );
-  m_detSetback = m_detDiamGroup->addNew<WLineEdit>();
-  setbackLabel->setBuddy( m_detSetback );
-  m_detSetback->setInline( false );
+  m_detSetback = m_diameterDiv->addNew<WLineEdit>();
+  add_form_row( m_diameterDiv, WString::tr("md-det-setback"), m_detSetback );
   m_detSetback->setValidator( distValidator );
   m_detSetback->setPlaceholderText( WString::tr("md-det-setback-ph") );
   m_detSetback->changed().connect( this, &MakeDrf::handleSourcesUpdates );
@@ -1667,8 +1836,7 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_detSetback->setAttributeValue( "autocorrect", "off" );
   m_detSetback->setAttributeValue( "spellcheck", "off" );
 #endif
-  HelpSystem::attachToolTipOn( m_detDiamGroup, WString::tr("md-tt-det-diam"), showToolTips,
-                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  HelpSystem::attachToolTipOn( m_diameterDiv, WString::tr("md-tt-det-diam"), showToolTips );
 
   // Full geometry + location support: the same tool the Modify DRF dialog embeds.  Defaults to the
   //  instant measured-curve transfer (no Monte Carlo); the user can pick an MC method and generate.
@@ -1678,68 +1846,109 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_mcTool->setChartHidden( true );
   m_mcTool->setMethod( MakeMcResponseForDrf::Method::CurveTransfer );
   m_mcTool->geometryInput()->setCompact( true );
+  m_mcTool->geometryInput()->setDiagramBelow( true );  //the sidebar has no room beside the form
+  m_mcTool->setAutoBuildTransfer( false );  //assembleDrf builds it from the fit
+  m_mcTool->setImportGeometryAlwaysOffered( true );  //the form starts as a guess; nothing to lose
+  m_mcTool->setAnchorHidden( true );  //assembleDrf anchors the transfer itself
   m_mcTool->geometryChanged().connect( this, &MakeDrf::handleSourcesUpdates );
   m_mcTool->responseGenerated().connect( this, &MakeDrf::setGeneratedMcResponse );
   // The tool drops its result whenever the geometry, method or an option changes; a response held
   //  past that describes some other detector, so let it go too.
-  m_mcTool->validationChanged().connect( this, [this]( const bool valid ){
+  // A run the user asked to store after that ended without a response - cancelled, failed, or
+  //  superseded (a method change or restored state bumps the generation id) - is said so, rather
+  //  than leave them waiting for a dialog that wont come.  A successful run has a result when
+  //  validationChanged(true) comes, and is disarmed by setGeneratedMcResponse before userChanged().
+  auto check_store_run = [this](){
+    if( m_storeAfterGenerationId < 0 )
+      return;
+    const bool superseded = (m_storeAfterGenerationId != m_mcTool->generationId());
+    if( !superseded && (m_mcTool->isGenerating() || m_mcTool->hasResult()) )
+      return;
+    m_storeAfterGenerationId = -1;
+    passMessage( WString::tr("md-mc-not-stored"), WarningWidget::WarningMsgMedium );
+  };//check_store_run
+
+  m_mcTool->validationChanged().connect( this, [this,check_store_run]( const bool valid ){
     if( !valid )
       m_generatedMcResponse.reset();
+    check_store_run();
   } );
-  m_geomPanel->addWidget( std::move(mcToolOwned) );
+  m_mcTool->userChanged().connect( this, check_store_run );
+  m_detSectionBody->addWidget( std::move(mcToolOwned) );
   m_mcTool->hide();  //diameter mode to start
 
-  // --- The chart ---
-  auto chartOwned = std::make_unique<DrfChart>();
-  m_chart = chartOwned.get();
-  m_chart->addStyleClass( "MakeDrfChart" );
-  m_chart->setKeepZoomOnUpdate( true );
-  upperLayout->addWidget( std::move(chartOwned), 0, 1 );
+  // A detector file's geometry can be imported from "Diameter only" mode too; doing so switches to
+  //  the geometry form, since a full geometry is the point.
+  WPushButton *importGeomBtn = m_diameterDiv->addNew<WPushButton>( WString::tr("mmr-import-geom-btn") );
+  importGeomBtn->addStyleClass( "LinkBtn MakeDrfImportGeom" );
+  importGeomBtn->setToolTip( WString::tr("mmr-tt-import-geom") );
+  importGeomBtn->clicked().connect( m_mcTool, &MakeMcResponseForDrf::showImportGeometryDialog );
+  m_mcTool->geometryImported().connect( this, [this](){
+    if( m_geomMode->isChecked() )
+      return;
+    m_geomSeeded = true;  //the imported geometry, not one guessed from the diameter
+    m_geomMode->setChecked( true );
+    handleGeometryModeChanged();
+  } );
 
-  // --- Fit options, messages and the fitted equation, under the chart (one flow container, so the
-  //  grid layout measures the wrapped options row together with the text beneath it) ---
-  auto lowerDivOwned = std::make_unique<WContainerWidget>();
-  WContainerWidget *lowerDiv = lowerDivOwned.get();
-  lowerDiv->addStyleClass( "MakeDrfLowerDiv" );
-  upperLayout->addWidget( std::move(lowerDivOwned), 1, 0, 1, 2 );
+  // Fixed-geometry efficiencies dont use the detector description; say so rather than vanish
+  m_detNotUsedTxt = m_detSection->addNew<WText>( WString::tr("md-det-not-used-fixed") );
+  m_detNotUsedTxt->addStyleClass( "FainterTxt MakeDrfSectionNote" );
+  m_detNotUsedTxt->setInline( false );
+  m_detNotUsedTxt->hide();
 
-  WContainerWidget *optionsRow = lowerDiv->addNew<WContainerWidget>();
-  optionsRow->addStyleClass( "MakeDrfOptionsRow" );
+  // --- Efficiency fit ---
+  m_effOptionGroup = sidebarScroll->addNew<GroupBox>( WString::tr("md-section-eff") );
+  m_effOptionGroup->addStyleClass( "MakeDrfSection" );
+  WContainerWidget *effGrid = m_effOptionGroup->addNew<WContainerWidget>();
+  effGrid->addStyleClass( "MakeDrfFormGrid" );
 
-  m_effOptionGroup = optionsRow->addNew<GroupBox>( WString::tr("md-eff-type") );
-  m_effEqnOrder = m_effOptionGroup->addNew<WComboBox>();
+  m_effEqnOrder = effGrid->addNew<WComboBox>();
+  add_form_row( effGrid, WString::tr("md-lbl-eqn-terms"), m_effEqnOrder );
   m_effEqnOrder->setNoSelectionEnabled( true );
-  m_effEqnOrder->setInline( false );
-  m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_effEqnOrder->changed().connect( this, &MakeDrf::handleEffEqnOrderChange );
 
-  m_effEqnUnits = m_effOptionGroup->addNew<WComboBox>();
-  m_effEqnUnits->setInline( false );
+  m_effEqnUnits = effGrid->addNew<WComboBox>();
+  add_form_row( effGrid, WString::tr("md-lbl-eqn-units"), m_effEqnUnits );
   m_effEqnUnits->addItem( WString::tr("md-eqn-in-kev") );
   m_effEqnUnits->addItem( WString::tr("md-eqn-in-mev") );
   m_effEqnUnits->setCurrentIndex( 1 );
   m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
 
-  m_geometry = m_effOptionGroup->addNew<WComboBox>();
-  m_geometry->setInline( false );
-  m_geometry->addStyleClass( "FixedGeomCombo" );
+  m_geometry = effGrid->addNew<WComboBox>();
+  add_form_row( effGrid, WString::tr("md-lbl-eff-type"), m_geometry );
   m_geometry->addItem( WString::tr("md-geom-intrinsic-eff") );
   m_geometry->addItem( WString::tr("md-geom-fixed-geom") );
   m_geometry->addItem( WString::tr("md-geom-fixed-cm2") );
   m_geometry->addItem( WString::tr("md-geom-fixed-m2") );
   m_geometry->addItem( WString::tr("md-geom-fixed-gram") );
   m_geometry->setCurrentIndex( 0 );
-
-  HelpSystem::attachToolTipOn( m_geometry, WString::tr("md-tt-eff-interpret"),
-                              showToolTips,
+  HelpSystem::attachToolTipOn( m_geometry, WString::tr("md-tt-eff-interpret"), showToolTips,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
   m_geometry->activated().connect( this, &MakeDrf::handleFixedGeometryChanged );
-  
-  m_fwhmOptionGroup = optionsRow->addNew<GroupBox>( WString::tr("md-fwhm-eqn-form-label") );
-  m_fwhmEqnType = m_fwhmOptionGroup->addNew<WComboBox>();
+
+  m_airAttenuate = m_effOptionGroup->addNew<WCheckBox>( WString::tr("md-atten-for-air-cb") );
+  m_airAttenuate->setChecked( true );
+  m_airAttenuate->setInline( false );
+  m_airAttenuate->addStyleClass( "AirAttenCb" );
+  m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
+  HelpSystem::attachToolTipOn( m_airAttenuate, WString::tr("md-tt-atten-for-air"), showToolTips,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+
+  m_fitNeedsDataTxt = m_effOptionGroup->addNew<WText>( WString::tr("md-fit-needs-data") );
+  m_fitNeedsDataTxt->addStyleClass( "FainterTxt MakeDrfSectionNote" );
+  m_fitNeedsDataTxt->setInline( false );
+
+  // --- FWHM fit ---
+  m_fwhmOptionGroup = sidebarScroll->addNew<GroupBox>( WString::tr("md-section-fwhm") );
+  m_fwhmOptionGroup->addStyleClass( "MakeDrfSection" );
+  WContainerWidget *fwhmGrid = m_fwhmOptionGroup->addNew<WContainerWidget>();
+  fwhmGrid->addStyleClass( "MakeDrfFormGrid" );
+
+  m_fwhmEqnType = fwhmGrid->addNew<WComboBox>();
+  add_form_row( fwhmGrid, WString::tr("md-lbl-fwhm-form"), m_fwhmEqnType );
   m_fwhmEqnType->setNoSelectionEnabled( true );
-  m_fwhmEqnType->setInline( false );
-  
   for( auto i = DetectorPeakResponse::ResolutionFnctForm(0);
       i < DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm;
       i = DetectorPeakResponse::ResolutionFnctForm(i+1) )
@@ -1767,80 +1976,107 @@ MakeDrf::MakeDrf( InterSpec *viewer )
         break;
     }//switch( i )
   }//for( loop over DetectorPeakResponse::ResolutionFnctForm )
-  
   m_fwhmEqnType->setCurrentIndex( 0 );
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
-  
-  m_sqrtEqnOrder = m_fwhmOptionGroup->addNew<WComboBox>();
+
+  m_sqrtEqnOrder = fwhmGrid->addNew<WComboBox>();
+  m_sqrtEqnOrderLabel = add_form_row( fwhmGrid, WString::tr("md-lbl-eqn-terms"), m_sqrtEqnOrder );
   m_sqrtEqnOrder->setNoSelectionEnabled( true );
-  m_sqrtEqnOrder->setInline( false );
-  m_sqrtEqnOrder->hide();
   m_sqrtEqnOrder->changed().connect( this, &MakeDrf::handleSqrtEqnOrderChange );
-  
-  m_effOptionGroup->hide();
-  m_fwhmOptionGroup->hide();
+  m_sqrtEqnOrder->hide();
+  m_sqrtEqnOrderLabel->hide();
 
-  GroupBox *genOpts = optionsRow->addNew<GroupBox>( WString::tr("md-options-title") );
-  m_airAttenuate = genOpts->addNew<WCheckBox>( WString::tr("md-atten-for-air-cb") );
-  m_airAttenuate->setChecked( true );
-  m_airAttenuate->setInline( false );
-  m_airAttenuate->addStyleClass( "AirAttenCb" );
-  m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
-  m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
-  HelpSystem::attachToolTipOn( m_airAttenuate, WString::tr("md-tt-atten-for-air"),
-                              showToolTips,
-                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
-
-  m_showFwhmPoints = genOpts->addNew<WCheckBox>( WString::tr("md-show-fwhm-markers") );
+  m_showFwhmPoints = m_fwhmOptionGroup->addNew<WCheckBox>( WString::tr("md-show-fwhm-markers") );
   m_showFwhmPoints->setChecked( true );
   m_showFwhmPoints->setInline( false );
   m_showFwhmPoints->checked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
   m_showFwhmPoints->unChecked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
 
-  // Peak fit preferences (optional, embedded in DRF)
-  GroupBox *peakFitPrefsGroup = optionsRow->addNew<GroupBox>( WString::tr("md-peak-fit-prefs-title") );
-  m_peakFitDetPrefsGui = peakFitPrefsGroup->addNew<PeakFitDetPrefsGui>( m_interspec, false );
-  
+  // --- Peak fit preferences (optional; saved into the DRF).  Collapsed to a one-line summary,
+  //  since they are rarely changed, and expand to a tall block when a skew is chosen.
+  m_pfpPanel = sidebarScroll->addNew<WPanel>();
+  m_pfpPanel->addStyleClass( "MakeDrfPfpPanel" );
+  m_peakFitDetPrefsGui = m_pfpPanel->setCentralWidget( std::make_unique<PeakFitDetPrefsGui>( m_interspec, false ) );
+  m_pfpPanel->setCollapsible( true );
+  m_pfpPanel->setCollapsed( true );
+  m_interspec->peakFitDetPrefsChanged().connect( this, &MakeDrf::handlePeakFitPrefsChanged );
+
+  // ===== Right: the chart, the status (problems and the fitted equation), the peaks and sources =====
+  auto chartOwned = std::make_unique<DrfChart>();
+  m_chart = chartOwned.get();
+  m_chart->addStyleClass( "MakeDrfChart" );
+  m_chart->setKeepZoomOnUpdate( true );
+  m_chart->setMinimumSize( WLength::Auto, WLength(160, WLength::Unit::Pixel) );
+
+  auto statusOwned = std::make_unique<WContainerWidget>();
+  m_statusArea = statusOwned.get();
+  m_statusArea->addStyleClass( "MakeDrfStatus" );
+  m_statusSummary = m_statusArea->addNew<WText>( "", Wt::TextFormat::Plain );
+  m_statusSummary->addStyleClass( "MakeDrfStatusSummary" );
+  m_statusSummary->setInline( false );
+  m_problemList = m_statusArea->addNew<WContainerWidget>();
+  m_problemList->addStyleClass( "MakeDrfProblems" );
+  m_problemList->hide();
+  m_intrinsicEffAnswer = m_statusArea->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
+  m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
+  m_intrinsicEffAnswer->setInline( false );
+  m_intrinsicEffAnswer->hide();
+
   auto fileHolderOwned = std::make_unique<WContainerWidget>();
   WContainerWidget *fileHolder = fileHolderOwned.get();
   fileHolder->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
   fileHolder->addStyleClass( "MakeDrfFiles" );
-
   m_files = fileHolder->addNew<WContainerWidget>();
 
-  m_errorMsg = lowerDiv->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
-  m_errorMsg->addStyleClass( "MakeDrfErrTxt" );
-  m_errorMsg->setInline( false );
-  m_errorMsg->hide();
-
-  m_intrinsicEffAnswer = lowerDiv->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
-  m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
-  m_intrinsicEffAnswer->setInline( false );
-  
-  upperLayout->setRowStretch( 0, 1 );
-  upperLayout->setColumnStretch( 1, 1 );
-  
   WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
   
-  if( viewer->isPhone() )
+  if( isPhone )
   {
-    //Phone layout untested!
-    WTabWidget *tab = layout->addWidget( std::make_unique<WTabWidget>(), 0, 0 );
+    // One thing at a time: setup, then the chart, then the peaks and their sources.  The tabs load
+    //  eagerly so a field the status list points at is always there to focus.
+    m_phoneTabs = layout->addWidget( std::make_unique<WTabWidget>(), 0, 0 );
+    m_phoneTabs->addTab( std::move(sidebarOwned), WString::tr("md-tab-setup"), ContentLoading::Eager );
+
     auto chartTabOwned = std::make_unique<WContainerWidget>();
-    WContainerWidget *chartTab = chartTabOwned.get();
-    chartTab->setLayout( std::move(upperLayoutOwned) );
-    tab->addTab( std::move(chartTabOwned), WString::tr("md-mi-chart-phone") );
-    tab->addTab( std::move(fileHolderOwned), WString::tr("md-mi-peaks-phone") );
+    WGridLayout *chartLayout = chartTabOwned->setLayout( std::make_unique<WGridLayout>() );
+    chartLayout->setContentsMargins( 0, 0, 0, 0 );
+    chartLayout->addWidget( std::move(chartOwned), 0, 0 );
+    chartLayout->addWidget( std::move(statusOwned), 1, 0 );
+    chartLayout->setRowStretch( 0, 1 );
+    m_phoneTabs->addTab( std::move(chartTabOwned), WString::tr("md-tab-chart"), ContentLoading::Eager );
+
+    m_phoneTabs->addTab( std::move(fileHolderOwned), WString::tr("md-mi-peaks-phone"), ContentLoading::Eager );
   }else
   {
-    layout->addLayout( std::move(upperLayoutOwned), 0, 0 );
-    layout->addWidget( std::move(fileHolderOwned), 1, 0 );
-    //geometry panel + chart, options row, message and equation; handleGeometryModeChanged() gives
-    //  this row more height when the full geometry form is showing.
-    layout->setRowResizable( 0, true, sm_diam_mode_height );
-    m_mainLayout = layout;
-  }//if( is phone ) / else
+    layout->setHorizontalSpacing( 8 );
+    layout->addWidget( std::move(sidebarOwned), 0, 0 );
+
+    auto rightOwned = std::make_unique<WContainerWidget>();
+    WContainerWidget *rightCol = rightOwned.get();
+    rightCol->addStyleClass( "MakeDrfRight" );
+    WGridLayout *rightLayout = rightCol->setLayout( std::make_unique<WGridLayout>() );
+    rightLayout->setContentsMargins( 0, 0, 0, 0 );
+    rightLayout->setVerticalSpacing( 8 );
+    rightLayout->addWidget( std::move(chartOwned), 0, 0 );
+    rightLayout->addWidget( std::move(statusOwned), 1, 0 );
+    rightLayout->addWidget( std::move(fileHolderOwned), 2, 0 );
+    rightLayout->setRowStretch( 2, 1 );
+    fileHolder->setMinimumSize( WLength::Auto, WLength(120, WLength::Unit::Pixel) );
+
+    // The divider between the chart and what is below it can be dragged.  Set once: setting it
+    //  again would throw away the height the user dragged to.
+    const int wh = m_interspec->renderedHeight();
+    const double chart_height = (wh > 100) ? std::clamp( 0.45*(0.95*wh - 110.0), 200.0, 420.0 ) : 300.0;
+    rightLayout->setRowResizable( 0, true, WLength(chart_height, WLength::Unit::Pixel) );
+    WidgetUtils::compensateRowHandleLeak( rightCol );
+
+    layout->addWidget( std::move(rightOwned), 0, 1 );
+    layout->setColumnStretch( 1, 1 );
+    layout->setRowStretch( 0, 1 );
+
+    updateSidebarWidth();
+  }//if( isPhone ) / else
   
   SpecMeasManager *manager = viewer->fileManager();
   SpectraFileModel *measmodel = manager->model();
@@ -1882,7 +2118,9 @@ MakeDrf::MakeDrf( InterSpec *viewer )
       added[0]->setTitle( "" );
   }
   
-  
+  handlePeakFitPrefsChanged();
+  updateStatusDisplay();
+
   //If we directly call handleSourcesUpdates() now, getting the activity
   //  uncertainty will throw an exception because they wont validate.... whatever.
   //  Re-resolve by DOM id rather than capturing `this`: we live in a transient MakeDrfWindow and
@@ -1898,7 +2136,8 @@ MakeDrf::MakeDrf( InterSpec *viewer )
 
 MakeDrf::~MakeDrf()
 {
-
+  if( m_saveAsWindow )
+    AuxWindow::deleteAuxWindow( m_saveAsWindow.get() );
 }//~MakeDrf()
 
 
@@ -1931,7 +2170,11 @@ void MakeDrf::startSaveAs()
   //      - add in a interface to select previously characterized detectors, and
   //        also upload them
   
+  if( m_saveAsWindow )
+    AuxWindow::deleteAuxWindow( m_saveAsWindow.get() );
+
   AuxWindow *w = AuxWindow::make( WString::tr("md-export-window-title"), windowprop );
+  m_saveAsWindow = w;
 
   WTable *table = w->contents()->addNew<WTable>();
   table->addStyleClass( "MakeDrfSaveAsTable" );
@@ -2061,6 +2304,22 @@ void MakeDrf::startSaveAs()
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
+  auto xmlResourceOwned = std::make_shared<DrfXmlDownloadResource>( this );
+  DrfXmlDownloadResource *xmlResource = xmlResourceOwned.get();
+  {
+    Wt::WLink lnk( xmlResourceOwned );
+    lnk.setTarget( Wt::LinkTarget::NewWindow );
+    cell->addNew<WAnchor>( lnk, WString::tr("md-export-drf-xml") );
+  }
+  cell = table->elementAt(currentRow, 2);
+  help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
+  help->addStyleClass( "MakeDrfSaveHelp" );
+  HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-drf-xml"), true,
+                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
+
+  currentRow = table->rowCount();
+  cell = table->elementAt(currentRow, 0);
+  cell->setColumnSpan( 2 );
   auto csvResourceOwned = std::make_shared<CsvDrfDownloadResource>( this );
   CsvDrfDownloadResource *csvResource = csvResourceOwned.get();
   {
@@ -2095,18 +2354,13 @@ void MakeDrf::startSaveAs()
                   HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
 
-  auto updateName = [name,csvResource,n42Resource,refSheetResource](){
-    if( name->validate() == Wt::ValidationState::Valid )
-    {
-      n42Resource->setSuggestFileName( name->text().toUTF8() );
-      csvResource->setSuggestFileName( name->text().toUTF8() );
-      refSheetResource->setSuggestFileName( name->text().toUTF8() );
-    }else
-    {
-      n42Resource->setSuggestFileName( "" );
-      csvResource->setSuggestFileName( "" );
-      refSheetResource->setSuggestFileName( "" );
-    }
+  auto updateName = [name,csvResource,n42Resource,refSheetResource,xmlResource](){
+    const string drfname = (name->validate() == Wt::ValidationState::Valid) ? name->text().toUTF8()
+                                                                            : string();
+    n42Resource->setSuggestFileName( drfname );
+    csvResource->setSuggestFileName( drfname );
+    refSheetResource->setSuggestFileName( drfname );
+    xmlResource->setSuggestFileName( drfname );
   };
   
   name->changed().connect( this, updateName );
@@ -2114,9 +2368,11 @@ void MakeDrf::startSaveAs()
   name->blurred().connect( this, updateName );
 
 
-  auto updateDesc = [description,csvResource,refSheetResource](){
+  auto updateDesc = [description,n42Resource,csvResource,refSheetResource,xmlResource](){
+    n42Resource->setDescription( description->text().toUTF8() );
     csvResource->setDescription( description->text().toUTF8() );
     refSheetResource->setDescription( description->text().toUTF8() );
+    xmlResource->setDescription( description->text().toUTF8() );
   };
 
   description->changed().connect( this, updateDesc );
@@ -2243,7 +2499,90 @@ bool MakeDrf::isIntrinsicEfficiencyValid()
 void MakeDrf::setGeneratedMcResponse( std::shared_ptr<ceelo::DetectorResponse> response )
 {
   m_generatedMcResponse = response;
+
+  // Only the run "Generate, then store" (or "Store when done") armed: a run the user started
+  //  themselves, or the instant transfer rebuilding itself, must not pop up the dialog.
+  const bool armed = (m_storeAfterGenerationId >= 0) && m_mcTool
+                     && (m_storeAfterGenerationId == m_mcTool->generationId());
+  m_storeAfterGenerationId = -1;
+  if( armed && response )
+    startSaveAs();
 }//setGeneratedMcResponse(...)
+
+
+void MakeDrf::requestStoreExport()
+{
+  m_storeAfterGenerationId = -1;  //this request replaces any earlier one
+
+  // Only a Monte-Carlo method has to be generated first; the instant transfer from the measured
+  //  curve (the default) is built as the DRF is assembled.
+  const bool full_geom = m_mcTool && (m_geometry->currentIndex() == 0) && m_geomMode->isChecked();
+  const bool mc_method = full_geom
+                && (m_mcTool->selectedMethod() != MakeMcResponseForDrf::Method::CurveTransfer);
+  const bool have_mc = m_generatedMcResponse
+                && (m_generatedMcResponse->provenance.method != ceelo::ProductionMethod::CurveTransfer);
+
+  if( !mc_method || have_mc || m_effEqnCoefs.empty() )
+  {
+    startSaveAs();
+    return;
+  }
+
+  const bool running = m_mcTool->isGenerating();
+  const bool can_generate = m_mcTool->generationReady();
+
+  WString body;
+  if( running )
+    body = WString::tr("md-mc-running-body");
+  else if( can_generate )
+    body = WString::tr("md-mc-none-body");
+  else  //the reason can quote typed text, so is escaped for the XHTML
+    body = WString::tr("md-mc-cant-body")
+             .arg( Wt::Utils::htmlEncode( m_mcTool->geometryProblem() ) );
+
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
+                  WString::tr( running ? "md-mc-running-title" : "md-mc-none-title" ), body );
+
+  if( running )
+  {
+    WPushButton *wait = dialog->addButton( WString::tr("md-mc-store-when-done"),
+                                           WidgetUtils::ButtonRole::Affirm );
+    wait->clicked().connect( this, [this](){
+      // Re-checked: the run may have finished while the dialog was up
+      if( m_mcTool->isGenerating() )
+      {
+        m_storeAfterGenerationId = m_mcTool->generationId();
+        passMessage( WString::tr("md-mc-will-store"), WarningWidget::WarningMsgInfo );
+      }else
+      {
+        requestStoreExport();
+      }
+    } );
+  }else if( can_generate )
+  {
+    WPushButton *generate = dialog->addButton( WString::tr("md-mc-generate-then-store"),
+                                               WidgetUtils::ButtonRole::Affirm );
+    generate->clicked().connect( this, [this](){
+      // Armed to THIS run only: one that never starts must not leave a later one armed
+      const bool started = m_mcTool->startGeneration();
+      m_storeAfterGenerationId = started ? m_mcTool->generationId() : -1;
+      if( started )
+      {
+        passMessage( WString::tr("md-mc-will-store"), WarningWidget::WarningMsgInfo );
+      }else
+      {
+        passMessage( WString::tr("md-mc-not-started")
+                       .arg( Wt::Utils::htmlEncode( m_mcTool->geometryProblem() ) ),
+                     WarningWidget::WarningMsgHigh );
+      }
+    } );
+  }//if( running ) / else if( can_generate )
+
+  WPushButton *without = dialog->addButton( WString::tr("md-mc-store-without"),
+                                            WidgetUtils::ButtonRole::Neutral );
+  without->clicked().connect( this, &MakeDrf::startSaveAs );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+}//void requestStoreExport()
 
 
 void MakeDrf::handleSourcesUpdates()
@@ -2255,14 +2594,19 @@ void MakeDrf::handleSourcesUpdates()
     return;
 
   size_t numchan = 0;
-  vector< std::shared_ptr<const PeakDef> > peaks;
+  vector< std::shared_ptr<const PeakDef> > peaks, fwhm_peaks;  //the peaks used, and the ones the FWHM fit uses
 
   // Raw per-peak points (absolute efficiency at each source's own distance) and the sources they
   //  came from; per-source keys keep each source's certificate/distance error a common-mode block.
   vector<MeasuredEffPoint> measured_points;
-  map<MakeDrfSrcDef *,int> raw_src_indexes;
+  vector<pair<MakeDrfSrcDef *,MakeDrfCalc::CalSource>> used_sources;  //in the order first used, as read
 
   const bool is_fixed_geometry = (m_geometry->currentIndex() != 0);
+
+  // What is wrong with the inputs, for the list under the chart: the detector first, then sources
+  vector<StatusItem> problems = validateDetectorInputs();
+  const bool detector_inputs_ok = std::none_of( begin(problems), end(problems),
+                                                []( const StatusItem &i ){ return i.isError; } );
 
   // How the detector is described (a diameter, or its full geometry)
   string geomErrMsg;
@@ -2273,13 +2617,17 @@ void MakeDrf::handleSourcesUpdates()
   }catch( std::exception &e )
   {
     geomErrMsg = e.what();
+    if( detector_inputs_ok )  //else validateDetectorInputs() has already said what is wrong
+      problems.push_back( makeStatusItem( WString::fromUTF8(geomErrMsg), nullptr, true ) );
   }
   const double diameter = geom_choice.diameter;
   
   const bool doAirAtten = (!is_fixed_geometry && m_airAttenuate->isChecked());
   
-  //Go through and and grab background peaks
-  vector<DrfPeak *> backgroundpeaks;
+  // The background peaks, with the background spectrum each is from; and how many source spectra
+  //  there are - messages name the file and sample a source is in, unless there is only the one.
+  vector<MakeDrfCalc::BackgroundPeak> backgroundpeaks;
+  size_t num_source_samples = 0, num_background_samples = 0;
   for( auto w : m_files->children() )
   {
     auto fileWidget = dynamic_cast<DrfSpecFile *>( w );
@@ -2290,23 +2638,57 @@ void MakeDrf::handleSourcesUpdates()
     
     for( DrfSpecFileSample *sample : fileWidget->fileSamples() )
     {
-      if( !sample->isBackground() )
-        continue;
-      
-      for( auto peak : sample->peaks() )
-      {
+      // A peak shows it is background subtracted only while it is (set below)
+      for( DrfPeak *peak : sample->peaks() )
         peak->setBackgroundBeingSubtractedInfo( false, 0.0 );
-        if( peak->useForEffFit() )
-          backgroundpeaks.push_back( peak );
+
+      if( !sample->isBackground() )
+      {
+        num_source_samples += 1;
+        continue;
       }
+      
+      for( DrfPeak *peak : sample->peaks() )
+      {
+        if( !peak->useForEffFit() )
+          continue;
+
+        MakeDrfCalc::BackgroundPeak back;
+        back.peak = peak->m_peak;
+        back.liveTime = sample->liveTime();
+        back.spectrum = num_background_samples;
+        backgroundpeaks.push_back( back );
+      }
+
+      num_background_samples += 1;
     }//for( DrfSpecFileSample *sample : sampleWidgets )
   }//for( auto w : m_files->children()  )
-  
+
+  // A status item for a source: "<b>Na24</b> - file.n42, Sample 2: the problem"
+  auto source_item = [num_source_samples]( MakeDrfSrcDef *src, DrfSpecFileSample *sample,
+                                           const WString &msg, WFormWidget *field,
+                                           const bool is_error ) -> StatusItem {
+    const SandiaDecay::Nuclide * const nuc = src ? src->nuclide() : nullptr;
+    const string nucname = nuc ? nuc->symbol : WString::tr("msd-non-specified-nuc").toUTF8();
+    const string location = (num_source_samples > 1) ? sample->locationLabel() : string();
+    const char * const key = location.empty() ? "md-prob-src-noloc" : "md-prob-src";
+
+    StatusItem item;
+    item.html = WString::tr(key).arg( "<b>" + Wt::Utils::htmlEncode(nucname) + "</b>" )
+                                .arg( Wt::Utils::htmlEncode(location) )
+                                .arg( Wt::Utils::htmlEncode(msg.toUTF8()) ).toUTF8();
+    item.plain = WString::tr(key).arg( nucname ).arg( location ).arg( msg ).toUTF8();
+    item.field = field;
+    item.isError = is_error;
+    return item;
+  };//source_item
+
   //Go through and make MakeDrfChart::DataPoint points, and also make sure to
   //  indicate which peaks are being background subtracted.
-  bool not_all_sources_used = false;
+  size_t num_peaks_selected = 0;
   float minenergy = 999999.0f, maxenergy = -9999999.0f;
   vector<MakeDrfChart::DataPoint> datapoints;
+  vector<pair<string,float>> datapoint_fit_keys;  //source key and energy of a used point; parallel to `datapoints`
   for( auto w : m_files->children()  )
   {
     auto fileWidget = dynamic_cast<DrfSpecFile *>( w );
@@ -2334,78 +2716,172 @@ void MakeDrf::handleSourcesUpdates()
       
 
       const vector<pair<DrfPeak *,MakeDrfSrcDef *>> peaks_to_sources = sample->selected_peak_to_sources();
-      map<const SandiaDecay::Nuclide *,vector<SandiaDecay::EnergyRatePair>> mixtures;
-      
-      // ageAtSpectrumTime() or activityAtSpectrumTime() can through an exception if the entered
-      //  values are invalid; we will skip the entire sample if we encounter this.
-      try
-      {
-        for( auto pp : peaks_to_sources )
+      num_peaks_selected += peaks_to_sources.size();
+
+      // The sample's peaks and sources, as MakeDrfCalc::samplePoints takes them.  A source whose
+      //  inputs have a problem is left out, but only it - the other sources in the sample are still
+      //  used (save for peaks it would add to).
+      const vector<DrfPeak *> sample_peaks = sample->peaks();
+      vector<MakeDrfSrcDef *> src_widgets;  //parallel to `input.sources`
+      vector<Wt::Core::observing_ptr<WFormWidget>> src_problem_field;  //an unusable source's first problem input
+      MakeDrfCalc::SampleInput input;
+      input.liveTime = sample->liveTime();
+      input.realTime = sample->realTime();
+
+      auto read_source = [&]( MakeDrfSrcDef * const src ) -> MakeDrfCalc::CalSource {
+        MakeDrfCalc::CalSource cs;
+        cs.nuclide = src->nuclide();
+
+        Wt::Core::observing_ptr<WFormWidget> first_problem;
+        for( const MakeDrfSrcDef::InputProblem &p : src->validate() )
         {
-          const SandiaDecay::Nuclide * const nuc = pp.second->nuclide();
-          if( !pp.first || !nuc || mixtures.count(nuc) )
-            continue;
-          
-          const double activity = pp.second->activityAtSpectrumTime();
-          const double age = pp.second->ageAtSpectrumTime();
-          
-          SandiaDecay::NuclideMixture mix;
-          mix.addAgedNuclideByActivity( nuc, activity, age );
-          
-          mixtures[nuc] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
-        }//for( auto pp : peaks_to_sources )
-      }catch( std::exception & )
-      {
-        not_all_sources_used = true;
-        continue;
-      }//try / catch
-      
-      for( auto pp : peaks_to_sources )
-      {
-        MakeDrfSrcDef * const srcDef = pp.second;
-        const SandiaDecay::Nuclide * const nuc = srcDef->nuclide();
-        
-        DrfPeak * const drfPeak = pp.first;
-        const std::shared_ptr<const PeakDef> peak = drfPeak->m_peak;
-        
-        //Check if we will background subtract
-        double back_peak_area = 0.0, back_peak_area_uncert = 0.0, back_peak_lt = 0.0;
-        for( auto b : backgroundpeaks )
-        {
-          const std::shared_ptr<const PeakDef> backpeak = b->m_peak;
-          if( fabs(backpeak->mean() - peak->mean()) < 1.5*peak->sigma()
-             || (backpeak->parentNuclide() && peak->parentNuclide() && (fabs(backpeak->gammaParticleEnergy() - peak->gammaParticleEnergy()) < 1.0)) )
+          problems.push_back( source_item( src, sample, p.message, p.field, p.blocking ) );
+          if( p.blocking && cs.usable )
           {
-            back_peak_area += backpeak->peakArea();
-            //ToDo: Check (when I'm not so tired) to make sure this is the right way to handle uncert.
-            back_peak_area_uncert = sqrt( back_peak_area_uncert*back_peak_area_uncert + backpeak->peakAreaUncert()*backpeak->peakAreaUncert() );
-            back_peak_lt += b->m_livetime;
-          }//
-        }//for( auto b : backgroundpeaks )
-        
-        const bool subBack = (back_peak_area > DBL_EPSILON && back_peak_lt > DBL_EPSILON);
-        drfPeak->setBackgroundBeingSubtractedInfo( subBack, (subBack ? (back_peak_area/back_peak_lt) : 0.0) );
-        
-        MakeDrfChart::DataPoint point;
-        point.energy = peak->parentNuclide() ? peak->gammaParticleEnergy() : peak->mean();
-        point.livetime = drfPeak->m_livetime;
-        point.peak_area = peak->peakArea();
-        point.peak_area_uncertainty = peak->peakAreaUncert();
-        
-        double scaled_back_area = -1.0, scaled_back_uncert = 0.0;  //for the points provenance
-        if( subBack )
+            cs.usable = false;
+            first_problem = p.field;
+          }
+        }//for( loop over problems with this source )
+        src_problem_field.push_back( first_problem );
+
+        if( !cs.usable )
+          return cs;
+
+        try
         {
-          const double frac_back_uncert = back_peak_area_uncert / back_peak_area;
-          const double scaled_back = point.livetime * back_peak_area / back_peak_lt;
-          scaled_back_area = scaled_back;
-          scaled_back_uncert = scaled_back * frac_back_uncert;
-          
-          point.peak_area -= scaled_back;
-          //ToDo: check this uncertainty is actually correct.
-          point.peak_area_uncertainty = sqrt( point.peak_area_uncertainty*point.peak_area_uncertainty
-                                             + scaled_back*frac_back_uncert*scaled_back*frac_back_uncert );
-        }
-        
+          cs.activity = src->activityAtSpectrumTime();
+          cs.fracActivityUncert = src->fractionalActivityUncertainty();
+          if( cs.nuclide )
+            cs.age = src->ageAtSpectrumTime();
+          if( !is_fixed_geometry )
+          {
+            cs.distance = src->distance();
+            cs.distanceUncert = src->distanceUncertainty();
+          }
+
+          ShieldingSelect * const shield = src->shielding();
+          if( shield && shield->isGenericMaterial() )
+          {
+            cs.shieldAtomicNumber = shield->atomicNumber();
+            cs.shieldArealDensity = shield->arealDensity();
+          }else if( shield )
+          {
+            cs.shieldMaterial = shield->material();
+            if( cs.shieldMaterial )
+              cs.shieldThickness = shield->thickness();
+          }
+        }catch( std::exception &e )
+        {
+          problems.push_back( source_item( src, sample, WString::fromUTF8(e.what()), nullptr, true ) );
+          cs.usable = false;
+        }//try / catch
+
+        return cs;
+      };//read_source lambda
+
+      for( DrfPeak * const drfPeak : sample_peaks )
+      {
+        MakeDrfCalc::SamplePeak sp;
+        sp.peak = drfPeak->m_peak;
+
+        const auto pos = std::find_if( begin(peaks_to_sources), end(peaks_to_sources),
+                                [drfPeak]( const pair<DrfPeak *,MakeDrfSrcDef *> &pp ){ return pp.first == drfPeak; } );
+        if( pos != end(peaks_to_sources) )
+        {
+          MakeDrfSrcDef * const src = pos->second;
+          const auto src_pos = std::find( begin(src_widgets), end(src_widgets), src );
+          sp.source = static_cast<int>( src_pos - begin(src_widgets) );
+          if( src_pos == end(src_widgets) )
+          {
+            src_widgets.push_back( src );
+            input.sources.push_back( read_source( src ) );
+          }
+
+          // A peak with no nuclide uses the branching ratio the user entered for it
+          if( !src->nuclide() && drfPeak->m_userBr
+             && (drfPeak->m_userBr->validate() == WValidator::State::Valid) )
+            sp.userBr = drfPeak->m_userBr->value();
+        }//if( the peak is used, for a source )
+
+        input.peaks.push_back( sp );
+      }//for( DrfPeak * const drfPeak : sample_peaks )
+
+      const MakeDrfCalc::SampleResult result = MakeDrfCalc::samplePoints( input, backgroundpeaks, doAirAtten );
+
+      for( const pair<size_t,string> &err : result.sourceErrors )
+        problems.push_back( source_item( src_widgets[err.first], sample, WString::fromUTF8(err.second), nullptr, true ) );
+
+      // Peaks left out for each (usable source, unusable source) pair, so one message lists them
+      map<pair<size_t,size_t>,vector<double>> interfered_peaks;
+
+      for( const MakeDrfCalc::PeakPoint &pt : result.points )
+      {
+        DrfPeak * const drfPeak = sample_peaks[pt.peak];
+        const std::shared_ptr<const PeakDef> &peak = drfPeak->m_peak;
+        const size_t src_index = static_cast<size_t>( input.peaks[pt.peak].source );
+        MakeDrfSrcDef * const srcDef = src_widgets[src_index];
+        const SandiaDecay::Nuclide * const nuc = srcDef->nuclide();
+
+        char energy_str[32] = { '\0' };
+        snprintf( energy_str, sizeof(energy_str), "%.1f", pt.energy );
+
+        pair<string,float> fit_key;  //set for a peak that gives an efficiency point
+        switch( pt.status )
+        {
+          case MakeDrfCalc::PeakPoint::Status::NoUserBranchRatio:
+            snprintf( energy_str, sizeof(energy_str), "%.2f", peak->mean() );
+            problems.push_back( source_item( srcDef, sample, WString::tr("md-err-peak-br").arg(energy_str),
+                                             drfPeak->m_userBr, true ) );
+            continue;
+
+          case MakeDrfCalc::PeakPoint::Status::NeedsUnusableSource:
+            interfered_peaks[{src_index, static_cast<size_t>(pt.interferer)}].push_back( pt.energy );
+            continue;
+
+          // The peak gives no efficiency; say why it is not being used rather than drop it silently
+          //  (its width is still good for the FWHM fit)
+          case MakeDrfCalc::PeakPoint::Status::NoSourceGammas:
+            problems.push_back( source_item( srcDef, sample,
+                                             WString::tr("md-warn-peak-no-src-gammas").arg(energy_str),
+                                             nullptr, false ) );
+            break;
+
+          case MakeDrfCalc::PeakPoint::Status::NoNetArea:
+            problems.push_back( source_item( srcDef, sample,
+                                             WString::tr("md-warn-peak-no-net-area").arg(energy_str),
+                                             nullptr, false ) );
+            break;
+
+          case MakeDrfCalc::PeakPoint::Status::Used:
+          {
+            // Per-source keys keep each source's certificate/distance error a common-mode block
+            auto used_pos = std::find_if( begin(used_sources), end(used_sources),
+                     [srcDef]( const pair<MakeDrfSrcDef *,MakeDrfCalc::CalSource> &u ){ return u.first == srcDef; } );
+            if( used_pos == end(used_sources) )
+            {
+              used_sources.emplace_back( srcDef, input.sources[src_index] );
+              used_pos = end(used_sources) - 1;
+            }
+
+            MeasuredEffPoint raw = pt.measured;
+            raw.sourceKey = (nuc ? nuc->symbol : string("user"))
+                            + "#" + std::to_string( used_pos - begin(used_sources) );
+            raw.fileName = SpecUtils::filename( fileWidget->measurement()->filename() );
+            raw.sampleNumbers = SpecUtils::sequencesToBriefString( sample->samples() );
+            fit_key = { raw.sourceKey, raw.energy };
+            measured_points.push_back( std::move(raw) );
+            break;
+          }
+        }//switch( pt.status )
+
+        const bool sub_back = (pt.bkgLiveTime > 0.0);
+        drfPeak->setBackgroundBeingSubtractedInfo( sub_back, (sub_back ? (pt.bkgArea / pt.bkgLiveTime) : 0.0) );
+
+        MakeDrfChart::DataPoint point;
+        point.energy = static_cast<float>( pt.energy );
+        point.livetime = static_cast<float>( input.liveTime );
+        point.peak_area = static_cast<float>( pt.peakArea );
+        point.peak_area_uncertainty = static_cast<float>( pt.peakAreaUncert );
         if( peak->type() == PeakDef::GaussianDefined )
         {
           point.peak_fwhm = peak->fwhm();
@@ -2414,204 +2890,55 @@ void MakeDrf::handleSourcesUpdates()
         {
           point.peak_fwhm = point.peak_fwhm_uncertainty = 0.0f;
         }
-        
-        
-        
-        auto trans_frac = [doAirAtten]( const float energy, MakeDrfSrcDef *src ) -> double {
-          
-          double airTransFrac = 1.0;
-          if( doAirAtten )
-          {
-            const double distance = src->distance();
-            const double mu = GammaInteractionCalc::transmission_length_coefficient_air( energy );
-            airTransFrac = exp( -mu * distance );
-          }//if( doAirAtten )
-          
-          ShieldingSelect *shield = src ? src->shielding() : nullptr;
-          if( !shield )
-            return airTransFrac;
-          
-          //ToDo: Attenuation calculation not checked!
-          double an = 14, ad = 0.0;
-          if( shield->isGenericMaterial() )
-          {
-            an = shield->atomicNumber();
-            ad = shield->arealDensity();
-            
-            if( an < 1.0 || ad < 0.0 )
-            {
-              an = 14;
-              ad = 0.0;
-            }
-          }else
-          {
-            std::shared_ptr<const Material> mat = shield->material();
-            if( mat )
-            {
-              an = mat->massWeightedAtomicNumber();
-              ad = mat->density * shield->thickness();
-            }//if( mat )
-          }//if( shield->isGenericMaterial() ) / else
-          
-          const double mu = MassAttenuation::massAttenuationCoefficientFracAN( an, energy );
-          return airTransFrac * exp( -mu * ad );
-        };//trans_frac lambda
-        
-        
-        auto src_rate = [&mixtures,trans_frac]( const float energy, const float width,
-                                                MakeDrfSrcDef * const src, DrfPeak * const peak,
-                                                float &source_count_rate,
-                                                float &incidentGamma, float &fracUncert ) {
-          source_count_rate = incidentGamma = fracUncert = 0.0;
-
-          const double transmittion_factor = trans_frac( energy, src );
-          const SandiaDecay::Nuclide * const nuc = src->nuclide();
-
-          if( nuc )
-          {
-            const vector<SandiaDecay::EnergyRatePair> &rates = mixtures[nuc];
-            for( const auto &r : rates )
-            {
-              if( fabs(r.energy - energy) < width )
-                source_count_rate += (r.numPerSecond * transmittion_factor);
-            }
-          }else
-          {
-            if( !peak->m_userBr || (peak->m_userBr->validate()!=WValidator::State::Valid) )
-              throw runtime_error( "Logic error - no nuclide associated with " + std::to_string(peak->m_peak->mean()) + " keV peak, and no user BR." );
-
-            const double activity = src->activityAtSpectrumTime();
-            const double br = peak->m_userBr->value();
-            source_count_rate += transmittion_factor * br * activity;
-          }
-
-          //If we get here on initial GUI load, we seem to get error validating
-          //  the uncertainty (hence a workaround is used to delay first reading)
-
-          if( source_count_rate > 0.0f )
-          {
-            // Gammas emitted into 4pi during the measurement; the source geometry is divided out
-            //  later (MakeDrfCalc::intrinsicFitPoints), so points at any distance share one model.
-            const double livetime = peak->m_livetime;
-            incidentGamma = source_count_rate * livetime;
-            fracUncert = src->fractionalActivityUncertainty();
-          }//if( source_count_rate > 0.0f )
-        };//src_rate labmda
-        
-        const double width = 1.25*(peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth());
-        
-        try
-        {
-          point.distance = is_fixed_geometry ? -1.0 : srcDef->distance();
-          
-          float source_count_rate, expected, fracUncert;
-          src_rate( point.energy, width, srcDef, drfPeak, source_count_rate, expected, fracUncert );
-          
-          
-          //Now loop through all the other nuclides and get their expected contribtion
-          for( const auto &nuc_to_rates : mixtures )
-          {
-            const SandiaDecay::Nuclide * const other_nuc = nuc_to_rates.first;
-            if( other_nuc == nuc || !other_nuc )
-              continue;
-            
-            MakeDrfSrcDef *otherSrcDef = nullptr;
-            for( size_t i = 0; !otherSrcDef && i < peaks_to_sources.size(); ++i )
-            {
-              if( peaks_to_sources[i].second->nuclide() == other_nuc )
-                otherSrcDef = peaks_to_sources[i].second;
-            }
-            
-            if( !otherSrcDef )
-              continue;
-            
-            assert( otherSrcDef != srcDef );
-            
-            float other_source_count_rate, other_expected, other_fracUncert;
-            src_rate( point.energy, width, otherSrcDef, drfPeak, other_source_count_rate, other_expected, other_fracUncert );
-            
-            if( other_source_count_rate > 0.0 )
-            {
-              fracUncert = sqrt( pow(expected*fracUncert,2.0f) + pow(other_expected*other_fracUncert,2.0f) );
-              expected += other_expected;
-              source_count_rate += other_source_count_rate;
-              
-              //ToDo: To MakeDrfChart::DataPoint add a other source count rate and uncertainty field.
-              
-              fracUncert /= expected;
-            }
-          }//for( const auto &nuc_to_rates : mixtures )
-          
-          
-          point.source_count_rate = source_count_rate;
-          point.source_count_rate_uncertainty = source_count_rate*fracUncert;
-          
-          // Absolute efficiency at this source's own distance
-          const double eff = point.peak_area / expected;
-
-          // Keep the raw point, with the statistical (peak area) and certificate (source activity)
-          //  parts separate, plus its provenance - the fit, a Monte-Carlo grounding, and a later
-          //  re-fit from the DRF alone all start from exactly this.
-          if( (eff > 0.0) && !IsNan(eff) && !IsInf(eff) )
-          {
-            MeasuredEffPoint raw;
-            raw.energy = point.energy;
-            raw.efficiency = static_cast<float>( eff );
-            raw.fracStatUncert = (point.peak_area > 0.0f)
-                                  ? (point.peak_area_uncertainty / point.peak_area) : 0.0f;
-            raw.fracCertUncert = fracUncert;
-            if( !raw_src_indexes.count(srcDef) )
-              raw_src_indexes[srcDef] = static_cast<int>( raw_src_indexes.size() );
-            raw.sourceKey = (nuc ? nuc->symbol : string("user"))
-                            + "#" + std::to_string( raw_src_indexes[srcDef] );
-            raw.distance = static_cast<float>( point.distance );
-            raw.distanceUncert = is_fixed_geometry ? 0.0f : static_cast<float>( srcDef->distanceUncertainty() );
-            raw.peakArea = point.peak_area;
-            raw.peakAreaUncert = point.peak_area_uncertainty;
-            raw.liveTime = point.livetime;
-            if( scaled_back_area >= 0.0 )
-            {
-              raw.bkgPeakArea = static_cast<float>( scaled_back_area );
-              raw.bkgPeakAreaUncert = static_cast<float>( scaled_back_uncert );
-            }
-            raw.fileName = SpecUtils::filename( fileWidget->measurement()->filename() );
-            raw.sampleNumbers = SpecUtils::sequencesToBriefString( sample->samples() );
-
-            measured_points.push_back( std::move(raw) );
-          }//if( eff is sensible )
-        }catch( std::exception &e )
-        {
-          cerr << "handleSourcesUpdates: got exception: " << e.what() << endl;
-          not_all_sources_used = true;
-          continue;
-        }
-        
+        point.source_count_rate = static_cast<float>( pt.sourceRate );
+        point.source_count_rate_uncertainty = static_cast<float>( pt.sourceRate * pt.fracSourceUncert );
+        point.distance = static_cast<float>( input.sources[src_index].distance );
         point.peak_color = peak->lineColor();
-        point.background_peak_area = back_peak_area;
-        point.background_peak_live_time = back_peak_lt;
-        
-        //ToDo: Add more/better source info.
-        char energy[32] = { '\0' }, counts[32] = { '\0' };
-        snprintf( energy, sizeof(energy)-1, "%.1f", point.energy );
-        snprintf( counts, sizeof(counts)-1, "%.1f", point.peak_area );
+        point.background_peak_area = static_cast<float>( pt.bkgArea );
+        point.background_peak_live_time = static_cast<float>( pt.bkgLiveTime );
+        point.use_for_fwhm_fit = pt.useForFwhm;
+
+        char counts[32] = { '\0' };
+        snprintf( counts, sizeof(counts), "%.1f", point.peak_area );
         if( nuc )
         {
           point.source_information = WString::tr("md-peak-counts")
                                       .arg(nuc->symbol)
-                                      .arg(energy)
+                                      .arg(energy_str)
                                       .arg(counts)
                                       .toUTF8();
         }else
         {
           point.source_information = WString::tr("md-peak-no-nuc")
-                                      .arg(energy)
+                                      .arg(energy_str)
                                       .arg(counts)
                                       .toUTF8();
         }
-        
+
+        if( pt.useForFwhm )
+          fwhm_peaks.push_back( peak );
         peaks.push_back( peak );
         datapoints.push_back( point );
-      }//for( auto pp : peaks_to_sources )
+        datapoint_fit_keys.push_back( fit_key );
+      }//for( const MakeDrfCalc::PeakPoint &pt : result.points )
+
+      for( const auto &interfered : interfered_peaks )
+      {
+        string energies;
+        for( const double energy : interfered.second )
+        {
+          char buffer[32] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "%.1f", energy );
+          energies += (energies.empty() ? "" : ", ") + string(buffer);
+        }
+
+        const size_t bad_index = interfered.first.second;
+        const SandiaDecay::Nuclide * const bad_nuc = src_widgets[bad_index]->nuclide();
+        problems.push_back( source_item( src_widgets[interfered.first.first], sample,
+                                         WString::tr("md-warn-peak-needs-bad-src")
+                                           .arg( energies ).arg( bad_nuc ? bad_nuc->symbol : string() ),
+                                         src_problem_field[bad_index].get(), false ) );
+      }//for( const auto &interfered : interfered_peaks )
     }//for( DrfSpecFileSample *sample : sampleWidgets )
   }//for( auto w : m_files->children()  )
   
@@ -2624,45 +2951,37 @@ void MakeDrf::handleSourcesUpdates()
   
   // The sources table (one entry per calibration source), for the DRFs provenance
   vector<MeasuredSourceInfo> sources;
-  for( const auto &src_index : raw_src_indexes )
+  for( size_t i = 0; i < used_sources.size(); ++i )
   {
-    MakeDrfSrcDef * const src = src_index.first;
-    const SandiaDecay::Nuclide * const nuc = src->nuclide();
+    const MakeDrfCalc::CalSource &cs = used_sources[i].second;
     MeasuredSourceInfo info;
-    info.sourceKey = (nuc ? nuc->symbol : string("user")) + "#" + std::to_string( src_index.second );
-    info.nuclide = nuc ? nuc->symbol : string();
+    info.sourceKey = (cs.nuclide ? cs.nuclide->symbol : string("user")) + "#" + std::to_string( i );
+    info.nuclide = cs.nuclide ? cs.nuclide->symbol : string();
+    info.activity = cs.activity;
+    info.fracActivityUncert = static_cast<float>( cs.fracActivityUncert );
+    if( cs.nuclide )
+      info.age = cs.age;
+    info.distance = static_cast<float>( cs.distance );
+    info.distanceUncert = static_cast<float>( cs.distanceUncert );
+    if( cs.shieldMaterial )
+    {
+      info.shieldMaterial = cs.shieldMaterial->name;
+      info.shieldAtomicNumber = static_cast<float>( cs.shieldMaterial->massWeightedAtomicNumber() );
+      info.shieldArealDensity = static_cast<float>( cs.shieldMaterial->density * cs.shieldThickness );
+    }else
+    {
+      info.shieldAtomicNumber = static_cast<float>( cs.shieldAtomicNumber );
+      info.shieldArealDensity = static_cast<float>( cs.shieldArealDensity );
+    }
+
     try
     {
-      info.activity = src->activityAtSpectrumTime();
-      info.fracActivityUncert = static_cast<float>( src->fractionalActivityUncertainty() );
-      if( nuc )
-        info.age = src->ageAtSpectrumTime();
-      if( !is_fixed_geometry )
-      {
-        info.distance = static_cast<float>( src->distance() );
-        info.distanceUncert = static_cast<float>( src->distanceUncertainty() );
-      }
-      ShieldingSelect * const shield = src->shielding();
-      if( shield )
-      {
-        if( shield->isGenericMaterial() )
-        {
-          info.shieldAtomicNumber = static_cast<float>( shield->atomicNumber() );
-          info.shieldArealDensity = static_cast<float>( shield->arealDensity() );
-        }else if( shield->material() )
-        {
-          info.shieldMaterial = shield->material()->name;
-          info.shieldAtomicNumber = static_cast<float>( shield->material()->massWeightedAtomicNumber() );
-          info.shieldArealDensity = static_cast<float>( shield->material()->density * shield->thickness() );
-        }
-      }//if( shield )
-      info.assayInfo = src->assayInfoString();
+      info.assayInfo = used_sources[i].first->assayInfoString();
     }catch( std::exception & )
     {
-      //A source with invalid input already excluded its peaks above
     }
     sources.push_back( std::move(info) );
-  }//for( const auto &src_index : raw_src_indexes )
+  }//for( size_t i = 0; i < used_sources.size(); ++i )
 
   MeasuredDrfPoints measured;
   try
@@ -2686,121 +3005,91 @@ void MakeDrf::handleSourcesUpdates()
     }catch( std::exception &e )
     {
       geomErrMsg = e.what();
+      problems.push_back( makeStatusItem( WString::fromUTF8(geomErrMsg), nullptr, true ) );
     }
   }//if( geomErrMsg.empty() && !measured.empty() )
-  
-  string msg;
-  if( not_all_sources_used )
-    msg += WString::tr("md-err-some-src").toUTF8();
-  if( !geomErrMsg.empty() )
-    msg += string(msg.empty() ? "" : "  ") + geomErrMsg;
-  
-  m_errorMsg->setText( msg );
-  m_errorMsg->setHidden( msg.empty() );
+
+  m_inputProblems = std::move( problems );
+  m_numPeaksSelected = num_peaks_selected;
+  m_numPeaksUsed = effpoints.size();
+  m_peaksResolutionType = peaks.empty() ? PeakFitUtils::CoarseResolutionType::Unknown
+                                        : PeakFitUtils::coarse_resolution_from_peaks( peaks );
   
   
-  const int numPeaks = static_cast<int>( peaks.size() );
-  const int currentOrder = m_effEqnOrder->currentIndex();
-  const int nCurrentOrders = m_effEqnOrder->count();
-  
-  if( nCurrentOrders == 8 && numPeaks >= 8 )
-  {
-    //Dont need to do anything
-  }else if( nCurrentOrders != numPeaks )
-  {
-    m_effEqnOrder->clear();
-    for( int order = 0; order < numPeaks && order < 8; ++order )
-      m_effEqnOrder->addItem( WString::tr("md-n-fit-pars").arg(order+1) );
-    
-    if( currentOrder > 0 )
+  // The equation term counts on offer follow the number of points.  By default two degrees of
+  //  freedom are left (one, for three points), so chi2/dof can say how well the curve describes the
+  //  points; a count the user picked is kept, as far as there are points for it.
+  const auto update_terms_combo = []( WComboBox *combo, const int npoints, const int max_offered,
+                                      const int max_default, const int user_terms ){
+    const int num_offered = std::min( npoints, max_offered );
+    if( combo->count() != num_offered )
     {
-      if( (currentOrder < (numPeaks/2)) && (currentOrder < 5) )
-        m_effEqnOrder->setCurrentIndex( std::min(numPeaks/2,5) );
-      else if( currentOrder >= numPeaks )
-        m_effEqnOrder->setCurrentIndex( numPeaks-1 );
-      else
-        m_effEqnOrder->setCurrentIndex( currentOrder );
-    }else if( numPeaks )
-    {
-      const int index = std::min(numPeaks-1,6); //Default to 6.
-      m_effEqnOrder->setCurrentIndex( index );
-    }else
-      m_effEqnOrder->setCurrentIndex( -1 );
-  }//
-  
-  const int currentSqrtOrder = m_sqrtEqnOrder->currentIndex() + 1;
-  const int nCurrentSqrtOrders = m_sqrtEqnOrder->count();
-  if( nCurrentSqrtOrders==6 && numPeaks>=6 )
-  {
-    //Dont need to do anything
-  }else if( nCurrentSqrtOrders != numPeaks )
-  {
-    const int nprev_orders = m_sqrtEqnOrder->count();
-    if( (nprev_orders > numPeaks) || ((numPeaks > 6) && (nprev_orders < 6)) )
-    {
-      m_sqrtEqnOrder->clear();
-      for( int order = 0; (order < numPeaks) && (order < 6); ++order )
-        m_sqrtEqnOrder->addItem( WString::tr("md-n-fit-pars").arg(order+1)  );
-      m_sqrtEqnOrder->setCurrentIndex( std::min(currentSqrtOrder-1, m_sqrtEqnOrder->count()-1) );
-    }//if( we need to adjust the how many orders are listed for FWHM )
-    
-    if( currentSqrtOrder > 0 )
-    {
-      if( (currentSqrtOrder < (numPeaks/2)) && (currentSqrtOrder < 4) )
-        m_sqrtEqnOrder->setCurrentIndex( std::min(numPeaks/2,4) );
-      else if( currentSqrtOrder >= numPeaks )
-        m_sqrtEqnOrder->setCurrentIndex( numPeaks-1 );
-      else
-        m_sqrtEqnOrder->setCurrentIndex( nCurrentSqrtOrders );
-    }else if( numPeaks )
-    {
-      const int index = std::min(numPeaks-1,4); //Default to 5 fit params.
-      m_sqrtEqnOrder->setCurrentIndex( index );
+      combo->clear();
+      for( int order = 0; order < num_offered; ++order )
+        combo->addItem( WString::tr("md-n-fit-pars").arg(order+1) );
     }
-  }//
+
+    if( num_offered < 1 )
+      return;
+
+    const int default_terms = MakeDrfCalc::defaultEquationTerms( npoints, max_default );
+    const int terms = (user_terms > 0) ? std::min( user_terms, num_offered ) : default_terms;
+    combo->setCurrentIndex( terms - 1 );
+  };//update_terms_combo
+
+  update_terms_combo( m_effEqnOrder, static_cast<int>(effpoints.size()), 8, 7, m_effEqnUserTerms );
+  update_terms_combo( m_sqrtEqnOrder, static_cast<int>(fwhm_peaks.size()), 6, 5, m_sqrtEqnUserTerms );
   
   m_dataPoints = datapoints;
   m_dataDiameter = diameter;
 
-  // Chart points: the intrinsic efficiency each peak gave (matched to its data point by energy),
-  //  with the total 1-sigma as its error bar, and the peaks FWHM.
+  // Chart points: the intrinsic efficiency each peak gave, with the total 1-sigma as its error bar,
+  //  and the peaks FWHM.  A fit point is found by its source key and energy (converted exactly as
+  //  intrinsicFitPoints does); points sharing both keep their order through the fit.
   {
-    map<float,const MakeDrfFit::EffFitPoint *> fit_by_energy;
+    assert( datapoint_fit_keys.size() == datapoints.size() );
+    map<pair<string,float>,deque<const MakeDrfFit::EffFitPoint *>> fit_points;
     for( const MakeDrfFit::EffFitPoint &fp : effpoints )
-      fit_by_energy[ inMeV ? (1000.0f * fp.energy) : fp.energy ] = &fp;
+      fit_points[{fp.sourceKey, fp.energy}].push_back( &fp );
 
     vector<DrfChartPoint> chart_pts;
-    for( const MakeDrfChart::DataPoint &d : datapoints )
+    for( size_t index = 0; index < datapoints.size(); ++index )
     {
+      const MakeDrfChart::DataPoint &d = datapoints[index];
       DrfChartPoint cp;
       cp.energy = d.energy;
-      cp.fwhm = d.peak_fwhm;
-      cp.fwhmUncert = d.peak_fwhm_uncertainty;
+      cp.fwhm = d.use_for_fwhm_fit ? d.peak_fwhm : 0.0f;  //only the widths the FWHM fit uses
+      cp.fwhmUncert = d.use_for_fwhm_fit ? d.peak_fwhm_uncertainty : 0.0f;
       cp.label = d.source_information;
       cp.color = d.peak_color.isDefault() ? string() : d.peak_color.cssText();
 
-      // The fit point energy is the data point energy passed through a float divide/multiply
-      auto pos = fit_by_energy.lower_bound( d.energy - 0.01f*d.energy );
-      if( (pos != end(fit_by_energy)) && (fabs(pos->first - d.energy) <= 0.01f*d.energy) )
+      const pair<string,float> &key = datapoint_fit_keys[index];
+      const auto pos = key.first.empty() ? end(fit_points)
+                         : fit_points.find( {key.first, inMeV ? (key.second / 1000.0f) : key.second} );
+      if( (pos != end(fit_points)) && !pos->second.empty() )
       {
-        const MakeDrfFit::EffFitPoint &fp = *pos->second;
+        const MakeDrfFit::EffFitPoint &fp = *pos->second.front();
+        pos->second.pop_front();
         cp.efficiency = fp.efficiency;
         cp.efficiencyUncert = fp.efficiency * sqrt( fp.fracStatUncert*fp.fracStatUncert
                                                     + fp.fracCertUncert*fp.fracCertUncert
                                                     + fp.fracDistUncert*fp.fracDistUncert );
       }
       chart_pts.push_back( std::move(cp) );
-    }//for( const MakeDrfChart::DataPoint &d : datapoints )
+    }//for( size_t index = 0; index < datapoints.size(); ++index )
 
     m_chart->setDataPoints( chart_pts );
   }
   
-  m_effOptionGroup->setHidden( datapoints.empty() );
-  m_fwhmOptionGroup->setHidden( datapoints.empty() );
-  
+  // The fit options stay where they are; only the choices that need data wait for it
+  m_effEqnOrder->setDisabled( datapoints.empty() );
+  m_sqrtEqnOrder->setDisabled( datapoints.empty() );
+  m_fitNeedsDataTxt->setHidden( !datapoints.empty() );
   
   fitEffEqn( effpoints );
-  fitFwhmEqn( peaks );
+  fitFwhmEqn( fwhm_peaks );
+
+  updateStatusDisplay();
   
   wApp->triggerUpdate();
 }//void handleSourcesUpdates()
@@ -2818,11 +3107,13 @@ void MakeDrf::handleFwhmTypeChanged()
     case DetectorPeakResponse::kConstantPlusSqrtEnergy:
     case DetectorPeakResponse::kNumResolutionFnctForm:
       m_sqrtEqnOrder->hide();
+      m_sqrtEqnOrderLabel->hide();
       valid_fwhm_form = true;
       break;
       
     case DetectorPeakResponse::kSqrtPolynomial:
       m_sqrtEqnOrder->show();
+      m_sqrtEqnOrderLabel->show();
       valid_fwhm_form = true;
       break;
   }//switch( fwhm_form )
@@ -2840,8 +3131,17 @@ void MakeDrf::handleFwhmTypeChanged()
 }//void handleFwhmTypeChanged()
 
 
+void MakeDrf::handleEffEqnOrderChange()
+{
+  m_effEqnUserTerms = m_effEqnOrder->currentIndex() + 1;
+  handleSourcesUpdates();
+}//void handleEffEqnOrderChange()
+
+
 void MakeDrf::handleSqrtEqnOrderChange()
 {
+  m_sqrtEqnUserTerms = m_sqrtEqnOrder->currentIndex() + 1;
+
   //We could update *just* the FWHM equation like:
   //size_t numchan = 0;
   //vector< std::shared_ptr<const PeakDef> > peaks;
@@ -2862,8 +3162,13 @@ void MakeDrf::handleShowFwhmPointsToggled()
 void MakeDrf::handleFixedGeometryChanged()
 {
   const bool is_fixed_geom = (m_geometry->currentIndex() != 0);
-  m_geomPanel->setHidden( is_fixed_geom );
-  m_airAttenuate->setHidden( is_fixed_geom );
+
+  // Fixed-geometry efficiencies dont use the detectors size or shape, nor the air between it and
+  //  the source; say so, rather than have those inputs vanish.
+  m_detSectionBody->setHidden( is_fixed_geom );
+  m_detNotUsedTxt->setHidden( !is_fixed_geom );
+  m_airAttenuate->setDisabled( is_fixed_geom );
+  updateSidebarWidth();
   
   DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   switch( m_geometry->currentIndex() )
@@ -2918,29 +3223,37 @@ void MakeDrf::handleGeometryModeChanged()
   m_mcTool->setHidden( !full );
   m_geomGuidance->setHidden( full );
 
-  // The geometry form is much bigger than the diameter inputs: it needs a wider panel (see the CSS
-  //  for MakeDrfGeomPanelFull), and more of the dialogs height, or the user is left entering the
-  //  geometry through a form several times the height of its panel.
-  m_geomPanel->toggleStyleClass( "MakeDrfGeomPanelFull", full );
-  if( m_mainLayout )
-  {
-    const int rendered_height = (m_interspec ? m_interspec->renderedHeight() : 0);
-    double height = sm_diam_mode_height;
-    if( full )
-      height = ((rendered_height > 100)
-                ? std::min( 1.0*sm_geom_mode_height, 0.65*rendered_height )
-                : 1.0*sm_geom_mode_height);
-    height = std::max( height, 1.0*sm_diam_mode_height );
-
-    m_mainLayout->setRowResizable( 0, true, WLength(height, WLength::Unit::Pixel) );
-  }//if( m_mainLayout )
+  // The geometry form needs a wider sidebar; the chart keeps whatever height the user gave it.
+  updateSidebarWidth();
 
   handleSourcesUpdates();
 }//handleGeometryModeChanged()
 
 
+void MakeDrf::updateSidebarWidth()
+{
+  if( m_phoneTabs || !m_sidebar )
+    return;  //on phones the sidebar is a tab, and fills it
+
+  const bool fixed_geom = (m_geometry && (m_geometry->currentIndex() != 0));
+  const bool full_geom = !fixed_geom && m_geomMode && m_geomMode->isChecked();
+
+  int width = 340;
+  if( full_geom )
+  {
+    // Enough for the geometry form's layer table; but leave the chart and peaks most of the window
+    const int app_width = m_interspec ? m_interspec->renderedWidth() : 0;
+    width = (app_width > 100) ? std::clamp( (45*make_drf_dialog_width(app_width))/100, 340, 450 ) : 450;
+  }
+
+  m_sidebar->setWidth( WLength(width, WLength::Unit::Pixel) );
+}//void updateSidebarWidth()
+
+
 std::string MakeDrf::detectorTypeHint() const
 {
+  // The crystal the spectra's instrument implies (its model text may name one, e.g. "LaBr3"),
+  //  else the one the fitted peak widths imply.
   string hint;
   for( auto w : m_files->children() )
   {
@@ -2948,8 +3261,14 @@ std::string MakeDrf::detectorTypeHint() const
     if( !fileWidget || !fileWidget->measurement() )
       continue;
     const shared_ptr<const SpecMeas> meas = fileWidget->measurement();
-    hint += " " + meas->instrument_model() + " " + SpecUtils::detectorTypeToString( meas->detector_type() );
+    const PeakFitUtils::CoarseResolutionType type
+                               = PeakFitUtils::coarse_type_for_detector_type( meas->detector_type() );
+    hint += " " + meas->instrument_model() + " " + CeeLoUtils::crystalNameForResolutionType( type );
   }
+
+  if( CeeLoUtils::crystalNameFromText( hint ).empty() )
+    hint += " " + CeeLoUtils::crystalNameForResolutionType( m_peaksResolutionType );
+
   return hint;
 }//detectorTypeHint()
 
@@ -2987,10 +3306,224 @@ MakeDrfCalc::GeometryChoice MakeDrf::geometryChoice() const
   }
   if( (choice.diameter <= 0.0) || IsNan(choice.diameter) || IsInf(choice.diameter) )
     throw runtime_error( WString::tr("md-err-det-diam-invalid").toUTF8() );
-  choice.setback = enteredSetback();
+
+  // Blank means no setback; anything else has to be a real one - a typo is not silently zero
+  const string setback_txt = SpecUtils::trim_copy( m_detSetback->text().toUTF8() );
+  if( !setback_txt.empty() )
+  {
+    double setback = -1.0;
+    try
+    {
+      setback = PhysicalUnits::stringToDistance( setback_txt );
+    }catch( std::exception & )
+    {
+    }
+
+    if( !(setback >= 0.0) || IsInf(setback) )
+      throw runtime_error( WString::tr("md-err-setback-invalid").toUTF8() );
+    choice.setback = setback;
+  }//if( !setback_txt.empty() )
 
   return choice;
 }//geometryChoice()
+
+
+MakeDrf::StatusItem MakeDrf::makeStatusItem( const Wt::WString &message, Wt::WFormWidget *field,
+                                             const bool is_error )
+{
+  StatusItem item;
+  item.plain = message.toUTF8();
+  item.html = Wt::Utils::htmlEncode( item.plain );
+  item.field = field;
+  item.isError = is_error;
+  return item;
+}//makeStatusItem(...)
+
+
+std::vector<MakeDrf::StatusItem> MakeDrf::validateDetectorInputs()
+{
+  vector<StatusItem> items;
+  bool diameter_value_error = false, setback_value_error = false;
+
+  const bool fixed_geom = (m_geometry->currentIndex() != 0);
+  const bool full_geom = m_geomMode->isChecked();
+
+  if( fixed_geom )
+  {
+    // The detector description isnt used
+  }else if( full_geom )
+  {
+    if( !m_mcTool->geometryValid() )
+    {
+      const string problem = m_mcTool->geometryProblem();
+      const WString msg = problem.empty() ? WString::tr("md-err-geometry-invalid")
+                                          : WString::tr("md-err-geometry").arg( problem );
+      items.push_back( makeStatusItem( msg, m_mcTool->geometryInput()->problemField(), true ) );
+    }
+  }else
+  {
+    const string diam_txt = SpecUtils::trim_copy( m_detDiameter->text().toUTF8() );
+    if( diam_txt.empty() )
+    {
+      items.push_back( makeStatusItem( WString::tr("md-err-det-diam-missing"), m_detDiameter, true ) );
+      diameter_value_error = true;
+    }else
+    {
+      try
+      {
+        const double diam = PhysicalUnits::stringToDistance( diam_txt );
+        if( !(diam > 0.0) || IsInf(diam) )
+        {
+          items.push_back( makeStatusItem( WString::tr("md-err-det-diam-nonpos"), m_detDiameter, true ) );
+          diameter_value_error = true;
+        }else if( (diam < 0.5*PhysicalUnits::cm) || (diam > 150.0*PhysicalUnits::cm) )
+        {
+          // Usable, but likely a unit slip (e.g. "3" meant as inches, but taken as cm, is fine;
+          //  "76" meant as mm but taken as cm is not)
+          items.push_back( makeStatusItem( WString::tr("md-warn-det-diam-unusual")
+                                             .arg( PhysicalUnits::printToBestLengthUnits(diam) ),
+                                           m_detDiameter, false ) );
+        }
+      }catch( std::exception & )
+      {
+        items.push_back( makeStatusItem( WString::tr("md-err-det-diam-invalid"), m_detDiameter, true ) );
+      }
+    }//if( diam_txt.empty() ) / else
+
+    const string setback_txt = SpecUtils::trim_copy( m_detSetback->text().toUTF8() );
+    if( !setback_txt.empty() )
+    {
+      try
+      {
+        const double setback = PhysicalUnits::stringToDistance( setback_txt );
+        if( !(setback >= 0.0) || IsInf(setback) )
+        {
+          items.push_back( makeStatusItem( WString::tr("md-err-setback-invalid"), m_detSetback, true ) );
+          setback_value_error = true;
+        }
+      }catch( std::exception & )
+      {
+        items.push_back( makeStatusItem( WString::tr("md-err-setback-invalid"), m_detSetback, true ) );
+      }
+    }//if( !setback_txt.empty() )
+  }//if( fixed_geom ) / else if( full_geom ) / else
+
+  WidgetUtils::setInputValueError( m_detDiameter, diameter_value_error );
+  WidgetUtils::setInputValueError( m_detSetback, setback_value_error );
+
+  return items;
+}//validateDetectorInputs()
+
+
+std::vector<MakeDrf::StatusItem> MakeDrf::detectorTypeMismatch() const
+{
+  vector<StatusItem> items;
+  if( !m_peakFitDetPrefsGui || (m_geometry->currentIndex() != 0) )
+    return items;
+
+  const shared_ptr<const PeakFitDetPrefs> prefs = m_peakFitDetPrefsGui->currentPrefs();
+  if( !prefs || (prefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown) )
+    return items;
+
+  // What the detector looks like: its crystal, when the geometry is given, else its peak widths
+  const bool full_geom = m_geomMode->isChecked();
+  const string crystal = full_geom ? m_mcTool->geometryInput()->crystalMaterialName() : string();
+  const PeakFitUtils::CoarseResolutionType seen = full_geom ? crystal_resolution_type( crystal )
+                                                            : m_peaksResolutionType;
+  if( !resolution_types_conflict( prefs->m_det_type, seen ) )
+    return items;
+
+  const WString prefs_type = PeakFitDetPrefsGui::detectorTypeLabel( prefs->m_det_type );
+  const WString msg = full_geom
+         ? WString::tr("md-warn-det-type-crystal").arg( prefs_type ).arg( crystal )
+         : WString::tr("md-warn-det-type-peaks").arg( prefs_type )
+                                                .arg( PeakFitDetPrefsGui::detectorTypeLabel(seen) );
+
+  items.push_back( makeStatusItem( msg, m_peakFitDetPrefsGui->detectorTypeCombo(), false ) );
+  return items;
+}//detectorTypeMismatch()
+
+
+void MakeDrf::updateStatusDisplay()
+{
+  m_problemList->clear();
+
+  vector<StatusItem> items = m_inputProblems;
+  for( const StatusItem &i : detectorTypeMismatch() )
+    items.push_back( i );
+  for( const StatusItem &i : m_fitProblems )
+    items.push_back( i );
+
+  for( const StatusItem &item : items )
+  {
+    WText *row = m_problemList->addNew<WText>( WString::fromUTF8(item.html), Wt::TextFormat::XHTML );
+    row->setInline( false );
+    row->addStyleClass( "MakeDrfProblem" );
+    row->addStyleClass( item.isError ? "ErrorTxt" : "WarnTxt" );
+
+    if( item.field )
+    {
+      row->addStyleClass( "HasField" );
+      const Wt::Core::observing_ptr<WFormWidget> field = item.field;
+      row->clicked().connect( this, [this,field](){ focusProblemField( field.get() ); } );
+    }
+  }//for( const StatusItem &item : items )
+
+  m_problemList->setHidden( items.empty() );
+
+  // A one-liner on how much of what was selected is going into the fit
+  WString summary;
+  if( m_numPeaksSelected == 0 )
+    summary = WString::tr("md-status-no-peaks");
+  else if( m_numPeaksUsed < m_numPeaksSelected )
+    summary = WString::tr("md-status-using").arg( static_cast<int>(m_numPeaksUsed) )
+                                             .arg( static_cast<int>(m_numPeaksSelected) );
+
+  m_statusSummary->setText( summary );
+  m_statusSummary->setHidden( summary.empty() );
+}//void updateStatusDisplay()
+
+
+void MakeDrf::focusProblemField( Wt::WFormWidget *field )
+{
+  if( !field )
+    return;
+
+  // On phones, first go to the tab the input is on
+  if( m_phoneTabs )
+  {
+    for( int i = 0; i < m_phoneTabs->count(); ++i )
+    {
+      const WWidget * const content = m_phoneTabs->widget( i );
+      for( const WWidget *p = field; p; p = p->parent() )
+      {
+        if( p == content )
+        {
+          m_phoneTabs->setCurrentIndex( i );
+          break;
+        }
+      }
+    }//for( loop over tabs )
+  }//if( m_phoneTabs )
+
+  WidgetUtils::revealAndFocus( field );
+}//void focusProblemField( Wt::WFormWidget *field )
+
+
+void MakeDrf::handlePeakFitPrefsChanged()
+{
+  if( !m_peakFitDetPrefsGui || !m_pfpPanel )
+    return;
+
+  m_peakFitDetPrefsGui->handlePrefsChanged();
+
+  const string summary = m_peakFitDetPrefsGui->summaryText().toUTF8();
+  m_pfpPanel->setTitle( WString::fromUTF8( WString::tr("md-peak-fit-prefs-title").toUTF8()
+                                           + " <span class=\"MakeDrfPfpSummary\">"
+                                           + Wt::Utils::htmlEncode( summary ) + "</span>" ) );
+
+  updateStatusDisplay();
+}//void handlePeakFitPrefsChanged()
 
 
 void MakeDrf::peakPreviewShown( DrfPeak *peak )
@@ -3123,12 +3656,23 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::EffFitPoint> data )
   const string sessionId = wApp->sessionId();
   
   m_effEqnChi2 = -999.9;
+  m_effEqnDof = 0;
   m_effEqnCoefs.clear();
   m_effEqnCoefUncerts.clear();
   m_effEqnCov.clear();
   m_effBirgeScale = 1.0;
   m_intrinsicEfficiencyIsValid.emit( false );
   m_intrinsicEffAnswer->setText( "" );
+  m_intrinsicEffAnswer->hide();
+  m_fitProblems.clear();
+
+  // With nothing to fit, the data range is gone too (else the chart keeps shading the old one)
+  if( data.empty() )
+  {
+    m_effLowerEnergy = m_effUpperEnergy = 0.0f;
+    m_effEqnChi2 = -999.9;
+  }
+
   updateChartDetector();
   
   const int eqnOrderIndex = m_effEqnOrder->currentIndex();
@@ -3186,6 +3730,7 @@ void MakeDrf::updateEffEqn( MakeDrfFit::EffFitResult result,
     return;
 
   m_effEqnChi2 = result.chi2;
+  m_effEqnDof = errmsg.empty() ? result.dof : 0;
   m_effLowerEnergy = lowestEnergy;
   m_effUpperEnergy = highestEnergy;
   m_effEqnCoefs = errmsg.empty() ? result.coefs : vector<float>{};
@@ -3194,25 +3739,19 @@ void MakeDrf::updateEffEqn( MakeDrfFit::EffFitResult result,
   m_effBirgeScale = result.birgeScale;
   m_intrinsicEfficiencyIsValid.emit( !m_effEqnCoefs.empty() );
   
-  // Fit problems go below the source/geometry messages handleSourcesUpdates() left there
-  string msg = m_errorMsg->text().toUTF8();
-  auto append_msg = [&msg]( const string &m ){
-    if( m.empty() )
-      return;
-    msg += msg.empty() ? m : ("<div>" + m + "</div>");
-  };
+  // Fit problems go below the source/geometry ones handleSourcesUpdates() found
+  m_fitProblems.clear();
   if( !errmsg.empty() )
-    append_msg( errmsg );
+    m_fitProblems.push_back( makeStatusItem( WString::fromUTF8(errmsg), nullptr, true ) );
   if( m_effBirgeScale > 1.5 )
   {
     char buffer[64];
     snprintf( buffer, sizeof(buffer), "%.1f", m_effBirgeScale );
-    append_msg( WString::tr("md-fit-warning-birge").arg(buffer).toUTF8() );
+    m_fitProblems.push_back( makeStatusItem( WString::tr("md-fit-warning-birge").arg(buffer), nullptr, false ) );
   }
   if( !result.warnings.empty() )
-    append_msg( result.warnings );
-  m_errorMsg->setText( WString::fromUTF8(msg) );
-  m_errorMsg->setHidden( msg.empty() );
+    m_fitProblems.push_back( makeStatusItem( WString::fromUTF8(result.warnings), nullptr, false ) );
+  updateStatusDisplay();
   
   if( !m_effEqnCoefs.empty() )
   {
@@ -3234,12 +3773,14 @@ void MakeDrf::updateEffEqn( MakeDrfFit::EffFitResult result,
       eqn += i ? "*log(x)" : "";
       eqn += (i > 1) ? ("<sup>" + std::to_string(i) + "</sup> ") : string(" ");
     }
-    eqn += ")";
+    eqn += ")&nbsp;&nbsp;" + WString::tr("md-eqn-x-units").arg( isEffEqnInMeV() ? "MeV" : "keV" ).toUTF8();
     
     m_intrinsicEffAnswer->setText( eqn );
+    m_intrinsicEffAnswer->show();
   }else
   {
     m_intrinsicEffAnswer->setText( "" );
+    m_intrinsicEffAnswer->hide();
   }//if( !coefs.empty() ) / else
 
   updateChartDetector();
@@ -3259,8 +3800,9 @@ void MakeDrf::updateChartDetector()
     //no valid fit yet
   }
 
-  m_chart->updateChart( preview );
+  // The data range first: the chart scales its efficiency axis to the curve over that range
   m_chart->setDataRange( m_effLowerEnergy, m_effUpperEnergy );
+  m_chart->updateChart( preview );
 
   if( !m_chartRangeSet && (m_effUpperEnergy > m_effLowerEnergy) )
   {
@@ -3563,8 +4105,10 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   const vector<MakeDrfChart::DataPoint> data = m_dataPoints;
   
-  const int effDof = static_cast<int>(data.size()) - static_cast<int>(effEqnCoefs.size());
-  const int fwhmDof = static_cast<int>(data.size()) - static_cast<int>(fwhmCoefs.size());
+  const int effDof = m_effEqnDof;
+  const int numFwhmPoints = static_cast<int>( std::count_if( begin(data), end(data),
+                                      []( const MakeDrfChart::DataPoint &d ){ return d.use_for_fwhm_fit; } ) );
+  const int fwhmDof = numFwhmPoints - static_cast<int>(fwhmCoefs.size());
   
   const bool effInMeV = isEffEqnInMeV();
   const auto resFcnForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
@@ -3599,22 +4143,37 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   {
     out << "Detector response function not valid" << endline;
     
-    if( m_errorMsg )
-      out << m_errorMsg->text().toUTF8() << endline;
+    for( const StatusItem &item : m_inputProblems )
+      out << item.plain << endline;
+    for( const StatusItem &item : m_fitProblems )
+      out << item.plain << endline;
     return;
   }//if( effEqnCoefs.empty() )
   
   //Okay, we've got all the variables we need for this function I think, lets
   //  write stuff
   
-  const float co60Energy = (effInMeV ? 1.33249f : 1332.49f);
-  const float intrinsicEffAt1332 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( co60Energy, effEqnCoefs );
-  
-  float releffuncert = -999.9f;
-  if( effEqnCoefs.size() == effEqnCoefsUncerts.size() && effEqnCoefs.size() > 0 )
-    releffuncert = effEqnUncert( co60Energy, effEqnCoefs, effEqnCoefsUncerts );
+  // The "Relative Eff" column: IEEE 325, of the DRF being saved (so a full geometry's response is
+  //  used), with its uncertainty; empty where it has no meaning (fixed geometry, or a fit not
+  //  reaching 1332 keV).
+  string rel_eff_field, rel_eff_uncert_field;
+  bool rel_eff_flat_disk = false;
+  try
+  {
+    const shared_ptr<const DetectorPeakResponse> drf = assembleDrf( drfname, drfdescription );
+    const double rel_eff = drf->relativeEfficiencyIeee325();
+    if( rel_eff > 0.0 )
+    {
+      rel_eff_flat_disk = !drf->ceeloResponse();
+      rel_eff_field = SpecUtils::printCompact( rel_eff, 4 ) + "%";
+      const DetectorPeakResponse::EffEval eval = drf->efficiencyEval( 1332.49f, 25.0*PhysicalUnits::cm );
+      if( (eval.value > 0.0) && (eval.sigma > 0.0) )
+        rel_eff_uncert_field = SpecUtils::printCompact( rel_eff * eval.sigma / eval.value, 3 ) + "%";
+    }
+  }catch( std::exception & )
+  {
+  }
 
-  
   std::chrono::minutes tzOffset( 0 );
   if( wApp )
     tzOffset = wApp->environment().timeZoneOffset();
@@ -3631,13 +4190,20 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   out << "# Description,";
   output_csv_field( out, drfdescription );
 
+  // The coefficients are floats: nine significant digits read back as the same float, where six
+  //  could move a many-term keV equation by tenths of a percent, and leave the covariance matrix
+  //  not positive definite.
+  const std::streamsize prev_precision = out.precision( std::numeric_limits<float>::max_digits10 );
+
   out << endline << endline
   << "# Intrinsic Efficiency Coefficients for equation of form"
   " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
   << (effInMeV ? "MeV" : "keV") << endline
   << "#  i.e. equation for probability of gamma that hits the face of the detector being detected in the full energy photopeak." << endline
-  << "# Name,Relative Eff @ 1332 keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,GeometryType" << endline
-  << drfname << " Intrinsic," << (100.0*intrinsicEffAt1332/ns_NaI3x3IntrinsicEff_1332) << "%,";
+  << "#  Relative Eff is by IEEE 325: Co-60 1332 keV FEP efficiency 25 cm from the face, relative to 1.2E-3 for a 3x3 NaI"
+  << (rel_eff_flat_disk ? " (estimated with the flat-disk model, which ignores the interaction depth)." : ".") << endline
+  << "# Name,Relative Eff,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor,GeometryType" << endline
+  << drfname << " Intrinsic," << rel_eff_field << ",";
   for( size_t i = 0; i < effEqnCoefs.size(); ++i )
     out << "," << effEqnCoefs[i];
   for( size_t i = effEqnCoefs.size(); i < 12; ++i )
@@ -3671,15 +4237,12 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   }//switch( geom_type )
   out << endline;
   
-  out << "# 1 sigma Uncertainties,";
-  if( releffuncert >= 0.0 )
-    out << 100*(releffuncert / ns_NaI3x3IntrinsicEff_1332) << "%";
-  out << ",";
+  out << "# 1 sigma Uncertainties," << rel_eff_uncert_field << ",";
   for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
     out << "," << effEqnCoefsUncerts[i];
   if( effChi2 > 0 )
-    out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
-        << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
+    out << endline << "# Chi2 / DOF = " << effChi2 << " / " << effDof
+        << " = " << (effDof >= 1 ? (effChi2/effDof) : 0.0);
   out << endline;
 
   // The full coefficient covariance (the diagonal above is its square root)
@@ -3712,22 +4275,19 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
     << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
     << "#  i.e. equation for probability of gamma emitted from source at 25cm being detected in the full energy photopeak." << endline
-    << "# Name,Relative Eff @ 1332 keV,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
-    << drfname << " Absolute," << (100.0*intrinsicEffAt1332/ns_NaI3x3IntrinsicEff_1332) << "%,";
+    << "# Name,Relative Eff,eff.c name,c0,c1,c2,c3,c4,c5,c6,c7,p0,p1,p2,Calib Distance,Radius (cm),G factor" << endline
+    << drfname << " Absolute," << rel_eff_field << ",";
     for( size_t i = 0; i < effEqnCoefs.size(); ++i )
       out << "," << ( (i==0 ? log(solidAngleAt25cm) : 0.0) + effEqnCoefs[i]);  //todo: make sure its not
     for( size_t i = effEqnCoefs.size(); i < 12; ++i )
       out << ",";
     out << "25," << (0.5*diam/PhysicalUnits::cm) << "," << solidAngleAt25cm << endline;
-    out << "# 1 sigma Uncertainties,";
-    if( releffuncert >= 0.0 )
-      out << 100*(releffuncert / ns_NaI3x3IntrinsicEff_1332) << "%";
-    out << ",";
+    out << "# 1 sigma Uncertainties," << rel_eff_uncert_field << ",";
     for( size_t i = 0; i < effEqnCoefsUncerts.size(); ++i )
       out << "," << effEqnCoefsUncerts[i];
     if( effChi2 > 0 )
-      out << endline << "# Chi2 / DOF = " << effChi2 << " / " << (effDof-1)
-      << " = " << (effDof >= 1 ? (effChi2/(effDof-1.0)) : 0.0);
+      out << endline << "# Chi2 / DOF = " << effChi2 << " / " << effDof
+      << " = " << (effDof >= 1 ? (effChi2/effDof) : 0.0);
     out << endline << endline;
   }//if( !is_fixed_geometry )
   
@@ -3741,13 +4301,12 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
       case DetectorPeakResponse::kGadrasResolutionFcn:
       {
         out << "GadrasEqn" << endline
-            << "# P6 -> resolution @ E=0 (keV)" << endline
+            << "# P6 -> resolution offset: FWHM @ E=0 (keV) when positive; when negative, bends the low-energy power law" << endline
             << "# P7 -> % FWHM @ 661 keV" << endline
             << "# P8 -> resolution power" << endline
-            << "# if( energy >= 661 or P6=0 ) FWHM = 6.61×P7×(energy/661)^P8" << endline
-            << "# else if( P6 < 0.0 ) FWHM = 6.61 x P7 x (energy/661)^(P8^(1.0/log(1.0-P6))" << endline
-            << "# else if( P6 > 6.61×P7 ) FWHM = P6" << endline
-            << "# else FWHM = sqrt(P6^2 + (6.61 x (sqrt((6.61×P7)^2 - P6^2)/6.61) x (energy/661)^P8)^2)" << endline
+            << "# if( energy > 661 or P6 = 0 ) FWHM = 6.61*P7*(energy/661)^P8" << endline
+            << "# else if( P6 > 0 ) FWHM = sqrt( (P6*(661 - energy)/661)^2 + (6.61*P7*(energy/661)^P8)^2 )" << endline
+            << "# else FWHM = 6.61*P7*(max(energy,30)/661)^(P8^(1/ln(1 - P6)))" << endline
             << "# Energy in keV"<< endline
             << "# ,P6,P7,P8" << endline;
         break;
@@ -3804,23 +4363,15 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
         out << "," << fwhmCoefUncert[i];
     }
     if( fwhmChi2 > 0 )
-      out << endline << "# Chi2 / DOF = " << fwhmChi2 << " / " << (fwhmDof-1)
-          << " = " << (fwhmDof >= 1 ? (fwhmChi2/(fwhmDof-1.0)) : 0.0);
+      out << endline << "# Chi2 / DOF = " << fwhmChi2 << " / " << fwhmDof
+          << " = " << (fwhmDof >= 1 ? (fwhmChi2/fwhmDof) : 0.0);
   }//if( fwhmCoefs.size() )
   
-  //Give upper/lower energy range
-  float lowerEnergy = 0.0f, upperEnergy = 0.0f;
-  if( !data.empty() )
-  {
-    lowerEnergy = 99999.9f;
-    upperEnergy = -99999.9f;
-    //Data is not sorted
-    for( const auto &p : data )
-    {
-      lowerEnergy = std::min( lowerEnergy, p.energy );
-      upperEnergy = std::max( upperEnergy, p.energy );
-    }
-  }//if( data.size() >= 2 )
+  out.precision( prev_precision );
+
+  // The energy range of the points the efficiency was fit to - what the DRF itself stores (`data`
+  //  also holds peaks that gave no efficiency).
+  const float lowerEnergy = m_effLowerEnergy, upperEnergy = m_effUpperEnergy;
   
   out << endline << endline;
   switch( geom_type )
@@ -3906,14 +4457,18 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
         << "," << deteffUncert
         << "," << geomFactor
         << "," << (raw ? (raw->distanceUncert / PhysicalUnits::cm) : 0.0)
-        << "," << (raw ? raw->sourceKey : string())
-        << "," << (raw ? raw->fracStatUncert : 0.0f)
+        << ",";
+    if( raw )
+      output_csv_field( out, raw->sourceKey );
+    out << "," << (raw ? raw->fracStatUncert : 0.0f)
         << "," << (raw ? raw->fracCertUncert : 0.0f)
         << ",";
     if( raw )
       output_csv_field( out, raw->fileName );
-    out << "," << (raw ? raw->sampleNumbers : string())
-        << endline;
+    out << ",";
+    if( raw )
+      output_csv_field( out, raw->sampleNumbers );  //e.g. "1-3,5"
+    out << endline;
   }//for( MakeDrfChart::DataPoint d: data )
   
   out << endline << endline;
@@ -3949,11 +4504,13 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   {
     const float energy = i / (effInMeV ? 1000.0f : 1.0f);
     const float eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, effEqnCoefs );
-    const float effUncert = effEqnUncert( energy, effEqnCoefs, effEqnCoefsUncerts );
+    const float effUncert = (effEqnCoefs.size() == effEqnCoefsUncerts.size())
+                            ? effEqnUncert( energy, effEqnCoefs, effEqnCoefsUncerts, m_effEqnCov )
+                            : -1.0f;
     
     out << i << "," << 100.0*eff << ",";
     
-    if( effEqnCoefs.size() == effEqnCoefsUncerts.size() && effEqnCoefs.size() > 0 )
+    if( effUncert >= 0.0f )
       out << 100.0*effUncert;
     out << ",";
     
@@ -4063,25 +4620,38 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
 
   const bool effInMeV = isEffEqnInMeV();
   const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
-  const float co60Energy = (effInMeV ? 1.33249f : 1332.49f);
-  const float intrinsicEffAt1332 = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( co60Energy, m_effEqnCoefs );
-  const float relEffPercent = 100.0 * intrinsicEffAt1332 / ns_NaI3x3IntrinsicEff_1332;
-  
-  char rel_eff_txt[256] = { '\0' };
-  
-  if( m_fwhmCoefs.empty() )
+
+  // The DRF being saved: its own efficiency (with a full geometry, its CeeLo response) gives the
+  //  relative efficiency and the distance rows of the table, and it is what the QR code encodes.
+  shared_ptr<const DetectorPeakResponse> drf;
+  string drf_error;
+  try
   {
-    snprintf( rel_eff_txt, sizeof(rel_eff_txt), "%.1f%% eff. (rel. to 3x3 NaI @1332 keV)", relEffPercent );
-  }else
+    drf = assembleDrf( drfname, drfdescrip );
+  }catch( std::exception &e )
   {
-    const float fwhm661 = DetectorPeakResponse::peakResolutionFWHM( 661.7, fwhmForm, m_fwhmCoefs );
-    const float relResolution = 100 * fwhm661 / 661.7;
-    
-    snprintf( rel_eff_txt, sizeof(rel_eff_txt),
-              "%.1f%% eff (rel. to 3x3 NaI @1332), and FWHM(661)=%.2g%%",
-             relEffPercent, relResolution );
-  }//if( we have FWHM ) / else.
-  
+    drf_error = e.what();
+  }
+
+  // IEEE 325 relative efficiency (what vendor data sheets quote) - none for a fixed geometry, or a
+  //  fit that does not reach 1332 keV - and the resolution at 661 keV.  Without a CeeLo response it
+  //  is the flat-disk scaling of the intrinsic curve to 25 cm, which ignores the interaction depth,
+  //  so is marked approximate.
+  string rel_eff_txt;
+  const double relEffPercent = drf ? drf->relativeEfficiencyIeee325() : -1.0;
+  if( relEffPercent > 0.0 )
+  {
+    const char * const msg_id = drf->ceeloResponse() ? "md-html-rel-eff" : "md-html-rel-eff-approx";
+    rel_eff_txt = WString::tr(msg_id).arg( SpecUtils::printCompact(relEffPercent, 3) ).toUTF8();
+  }
+
+  if( !m_fwhmCoefs.empty() )
+  {
+    const float fwhm661 = DetectorPeakResponse::peakResolutionFWHM( 661.7f, fwhmForm, m_fwhmCoefs );
+    const string fwhm_txt = SpecUtils::printCompact( 100.0*fwhm661/661.7, 2 );
+    rel_eff_txt += (rel_eff_txt.empty() ? "" : ", ") + WString::tr("md-html-fwhm-661").arg( fwhm_txt ).toUTF8();
+  }//if( we have FWHM )
+
   string fwhm_eqn;
   if( m_fwhmCoefs.size() )
   {
@@ -4089,34 +4659,36 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     {
       case DetectorPeakResponse::kGadrasResolutionFcn:
       {
+        // Mirrors DetectorPeakResponse::peakResolutionFWHM (GADRAS "form C"): a power law above
+        //  661 keV; below it, the sign of P6 picks the branch.
         const float P6 = m_fwhmCoefs[0];
         const float P7 = (m_fwhmCoefs.size() > 1) ? m_fwhmCoefs[1] : 0.0f;
         const float P8 = (m_fwhmCoefs.size() > 2) ? m_fwhmCoefs[2] : 0.0f;
-        
-        char case1_buffer[256] = { '\0' }, case2_buffer[256] = { '\0' };
-        char case3_buffer[256] = { '\0' }, case4_buffer[512] = { '\0' };
-        snprintf( case1_buffer, sizeof(case1_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)<sup>%.5g</sup>", P7, P8 );
-        snprintf( case2_buffer, sizeof(case2_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)^(%.5g^(1.0/log(1.0-%.5g))", P7, P8, P6 );
-        snprintf( case3_buffer, sizeof(case3_buffer), "FWHM(keV) = %.5g", P6 );
-        snprintf( case4_buffer, sizeof(case4_buffer), "FWHM(keV) = sqrt(%.5g<sup>2</sup>"
-                 " + (6.61 *"
-                 " (sqrt((6.61 * %.5g)<sup>2</sup> - %.5g<sup>2</sup>)/6.61)"
-                 " * (x/661)<sup>%.5g</sup>)<sup>2</sup>)", P6, P7, P6, P8 );
-        
-        if( fabs(P6) < 1.0E-8 )
+
+        char high_buffer[256] = { '\0' }, low_buffer[512] = { '\0' };
+        snprintf( high_buffer, sizeof(high_buffer), "FWHM(keV) = 6.61 * %.5g * (x/661)<sup>%.5g</sup>", P7, P8 );
+
+        if( P6 == 0.0f )
         {
-          fwhm_eqn = case1_buffer;
-        }else if( P6 < 0.0 )
-        {
-          fwhm_eqn = case2_buffer;
-        }else if( P6 > 6.61*P7 )
-        {
-          fwhm_eqn = case3_buffer;
+          fwhm_eqn = high_buffer;
         }else
         {
-          fwhm_eqn = "<div class=\"gadras-fcn\">E &lt; 661: " + string(case1_buffer) +  "</div>"
-          "<div class=\"gadras-fcn\">E &gt; 661: " + string(case4_buffer) +  "</div>";
-        }
+          if( P6 > 0.0f )
+          {
+            snprintf( low_buffer, sizeof(low_buffer),
+                      "FWHM(keV) = sqrt( (%.5g * (661 - x)/661)<sup>2</sup>"
+                      " + (6.61 * %.5g * (x/661)<sup>%.5g</sup>)<sup>2</sup> )", P6, P7, P8 );
+          }else
+          {
+            // The low-energy power is a constant, P8^(1/ln(1 - P6)); give its value
+            const double power = std::pow( static_cast<double>(P8), 1.0/std::log(1.0 - P6) );
+            snprintf( low_buffer, sizeof(low_buffer),
+                      "FWHM(keV) = 6.61 * %.5g * (max(x,30)/661)<sup>%.5g</sup>", P7, power );
+          }
+
+          fwhm_eqn = "<div class=\"gadras-fcn\">x &#8804; 661: " + string(low_buffer) + "</div>"
+                     "<div class=\"gadras-fcn\">x &gt; 661: " + string(high_buffer) + "</div>";
+        }//if( P6 == 0 ) / else
         break;
       }//case DetectorPeakResponse::kGadrasResolutionFcn:
         
@@ -4165,14 +4737,15 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
           else
             fwhm_eqn += ((m_fwhmCoefs[i] < 0.0) ? " - " : " + ");
           
+          // The polynomial is in MeV: FWHM = sqrt( A0 + A1*(x/1000) + A2*(x/1000)^2 + ... )
           char buffer[64] = { '\0' };
-          snprintf( buffer, sizeof(buffer), "%.4g", 0.001*fabs(m_fwhmCoefs[i]) );
+          snprintf( buffer, sizeof(buffer), "%.4g", fabs(m_fwhmCoefs[i]) );
           fwhm_eqn += buffer;
           
           if( i == 1 )
-            fwhm_eqn += "*x";
+            fwhm_eqn += "*(x/1000)";
           else if( i > 1 )
-            fwhm_eqn += "*x<sup>" + std::to_string(i) + "</sup>";
+            fwhm_eqn += "*(x/1000)<sup>" + std::to_string(i) + "</sup>";
         }
         fwhm_eqn += ")";
         
@@ -4248,14 +4821,6 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     
     // The DRF's own answer at each distance - with a full geometry that includes the near field,
     //  which the flat-disk product below (the fallback) does not.
-    shared_ptr<const DetectorPeakResponse> table_drf;
-    try
-    {
-      table_drf = assembleDrf( drfname, drfdescrip );
-    }catch( std::exception & )
-    {
-    }
-
     for( const int dist_cm : eff_dist_cm )
     {
       efftable << "\t<tr><th>" << dist_cm << " cm</th>";
@@ -4268,8 +4833,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
         double abs_eff = -1.0;
         try
         {
-          if( table_drf && table_drf->isValid() )
-            abs_eff = table_drf->efficiency( static_cast<float>(raw_energy), dist_cm*PhysicalUnits::cm );
+          if( drf && drf->isValid() )
+            abs_eff = drf->efficiency( static_cast<float>(raw_energy), dist_cm*PhysicalUnits::cm );
         }catch( std::exception & )
         {
         }
@@ -4356,7 +4921,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     }//switch( m_fwhmEqnType->currentIndex() )
     
     chart.setFwhmCoefficients( m_fwhmCoefs, m_fwhmCoefUncerts, fwhmEqnType, units );
-    chart.setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, units );
+    chart.setEfficiencyCoefficients( m_effEqnCoefs, m_effEqnCoefUncerts, m_effEqnCov, units );
     
     chart.update();
     
@@ -4371,8 +4936,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   string qr_code, qr_note;
   try
   {
-    shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
-    assert( drf && drf->isValid() );
+    if( !drf )
+      throw runtime_error( drf_error );
     
     // The URL carries the detector's shape, but not a Monte-Carlo response - that is orders of
     //  magnitude past what a QR code holds.  Say so on the sheet.
@@ -4395,19 +4960,22 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   WTemplate tmplt;
   // tmplttxt is unsafe HTML because of <head> tag and stuff, so we dont want Wt to filter it
   tmplt.setTemplateText( WString::fromUTF8(tmplttxt), TextFormat::UnsafeXHTML );
-  tmplt.bindString("drf-name", drfname, TextFormat::UnsafeXHTML );
-  tmplt.bindString("drf-desc", drfdescrip, TextFormat::UnsafeXHTML );
+  // User-entered text goes into the HTML as text, not markup
+  const string drfname_html = Wt::Utils::htmlEncode( drfname );
+  const string drfdescrip_html = Wt::Utils::htmlEncode( drfdescrip );
+  tmplt.bindString("drf-name", drfname_html, TextFormat::UnsafeXHTML );
+  tmplt.bindString("drf-desc", drfdescrip_html, TextFormat::UnsafeXHTML );
   tmplt.bindString("diameter", diameter, TextFormat::UnsafeXHTML );
-  tmplt.bindString("geometry", geometry_txt, TextFormat::UnsafeXHTML );
+  tmplt.bindString("geometry", Wt::Utils::htmlEncode(geometry_txt), TextFormat::UnsafeXHTML );
   tmplt.bindString("date", date, TextFormat::UnsafeXHTML );
   tmplt.bindString("rel-eff", rel_eff_txt, TextFormat::UnsafeXHTML );
   tmplt.bindString("eff-eqn", eff_eqn, TextFormat::UnsafeXHTML );
   tmplt.bindString("fwhm-eqn", fwhm_eqn, TextFormat::UnsafeXHTML );
   tmplt.bindString("eff-table", efftable.str(), TextFormat::UnsafeXHTML );
   tmplt.bindString("eff-svg", eff_chart_svg.str(), TextFormat::UnsafeXHTML );
-  tmplt.bindString("qr-code-title", drfname, TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code-title", drfname_html, TextFormat::UnsafeXHTML );
   tmplt.bindString("qr-code", qr_code, TextFormat::UnsafeXHTML );
-  tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code-summary", drfdescrip_html, TextFormat::UnsafeXHTML );
   tmplt.bindString("qr-code-note", qr_note, TextFormat::UnsafeXHTML );
   
   

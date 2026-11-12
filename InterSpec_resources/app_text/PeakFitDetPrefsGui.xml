@@ -4,6 +4,11 @@
 
   <message id="pfdpg-collapsed-label">Peak Fit Opts</message>
 
+  <!-- One-line summary of the settings, shown where the controls are collapsed away -->
+  <message id="pfdpg-summary">{1} · FWHM: {2} · {3}</message>
+  <message id="pfdpg-summary-no-skew">no skew</message>
+  <message id="pfdpg-summary-no-fg">no foreground spectrum</message>
+
   <message id="pfdpg-det-type-label">Det. Type</message>
   <message id="pfdpg-skew-type-label">Skew Type</message>
   <message id="pfdpg-skew-params-label">Skew Params</message>

@@ -524,10 +524,9 @@ public:
    
    Detector Name, Relative Eff, Detector Description,  c0,  c1,  c2,  c3,  c4,  c5,  c6,  c7,  p0,  p1,  p2,  Calib Distance, Radius (cm),  G factor
    Detector Name: is usually the detector model, ex., "IdentiFINDER".
-   Relative Eff:. is the efficiency relative to a 3x3 NaI detector at 1332 keV (MakeDrf writes its
-              intrinsic-efficiency ratio here; vendor values are usually the IEEE 325 absolute ratio
-              at 25 cm - see #relativeEfficiencyIeee325); this is only used for reference, and may be
-              empty, ex., "11%"
+   Relative Eff:. is the efficiency relative to a 3x3 NaI detector at 1332 keV, by the IEEE 325
+              definition (see #relativeEfficiencyIeee325; MakeDrf writes this, and leaves it empty for
+              a fixed geometry); this is only used for reference, and may be empty, ex., "11%"
    Detector Description: Description of the detector crystal, ex., "2.5x1.5 Planar HPGe"
    c0 through c7: the coefficients that will be fed into #fromExpOfLogPowerSeries and are in MeV (not keV); it is not uncommon for
               only the first 4 or five coefficients to be non-zero.  These coefficients are teh relative efficiency at a given distance.
@@ -1547,6 +1546,14 @@ public:
   //It is expected energy is in the same units (e.g. keV, MeV, etc) as the coefs
   static float expOfLogPowerSeriesEfficiency( const float energy,
                                               const std::vector<float> &coefs );
+
+  /** 1-sigma uncertainty of #expOfLogPowerSeriesEfficiency at `energy` (same units as the
+   coefficients), linearly propagated from the coefficients' row-major covariance:
+   d(eff)/d(c_i) = eff*log(energy)^i.  Negative when it can't be computed (no or mis-sized
+   covariance, a non-positive energy, or a non-finite or negative variance). */
+  static double expOfLogPowerSeriesEfficiencyUncert( const float energy,
+                                                     const std::vector<float> &coefs,
+                                                     const std::vector<float> &covariance );
 
   /** The exp-of-log-power-series efficiency for a generic scalar type `T` (double, or a
    `ceres::Jet<>`) with coefficients of type `ParT`; evaluated by Horner's rule in log(energy).

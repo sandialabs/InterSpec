@@ -195,6 +195,15 @@ If you only know the source activity at a previous date, you can select the
 activity will then be decayed to the date given in the spectrum file (which you
 can also change here).  If it is a source where the gamma spectrum appreciable
 changes with age, you will also be given a chance to enter age at assay date.
+Dates are entered as <em>yyyy-mm-dd</em>; a date typed some other unambiguous way, like
+&quot;2019-1-5&quot; or &quot;5 Jan 2019&quot;, is rewritten that way when you leave the field.
+</div>
+
+<div style="padding-top: 10px; clear: both">
+An input that can not be used is outlined in red as you type (hover over it to see why), and what is
+wrong is listed at the bottom of its source box.  A source with a problem is left out of the fit -
+along with any other source's peaks it would have contributed to - but the other sources are still
+used.  Every problem is also listed under the chart; click one to go to the input it is about.
 </div>
 
 <div style="padding-top: 10px; clear: both">
@@ -232,7 +241,11 @@ based on a simulation with arbitrary gamma sources.
   <img src="InterSpec_resources/static_text/images/make_drf_options.jpg"  class="imageBorder" style="max-width:66%;" />
 </div>
 <p>
-The panel to the left of the chart is where you say what the detector is.  Usually the
+The panel on the left is where you set things up: what the detector is, then how the efficiency
+and FWHM equations are fit, then (collapsed, since they are rarely changed) the peak fitting
+preferences to save with the detector response.  It scrolls on its own, and the divider under the
+chart can be dragged to give the chart, or the peaks below it, more room.
+In the &quot;Detector&quot; section, usually the
 <em>crystal diameter</em> is all you need: with &quot;<span style="font-weight: bold;">Diameter only</span>&quot;
 selected, enter the diameter of the active crystal (not the housing), and optionally the
 <em>setback</em> - the distance from the outside face of the detector to the crystal - if you know it.
@@ -243,8 +256,11 @@ more than a few detector-diameters away, on the detector axis.
 If you also know the crystal material and length (and, better still, the endcap or housing
 layers), switch to &quot;<span style="font-weight: bold;">Detector geometry</span>&quot;.  The
 same geometry form as the &quot;Modify Detector Response&quot; tool appears, pre-filled from the
-diameter you entered; the crystal length shown is a guess until you set it.  With a real geometry,
-the tool
+diameter you entered; the crystal length shown is a guess until you set it.  If another file
+already describes the detector - an InterSpec detector (.drf.xml) saved with a geometry, an ANGLE
+.outx or .detx, or a GADRAS Detector.dat - use &quot;<span style="font-weight: bold;">Import
+geometry from file...</span>&quot; (in either mode) to fill the form from it; only the geometry is
+taken.  With a real geometry, the tool
 </p>
 <ul>
   <li>puts calibration sources measured at <em>different</em> distances onto one efficiency curve
@@ -269,10 +285,12 @@ uncertainties reported by the analysis tools; you do not need to do anything for
 <div style="display:table-row">
 <h4>Fitting Options:</h4>
 <p>
-Below the chart you can choose how many coefficients you want the <em>Intrinsic Efficiency</em>
+In the &quot;Efficiency Fit&quot; section of the left panel you can choose how many coefficients you want the <em>Intrinsic Efficiency</em>
 equation to use, with the guiding criteria usually being how well the fit
 equation matches the data, without being over-fitted.
-A maximum of eight coefficients can be used.
+A maximum of eight coefficients can be used.  Until you choose, the number of coefficients follows
+the number of points, leaving two more points than coefficients (up to seven coefficients), so
+that the fit &chi;<sup>2</sup> can show how well the equation describes the points.
 You can also choose if you would like the coefficients fit for energy in keV or
 MeV.  Usually MeV gives coefficient values that are slightly more natural
 looking, but the only time the choice really matters is if you want to use the
@@ -292,7 +310,9 @@ points, where the equation is an extrapolation.
 The detector Full Width Half Maximum (FWHM) as a function of energy is also fit
 at the same time as the <em>Intrinsic Efficiency</em>.  The information is saved as part of the
 DRF (with its coefficient uncertainties), and is also written to the CSV file available from the
-&quot;Store/Export...&quot; dialog.
+&quot;Store/Export...&quot; dialog.  Peaks at 511 keV are left out of the FWHM fit (and not shown as
+FWHM points): annihilation photons are Doppler broadened, so the peak is wider than the detector
+resolution, whatever made the positrons.  They are still used for the efficiency.
 </p>
 <p>
 The FWHM can be fit using either the square root of a power series in energy:
@@ -479,14 +499,19 @@ source is selected.
   <li>Background peak rates are subtracted from a test-source peak rate if the
       fit background peak is within 1.5 peak-sigmas of the fit test-source peak,
       or if the background peak is assigned a nuclide and its source line is
-      within 1 keV of the test-source line.
+      within 1 keV of the test-source line.  The background rate is the matching background
+      peaks' total area over the total live time of the background spectra they are in.
   </li>
-  <li>If a spectrum has multiple sources associated with it, then for each peak
-      used, not only will the primary nuclide associated with that peak be used
-      to calculate the incident photons on the detector at that energy, but if
-      any of the other sources have gamma rays within 1.25 peak sigmas of the
-      primary nuclides line, it will be used as well.  However, the effect of
-      this is not currently displayed to the user.
+  <li>The photons expected in a peak are from every source gamma (or x-ray) line that is within
+      1.25 peak sigmas of the peak's assigned line, including lines of the other sources in the
+      same spectrum; a line near two peaks counts toward the nearer one only.  This is the same
+      rule the <em>Activity/Shielding Fit</em> tool uses.  However, the effect of other sources is
+      not currently displayed to the user.
+  </li>
+  <li>When a measurement's real time is more than 0.5% of a source's half-life, the source's decay
+      (or the ingrowth of its progeny) during the measurement is accounted for, as the
+      <em>Activity/Shielding Fit</em> tool does by default.  The activity entered is at the start
+      of the measurement (or at the assay date, decayed to the spectrum date, in whole days).
   </li>
   <li>If the spectrum file contains source information such as activity or
       distance, this info may get pre-populated in the tool.  A common way

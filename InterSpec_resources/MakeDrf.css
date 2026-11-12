@@ -3,22 +3,64 @@
 }
 
 
-/* Left column: diameter-only / full-geometry description of the detector */
-.MakeDrfGeomPanel {
-  width: 310px;
+/* ===== The setup sidebar (left column) =====
+   The sidebar itself is a layout item: its width is set from C++ (MakeDrf::updateSidebarWidth) and
+   it must not be sized or scrolled by CSS - Wt measures layout items off-screen.  The scrolling is
+   on the div inside it. */
+.MakeDrfSidebarScroll {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  padding: 0 4px 4px 0;
+}
+
+.IsPhone .MakeDrfSidebarScroll {
+  padding: 4px;
+}
+
+/* One section of the sidebar: Detector, Efficiency fit, FWHM fit */
+.MakeDrfSection {
   border: 1px solid var(--interspec-outline-color);
-  margin-bottom: 4px;
-  padding: 3px;
+  border-radius: 3px;
+  margin: 0 0 6px 0;
+  padding: 2px 8px 6px 8px;
+  /* A fieldset is min-width:min-content by default, which lets a wide child push it past the
+     sidebar rather than wrap */
+  min-width: 0;
+}
+
+.MakeDrfSection > legend {
+  font-weight: bold;
+  padding: 0 4px;
+}
+
+.MakeDrfSectionNote {
+  font-size: 90%;
+  padding-top: 4px;
+}
+
+/* label | input rows */
+.MakeDrfFormGrid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 4px;
+  align-items: center;
+  padding: 2px 0 4px 0;
+}
+
+.MakeDrfFormGrid > input,
+.MakeDrfFormGrid > select {
+  width: 100%;
+  max-width: 13em;
   box-sizing: border-box;
 }
 
-/* The full-geometry form has a lot more in it than the diameter inputs (shape, crystal, its
-   dimensions, layers, then the MC options), and its rows put the inputs beside their labels - at
-   the diameter-only width they get squeezed to a few characters each.  The max-width keeps the
-   chart beside it usable when the dialog is narrow. */
-.MakeDrfGeomPanel.MakeDrfGeomPanelFull {
-  width: 430px;
-  max-width: 50%;
+/* "Import geometry from file...", on a row of its own beneath the diameter/setback rows */
+.MakeDrfFormGrid > .MakeDrfImportGeom {
+  grid-column: 1 / -1;
+  justify-self: end;
 }
 
 .MakeDrfGeomModeRow {
@@ -31,60 +73,132 @@
   padding: 0 2px 6px 2px;
 }
 
-.MakeDrfDiameterDiv > fieldset {
-  border: none;
-  padding-top: 1px;
-  padding-bottom: 5px;
-  margin-top: 5px;
-  margin-bottom: 5px;
-}
-
 .MakeDrfMcTool .McGeomBox,
 .MakeDrfMcTool .McOptsBox {
   margin: 2px 0;
 }
 
+/* The geometry tool is inside the sidebar, which already scrolls */
+.MakeDrfSidebar .MakeMcResponseForDrf {
+  overflow: visible;
+  padding: 0;
+}
+
 /* A <select> is as wide as its longest option, and a few of the MC choices ("Full MC
    characterization", "No MC support (instant, from measured curve)") are long enough to push their
-   table past the edge of this panel.  Cap them - the full text still shows when the list drops
-   down - rather than widening the panel for the sake of one row. */
+   table past the edge of the sidebar.  Cap them - the full text still shows when the list drops
+   down - rather than widening the sidebar for the sake of one row. */
 .MakeDrfMcTool select {
   max-width: 15em;
 }
 
-.MakeDrfChart {
-  min-height: 200px;
-}
-
-/* Fit options, laid out in a row under the chart */
-.MakeDrfOptionsRow {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 3px 0;
-}
-
-.MakeDrfOptionsRow > fieldset {
+/* The collapsible "Peak Fit Prefs" section; its title carries a summary of the settings */
+.MakeDrfPfpPanel {
   border: 1px solid var(--interspec-outline-color);
   border-radius: 3px;
-  padding: 1px 6px 4px 6px;
-  margin: 0;
+  margin: 0 0 6px 0;
 }
 
-.FixedGeomCombo {
+.MakeDrfPfpPanel > .titlebar {
+  cursor: pointer;
+  padding: 3px 6px;
+  font-weight: bold;
+  background: none;
+  color: var(--interspec-text-color);
+}
+
+.MakeDrfPfpSummary {
+  font-weight: normal;
+  font-size: 90%;
+  color: var(--interspec-fainter-text-color);
+  margin-left: 0.5em;
+}
+
+/* PeakFitDetPrefsGui is styled as a narrow strip for the Peak Manager; here it fills the section */
+.MakeDrf .PeakFitDetPrefsGui .PeakFitDetPrefsExpanded {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  margin-left: 0;
+  border: none;
+  background: none;
+}
+
+.MakeDrf .PeakFitDetPrefsGui .PfdpgLabel {
+  font-size: inherit;
+}
+
+
+/* ===== The right column: chart, status, peaks and sources ===== */
+
+/* The handle to drag the chart taller or shorter.  Wt's handle is a 5px absolutely positioned div,
+   which InterSpec.css makes transparent; the ::before widens what can be grabbed (without changing
+   the layout item - see the note above .MakeDrfSidebarScroll), and the ::after is a visible grip. */
+.MakeDrfRight > div > .Wt-hrh2 {
+  z-index: 2;
+  background-image: none;
+}
+
+.MakeDrfRight > div > .Wt-hrh2::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+
+.MakeDrfRight > div > .Wt-hrh2::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 20px);
+  width: 40px;
+  top: 1px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--interspec-outline-color);
+}
+
+.MakeDrfRight > div > .Wt-hrh2:hover::after {
+  background: var(--interspec-accent-color);
+}
+
+/* What is wrong, under the chart */
+.MakeDrfStatus {
+  padding: 0 2px;
+}
+
+.MakeDrfStatusSummary {
+  font-size: 90%;
+  color: var(--interspec-fainter-text-color);
+  padding: 1px 4px;
+}
+
+.MakeDrfProblems {
+  max-height: 5.6em;
+  overflow-y: auto;
+  border-left: 3px solid var(--interspec-error-color);
+  padding: 1px 0;
+  margin-bottom: 3px;
+}
+
+.MakeDrfProblem {
   display: block;
+  font-size: 90%;
+  line-height: 1.35em;
+  padding: 0 6px;
+}
+
+.MakeDrfProblem.HasField {
+  cursor: pointer;
+}
+
+.MakeDrfProblem.HasField:hover {
+  text-decoration: underline;
 }
 
 .AirAttenCb {
-}
-
-.MakeDrfErrTxt {
-  padding: 1em;
-  margin: 2px;
-  color: var(--interspec-error-color);
-  border: 1px solid var(--interspec-outline-color);
+  padding-top: 2px;
 }
 
 .MakeDrfFiles {
@@ -126,6 +240,13 @@
 
 .DrfSpecFile.SingleFile {
   border: none;
+}
+
+/* A file panel with no title (one file, or one sample - whose own panel names the file) would
+   otherwise show an empty title bar above it */
+.DrfSpecFile.SingleFile > .titlebar,
+.DrfSpecFile.SingleSample > .titlebar {
+  display: none;
 }
 
 .DrfSpecFileSample {
@@ -225,15 +346,19 @@
   
 }
 
-.MakeDrfLowerDiv {
-  padding-bottom: 2px;
+/* The sources of a sample, side by side, wrapping; top-aligned when they differ in height */
+.DrfSampleSources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
 }
 
 .MakeDrfEqnAnswer {
   display: block;
-  /* margin: 5px 2px 3px 2 px; */
-  padding-top: 5px;
-  height: 26px;
+  padding: 4px;
+  overflow-wrap: anywhere;
   text-align: center;
   font-size: 12px;
   font-weight: normal;

@@ -1634,20 +1634,10 @@ std::string crystalNameFromDrfEvidence( const DetectorPeakResponse &drf )
       }
     }//for( each DetectorType )
 
-    if( best != SpecUtils::DetectorType::Unknown )
-    {
-      switch( PeakFitUtils::coarse_type_for_detector_type( best ) )
-      {
-        case PeakFitUtils::CoarseResolutionType::High: return crystalNameFromText( "HPGe" );
-        case PeakFitUtils::CoarseResolutionType::LaBr: return crystalNameFromText( "LaBr3" );
-        case PeakFitUtils::CoarseResolutionType::CZT:  return crystalNameFromText( "CZT" );
-        case PeakFitUtils::CoarseResolutionType::Low:  return crystalNameFromText( "NaI" );
-        case PeakFitUtils::CoarseResolutionType::MedRes:
-        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
-        case PeakFitUtils::CoarseResolutionType::Unknown:
-          break;
-      }//switch( coarse_type_for_detector_type(best) )
-    }//if( a model was recognised )
+    const std::string crystal = (best == SpecUtils::DetectorType::Unknown) ? std::string()
+                  : crystalNameForResolutionType( PeakFitUtils::coarse_type_for_detector_type(best) );
+    if( !crystal.empty() )
+      return crystal;
   }
 
   // 2) The DRF's own FWHM.  At 661 keV an HPGe is 1-2 keV where every scintillator here is
@@ -1688,6 +1678,24 @@ std::string crystalNameFromDrfEvidence( const DetectorPeakResponse &drf )
 
   return std::string();
 }//crystalNameFromDrfEvidence(...)
+
+
+std::string crystalNameForResolutionType( const PeakFitUtils::CoarseResolutionType type )
+{
+  switch( type )
+  {
+    case PeakFitUtils::CoarseResolutionType::High: return crystalNameFromText( "HPGe" );
+    case PeakFitUtils::CoarseResolutionType::LaBr: return crystalNameFromText( "LaBr3" );
+    case PeakFitUtils::CoarseResolutionType::CZT:  return crystalNameFromText( "CZT" );
+    case PeakFitUtils::CoarseResolutionType::Low:  return crystalNameFromText( "NaI" );
+    case PeakFitUtils::CoarseResolutionType::MedRes:
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+    case PeakFitUtils::CoarseResolutionType::Unknown:
+      break;
+  }//switch( type )
+
+  return std::string();
+}//crystalNameForResolutionType(...)
 
 
 ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,

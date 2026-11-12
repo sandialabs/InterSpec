@@ -16,7 +16,6 @@
 
   <message id="md-det-diam">Diâmetro Det.</message>
   <message id="md-det-setback">Recuo Det.</message>
-  <message id="md-eff-type">Tipo de Eficiência</message>
   <message id="md-eqn-in-kev">Eqn. em keV</message>
   <message id="md-eqn-in-mev">Eqn. em MeV</message>
   <message id="md-geom-intrinsic-eff">Efic. Intrínseca</message>
@@ -40,7 +39,6 @@
     <br />
     Fixa por grama: similar a por cm2, mas por grama de fonte.
   </message>
-  <message id="md-fwhm-eqn-form-label">Eqn. FWHM</message>
   <message id="md-fwhm-gadras">Equação Gadras</message>
   <message id="md-sqrt-series">Série de Potência Sqrt</message>
   <message id="md-atten-for-air-cb">Aten. para ar</message>
@@ -51,7 +49,6 @@
     Este é um efeito maior em energias mais baixas, ou distâncias de calibração maiores.
   </message>
   <message id="md-show-fwhm-markers">Mostrar pontos FWHM</message>
-  <message id="md-mi-chart-phone">Gráfico/Opções</message>
   <message id="md-mi-peaks-phone">Picos a Usar</message>
   <message id="md-export-btn">Armazenar/Exportar...</message>
   <message id="md-export-window-title">Armazenar/Exportar DRF</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} keV, Pico {3} contagens</message>
   <message id="md-peak-no-nuc">Sem nuclídeo assoc., {1} keV, Pico {2} contagens</message>
   
-  <message id="md-err-some-src">Algumas fontes tiveram erros.</message>
   <message id="md-n-fit-pars">{1} Parâmetros de Ajuste</message>
   <message id="md-html-eff-table-caption">Eficiência de Detecção de Energia Total (% total de gamas)</message>
   <message id="md-html-Intrinsic">Intrínseco</message>

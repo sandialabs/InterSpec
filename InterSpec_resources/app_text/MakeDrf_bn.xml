@@ -16,7 +16,6 @@
 
   <message id="md-det-diam">ডিট. ব্যাস</message>
   <message id="md-det-setback">ডিট. সেটব্যাক</message>
-  <message id="md-eff-type">দক্ষতা ধরন</message>
   <message id="md-eqn-in-kev">keV তে সমীকরণ</message>
   <message id="md-eqn-in-mev">MeV তে সমীকরণ</message>
   <message id="md-geom-intrinsic-eff">অভ্যন্তরীণ দক্ষতা।</message>
@@ -39,7 +38,6 @@
     <br />
     স্থির প্রতি গ্রাম: প্রতি cm2 এর অনুরূপ, তবে উৎসের প্রতি গ্রামের জন্য।
   </message>
-  <message id="md-fwhm-eqn-form-label">FWHM সমীকরণ।</message>
   <message id="md-fwhm-gadras">Gadras সমীকরণ</message>
   <message id="md-sqrt-series">বর্গমূল পাওয়ার সিরিজ</message>
   <message id="md-atten-for-air-cb">বায়ুর জন্য ক্ষয়</message>
@@ -50,7 +48,6 @@
     এটি নিম্ন শক্তিতে, অথবা বৃহত্তর ক্যালিব্রেশন দূরত্বে একটি বড় প্রভাব।
   </message>
   <message id="md-show-fwhm-markers">FWHM পয়েন্ট দেখান</message>
-  <message id="md-mi-chart-phone">চার্ট/বিকল্প</message>
   <message id="md-mi-peaks-phone">ব্যবহার করার পিক</message>
   <message id="md-export-btn">সংরক্ষণ/এক্সপোর্ট...</message>
   <message id="md-export-window-title">DRF সংরক্ষণ/এক্সপোর্ট</message>
@@ -88,7 +85,6 @@
   <message id="md-peak-counts">{1} {2} keV, পিক {3} গণনা</message>
   <message id="md-peak-no-nuc">কোনো সংশ্লিষ্ট নিউক্লাইড নেই, {1} keV, পিক {2} গণনা</message>
   
-  <message id="md-err-some-src">কিছু উৎসে ত্রুটি ছিল।</message>
   <message id="md-n-fit-pars">{1} ফিট প্যারাম</message>
   <message id="md-html-eff-table-caption">সম্পূর্ণ-শক্তি সনাক্তকরণ দক্ষতা (% মোট গামা)</message>
   <message id="md-html-Intrinsic">অভ্যন্তরীণ</message>

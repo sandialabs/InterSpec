@@ -16,7 +16,6 @@
   
   <message id="md-det-diam">探测器直径</message>
   <message id="md-det-setback">Det. 后退距离</message>
-  <message id="md-eff-type">效率类型</message>
   <message id="md-eqn-in-kev">方程单位keV</message>
   <message id="md-eqn-in-mev">方程单位MeV</message>
   <message id="md-geom-intrinsic-eff">本征效率</message>
@@ -40,7 +39,6 @@
     <br />
     固定每克：类似于每cm²，但对于每克源。
   </message>
-  <message id="md-fwhm-eqn-form-label">FWHM方程</message>
   <message id="md-fwhm-gadras">Gadras方程</message>
   <message id="md-sqrt-series">平方根幂级数</message>
   <message id="md-atten-for-air-cb">空气衰减</message>
@@ -51,7 +49,6 @@
     这在较低能量或较大刻度距离下影响更大。
   </message>
   <message id="md-show-fwhm-markers">显示FWHM点</message>
-  <message id="md-mi-chart-phone">图表/选项</message>
   <message id="md-mi-peaks-phone">要使用的峰</message>
   <message id="md-export-btn">存储/导出...</message>
   <message id="md-export-window-title">存储/导出DRF</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} keV，峰{3}计数</message>
   <message id="md-peak-no-nuc">无关联核素，{1} keV，峰{2}计数</message>
   
-  <message id="md-err-some-src">某些源有错误。</message>
   <message id="md-n-fit-pars">{1}拟合参数</message>
   <message id="md-html-eff-table-caption">全能检测效率（总伽马的%）</message>
   <message id="md-html-Intrinsic">本征</message>

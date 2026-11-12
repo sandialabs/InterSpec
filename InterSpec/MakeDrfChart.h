@@ -102,6 +102,10 @@ public:
      (see MakeDrfCalc::intrinsicFitPoints), and its points belong under the curve on that footing.
      */
     double geometric_factor = -1.0;
+
+    /** Whether the FWHM fit uses this point's peak: false for a data-defined peak, which has no
+     width, and for 511 keV annihilation photons, which are Doppler broadened. */
+    bool use_for_fwhm_fit = true;
   };//struct DataPoint
   
 public:
@@ -124,9 +128,11 @@ public:
   
   /** Set the coefficients to draw the detector efficiency response with.
       Setting with zero coefficients will remove line from chart.
+      The uncertainty band is drawn only when the coefficient covariance (row-major) is given.
    */
   void setEfficiencyCoefficients( const std::vector<float> &coeffs,
                                   const std::vector<float> &uncerts,
+                                  const std::vector<float> &covariance,
                                   const EqnEnergyUnits units );
   
   /**
@@ -188,6 +194,9 @@ protected:
   std::vector<float> m_efficiencyCoefs;
   
   std::vector<float> m_efficiencyCoefUncerts;
+
+  /** Row-major covariance of #m_efficiencyCoefs; empty if not known (then no band is drawn). */
+  std::vector<float> m_efficiencyCoefCov;
   
   FwhmCoefType m_fwhmEqnType;
   

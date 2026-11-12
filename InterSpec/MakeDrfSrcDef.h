@@ -31,6 +31,7 @@
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#include <Wt/WString.h>
 #include <Wt/WContainerWidget.h>
 
 class MaterialDB;
@@ -46,6 +47,7 @@ namespace Wt
   class WCheckBox;
   class WDateEdit;
   class WComboBox;
+  class WFormWidget;
   class WPushButton;
   class WDoubleSpinBox;
   class WSuggestionPopup;
@@ -145,7 +147,29 @@ public:
   
   /** Signal emitted when widget is upadated by the user. */
   Wt::Signal<> &updated();
-  
+
+
+  /** Something wrong with what the user entered. */
+  struct InputProblem
+  {
+    /** The input at fault (a child of this widget), or nullptr when no single input is. */
+    Wt::WFormWidget *field = nullptr;
+
+    /** What is wrong, for showing the user. */
+    Wt::WString message;
+
+    /** If true, the source can not be used; if false, the problem is a warning only. */
+    bool blocking = true;
+  };//struct InputProblem
+
+  /** Checks the inputs that currently apply (i.e., the visible rows), marks the ones at fault, shows
+   the messages at the bottom of this widget, and returns them.
+
+   When no blocking problems are returned, #activityAtSpectrumTime, #ageAtSpectrumTime,
+   #fractionalActivityUncertainty and #distance (when shown) will not throw.
+   */
+  std::vector<InputProblem> validate();
+
   /** Returns user entered distance.
    
      Throws exception if input field has invalid text.
@@ -274,33 +298,33 @@ protected:
   void setSrcInfo( const SrcLibLineInfo &info );
   
   void updateAgedText();
-  
-  void useAgeInfoUserToggled();
-  
-  void useShieldingInfoUserToggled();
-  
-  void handleUserChangedShielding();
-  
-  void handleUserChangedDistance();
 
-  void handleUserChangedDistanceUncert();
-  
-  void handleUserChangedActivity();
-  
-  void handleUserChangedActivityUncertainty();
-  
-  void handleUserChangedAgeAtAssay();
-  
-  void handleEnteredDatesUpdated();
-  
-  void validateDateFields();
-  
+  void useAgeInfoUserToggled();
+
+  void useShieldingInfoUserToggled();
+
+  /** Any user edit: re-validates, updates the aged activity text, and emits #updated. */
+  void handleUserInput();
+
+  /** A date field was edited: re-writes a loosely typed date into the fields format, then
+   #handleUserInput. */
+  void handleDateInput( Wt::WDateEdit *edit );
+
+  /** The activity label: "Activity", "Assay Act." when aging, or the fixed-geometry variants. */
+  void updateActivityLabel();
+
   /** Returns user entered activity.  Throws exception if invalid. */
   double enteredActivity() const;
-  
+
   void updateSourceLibNuclides();
-  
+
   Wt::WTable *m_table;
+
+  /** The DetectorPeakResponse::EffGeometryType this source is for; see #setIsEffGeometryType. */
+  int m_effGeomType;
+
+  /** The problems #validate found, shown at the bottom of the widget; hidden when there are none. */
+  Wt::WText *m_problemsTxt;
   
   /** The name of the nuclide this source represents. */
   const SandiaDecay::Nuclide *m_nuclide;
