@@ -1210,48 +1210,67 @@ members with `existsIn(peak,"ImpliedActivityUncert")` when a zero uncertainty is
 
 ### 5.18 `PullTrend`
 
-An automatic diagnosis of the per-peak pulls ("chi" values, i.e. `(observed-model)/uncertainty`)
-as a function of energy.  The physics: if the model has the wrong *amount* of shielding, the
-attenuation-vs-energy mismatch tilts the pulls monotonically with energy; if it has the wrong
-effective *atomic number*, the photoelectric term (~Z⁴·⁵/E³) versus the nearly Z-independent
-Compton term bends them (a low-energy "hook") even after the fit compensates the overall amount.
-A low-order polynomial is fit to the pulls and the coefficient t-statistics are compared against
-calibrated thresholds.  The GUI shows `Message` under the χ² chart; the bundled templates put it
-in the same place.
+An automatic diagnosis of the per-peak pulls ("chi" values, i.e. `(observed-model)/uncertainty`).
+It asks whether a *physical* change of the shielding would explain the residuals significantly
+better than the fitted model: scaling the shielding amount (or, when the model has no shielding,
+adding a layer of a reference material), or changing the shielding's effective atomic number, with
+every source activity re-solved for each alternative.  Each answer is a profile likelihood-ratio
+significance (in sigma), divided by a residual scale that is never below 2 (real peak fits scatter
+2-5x their statistical uncertainty), with a 2% fractional floor on each peak's uncertainty.  A
+smooth residual trend that no shielding change explains is reported as "other".  The GUI shows
+`Message` under the χ² chart; the bundled templates put it in the same place.
 
 ```json
 "PullTrend": {
   "HasConclusion": true,
-  "Message": "Peak residuals probably indicate too much modeled shielding.",
+  "TestsRun": true,
+  "Message": "Peak residuals strongly indicate the model lacks shielding; the peaks are consistent with roughly 24 g/cm2 of a medium-Z (iron-like) material.",
+  "AmountSigma": 21.4,
+  "AtomicNumberSigma": 0.0,
+  "OtherTrendSigma": 0.3,
+  "ResidualScale": 2.0,
+  "NumPeaksTested": 13,
+  "ModelHasShielding": false,
+  "PossibleCascadeSumming": false,
+  "SuggestedArealDensity": 24.1,
+  "SuggestedArealDensityStr": "24 g/cm²",
+  "SuggestedAtomicNumber": 26,
   "SlopeT": 3.72,
-  "CurvatureT": 0.41,
-  "ReducedChi2": 1.18,
+  "CurvatureT": -4.41,
+  "ReducedChi2": 9.8,
   "NumPeaksUsed": 12,
-  "AtomicNumberDiscriminationPower": 4.83,
-  "AtomicNumberDiscriminable": true
+  "AtomicNumberDiscriminationPower": 0.0,
+  "AtomicNumberDiscriminable": false
 }
 ```
 
 | Field | Type | Notes |
 |---|---|---|
 | `HasConclusion`  | bool   | A conclusion was reached *and* is worth reporting. **Always emitted.** False both when the analysis could not run at all and when it ran but found nothing conclusive — guard `Message` with this. |
-| `Message`        | string | Plain-English one-sentence conclusion, e.g. `"Peak residuals probably indicate too much modeled shielding."`, `"Peak residuals may indicate the shielding's effective atomic number is too low."`, or `"A residual energy trend remains despite fitting shielding; the distance, geometry, source age, or detector response may be slightly off."`  **Always emitted**; empty string when `HasConclusion` is false.  Not localized (the GUI renders its own localized wording from the same result). |
-| `SlopeT`         | number | t-statistic of the fitted linear term.  Large magnitude ⇒ a monotonic pull trend with energy ⇒ the modeled shielding *amount* is likely wrong.  Sign indicates direction. |
-| `CurvatureT`     | number | t-statistic of the fitted quadratic term.  Large magnitude ⇒ the pull *shape* is wrong ⇒ the effective atomic number is likely wrong.  Only asserted as a Z conclusion when `AtomicNumberDiscriminable` is true. |
-| `ReducedChi2`    | number | Reduced χ² of the trend fit itself (a measure of how well the low-order trend describes the pulls).  Values > 1 mean scatter beyond the trend; the coefficient uncertainties are already inflated by `sqrt(max(1,ReducedChi2))` so the t-statistics stay calibrated. |
-| `NumPeaksUsed`   | int    | Number of pull points that survived filtering and entered the trend fit. |
-| `AtomicNumberDiscriminationPower` | number | How well **this dataset** *could* resolve a reference-sized (1.5×) atomic-number error — a property of the peak energies, significances and model shielding, not of the observed pulls.  Above ~250 keV attenuation is Compton-dominated and nearly Z-independent, so only low-energy, high-significance peaks carry Z information.  0 when not computed. |
-| `AtomicNumberDiscriminable`       | bool   | `AtomicNumberDiscriminationPower` cleared the calibrated gate (~2.5).  **When false, a null Z result means "could not tell", not "atomic number is fine"** — and any curvature that does appear is suppressed rather than reported as a Z signature.  Worth saying so explicitly in a report. |
+| `Message`        | string | Plain-English one-sentence conclusion, e.g. `"Peak residuals probably indicate too much modeled shielding; about 9.8 g/cm2 in total would fit best."`, `"Peak residuals may indicate the shielding's effective atomic number is too low; the peaks favor an effective atomic number near 26."`, or `"A residual energy trend remains that changing the shielding does not explain; ..."`; a cascade-summing caveat sentence is appended when `PossibleCascadeSumming`.  **Always emitted**; empty string when `HasConclusion` is false.  Not localized (the GUI renders its own localized wording from the same result). |
+| `TestsRun`       | bool   | Whether the likelihood-ratio tests ran (they do not for self-attenuating or trace sources, or with too few peaks).  When false, the sigma fields are 0 and mean "not tested", not "nothing found". |
+| `AmountSigma`    | number | Likelihood-ratio significance of changing the shielding amount (or adding shielding, when the model has none).  Positive ⇒ the peaks want *more* shielding; negative ⇒ less.  Only used for a conclusion when the amount was not fit. |
+| `AtomicNumberSigma` | number | Significance of changing the effective atomic number (areal density re-fit).  Positive ⇒ the peaks want a *higher* Z than modeled (model Z too low). |
+| `OtherTrendSigma` | number | Significance of a smooth (quadratic in log energy) residual trend beyond the best shielding alternative. |
+| `ResidualScale`  | number | Scale the significances were divided by: the residual scatter about the best alternative, but never below 2 (0 when the tests did not run). |
+| `NumPeaksTested` | int    | Peaks the likelihood-ratio tests used. |
+| `ModelHasShielding` | bool | Whether the model had any shielding with non-zero areal density. |
+| `PossibleCascadeSumming` | bool | The entered distance is under 15 cm, cascade-summing correction is off, a source nuclide emits coincident gammas, and summing cannot be ruled out for this detector. |
+| `SuggestedArealDensity` | number | g/cm².  Present with amount and lacks-shielding conclusions (best-fit total areal density) and atomic-number conclusions (areal density at the favored Z).  `SuggestedArealDensityStr` is the same, formatted. |
+| `SuggestedAtomicNumber` | number | The favored effective atomic number, when the data pin it (lacks-shielding: one of 7, 13, 26, 50, 82; atomic-number conclusions: free fit). |
+| `SlopeT`, `CurvatureT`, `ReducedChi2`, `NumPeaksUsed` | number | The descriptive trend curve drawn on the χ chart (a low-order polynomial in log energy fit to the pulls).  Informational only; it no longer drives the conclusion. |
+| `AtomicNumberDiscriminationPower` | number | How well **this dataset** *could* resolve a reference-sized (1.5×) atomic-number error — the `AtomicNumberSigma` such an error would produce for these peaks and this shielding, independent of the observed pulls.  Above ~250 keV attenuation is Compton-dominated and nearly Z-independent, so only low-energy, significant peaks carry Z information.  0 when not computed (no single shielding in the model). |
+| `AtomicNumberDiscriminable`       | bool   | `AtomicNumberDiscriminationPower` reached 2.5.  Soft ("possibly", 2.5–3.5 sigma) atomic-number calls are only made then.  **When false, a null Z result means "could not tell", not "atomic number is fine".** |
 
-> **Guarding.**  `HasConclusion` and `Message` are always present.  **The other six fields are
-> present only when the trend analysis actually ran** (it is skipped, and may fail, e.g. with too
-> few peaks).  Use `existsIn(PullTrend,"SlopeT")` before touching any of them:
+> **Guarding.**  `HasConclusion` and `Message` are always present.  **The other fields are present
+> only when the analysis actually ran** (and the `Suggested*` ones only with a matching conclusion).
+> Use `existsIn(PullTrend,"AmountSigma")` before touching any of them:
 >
 > ```
 > {% if exists("PullTrend") and PullTrend.HasConclusion %}{{ PullTrend.Message }}{% endif %}
-> {% if exists("PullTrend") and existsIn(PullTrend,"SlopeT") %}
->   (slope t={{ printFixed(PullTrend.SlopeT,1) }}, curvature t={{ printFixed(PullTrend.CurvatureT,1) }},
->    {{ PullTrend.NumPeaksUsed }} points{% if PullTrend.AtomicNumberDiscriminable %}{% else %};
+> {% if exists("PullTrend") and existsIn(PullTrend,"AmountSigma") %}
+>   (amount {{ printFixed(PullTrend.AmountSigma,1) }} sigma, atomic number {{ printFixed(PullTrend.AtomicNumberSigma,1) }} sigma,
+>    {{ PullTrend.NumPeaksTested }} peaks{% if PullTrend.AtomicNumberDiscriminable %}{% else %};
 >    these peaks cannot resolve the effective atomic number{% endif %})
 > {% endif %}
 > ```

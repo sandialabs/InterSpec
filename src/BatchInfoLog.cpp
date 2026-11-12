@@ -1180,6 +1180,21 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         const string trend_msg = ShieldSourcePullTrend::conclusion_report_text( trend );
         tj["Message"] = trend_msg;
         tj["HasConclusion"] = !trend_msg.empty();
+        tj["TestsRun"] = trend.testsRun;
+        tj["AmountSigma"] = trend.amountT;
+        tj["AtomicNumberSigma"] = trend.atomicNumberT;
+        tj["OtherTrendSigma"] = trend.otherT;
+        tj["ResidualScale"] = trend.residualScale;
+        tj["NumPeaksTested"] = static_cast<int>( trend.numPeaksTested );
+        tj["ModelHasShielding"] = trend.modelHasShielding;
+        tj["PossibleCascadeSumming"] = trend.possibleCascadeSumming;
+        if( trend.suggestedArealDensity > 0.0 )
+        {
+          tj["SuggestedArealDensity"] = trend.suggestedArealDensity / (PhysicalUnits::g / PhysicalUnits::cm2);
+          tj["SuggestedArealDensityStr"] = ShieldSourcePullTrend::areal_density_txt( trend.suggestedArealDensity );
+        }
+        if( (trend.suggestedAtomicNumber > 0.0) && trend.suggestedAtomicNumberResolved )
+          tj["SuggestedAtomicNumber"] = trend.suggestedAtomicNumber;
         tj["SlopeT"] = trend.slopeT;
         tj["CurvatureT"] = trend.curvatureT;
         tj["ReducedChi2"] = trend.redChi2;
