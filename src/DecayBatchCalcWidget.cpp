@@ -851,6 +851,7 @@ DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
   // --- Results area -------------------------------------------------------------------------
   m_resultContainer = addNew<WContainerWidget>();
   m_resultContainer->addStyleClass( "DbcResultArea" );
+  m_resultContainer->addStyleClass( "SelectableTxt" );
   m_resultContainer->setOverflow( Wt::Overflow::Auto );
 
   // --- Export row (children of this widget, NOT the window footer) --------------------------

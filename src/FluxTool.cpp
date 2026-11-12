@@ -1608,6 +1608,7 @@ void FluxToolWidget::init()
 
   WContainerWidget *notesDiv = optsAndNotesDiv->addNew<WContainerWidget>();
   notesDiv->addStyleClass( "FluxNotes" );
+  notesDiv->addStyleClass( "SelectableTxt" );
   m_rangeWarning = notesDiv->addNew<WText>( WString::fromUTF8("") );
   m_rangeWarning->addStyleClass( "FluxRangeWarn" );
   m_rangeWarning->setInline( false );

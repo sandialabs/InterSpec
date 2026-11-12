@@ -632,6 +632,7 @@ void LlmConfigWindow::buildUi()
   m_previewPre = m_previewContainer->addNew<WText>();
   m_previewPre->setTextFormat( Wt::TextFormat::Plain );
   m_previewPre->addStyleClass( "LcwXmlPre" );
+  m_previewPre->addStyleClass( "SelectableTxt" );
   m_previewContainer->setHidden( true );
 
   // --- Footer ---

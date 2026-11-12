@@ -853,6 +853,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   //  shows either a result or italic placeholder text, so the widget height stays stable.
   m_summary_text = addNew<WText>();
   m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
+  m_summary_text->addStyleClass( "SelectableTxt" );
   setSummaryText( WString(), WString() );
 
 

@@ -218,19 +218,23 @@ void GammaCountDialog::init()
   label->addStyleClass( "GridFirstRow GridFirstCol" );
   m_primaryGammaCount = answers->addNew<WText>();
   m_primaryGammaCount->addStyleClass( "GridFirstRow GridSecondCol" );
+  m_primaryGammaCount->addStyleClass( "SelectAllTxt" );
 
   label = answers->addNew<WLabel>( WString::tr("gcd-secondary-counts-label") );
   label->addStyleClass( "GridSecondRow GridFirstCol" );
   m_secondaryGammaCount = answers->addNew<WText>();
   m_secondaryGammaCount->addStyleClass( "GridSecondRow GridSecondCol" );
+  m_secondaryGammaCount->addStyleClass( "SelectAllTxt" );
 
   label = answers->addNew<WLabel>( WString::tr("gcd-background-counts-label") );
   label->addStyleClass( "GridThirdRow GridFirstCol" );
   m_backgroundGammaCount = answers->addNew<WText>();
   m_backgroundGammaCount->addStyleClass( "GridThirdRow GridSecondCol" );
+  m_backgroundGammaCount->addStyleClass( "SelectAllTxt" );
 
   m_sigmaAboveBackground = answers->addNew<WText>( "", Wt::TextFormat::XHTML );
   m_sigmaAboveBackground->addStyleClass( "line-above GridFourthRow GridFirstCol GridJustifyCenter GridSpanTwoCol nsigma" );
+  m_sigmaAboveBackground->addStyleClass( "SelectableTxt" );
 
   m_nsigmaHelp = answers->addNew<WImage>();
   m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
@@ -243,6 +247,7 @@ void GammaCountDialog::init()
 
   m_liveTimeScaleNote = answers->addNew<WText>( "", Wt::TextFormat::XHTML );
   m_liveTimeScaleNote->addStyleClass( "GridFifthRow GridFirstCol GridJustifyCenter GridSpanThreeCol line-above LiveTimeScaleNote" );  //""
+  m_liveTimeScaleNote->addStyleClass( "SelectableTxt" );
   m_liveTimeScaleNote->hide();
   
   

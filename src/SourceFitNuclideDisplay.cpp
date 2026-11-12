@@ -234,6 +234,7 @@ public:
     // ---- mass + act(T_ref) line ----
     WContainerWidget *massLine = fields->addNew<WContainerWidget>();
     massLine->addStyleClass( "NucMass" );
+    massLine->addStyleClass( "SelectableTxt" );
     m_massLabel = massLine->addNew<WText>();
     m_actRefLabel = massLine->addNew<WText>();
     m_actRefLabel->addStyleClass( "NucTRef" );
@@ -621,6 +622,7 @@ protected:
     {
       WContainerWidget *chip = list->addNew<WContainerWidget>();
       chip->addStyleClass( "NpChip" );
+      chip->addStyleClass( "SelectableTxt" );
       WText *d = chip->addNew<WText>( WString::fromUTF8(kv.first->symbol) );
       d->addStyleClass( "NpDaughter" );
 
@@ -699,8 +701,10 @@ SourceFitNuclideDisplay::SourceFitNuclideDisplay( SourceFitModel *model,
   footInfo->addStyleClass( "NucFootInfo" );
   m_backDecayFootTxt = footInfo->addNew<WText>();
   m_backDecayFootTxt->addStyleClass( "NucFootRef" );
+  m_backDecayFootTxt->addStyleClass( "SelectableTxt" );
   m_backDecayFootSpan = footInfo->addNew<WText>( WString(), TextFormat::Plain );
   m_backDecayFootSpan->addStyleClass( "NucFootSpan" );
+  m_backDecayFootSpan->addStyleClass( "SelectableTxt" );
   m_showDecayBtn = m_backDecayFoot->addNew<WPushButton>( WString::tr("sfn-show-decay") );
   m_showDecayBtn->addStyleClass( "SsdLink ShowDecayLink" );
   m_showDecayBtn->setToolTip( WString::tr("sfn-tt-show-decay") );

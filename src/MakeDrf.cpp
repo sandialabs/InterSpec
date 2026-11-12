@@ -692,6 +692,7 @@ namespace
       //  Perhaps there is something else going on???  Has to be, right?
       m_descTxt->setWidth( WLength(70,WLength::Unit::Percentage) );
       m_descTxt->addStyleClass( "DrfPeakInfoTxt" );
+      m_descTxt->addStyleClass( "SelectableTxt" );
       m_backSubTxt = addNew<WText>( WString::fromUTF8("") );
       m_backSubTxt->addStyleClass( "DrfPeakBackSubTxt" );
       m_backSubTxt->hide();
@@ -2158,6 +2159,7 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_problemList->hide();
   m_intrinsicEffAnswer = m_statusArea->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
   m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
+  m_intrinsicEffAnswer->addStyleClass( "SelectAllTxt" );
   m_intrinsicEffAnswer->setInline( false );
   m_intrinsicEffAnswer->hide();
 

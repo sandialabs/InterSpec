@@ -99,8 +99,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
 
   addStyleClass( "GammaXsGui" );
 
-  wApp->useStyleSheet( "InterSpec_resources/GammaXsGui.css" );
-
   m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setColumnStretch( 1, 1 );
 
@@ -161,6 +159,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_totalAttenuation = w.get();
     m_totalAttenuation->addStyleClass( "GxsResult" );
+    m_totalAttenuation->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -175,6 +174,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_compton = w.get();
     m_compton->addStyleClass( "GxsResult" );
+    m_compton->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -189,6 +189,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_rayleigh = w.get();
     m_rayleigh->addStyleClass( "GxsResult" );
+    m_rayleigh->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -203,6 +204,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_photoElectric = w.get();
     m_photoElectric->addStyleClass( "GxsResult" );
+    m_photoElectric->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -217,6 +219,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_conversion = w.get();
     m_conversion->addStyleClass( "GxsResult" );
+    m_conversion->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -231,6 +234,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>( "" );
     m_effectiveZ = w.get();
     m_effectiveZ->addStyleClass( "GxsResult" );
+    m_effectiveZ->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 
@@ -293,6 +297,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_transmissionFraction = w.get();
     m_transmissionFraction->addStyleClass( "GxsResult" );
+    m_transmissionFraction->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( {transFracLabel, m_transmissionFraction}, WString::tr("gxsg-tt-trans-frac"),
@@ -341,6 +346,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_intrinsicEfficiency = w.get();
     m_intrinsicEfficiency->addStyleClass( "GxsResult" );
+    m_intrinsicEfficiency->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTips );
@@ -357,6 +363,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_fractionalAngle = w.get();
     m_fractionalAngle->addStyleClass( "GxsResult" );
+    m_fractionalAngle->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTips );
@@ -373,6 +380,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_efficiency = w.get();
     m_efficiency->addStyleClass( "GxsResult" );
+    m_efficiency->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( {m_efficiencyLabel, m_efficiency}, WString::tr("gxsg-tt-det-eff"),
@@ -388,6 +396,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_totalEfficiency = w.get();
     m_totalEfficiency->addStyleClass( "GxsResult" );
+    m_totalEfficiency->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( m_totalEfficiencyLabel,

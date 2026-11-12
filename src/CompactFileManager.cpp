@@ -309,6 +309,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     // Titles come from the spectrum file, so display them as plain text
     m_titles[typeindex] = wrapper->addNew<WText>( "", TextFormat::Plain );
     m_titles[typeindex]->addStyleClass( "SpecTitle" );
+    m_titles[typeindex]->addStyleClass( "SelectableTxt" );
     m_titles[typeindex]->setInline( false );
     m_titles[typeindex]->hide();
 

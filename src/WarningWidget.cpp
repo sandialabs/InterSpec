@@ -296,6 +296,7 @@ void WarningWidget::createContent()
       desc->setOverflow(Wt::Overflow::Auto);
       m_description = desc->addNew<WText>();
       m_description->setWordWrap(true);
+      m_description->addStyleClass( "SelectableTxt" );
       m_layout->addWidget( std::move(descOwner), 1, 0, 4, 1 );
     }
 

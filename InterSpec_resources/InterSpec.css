@@ -854,6 +854,14 @@ ul.Wt-tv-root > li {
   background-color: var(--interspec-header-background) !important;
 }
 
+/* Wt's default cell editor (WItemDelegate::createEditor) sizes its <input> to 100% of the cell; with
+   content-box sizing the input's padding and border push it past the cell, which clips it (text sits
+   low, right/bottom borders hidden).  Editors laid out with a WLayout (e.g. PhotopeakDelegate) are not
+   direct children of the cell, and are sized by the layout instead. */
+.Wt-itemview .Wt-tv-c > input[type="text"] {
+  box-sizing: border-box;
+}
+
 /* Link-style buttons carry their icon as an <img>, which dark themes flip. */
 .LinkBtn img, .DownloadBtn img, .UploadBtn img, .MoreInfoBtn img {
   filter: var(--interspec-icon-filter);
@@ -1141,6 +1149,22 @@ a, .InfoLink {
 .FainterTxt { color: var(--interspec-fainter-text-color); }
 .SecondaryTxt { color: var(--interspec-secondary-text-color); }
 .InfoTxt { color: var(--interspec-link-color); }
+
+/* Opt-in text selection, for values/summaries/messages a user may want to copy; selection is off
+   app-wide (.specviewer, .AuxWindow-content) so click-drags don't highlight unrelated UI.  Put these
+   on the leaf element holding the text - not on a container that also has buttons, or on a drag
+   handle or clickable element.  Must be `text`/`all`, not `auto`: under a user-select:none
+   ancestor `auto` resolves to `none`.  Safari/WKWebView only honours the -webkit- prefixed form. */
+.SelectableTxt {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+/* One click selects the whole element; only for a short standalone value (no inputs or links). */
+.SelectAllTxt {
+  -webkit-user-select: all;
+  user-select: all;
+}
 
 /* Peak Manager colour column: the swatch's own colour is inline (it is data), the rest is here. */
 .PeakColorSwatch {

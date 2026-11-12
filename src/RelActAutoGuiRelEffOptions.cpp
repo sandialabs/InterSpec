@@ -287,6 +287,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
 
   m_eqn_txt = addNew<WText>();
   m_eqn_txt->addStyleClass( "RelEffEqnTxt" );
+  m_eqn_txt->addStyleClass( "SelectAllTxt" );
 
   m_add_del_rel_eff_div = addNew<WContainerWidget>();
   m_add_del_rel_eff_div->addStyleClass( "AddDelRelEffDiv" );

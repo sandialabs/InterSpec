@@ -825,6 +825,7 @@ DrfPreviewPanel::DrfPreviewPanel( const Context context )
   m_icon->addStyleClass( "DrfPvIcon" );
   m_name = title->addNew<WText>( "", TextFormat::Plain );
   m_name->addStyleClass( "DrfPvName" );
+  m_name->addStyleClass( "SelectAllTxt" );
 
   m_meta = head->addNew<WText>( "", TextFormat::Plain );
   m_meta->addStyleClass( "DrfPvMeta" );
@@ -883,6 +884,7 @@ DrfPreviewPanel::DrfPreviewPanel( const Context context )
 
   m_where = m_content->addNew<WText>( "", TextFormat::XHTML );
   m_where->addStyleClass( "DrfPvWhere" );
+  m_where->addStyleClass( "SelectableTxt" );
   m_where->setInline( false );
 
   m_actions = m_content->addNew<WContainerWidget>();
@@ -1268,6 +1270,7 @@ void DrfLocationsPage::setLocations( const std::vector<DrfLibrary::Location> &lo
     what->addNew<WText>( name_line, TextFormat::Plain )->addStyleClass( "DrfLocName" );
     WText *path = what->addNew<WText>( WString::fromUTF8( loc.path ), TextFormat::Plain );
     path->addStyleClass( "DrfLocPath DrfMono" );
+    path->addStyleClass( "SelectAllTxt" );
     path->setToolTip( WString::fromUTF8( loc.path ) );
 
     // InterSpec's own folder for kept imports is only made when something is kept.

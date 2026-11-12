@@ -77,7 +77,7 @@ window.InterSpecToast = (function() {
 
     // Body
     var body = document.createElement('div');
-    body.className = 'ispec-toast-body';
+    body.className = 'ispec-toast-body SelectableTxt';
     body.innerHTML = html;
     toast.appendChild(body);
 

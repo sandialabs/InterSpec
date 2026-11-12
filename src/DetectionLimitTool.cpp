@@ -820,6 +820,7 @@ public:
 
     m_poisonLimit = currieLimitContent->addNew<WText>( "&nbsp;" );
     m_poisonLimit->addStyleClass( "CurrieTxt");
+    m_poisonLimit->addStyleClass( "SelectableTxt" );
 
     WContainerWidget *num_side_chan_row = currieLimitContent->addNew<WContainerWidget>();
     num_side_chan_row->addStyleClass( "CurrieNSideChanRow" );
@@ -1478,10 +1479,12 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_bestChi2Act = m_results->addNew<WText>( "&nbsp;" );
   m_bestChi2Act->setInline( false );
   m_bestChi2Act->addStyleClass( "MdaResultTxt" );
+  m_bestChi2Act->addStyleClass( "SelectableTxt" );
 
   m_upperLimit = m_results->addNew<WText>( "&nbsp;" );
   m_upperLimit->setInline( false );
   m_upperLimit->addStyleClass( "MdaResultTxt" );
+  m_upperLimit->addStyleClass( "SelectableTxt" );
 
   m_bandTxt = m_results->addNew<WText>( "&nbsp;" );
   m_bandTxt->setInline( false );
@@ -2078,6 +2081,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     //Gross Counts in Peak Foreground: 1389.813
     WTable *table = dialog->contents()->addNew<WTable>();
     table->addStyleClass( "MdaCurrieMoreInfoTable" );
+    table->addStyleClass( "SelectableTxt" );
     
     WTableCell *cell = nullptr;
     

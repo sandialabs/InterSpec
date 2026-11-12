@@ -873,12 +873,15 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
 
   m_error_msg = presetDiv->addNew<WText>( WString::tr("raag-not-calculated") );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
+  m_error_msg->addStyleClass( "SelectableTxt" );
 
   m_fit_chi2_msg = presetDiv->addNew<WText>( WString() );
   m_fit_chi2_msg->addStyleClass( "RelActAutoChi2Msg" );
+  m_fit_chi2_msg->addStyleClass( "SelectableTxt" );
 
   m_status_indicator = presetDiv->addNew<WText>( WString::tr("raag-calculating") );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
+  m_status_indicator->addStyleClass( "SelectableTxt" );
   m_status_indicator->hide();
 
   m_progress_timer = addChild( std::make_unique<WTimer>() );

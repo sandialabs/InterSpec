@@ -3360,6 +3360,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_fitMessage = new WText();
   m_fitMessage->setInline( false );
   m_fitMessage->addStyleClass( "FitMessage" );
+  m_fitMessage->addStyleClass( "SelectableTxt" );
   m_fitMessage->hide();
 
   // The XML export resource the footer "Export Model" link points to (footer built in
@@ -3381,6 +3382,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_trendTxt = trendTxtOwned.get();
   m_trendTxt->setInline( false );
   m_trendTxt->addStyleClass( "ShieldSourceTrendMsg" );
+  m_trendTxt->addStyleClass( "SelectableTxt" );
   m_trendTxt->setTextFormat( TextFormat::XHTML );
   m_trendTxt->hide();
       
@@ -3574,6 +3576,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_drfUncertStatus = m_drfUncertMethodRow->addNew<WText>();
   m_drfUncertStatus->addStyleClass( "DrfUncertStatus" );
+  m_drfUncertStatus->addStyleClass( "SelectableTxt" );
   updateDrfUncertMethodAvailability();  //the detector display and distance already exist
 
   lineDiv = m_optionsDiv->addNew<WContainerWidget>();
@@ -3601,6 +3604,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_volEffMethodCombo->changed().connect( this, &ShieldingSourceDisplay::volEffMethodChanged );
   m_volEffMethodStatus = lineDiv->addNew<WText>();
   m_volEffMethodStatus->addStyleClass( "VolEffMethodStatus" );
+  m_volEffMethodStatus->addStyleClass( "SelectableTxt" );
 
   // "Back decay": also quote the activities at another time (end of irradiation, a release, another
   //  measurement, ...), entered as a duration before the measurement or as a date/time.  Does not
@@ -3630,6 +3634,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   // Plain text, as it may quote what the user typed.
   m_backDecayStatus = lineDiv->addNew<WText>( WString(), TextFormat::Plain );
   m_backDecayStatus->addStyleClass( "BackDecayStatus" );
+  m_backDecayStatus->addStyleClass( "SelectableTxt" );
 
   // The nuclide cards show each activity at the reference time, computed from the model as it is.
   m_nuclideDisplay->setBackDecayProvider( [this](){ return currentBackDecayResults(); } );
@@ -3664,6 +3669,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_fixedGeomLockedNote = new WText( WString::tr("ssd-fixed-geom-locked-note") );
   m_fixedGeomLockedNote->addStyleClass( "FixedGeomLockedNote" );
+  m_fixedGeomLockedNote->addStyleClass( "SelectableTxt" );
   m_fixedGeomLockedNote->setInline( false );  //holds block content (the embedded-scene summary)
   m_fixedGeomLockedNote->hide();
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomLockedNote),  5, 0, 1, 3, AlignmentFlag::Center );
@@ -10415,6 +10421,7 @@ void ShieldingSourceDisplay::showPhoneFitResults()
   {
     WTable *table = contents->addNew<WTable>();
     table->addStyleClass( "SsdResultsTable" );
+    table->addStyleClass( "SelectableTxt" );
     table->setHeaderCount( 1 );
     table->elementAt(0,0)->addNew<WText>( WString::tr("ssd-phone-col-nuclide") );
     table->elementAt(0,1)->addNew<WText>( WString::tr("ssd-phone-col-activity") );
@@ -10470,6 +10477,7 @@ void ShieldingSourceDisplay::showPhoneFitResults()
     {
       WContainerWidget *box = contents->addNew<WContainerWidget>();
       box->addStyleClass( "SsdResultsWarn" );
+      box->addStyleClass( "SelectableTxt" );
       string warn;
       for( const string &m : msgs )
         warn += (warn.empty() ? string() : string("<br />")) + Wt::Utils::htmlEncode(m);

@@ -450,6 +450,7 @@ void DoseCalcWidget::init()
         m_doseAnswer = m_answerWidgets[i]->addNew<WText>();
         m_doseAnswer->setInline( false );
         m_doseAnswer->addStyleClass( "DoseAnswerTxt" );
+        m_doseAnswer->addStyleClass( "SelectAllTxt" );
 
         m_doseAnswerValue = 0.1 * PhysicalUnits::rem / PhysicalUnits::hour;
         m_doseAnswer->setText( "100 mR/hr" );
@@ -559,6 +560,7 @@ void DoseCalcWidget::init()
 
         m_activityAnswer->setText( WString::fromUTF8(actstr) );
         m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
+        m_activityAnswer->addStyleClass( "SelectAllTxt" );
         
         m_activityEnterUnits->activated().connect( this, [this]( int ){ updateResult(); } );
         m_activityAnswerUnits->activated().connect( this, [this]( int ){ updateResult(); } );
@@ -578,6 +580,7 @@ void DoseCalcWidget::init()
         m_distanceAnswer->setInline( false );
         m_distanceAnswer->addStyleClass( "DoseAnswerTxt" );
         m_distanceAnswer->addStyleClass( "DoseDistanceAnswer" );
+        m_distanceAnswer->addStyleClass( "SelectAllTxt" );
 
         m_distanceEnter = m_enterWidgets[i]->addNew<WLineEdit>( "100 cm" );
         distanceLabel->setBuddy( m_distanceEnter );
@@ -649,6 +652,7 @@ void DoseCalcWidget::init()
   m_issueTxt = answerLayout->addWidget( std::make_unique<WText>(), answerLayout->rowCount(), 0,
                                         Wt::AlignmentFlag::Bottom );
   m_issueTxt->addStyleClass( "DoseIssueTxt" );
+  m_issueTxt->addStyleClass( "SelectableTxt" );
   
   if( !narrowLayout )
   {
@@ -1733,6 +1737,7 @@ void DoseCalcWidget::updateStayTime()
 
     WContainerWidget *tableDiv = m_stayTime->addNew<WContainerWidget>();
     tableDiv->addStyleClass( "DoseStayTimeTable" );
+    tableDiv->addStyleClass( "SelectableTxt" );
     WGridLayout *table = tableDiv->setLayout( std::make_unique<WGridLayout>() );
     table->setHorizontalSpacing( 0 );
     table->setVerticalSpacing( 0 );

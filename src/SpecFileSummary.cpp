@@ -249,6 +249,7 @@ void addField( WText *&edit, WGridLayout *table, const WString &labelstr,
   label->setStyleClass( "SpectrumFileSummaryLabel" );
   auto editOwner = std::make_unique<WText>();
   edit = editOwner.get();
+  edit->addStyleClass( "SelectAllTxt" );
   table->addWidget( std::move(editOwner), row, col+1, rowspan, colspan,
                     Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Left );
 }

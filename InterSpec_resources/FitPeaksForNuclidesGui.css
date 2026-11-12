@@ -111,12 +111,8 @@
   box-sizing: border-box;
 }
 
-/* Allow text results to be selectable for copy/paste */
 .FitPeaksAdvancedWidget .RelActTxtResults
 {
-  user-select: auto;
-  -moz-user-select: auto;
-  -webkit-user-select: auto;
   overflow-y: auto;
 }
 

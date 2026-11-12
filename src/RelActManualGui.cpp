@@ -1033,6 +1033,7 @@ void RelActManualGui::init()
   auto resultsOwner = std::make_unique<WContainerWidget>();
   m_results = resultsOwner.get();
   m_results->addStyleClass( "ResultsTxt" );
+  m_results->addStyleClass( "SelectableTxt" );
   WMenuItem *item = m_resultMenu->addItem( WString::tr("ramg-mi-results"), std::move(resultsOwner) );
 
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.

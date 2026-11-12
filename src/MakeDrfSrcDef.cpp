@@ -693,6 +693,7 @@ void MakeDrfSrcDef::create()
   label = cell->addNew<WLabel>( WString::tr("msd-aging-res") );
   cell = m_table->elementAt(sm_decayed_info_row,1);
   m_sourceInfoAtMeasurement = cell->addNew<WText>();
+  m_sourceInfoAtMeasurement->addStyleClass( "SelectableTxt" );
   
   //Wt::WDateEdit *m_sourceCreationDate;
   

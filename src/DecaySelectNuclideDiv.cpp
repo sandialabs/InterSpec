@@ -323,6 +323,7 @@ void DecaySelectNuclide::init()
   m_nuclideAgeEdit->addStyleClass( "m_nuclideAgeEdit" );
 
   m_selectedIsotopeHalfLife->addStyleClass( "m_selectedIsotopeHalfLife" );
+  m_selectedIsotopeHalfLife->addStyleClass( "SelectableTxt" );
 
   for( int z = 1; z < 119; ++z )
   {

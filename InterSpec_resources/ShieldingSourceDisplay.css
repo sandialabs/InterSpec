@@ -175,27 +175,15 @@
   color: var(--interspec-error-color);
 }
 
-/* Result and info text the user may want to copy: InterSpec disables text selection app-wide (and
-   .AuxWindow-content again), so re-enable it here.  It must be an explicit `text`, not `auto` - with
-   `auto` the used value inherits `none` - and needs the -webkit- prefix for Safari.  Text that is
+/* Result and info text the user may want to copy gets the shared .SelectableTxt class in C++ (see
+   InterSpec.css).  The nuclide name and half-life are the exception: they are only selectable while
+   the header is not the tappable phone accordion header, so that is done here.  Text that is
    clickable (the detector name, the phone accordion header, nested peak rows, and activity strip) is
    left out, since a drag-select would also click it. */
 .ShieldingSourceDisplay .NucHead:not(.NucHeadTap) .NucName,
-.ShieldingSourceDisplay .NucHead:not(.NucHeadTap) .NucHl,
-.ShieldingSourceDisplay .NucMass,
-.ShieldingSourceDisplay .NpChip,
-.ShieldingSourceDisplay .FitOptionsRow > .DrfUncertStatus,
-.ShieldingSourceDisplay .FitOptionsRow > .VolEffMethodStatus,
-.ShieldingSourceDisplay .FitOptionsRow > .BackDecayStatus,
-.ShieldingSourceDisplay .NucFootRef,
-.ShieldingSourceDisplay .NucFootSpan,
-.ShieldingSourceDisplay .ShieldSourceTrendMsg,
-.ShieldingSourceDisplay .FixedGeomLockedNote,
-.ShieldingSourceDisplay .ShieldingSelect .MaterialSummary
+.ShieldingSourceDisplay .NucHead:not(.NucHeadTap) .NucHl
 {
   -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
   user-select: text;
   cursor: text;
 }
@@ -441,12 +429,6 @@
   padding: 6px 9px;
   font-size: 12px;
   line-height: 1.35;
-  /* Allow selecting/copying the message text (InterSpec disables selection by default). */
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
-  user-select: text;
-  cursor: text;
 }
 .ShieldingSourceDisplay .FitMessage.FitMsgInfo
 {

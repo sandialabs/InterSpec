@@ -516,6 +516,7 @@ public:
     m_info = m_layout->addWidget( make_unique<WContainerWidget>(), 4, 0, 1, 3 );
     m_inputs = m_info->addNew<WContainerWidget>();
     m_results = m_info->addNew<WContainerWidget>();
+    m_results->addStyleClass( "SelectableTxt" );
     m_info->hide();
     
     m_layout->setRowStretch( 3, 1 );
@@ -2539,6 +2540,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
   
   WContainerWidget *cont = new WContainerWidget();
   cont->addStyleClass( "isotopesSummary" );
+  cont->addStyleClass( "SelectableTxt" );
 
   if( !m_currentMixture || !m_currentMixture->numInitialNuclides() )
     return cont;

@@ -403,6 +403,7 @@ void PeakEdit::init()
   row->elementAt(0)->setColumnSpan(4);
   m_drfFwhm = row->elementAt(0)->addNew<WText>( "" );
   m_drfFwhm->addStyleClass( "PeakEditDrfFwhm" );
+  m_drfFwhm->addStyleClass( "SelectableTxt" );
   row->setHidden( true );
   
   // When the detector changed/modified signal is emitted, the DRF for the foreground

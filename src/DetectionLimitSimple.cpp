@@ -325,6 +325,7 @@ void DetectionLimitSimple::init()
 
   m_resultTxt = resultsDiv->addNew<WText>( "&nbsp;" );
   m_resultTxt->addStyleClass( "ResultsTxtArea" );
+  m_resultTxt->addStyleClass( "SelectableTxt" );
   m_resultTxt->setInline( false );
 
   // Notes that qualify a limit that WAS produced - overlapping regions of interest combined, a
@@ -2334,6 +2335,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   // Now create rows of text information.
   WTable *table = contents->addNew<WTable>();
   table->addStyleClass( "DeconvoMoreInfoTable" );
+  table->addStyleClass( "SelectableTxt" );
   
   const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( 
                                         const DetectionLimitCalc::DeconComputeResults &result,

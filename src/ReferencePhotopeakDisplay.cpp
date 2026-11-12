@@ -1154,6 +1154,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
     m_halflife = hlRow->addNew<WText>();
     m_halflife->addStyleClass("Hl");
+    m_halflife->addStyleClass( "SelectableTxt" );
 
     m_moreInfoBtn = hlRow->addNew<WPushButton>( WString::tr("rpd-more-info") );
     m_moreInfoBtn->addStyleClass( "LinkBtn MoreInfoBtn" );

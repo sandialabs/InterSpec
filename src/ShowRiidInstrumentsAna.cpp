@@ -144,6 +144,7 @@ class AnaResultDisplay : public WContainerWidget
     cell->setColumnSpan( colspan );
     edit = cell->addNew<WText>();
     edit->setStyleClass( "AlgoInfoTxt" );
+    edit->addStyleClass( "SelectableTxt" );
   }
   
 public:
@@ -318,6 +319,7 @@ public:
       anastr = "<div class=\"RiidNuclideResults\"><div class=\"AlgoInfoTitle\">"
                 + WString::tr("srria-algo-results").toUTF8() + ":</div>" + anastr + "</div>";
       m_summary = addNew<WText>( anastr );
+      m_summary->addStyleClass( "SelectableTxt" );
       m_summary->setInline( false );
     }else
     {

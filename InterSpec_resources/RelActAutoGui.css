@@ -104,14 +104,6 @@
   height: 100%;
 }
 
-.RelActAutoGui .RelActTxtResults
-{
-  /* Let this text be selectable so user can copy/paste. */
-  user-select: auto;
-  -moz-user-select: auto;
-  -webkit-user-select: auto;
-}
-
 .RelActAutoGui .UpperMenu,
 .RelActAutoGui .RelEffCurveOptsMenu,
 .RelActAutoGui .RelEffNuclidesMenu
@@ -263,11 +255,6 @@ padding-bottom: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-
-  /* Let this text be selectable so user can copy/paste. */
-  user-select: auto;
-  -moz-user-select: auto;
-  -webkit-user-select: auto;
 }
 
 .RelActAutoGui .RelActAutoErrMsg
@@ -843,11 +830,6 @@ padding-bottom: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-
-  /* Let this text be selectable so user can copy/paste. */
-  user-select: auto;
-  -moz-user-select: auto;
-  -webkit-user-select: auto;
 }
 
 /* Italic, muted placeholder shown before a result is computed. */

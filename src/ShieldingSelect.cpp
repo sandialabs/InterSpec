@@ -2336,6 +2336,7 @@ void ShieldingSelect::init()
     m_materialSummary = summaryUniq.get();
     m_materialSummary->setInline( true );
     m_materialSummary->addStyleClass( "MaterialSummary" );
+    m_materialSummary->addStyleClass( "SelectableTxt" );
     if( m_forFitting )
       m_materialSummary->addStyleClass( "MaterialSummaryFit" );
 
