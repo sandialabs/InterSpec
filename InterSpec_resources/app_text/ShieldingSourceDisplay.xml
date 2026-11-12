@@ -375,14 +375,27 @@
        every peak's pull shares one common offset - see the "Detector-efficiency uncertainty" help. -->
   <message id="x2g-eff-corr-note">Det. eff. correlations bias residuals ~{1}σ from zero — see Help for why.</message>
 
-  <!-- Pull-trend interpretation messages.  {1} is the confidence qualifier (x2g-trend-conf-*).
-       The trend is fit to (observed-model)/uncert vs energy: a slope indicates the shielding
-       amount is off; curvature (a low-energy hook) indicates the effective atomic number is off. -->
-  <message id="x2g-trend-shield-too-low">Peak residuals {1} too little modeled shielding.</message>
-  <message id="x2g-trend-shield-too-high">Peak residuals {1} too much modeled shielding.</message>
-  <message id="x2g-trend-an-too-low">Peak residuals {1} the shielding's effective atomic number is too low.</message>
-  <message id="x2g-trend-an-too-high">Peak residuals {1} the shielding's effective atomic number is too high.</message>
-  <message id="x2g-trend-other-inconsistency">A residual energy trend remains despite fitting shielding — check distance, geometry, age, or detector.</message>
+  <!-- Pull-trend interpretation messages.  {1} is the confidence qualifier (x2g-trend-conf-*), {2}
+       an optional hint clause (x2g-trend-hint-*, or empty).  The diagnosis tests whether changing
+       the shielding amount (or adding shielding), or its effective atomic number, explains the
+       per-peak residuals significantly better than the fitted model. -->
+  <message id="x2g-trend-shield-too-low">Peak residuals {1} too little modeled shielding{2}.</message>
+  <message id="x2g-trend-shield-too-high">Peak residuals {1} too much modeled shielding{2}.</message>
+  <message id="x2g-trend-lacks-shielding">Peak residuals {1} the model lacks shielding{2}.</message>
+  <message id="x2g-trend-an-too-low">Peak residuals {1} the shielding's effective atomic number is too low{2}.</message>
+  <message id="x2g-trend-an-too-high">Peak residuals {1} the shielding's effective atomic number is too high{2}.</message>
+  <message id="x2g-trend-other-inconsistency">A residual energy trend remains that changing the shielding does not explain — check distance, geometry, age, or detector response.</message>
+  <message id="x2g-trend-hint-amount">; about {1} in total would fit best</message>
+  <message id="x2g-trend-hint-no-shield">; the peaks fit best with little or no shielding</message>
+  <message id="x2g-trend-hint-lacks-z">; the peaks are consistent with roughly {1} of {2} material</message>
+  <message id="x2g-trend-hint-lacks-feeq">; the peaks are consistent with roughly {1} of iron-equivalent shielding</message>
+  <message id="x2g-trend-hint-z">; the peaks favor an effective atomic number near {1}</message>
+  <message id="x2g-trend-zclass-water">a very low-Z (water- or plastic-like)</message>
+  <message id="x2g-trend-zclass-al">a low-Z (aluminum-like)</message>
+  <message id="x2g-trend-zclass-fe">a medium-Z (iron-like)</message>
+  <message id="x2g-trend-zclass-sn">a high-Z (tin-like)</message>
+  <message id="x2g-trend-zclass-pb">a very high-Z (lead-like)</message>
+  <message id="x2g-trend-summing-caveat">The source is close to the detector and cascade-summing correction is off, so summing may also contribute.</message>
   <message id="x2g-trend-conf-tentative">possibly indicate</message>
   <message id="x2g-trend-conf-weak">may indicate</message>
   <message id="x2g-trend-conf-moderate">probably indicate</message>
