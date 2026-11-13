@@ -143,15 +143,16 @@
 
 /* ===== The right column: chart, status, peaks and sources ===== */
 
-/* The handle to drag the chart taller or shorter.  Wt's handle is a 5px absolutely positioned div,
-   which InterSpec.css makes transparent; the ::before widens what can be grabbed (without changing
-   the layout item - see the note above .MakeDrfSidebarScroll), and the ::after is a visible grip. */
-.MakeDrfRight > div > .Wt-hrh2 {
+/* The handle to drag the chart taller or shorter.  Wt's (flex layout) handle is a 5px absolutely
+   positioned div, which InterSpec.css makes transparent; the ::before widens what can be grabbed
+   (without changing the layout item - see the note above .MakeDrfSidebarScroll), and the ::after is
+   a visible grip. */
+.MakeDrfRight > .Wt-hrh2 {
   z-index: 2;
   background-image: none;
 }
 
-.MakeDrfRight > div > .Wt-hrh2::before {
+.MakeDrfRight > .Wt-hrh2::before {
   content: "";
   position: absolute;
   left: 0;
@@ -160,7 +161,7 @@
   bottom: -4px;
 }
 
-.MakeDrfRight > div > .Wt-hrh2::after {
+.MakeDrfRight > .Wt-hrh2::after {
   content: "";
   position: absolute;
   left: calc(50% - 20px);
@@ -171,7 +172,7 @@
   background: var(--interspec-outline-color);
 }
 
-.MakeDrfRight > div > .Wt-hrh2:hover::after {
+.MakeDrfRight > .Wt-hrh2:hover::after {
   background: var(--interspec-accent-color);
 }
 
