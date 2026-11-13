@@ -2409,7 +2409,7 @@ Wt::cpp17::any PeakModel::data( const WModelIndex &index, Wt::ItemDataRole role 
 
         case PeakDef::NormalGamma:
         case PeakDef::AnnihilationGamma:
-          if( !peak->parentNuclide() && !peak->reaction() )
+          if( !peak->parentNuclide() && !peak->reaction() && !peak->xrayElement() )
             return Wt::cpp17::any();
           break;
 
@@ -2676,19 +2676,22 @@ PeakModel::SetGammaSource PeakModel::setXray( PeakDef &peak,
   if( isSame )
     return SetGammaSource::NoSourceChange;
   
+  const bool wasUsedForShielding = peak.useForShieldingSourceFit();
+  const bool wasUsedForRelEff = peak.useForManualRelEff();
+
+  // X-rays are opt-in for "Isotopics from peaks" (like decay x-rays are; see setNuclide(...)):
+  //  PeakDef::setXray clears the flag when the element changes, but keeps it for another line of the
+  //  same element.
   peak.setXray( el, xray_energy );
-  
+
   if( !nearXray && !hadSource )
     return SetGammaSource::NoSourceChange;
-  
-  if( peak.useForShieldingSourceFit() || peak.useForManualRelEff() )
-  {
-    peak.useForShieldingSourceFit( false );
-    peak.useForManualRelEff( false );
-    return SetGammaSource::SourceAndUseChanged;
-  }
-  
-  return SetGammaSource::SourceChange;
+
+  // X-rays are not used for activity/shielding fits.
+  peak.useForShieldingSourceFit( false );
+
+  const bool useChanged = (wasUsedForShielding || (wasUsedForRelEff != peak.useForManualRelEff()));
+  return useChanged ? SetGammaSource::SourceAndUseChanged : SetGammaSource::SourceChange;
 }//setXray(...)
 
 
@@ -3403,7 +3406,7 @@ bool PeakModel::setData( const WModelIndex &index,
           
           if( use )
           {
-            const bool has_parent = (new_peak.parentNuclide() || new_peak.reaction());
+            const bool has_parent = (new_peak.parentNuclide() || new_peak.reaction() || new_peak.xrayElement());
             const bool is_gamma = ((new_peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma)
                                    || (new_peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma) );
             const bool is_decay_xray = (new_peak.parentNuclide()
@@ -3623,8 +3626,9 @@ bool PeakModel::setData( const WModelIndex &index,
         //  ranges rather than a single kIsotope..last-column range - a model should only signal the
         //  cells that actually changed.  See the kIsotope branch below.
         dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kIsotope) );
+        dataChanged().emit( PeakModel::index(row, kUseForManualRelEff), PeakModel::index(row, kUseForManualRelEff) );
         dataChanged().emit( PeakModel::index(row, kMean), PeakModel::index(row, kCps) );
-        dataChanged().emit( PeakModel::index(row, kPhotoPeakEnergy), PeakModel::index(row, kDifference) );
+        dataChanged().emit( PeakModel::index(row, kPhotoPeakEnergy), PeakModel::index(row, kUseForShieldingSourceFit) );
         dataChanged().emit( PeakModel::index(row, kLowerX), PeakModel::index(row, kContinuumType) );
       }else
         dataChanged().emit( index, PeakModel::index(row, kDifference) );
@@ -3637,10 +3641,12 @@ bool PeakModel::setData( const WModelIndex &index,
     }else
     {
       // column == kIsotope: a nuclide change updates the isotope name, its assigned gamma energy,
-      //  and the difference columns.  Emit these as narrow, separate ranges rather than one wide
-      //  kIsotope..kUserLabel range - a model should only signal the cells that actually changed.
+      //  the difference columns, and the use-for flags (which also depend on the source type).  Emit
+      //  these as narrow, separate ranges rather than one wide kIsotope..kUserLabel range - a model
+      //  should only signal the cells that actually changed.
       dataChanged().emit( index, index ); // kIsotope
-      dataChanged().emit( PeakModel::index(row, kPhotoPeakEnergy), PeakModel::index(row, kDifference) );
+      dataChanged().emit( PeakModel::index(row, kUseForManualRelEff), PeakModel::index(row, kUseForManualRelEff) );
+      dataChanged().emit( PeakModel::index(row, kPhotoPeakEnergy), PeakModel::index(row, kUseForShieldingSourceFit) );
     }
 
 

@@ -160,7 +160,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="4" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="4">
+			<Peak version="0.2" continuumID="4" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="4">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">7.49583684e+01 1.11969477e-02</Centroid>
@@ -315,7 +315,7 @@
 					<DecayGammaType>NormalGamma</DecayGammaType>
 				</Nuclide>
 			</Peak>
-			<Peak version="0.2" continuumID="8" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="10">
+			<Peak version="0.2" continuumID="8" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="10">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">9.33980750e+01 2.64700567e-04</Centroid>
@@ -331,7 +331,7 @@
 					<Energy>9.33000031e+01</Energy>
 				</XRay>
 			</Peak>
-			<Peak version="0.2" continuumID="8" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="11">
+			<Peak version="0.2" continuumID="8" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="11">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">9.47120922e+01 7.21317196e-05</Centroid>
@@ -377,7 +377,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="9" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="13">
+			<Peak version="0.2" continuumID="9" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="13">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">9.84850130e+01 7.41543399e-05</Centroid>
@@ -404,7 +404,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="10" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="14">
+			<Peak version="0.2" continuumID="10" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="14">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">1.04880426e+02 2.67004738e-03</Centroid>
@@ -420,7 +420,7 @@
 					<Energy>1.04800003e+02</Energy>
 				</XRay>
 			</Peak>
-			<Peak version="0.2" continuumID="10" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="15">
+			<Peak version="0.2" continuumID="10" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="15">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">1.05655765e+02 1.38387922e-03</Centroid>
@@ -1493,7 +1493,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="41" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="58">
+			<Peak version="0.2" continuumID="41" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="58">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">9.34187839e+01 2.00482998e-03</Centroid>
@@ -1646,7 +1646,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="47" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="64">
+			<Peak version="0.2" continuumID="47" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="64">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">1.04876973e+02 2.29403873e-03</Centroid>
@@ -1673,7 +1673,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="48" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="65">
+			<Peak version="0.2" continuumID="48" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="65">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">1.05488643e+02 1.35464529e-03</Centroid>
@@ -1953,7 +1953,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="59" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="79">
+			<Peak version="0.2" continuumID="59" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="79">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">7.49342795e+01 7.41386687e-03</Centroid>
@@ -2010,7 +2010,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="61" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="81">
+			<Peak version="0.2" continuumID="61" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="81">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">9.47184102e+01 2.48247166e-04</Centroid>
@@ -2067,7 +2067,7 @@
 					<Fittable>1 1</Fittable>
 				</Coefficients>
 			</PeakContinuum>
-			<Peak version="0.2" continuumID="63" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="83">
+			<Peak version="0.2" continuumID="63" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="false" id="83">
 				<Type>GaussianDefined</Type>
 				<Skew>NoSkew</Skew>
 				<Centroid fit="true">9.84847266e+01 9.44760753e-05</Centroid>

@@ -51,6 +51,7 @@
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
@@ -1362,5 +1363,95 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
   return result_peaks;
 }
 
+
+double FluorescenceDepthModel::mu_at( const double energy ) const
+{
+  assert( !mu_at_energy.empty() );
+  const auto nearest = std::min_element( begin(mu_at_energy), end(mu_at_energy),
+    [energy]( const pair<double,double> &a, const pair<double,double> &b ){
+      return fabs(a.first - energy) < fabs(b.first - energy);
+  } );
+  return nearest->second;
+}//double FluorescenceDepthModel::mu_at( const double energy ) const
+
+
+std::optional<FluorescenceDepthModel> fluorescence_depth_model( const Material &material,
+                                  const SandiaDecay::Element &element,
+                                  const vector<double> &fit_xray_energies,
+                                  const vector<vector<pair<double,double>>> &exciting_source_lines )
+{
+  if( !(material.density > 0.0f) || fit_xray_energies.empty() || element.xrays.empty() )
+    return std::nullopt;
+
+  bool in_material = false;
+  for( const Material::ElementFractionPair &ef : material.elements )
+    in_material |= (ef.first && (ef.first->atomicNumber == element.atomicNumber) && (ef.second > 0.0f));
+  for( const Material::NuclideFractionPair &nf : material.nuclides )
+    in_material |= (nf.first && (nf.first->atomicNumber == element.atomicNumber) && (nf.second > 0.0f));
+  if( !in_material )
+    return std::nullopt;
+
+  const auto lowest_highest = std::minmax_element( begin(fit_xray_energies), end(fit_xray_energies) );
+  if( !((*lowest_highest.second - *lowest_highest.first) >= ns_fluorescence_depth_min_span_kev) )
+    return std::nullopt;
+
+  const auto mu_of = [&material]( const double energy ) -> double {
+    return GammaInteractionCalc::transmition_length_coefficient( &material, energy ) / material.density;
+  };
+
+  // The element's highest K line (K-P) lies within ~30 eV of its K edge.
+  double highest_line = 0.0;
+  for( const SandiaDecay::EnergyIntensityPair &xray : element.xrays )
+    highest_line = std::max( highest_line, xray.energy );
+  const double k_edge = highest_line + 0.05;
+
+  FluorescenceDepthModel model;
+  for( size_t src_index = 0; src_index < exciting_source_lines.size(); ++src_index )
+  {
+    vector<pair<double,double>> lines; //{mu, yield x photo-absorption / mu}
+    for( const pair<double,double> &energy_yield : exciting_source_lines[src_index] )
+    {
+      const double energy = energy_yield.first, yield = energy_yield.second;
+      if( (energy <= k_edge) || !(yield > 0.0) )
+        continue;
+
+      const double mu = mu_of( energy );
+      const double photo = MassAttenuation::massAttenuationCoefficientElement( element.atomicNumber,
+                                               energy, MassAttenuation::GammaEmProcces::PhotoElectric );
+      if( (mu > 0.0) && (photo > 0.0) )
+        lines.emplace_back( mu, yield * photo / mu );
+    }//for( loop over the exciting source's lines )
+
+    // Lines exciting < 0.1 % as much as this source's strongest only cost evaluation time, and lines with
+    //  attenuation coefficients within ~3 % of each other give the same depth profile, so are merged.
+    double max_weight = 0.0;
+    for( const pair<double,double> &l : lines )
+      max_weight = std::max( max_weight, l.second );
+    std::map<long,pair<double,double>> merged; //{log-mu bin, {sum weight x mu, sum weight}}
+    for( const pair<double,double> &l : lines )
+    {
+      if( l.second < 1.0E-3 * max_weight )
+        continue;
+      pair<double,double> &bin = merged[std::lround( std::log( l.first ) / 0.03 )];
+      bin.first += l.second * l.first;
+      bin.second += l.second;
+    }
+
+    for( const auto &bin : merged )
+    {
+      model.exciting_source.push_back( src_index );
+      model.exciting_mu.push_back( bin.second.first / bin.second.second );
+      model.exciting_base_weight.push_back( bin.second.second );
+    }
+  }//for( loop over candidate exciting sources )
+
+  if( model.exciting_mu.empty() )
+    return std::nullopt;
+
+  for( const SandiaDecay::EnergyIntensityPair &xray : element.xrays )
+    model.mu_at_energy.emplace_back( xray.energy, mu_of( xray.energy ) );
+
+  return model;
+}//fluorescence_depth_model(...)
 
 }//namespace RelActCalc

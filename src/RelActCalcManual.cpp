@@ -137,6 +137,25 @@ bool shield_fits_an( const std::shared_ptr<const RelActCalc::PhysicalModelShield
   return shield_fits_an( opt.get() );
 }
 
+
+/** The fluorescence production profile of `fluor` in a self-attenuator of `areal_density`, where `rel_act(name)`
+ gives the relative activity of each exciting source.
+ */
+template<typename T, typename RelActFcn>
+RelActCalc::FluorescenceDepthProfile<T> fluorescence_profile( const RelActCalcManual::FluorescenceDepthSource &fluor,
+                                                            const T &areal_density, const RelActFcn &rel_act )
+{
+  const RelActCalc::FluorescenceDepthModel &model = fluor.m_model;
+  assert( model.exciting_base_weight.size() == fluor.m_exciting_sources.size() );
+
+  std::vector<T> weights;
+  weights.reserve( model.exciting_base_weight.size() );
+  for( size_t i = 0; i < model.exciting_base_weight.size(); ++i )
+    weights.push_back( T(model.exciting_base_weight[i]) * rel_act( fluor.m_exciting_sources[i] ) );
+
+  return RelActCalc::fluorescence_depth_profile( model.exciting_mu, weights, areal_density );
+}//fluorescence_profile(...)
+
 /** We can either use a residual to force the normalization of the R.E. curve to 1.0 at the lowest
  * energy.  Or we can manually force the average measured relative efficiency to 1.0.
  * This does not apply to `RelEffEqnForm::FramPhysicalModel`.
@@ -842,6 +861,57 @@ struct ManualGenericRelActFunctor
   /** Warnings from setting up the problem - does not include problems evaluating things. */
   std::vector<std::string> m_setup_warnings;
 
+  /** For a line of a fluorescing element: its index in `m_input.phys_model_fluorescence`, and the
+   self-attenuator's attenuation coefficient at the peak energy.
+   */
+  struct LineFluorescence
+  {
+    int model_index = -1;
+    double mu = 0.0;
+  };
+
+  /** Indexed by peak, then line, of `m_input.peaks`; empty if there are no fluorescence corrections. */
+  std::vector<std::vector<LineFluorescence>> m_line_fluorescence;
+
+
+  /** The fluorescence production profile of each of `m_input.phys_model_fluorescence`, at parameters `x`, for the
+   self-attenuator areal density `self_atten_ad` (`std::nullopt` if no self-attenuator).
+   */
+  template<typename T>
+  std::vector<RelActCalc::FluorescenceDepthProfile<T>> fluorescence_profiles( const std::vector<T> &x,
+                                                                const std::optional<T> &self_atten_ad ) const
+  {
+    std::vector<RelActCalc::FluorescenceDepthProfile<T>> profiles;
+    if( !self_atten_ad.has_value() )
+      return profiles;
+
+    for( const RelActCalcManual::FluorescenceDepthSource &fluor : m_input.phys_model_fluorescence )
+      profiles.push_back( fluorescence_profile( fluor, *self_atten_ad,
+                            [this,&x]( const std::string &src ){ return relative_activity( src, x ); } ) );
+    return profiles;
+  }//fluorescence_profiles(...)
+
+
+  /** The factor on the efficiency of line `line_index` of peak `peak_index`: its fluorescence source-depth
+   correction for a fluorescing element (see `RelEffInput::phys_model_fluorescence`), else 1.0.
+   */
+  template<typename T>
+  T line_eff_multiple( const std::vector<RelActCalc::FluorescenceDepthProfile<T>> &profiles,
+                       const size_t peak_index, const size_t line_index ) const
+  {
+    if( m_line_fluorescence.empty() || profiles.empty() )
+      return T(1.0);
+
+    assert( peak_index < m_line_fluorescence.size() );
+    assert( line_index < m_line_fluorescence[peak_index].size() );
+    const LineFluorescence &info = m_line_fluorescence[peak_index][line_index];
+    if( info.model_index < 0 )
+      return T(1.0);
+
+    assert( static_cast<size_t>(info.model_index) < profiles.size() );
+    return RelActCalc::fluorescence_self_atten_correction( profiles[info.model_index], info.mu );
+  }//line_eff_multiple(...)
+
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
   /** Per-element sigma-block for mass-fraction constraints - the Manual mirror of
    RelActCalcAutoImp::RelActAutoCostFcn::MassFracBlock, sharing the exact decode in
@@ -1333,6 +1403,53 @@ struct ManualGenericRelActFunctor
     }//if( !m_input.act_ratio_constraints.empty() )
 
     assert( m_isotopes.size() == m_rel_act_norms.size() );
+
+    // Map each peak line of a fluorescing element to its source-depth model.
+    if( !m_input.phys_model_fluorescence.empty() )
+    {
+      if( (m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+         || !m_input.phys_model_self_atten || !m_input.phys_model_self_atten->material )
+        throw runtime_error( "ManualGenericRelActFunctor: fluorescence source-depth corrections require the"
+                             " Physical Model with a self-attenuating material." );
+
+      for( const RelActCalcManual::FluorescenceDepthSource &fluor : m_input.phys_model_fluorescence )
+      {
+        if( !std::binary_search( begin(m_isotopes), end(m_isotopes), fluor.m_element )
+           || (fluor.m_material != m_input.phys_model_self_atten->material.get())
+           || fluor.m_model.mu_at_energy.empty()
+           || (fluor.m_exciting_sources.size() != fluor.m_model.exciting_mu.size())
+           || (fluor.m_model.exciting_base_weight.size() != fluor.m_model.exciting_mu.size()) )
+          throw runtime_error( "ManualGenericRelActFunctor: invalid fluorescence model for '" + fluor.m_element + "'." );
+
+        for( const string &exciter : fluor.m_exciting_sources )
+        {
+          if( !std::binary_search( begin(m_isotopes), end(m_isotopes), exciter ) )
+            throw runtime_error( "ManualGenericRelActFunctor: fluorescence of '" + fluor.m_element
+                                 + "' is excited by '" + exciter + "', which is not in the problem." );
+        }
+      }//for( loop over fluorescing sources )
+
+      m_line_fluorescence.resize( m_input.peaks.size() );
+      for( size_t peak_index = 0; peak_index < m_input.peaks.size(); ++peak_index )
+      {
+        const RelActCalcManual::GenericPeakInfo &peak = m_input.peaks[peak_index];
+        for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+        {
+          LineFluorescence info;
+          for( size_t i = 0; i < m_input.phys_model_fluorescence.size(); ++i )
+          {
+            const RelActCalcManual::FluorescenceDepthSource &fluor = m_input.phys_model_fluorescence[i];
+            if( fluor.m_element == line.m_isotope )
+            {
+              info.model_index = static_cast<int>( i );
+              info.mu = fluor.m_model.mu_at( peak.m_energy );
+            }
+          }//for( loop over fluorescing sources )
+
+          m_line_fluorescence[peak_index].push_back( info );
+        }//for( loop over peak lines )
+      }//for( loop over peaks )
+    }//if( !m_input.phys_model_fluorescence.empty() )
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
     // Group the mass-fraction constraints into per-element sigma-blocks (see #ManualMassFracBlock).
@@ -1915,6 +2032,7 @@ struct ManualGenericRelActFunctor
     const size_t num_isos = num_isotopes();
   
     std::function<T (double)> rel_eff_fcn;
+    std::optional<T> self_atten_ad; //Only used for fluorescence source-depth corrections
     if( m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       size_t par_num = num_isos;
@@ -1953,6 +2071,7 @@ struct ManualGenericRelActFunctor
         att.areal_density = x[par_num] * PhysicalUnits::g_per_cm2;
         par_num += 1;
         
+        self_atten_ad = att.areal_density;
         self_atten = std::move(att);
       }//if( use internal attenuation shielding )
       
@@ -2023,6 +2142,9 @@ struct ManualGenericRelActFunctor
       };
     }
     
+    const std::vector<RelActCalc::FluorescenceDepthProfile<T>> fluor_profiles
+                                                     = fluorescence_profiles( x, self_atten_ad );
+
     for( size_t index = 0; index < m_input.peaks.size(); ++index )
     {
       const RelActCalcManual::GenericPeakInfo &peak = m_input.peaks[index];
@@ -2030,11 +2152,15 @@ struct ManualGenericRelActFunctor
       T curve_val = rel_eff_fcn( peak.m_energy );
       
       T rel_src_counts{}; //scalar part of Jet will be default constructed to 0.0
-      for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+      for( size_t line_index = 0; line_index < peak.m_source_gammas.size(); ++line_index )
       {
+        const RelActCalcManual::GenericLineInfo &line = peak.m_source_gammas[line_index];
         const T rel_activity = relative_activity( line.m_isotope, x );
-        rel_src_counts += rel_activity * line.m_yield;
-      }//for( const GenericLineInfo &line : peak.m_source_gammas )
+        if( fluor_profiles.empty() )
+          rel_src_counts += rel_activity * line.m_yield;
+        else
+          rel_src_counts += rel_activity * line.m_yield * line_eff_multiple( fluor_profiles, index, line_index );
+      }//for( loop over peak.m_source_gammas )
       
       
 #if( USE_RESIDUAL_TO_BREAK_DEGENERACY )
@@ -3914,7 +4040,8 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
       if( !m_rel_activities.empty() )
         rel_act = relative_activity(iso);
       
-      const double contrib_counts = rel_act * yield * function_val;
+      const double contrib_counts = rel_act * yield * function_val
+                                    * fluorescence_correction( iso, peak.m_energy );
       total_contrib_counts += contrib_counts;
       strm << (i ? ", " : "") << iso << ": fit " << contrib_counts << " counts";
     }//for( const RelActCalc::GammaLineInfo &line : peak.m_source_gammas )
@@ -4141,12 +4268,9 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       const SandiaDecay::Nuclide * const nuc_i = db->nuclide( nuc_i_str );
       const SandiaDecay::Nuclide * const nuc_j = db->nuclide( nuc_j_str );
       
+      // Ratios with a reaction or an x-ray element's (free) activity are not meaningful.
       if( !nuc_i || !nuc_j )
-      {
-        results_html << "<tr><td>" << nuc_i_str << "/" << nuc_j_str << "</td><td>--</td><td>--</td></tr>\n";
-        results_html << "<tr><td>" << nuc_j_str << "/" << nuc_i_str << "</td><td>--</td><td>--</td></tr>\n";
         continue;
-      }
       
       const double act_i = relative_activity( nuc_i_str );
       const double act_j = relative_activity( nuc_j_str );
@@ -4220,6 +4344,49 @@ double RelEffSolution::rel_eff_eqn_value( const double energy ) const
   return RelActCalc::eval_physical_model_eqn_imp<double>( energy, input.self_atten, input.external_attens,
                                             input.det.get(), input.hoerl_b, input.hoerl_c );
 }
+
+
+double RelEffSolution::fluorescence_correction( const std::string &source, const double energy ) const
+{
+  if( (m_status != ManualSolutionStatus::Success) || m_rel_activities.empty()
+     || (m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+    return 1.0;
+
+  for( const FluorescenceDepthSource &fluor : m_input.phys_model_fluorescence )
+  {
+    if( fluor.m_element != source )
+      continue;
+
+    const ManualGenericRelActFunctor::PhysModelRelEqnDef<double> input
+                = ManualGenericRelActFunctor::make_phys_eqn_input( m_input, m_rel_eff_eqn_coefficients );
+    if( !input.self_atten.has_value() )
+      return 1.0;
+
+    const RelActCalc::FluorescenceDepthProfile<double> profile = fluorescence_profile( fluor,
+                          input.self_atten->areal_density,
+                          [this]( const std::string &src ){ return relative_activity( src ); } );
+
+    return RelActCalc::fluorescence_self_atten_correction( profile, fluor.m_model.mu_at( energy ) );
+  }//for( loop over fluorescing sources )
+
+  return 1.0;
+}//double fluorescence_correction( const std::string &source, const double energy ) const
+
+
+std::vector<GenericPeakInfo> RelEffSolution::peaks_with_effective_yields() const
+{
+  std::vector<GenericPeakInfo> peaks = m_input.peaks;
+  if( m_input.phys_model_fluorescence.empty() )
+    return peaks;
+
+  for( GenericPeakInfo &peak : peaks )
+  {
+    for( GenericLineInfo &line : peak.m_source_gammas )
+      line.m_yield *= fluorescence_correction( line.m_isotope, peak.m_energy );
+  }
+
+  return peaks;
+}//std::vector<GenericPeakInfo> peaks_with_effective_yields() const
 
 
 double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
@@ -4484,9 +4651,10 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
         results_html << "<tr><td></td>";
       
       const double rel_act = relative_activity(line.m_isotope);
+      const double fluor_corr = fluorescence_correction( line.m_isotope, info.m_energy );
       const double counts_over_yield = info.m_counts / line.m_yield;
       const double counts_uncert_percent = 100.0*(info.m_counts_uncert / info.m_counts);
-      const double meas_rel_eff = info.m_counts / (line.m_yield * rel_act);
+      const double meas_rel_eff = info.m_counts / (line.m_yield * rel_act * fluor_corr);
       const double meas_rel_eff_uncert = 100* info.m_counts_uncert / info.m_counts;
       
       results_html << "<td>" << line.m_isotope
@@ -4506,8 +4674,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
         {
           double sum_counts = 0.0;
           for( const GenericLineInfo &sum_line : info.m_source_gammas )
-            sum_counts += relative_activity(sum_line.m_isotope) * sum_line.m_yield;
-          const double contrib_percent = 100.0*(rel_act*line.m_yield) / sum_counts;
+            sum_counts += relative_activity(sum_line.m_isotope) * sum_line.m_yield
+                          * fluorescence_correction( sum_line.m_isotope, info.m_energy );
+          const double contrib_percent = 100.0*(rel_act*line.m_yield*fluor_corr) / sum_counts;
           results_html << SpecUtils::printCompact( contrib_percent, nsigfig ) << "%";
         }
       }//if( any_peak_has_multiple_srcs )
@@ -4589,10 +4758,13 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   //  want to go back
   //stringstream add_rel_eff_plot_css;
   
+  // Effective yields include any fluorescence source-depth correction, so x-ray points sit on the curve.
+  const vector<GenericPeakInfo> plot_peaks = peaks_with_effective_yields();
+
   rel_eff_plot_values << "[";
-  for( size_t index = 0; index < m_input.peaks.size(); ++index )
+  for( size_t index = 0; index < plot_peaks.size(); ++index )
   {
-    const GenericPeakInfo &peak = m_input.peaks[index];
+    const GenericPeakInfo &peak = plot_peaks[index];
     
     string isotopes_json;
     double src_counts = 0.0;
@@ -6194,11 +6366,18 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       phys_mode_rel_eqn_input = ManualGenericRelActFunctor::make_phys_eqn_input( input, rel_eff_coefs );
     
+    std::optional<double> self_atten_ad;
+    if( phys_mode_rel_eqn_input.self_atten.has_value() )
+      self_atten_ad = phys_mode_rel_eqn_input.self_atten->areal_density;
+    const vector<RelActCalc::FluorescenceDepthProfile<double>> fluor_profiles
+                                      = cost_functor->fluorescence_profiles( parameters, self_atten_ad );
+
     bool used_unweighted = false, used_add_uncert = false;
     solution.m_predicted_peak_counts.clear();
     solution.m_predicted_peak_counts.reserve( cost_functor->m_input.peaks.size() );
-    for( const GenericPeakInfo &peak : cost_functor->m_input.peaks )
+    for( size_t peak_index = 0; peak_index < cost_functor->m_input.peaks.size(); ++peak_index )
     {
+      const GenericPeakInfo &peak = cost_functor->m_input.peaks[peak_index];
       double curve_val;
       if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
@@ -6217,13 +6396,15 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       used_unweighted |= (peak.m_base_rel_eff_uncert < -1.0E-9);
       
       double expected_src_counts = 0.0;
-      for( const GenericLineInfo &line : peak.m_source_gammas )
+      for( size_t line_index = 0; line_index < peak.m_source_gammas.size(); ++line_index )
       {
+        const GenericLineInfo &line = peak.m_source_gammas[line_index];
         // `gauge_mult` (1.0 except Ceres-fit empirical forms) keeps the activities consistent
         //  with the gauge-rescaled curve coefficients; their product is gauge-invariant.
         const double rel_activity = gauge_mult * cost_functor->relative_activity( line.m_isotope, parameters );
-        expected_src_counts += rel_activity * line.m_yield;
-      }//for( const RelActCalc::GammaLineInfo &line : peak.m_source_gammas )
+        expected_src_counts += rel_activity * line.m_yield
+                               * cost_functor->line_eff_multiple( fluor_profiles, peak_index, line_index );
+      }//for( loop over peak.m_source_gammas )
       
       const double expected_counts = expected_src_counts * curve_val;
       solution.m_predicted_peak_counts.push_back( expected_counts );
@@ -6910,7 +7091,8 @@ double estimate_stat_uncert_multiple( const RelEffSolution &solution, const doub
 
     double src_counts = 0.0;
     for( const GenericLineInfo &line : peak.m_source_gammas )
-      src_counts += solution.relative_activity( line.m_isotope ) * line.m_yield;
+      src_counts += solution.relative_activity( line.m_isotope ) * line.m_yield
+                    * solution.fluorescence_correction( line.m_isotope, peak.m_energy );
 
     const double predicted = src_counts * solution.rel_eff_eqn_value( peak.m_energy );
 
@@ -6931,6 +7113,76 @@ double estimate_stat_uncert_multiple( const RelEffSolution &solution, const doub
 
   return (std::min)( max_multiple, (std::max)( 1.0, std::sqrt(variance_multiple) ) );
 }//double estimate_stat_uncert_multiple( const RelEffSolution &solution, const double max_multiple )
+
+
+void add_fluorescence_depth_models( RelEffInput &input, const std::vector<SandiaDecayNuc> &sources,
+                                    const double measurement_duration )
+{
+  input.phys_model_fluorescence.clear();
+
+  if( (input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+     || !input.phys_model_self_atten || !input.phys_model_self_atten->material )
+    return;
+
+  const Material &material = *input.phys_model_self_atten->material;
+
+  // The energies of the peaks each source has lines in.
+  map<string,vector<double>> source_peak_energies;
+  for( const GenericPeakInfo &peak : input.peaks )
+  {
+    for( const GenericLineInfo &line : peak.m_source_gammas )
+      source_peak_energies[line.m_isotope].push_back( peak.m_energy );
+  }
+
+  // The problem's nuclides excite the fluorescence; their photons per Bq of the parent at its age - computed
+  //  the same way as the yields of their peaks (see PeakCsvInput::fill_in_nuclide_info(...)), so the fit
+  //  activities scale both alike.
+  vector<string> exciting_names;
+  vector<vector<pair<double,double>>> exciting_lines;
+  for( const SandiaDecayNuc &src : sources )
+  {
+    if( !src.nuclide || !source_peak_energies.count( src.nuclide->symbol ) )
+      continue;
+
+    const double age = (src.age >= 0.0) ? src.age : PeakDef::defaultDecayTime( src.nuclide );
+    const double ref_act = 1.0*SandiaDecay::MBq;
+    SandiaDecay::NuclideMixture mix;
+    mix.addNuclideByActivity( src.nuclide, ref_act / std::exp( -age * src.nuclide->decayConstant() ) );
+
+    const bool decay_correct = (src.correct_for_decay_during_meas && (measurement_duration > 0.0));
+    const vector<SandiaDecay::EnergyRatePair> photons = decay_correct
+            ? GammaInteractionCalc::decay_during_meas_corrected_gammas( mix, age, measurement_duration )
+            : mix.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
+
+    vector<pair<double,double>> lines;
+    for( const SandiaDecay::EnergyRatePair &photon : photons )
+      lines.emplace_back( photon.energy, photon.numPerSecond / ref_act );
+
+    exciting_names.push_back( src.nuclide->symbol );
+    exciting_lines.push_back( std::move(lines) );
+  }//for( loop over sources to find exciting nuclides )
+
+  for( const SandiaDecayNuc &src : sources )
+  {
+    const auto pos = src.element ? source_peak_energies.find( src.element->symbol ) : end(source_peak_energies);
+    if( pos == end(source_peak_energies) )
+      continue;
+
+    std::optional<RelActCalc::FluorescenceDepthModel> model
+                  = RelActCalc::fluorescence_depth_model( material, *src.element, pos->second, exciting_lines );
+    if( !model )
+      continue;
+
+    FluorescenceDepthSource fluor;
+    fluor.m_element = src.element->symbol;
+    fluor.m_material = &material;
+    for( const size_t index : model->exciting_source )
+      fluor.m_exciting_sources.push_back( exciting_names[index] );
+    fluor.m_model = std::move( *model );
+
+    input.phys_model_fluorescence.push_back( std::move(fluor) );
+  }//for( loop over sources to find fluorescing elements )
+}//void add_fluorescence_depth_models( RelEffInput &input, const std::vector<SandiaDecayNuc> &sources )
 
 
 

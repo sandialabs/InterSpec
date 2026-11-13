@@ -384,10 +384,10 @@ namespace
     RelActManualGui::RelActCalcRawInput calc_raw_input;
     calc_raw_input.state = guiState;
     calc_raw_input.fore_spec = meas;
-    // prepare_calc_input expects peaks already filtered to nuclide/reaction-assigned, manual-rel-eff
-    //  peaks (normally done by get_raw_info_for_calc_input()).
+    // prepare_calc_input expects peaks already filtered to nuclide/reaction/x-ray-assigned, manual-rel-eff
+    //  peaks (normally done by get_raw_info_for_calc_input()).  (This file's x-ray peaks are not marked for use.)
     for( const shared_ptr<const PeakDef> &p : *orig_peaks )
-      if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
+      if( p && (p->parentNuclide() || p->reaction() || p->xrayElement()) && p->useForManualRelEff() )
         calc_raw_input.peaks.push_back( p );
     calc_raw_input.detector = det;
 

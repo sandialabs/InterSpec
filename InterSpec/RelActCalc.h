@@ -40,6 +40,7 @@ class PeakDef;
 namespace SandiaDecay
 {
   struct Nuclide;
+  struct Element;
 }
 
 namespace SpecUtils
@@ -515,7 +516,58 @@ struct PhysModelShield
   T atomic_number{0.0};
   T areal_density{0.0};
 };//struct PhysModelShield
-  
+
+
+/** An element's fluorescence lines used in a fit must span at least this many keV for the fluorescence source-depth
+ model to be used; below it the correction is ~constant over the lines, which the element's free activity absorbs.
+ */
+const double ns_fluorescence_depth_min_span_kev = 5.0;
+
+
+/** The fluorescence source-depth model of an element's x-rays induced in a Physical-model self-attenuating material
+ that contains the element; shared by the "Auto" and "Manual" calculations.
+
+ Fluorescence is produced where the source's own photons are photo-absorbed, which is not uniform in depth, so these
+ x-rays get `fluorescence_self_atten_correction(...)` (RelActCalc_imp.hpp) on top of the uniform-source
+ self-attenuation.  When evaluating, the production weight of exciting group `i` is `exciting_base_weight[i]` times
+ the fitted relative activity of its source.
+ */
+struct FluorescenceDepthModel
+{
+  /** For each group of exciting lines: the index of its source in the `exciting_source_lines` given to
+   `fluorescence_depth_model(...)`, the material's attenuation coefficient (per unit areal density), and the
+   lines' yield x the element's photo-absorption / attenuation.
+   */
+  std::vector<size_t> exciting_source;
+  std::vector<double> exciting_mu, exciting_base_weight;
+
+  /** {energy, the material's attenuation coefficient} for each of the element's x-rays. */
+  std::vector<std::pair<double,double>> mu_at_energy;
+
+  /** The attenuation coefficient at the element's x-ray nearest `energy`. */
+  double mu_at( const double energy ) const;
+};//struct FluorescenceDepthModel
+
+
+/** Builds the fluorescence source-depth model for `element`'s x-rays in the self-attenuating `material`.
+
+ Returns nothing (i.e., no correction) unless (1) the material contains the element, (2) the element's x-rays used
+ in the fit span at least `ns_fluorescence_depth_min_span_kev`, and (3) some source has lines above the element's
+ K edge to excite it.  No fit parameters are added: the correction follows the fitted areal density and activities.
+ Bremsstrahlung (e.g., Pa-234m betas in DU) also excites, but with nearly the same depth profile, so it changes the
+ fluorescence amount, not the line pattern.
+
+ @param material The self-attenuating material.
+ @param element The fluorescing element; its lines are `element.xrays`.
+ @param fit_xray_energies Energies of the element's x-rays that the fit uses (e.g., in an ROI, or matched to a peak).
+ @param exciting_source_lines For each candidate exciting source, its {energy, yield} photon lines; leave a source's
+        entry empty if it should not excite (e.g., other fluorescing elements).
+ */
+std::optional<FluorescenceDepthModel> fluorescence_depth_model( const Material &material,
+                                  const SandiaDecay::Element &element,
+                                  const std::vector<double> &fit_xray_energies,
+                                  const std::vector<std::vector<std::pair<double,double>>> &exciting_source_lines );
+
   
 /** Evaluates the Physical-Model relative efficiency at `energy`.
 

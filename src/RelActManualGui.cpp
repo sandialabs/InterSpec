@@ -272,6 +272,8 @@ class ManRelEffNucDisp : public Wt::WPanel
 public:
   const SandiaDecay::Nuclide * const m_nuc;
   const ReactionGamma::Reaction * const m_reaction;
+  /** Set for an element's fluorescence x-rays. */
+  const SandiaDecay::Element * const m_element;
   double m_current_age;
   const bool m_age_is_settable;
   Wt::WTable *m_nucContentTable;
@@ -284,12 +286,15 @@ public:
   
   
 public:
+  /** Exactly one of `nuc`, `reaction`, or `element` should be non-null. */
   ManRelEffNucDisp( const SandiaDecay::Nuclide * const nuc,
                    const ReactionGamma::Reaction * const reaction,
+                   const SandiaDecay::Element * const element,
                    double age, const float meas_time )
   : WPanel(),
    m_nuc( nuc ),
    m_reaction( reaction ),
+   m_element( element ),
    m_current_age( (nuc && (age < 0.0)) ? PeakDef::defaultDecayTime(nuc) : age ),
    m_age_is_settable( nuc ? !PeakDef::ageFitNotAllowed(nuc) : false ),
    m_nucContentTable( nullptr ),
@@ -299,14 +304,19 @@ public:
    m_profile_uncert( nullptr ),
    m_updated()
   {
-    assert( m_nuc || m_reaction );
+    assert( (!!m_nuc + !!m_reaction + !!m_element) == 1 );
     
-    if( !m_nuc && !m_reaction )
-      throw runtime_error( "ManRelEffNucDisp: null nuclide and reaction" );
+    if( !m_nuc && !m_reaction && !m_element )
+      throw runtime_error( "ManRelEffNucDisp: null nuclide, reaction, and element" );
     
     addStyleClass( "ManRelEffNucDisp" );
     
-    setTitle( m_nuc ? m_nuc->symbol : m_reaction->name() );
+    if( m_nuc )
+      setTitle( m_nuc->symbol );
+    else if( m_element )
+      setTitle( WString::tr("mrend-xrays-title").arg( m_element->symbol ) );
+    else
+      setTitle( m_reaction->name() );
     setCollapsible( true );
     setCollapsed( true );
     //setAnimation( { WAnimation::AnimationEffect::SlideInFromTop,
@@ -385,6 +395,13 @@ public:
       }
       
       // We could maybe list which gammas are currently being used
+    }else if( m_element )
+    {
+      auto contentOwner = std::make_unique<WText>( WString::tr("mrend-fluor-xrays").arg( m_element->symbol )
+                                                                   .arg( SpecUtils::printCompact( RelActCalc::ns_fluorescence_depth_min_span_kev, 3 ) ) );
+      contentOwner->setInline( false );
+      contentOwner->addStyleClass( "NucInfoTable" );
+      setCentralWidget( std::move(contentOwner) );
     }else
     {
       string target;
@@ -410,7 +427,7 @@ public:
       contentOwner->setInline( false );
       contentOwner->addStyleClass( "NucInfoTable" );
       setCentralWidget( std::move(contentOwner) );
-    }//if( m_nuc ) / else ( m_reaction )
+    }//if( m_nuc ) / else if( m_element ) / else ( m_reaction )
   }//ManRelEffNucDisp(...)
   
   
@@ -532,9 +549,9 @@ public:
 
   void handleAgeChange()
   {
-    assert( m_age_edit_tmp || m_reaction );
+    assert( m_age_edit_tmp || !m_nuc );
    
-    if( m_reaction )
+    if( !m_nuc )
       return;
     
     assert( m_nuc );
@@ -569,7 +586,7 @@ public:
   
   void setAgeHidden( const bool hidden )
   {
-    assert( m_age_row || m_reaction );
+    assert( m_age_row || !m_nuc );
     
     if( m_age_row )
       m_age_row->setHidden( hidden );
@@ -1414,7 +1431,7 @@ RelActManualGui::RelActCalcRawInput RelActManualGui::get_raw_info_for_calc_input
 
   for( const shared_ptr<const PeakDef> &p : *peaks )
   {
-    if( !p || !(p->parentNuclide() || p->reaction()) || !p->useForManualRelEff() )
+    if( !p || !(p->parentNuclide() || p->reaction() || p->xrayElement()) || !p->useForManualRelEff() )
       continue;
 
     setup_input.peaks.push_back( p );
@@ -1568,9 +1585,9 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
   for( const PeakModel::PeakShrdPtr &p : peaks )
   {
     // `get_raw_info_for_calc_input()` should have already filtered peaks correctly to only include peaks that we want
-    assert( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() );
+    assert( p && (p->parentNuclide() || p->reaction() || p->xrayElement()) && p->useForManualRelEff() );
 
-    if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
+    if( p && (p->parentNuclide() || p->reaction() || p->xrayElement()) && p->useForManualRelEff() )
     {
       GenericPeakInfo peak;
       peak.m_mean = peak.m_energy = p->mean();
@@ -1632,7 +1649,8 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
       for( const auto &existing : nuclides_to_match_to )
       {
         if( (p->parentNuclide() && (existing.nuclide == p->parentNuclide()))
-           || (p->reaction() && (existing.reaction == p->reaction())) )
+           || (p->reaction() && (existing.reaction == p->reaction()))
+           || (p->xrayElement() && (existing.element == p->xrayElement())) )
         {
           nuc = existing;
           hadNuclide = true;
@@ -1666,13 +1684,17 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
           
           if( decay_corr_pos != end(decay_correct_during_meas) )
             nuc.correct_for_decay_during_meas = decay_corr_pos->second;
+        }else if( p->xrayElement() )
+        {
+          // Fluorescence x-rays: the element gets its own, freely fit, activity.
+          nuc.element = p->xrayElement();
         }else
         {
           has_reaction = true;
           nuc.reaction = p->reaction();
         }
         
-        assert( nuc.nuclide || nuc.reaction );
+        assert( nuc.nuclide || nuc.reaction || nuc.element );
         
         nuclides_to_match_to.push_back( nuc );
       }//if( !hadNuclide )
@@ -1714,6 +1736,13 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
         
         unique_isotopes.insert( p->parentNuclide()->symbol );
         src_atomic_numbers.insert( p->parentNuclide()->atomicNumber );
+      }else if( p->xrayElement() )
+      {
+        has_U_or_Pu |= (p->xrayElement()->atomicNumber == 92);
+        has_U_or_Pu |= (p->xrayElement()->atomicNumber == 94);
+
+        unique_isotopes.insert( p->xrayElement()->symbol );
+        src_atomic_numbers.insert( p->xrayElement()->atomicNumber );
       }else
       {
         assert( p->reaction() );
@@ -1801,10 +1830,12 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
     vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
     for( const auto &n : nuclides_to_match_to )
     {
-      assert( n.nuclide || n.reaction );
+      assert( n.nuclide || n.reaction || n.element );
       
       if( n.nuclide )
         isotopes.emplace_back( n.nuclide->symbol, n.age, n.correct_for_decay_during_meas );
+      else if( n.element )
+        isotopes.emplace_back( n.element->symbol, -1.0, false );
       else
         isotopes.emplace_back( n.reaction->name(), -1.0, false );
     }//for( const auto &n : nuclides_to_match_to )
@@ -1901,6 +1932,45 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
       if( rr )
         setup_output.phys_model_external_attens.push_back( rr );
     }//for( auto w : m_extAttenShields->children() )
+
+    // Fluorescence x-rays of an element in the self-attenuating material get the same source-depth
+    //  correction RelActCalcAuto uses.
+    const double meas_duration = fore_spec ? fore_spec->real_time() : -1.0;
+    RelActCalcManual::add_fluorescence_depth_models( setup_output, nuclides_to_match_to, meas_duration );
+
+    // Fluorescence induced in an external shielding is not modelled: its x-rays are treated as if from
+    //  the source, which is only reasonable for thin shielding.  (A generic external shielding is
+    //  compared at its current atomic number, even if that is being fit.)
+    const auto shield_has_element = []( const RelActCalc::PhysicalModelShieldInput *shield,
+                                        const SandiaDecay::Element *el ) -> bool {
+      if( !shield || !el )
+        return false;
+      if( !shield->material )
+        return (fabs(shield->atomic_number - el->atomicNumber) < 0.5);
+
+      bool has_el = false;
+      for( const Material::ElementFractionPair &ef : shield->material->elements )
+        has_el |= (ef.first && (ef.first->atomicNumber == el->atomicNumber));
+      for( const Material::NuclideFractionPair &nf : shield->material->nuclides )
+        has_el |= (nf.first && (nf.first->atomicNumber == el->atomicNumber));
+      return has_el;
+    };//shield_has_element(...)
+
+    for( const SandiaDecayNuc &n : nuclides_to_match_to )
+    {
+      if( !n.element )
+        continue;
+
+      for( const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : setup_output.phys_model_external_attens )
+      {
+        if( shield_has_element( ext.get(), n.element ) )
+        {
+          setup_output.prep_warnings.push_back(
+                          WString::tr("ramg-warn-ext-shield-fluor").arg( n.element->symbol ).toUTF8() );
+          break;
+        }
+      }//for( loop over external shieldings )
+    }//for( loop over sources )
   }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
 
 
@@ -2335,9 +2405,13 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     string color;
     for( const auto &p : displayed_peaks )
     {
-      if( p && p->parentNuclide()
-         && (p->parentNuclide()->symbol == act.m_isotope)
-         && !p->lineColor().isDefault() )
+      if( !p || p->lineColor().isDefault() )
+        continue;
+
+      const bool is_src = (p->parentNuclide() && (p->parentNuclide()->symbol == act.m_isotope))
+                          || (p->xrayElement() && (p->xrayElement()->symbol == act.m_isotope))
+                          || (p->reaction() && (p->reaction()->name() == act.m_isotope));
+      if( is_src )
       {
         color = p->lineColor().cssText();
         break;
@@ -2368,9 +2442,14 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio.  If we have U and Pu, we wont give enrichment.
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   set<string> isotopes;
+  size_t num_nuclides = 0;
   for( const auto &relact : solution.m_rel_activities )
+  {
     isotopes.insert( relact.m_isotope );
+    num_nuclides += (db && db->nuclide( relact.m_isotope )) ? 1 : 0;
+  }
   if( (isotopes.count("U235") && isotopes.count("U238") && !isotopes.count("Pu239"))
      || (isotopes.count("Pu239") && isotopes.count("Pu240") && !isotopes.count("U235")) )
   {
@@ -2425,8 +2504,9 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     }//try / catch
     
     chi2_title.arg( enrich );
-  }else if( isotopes.size() == 2 )
+  }else if( (isotopes.size() == 2) && (num_nuclides == 2) )
   {
+    // (A ratio with a reaction or an x-ray element's free activity is not meaningful.)
     const vector<RelActCalcManual::IsotopeRelativeActivity> &rel_acts = solution.m_rel_activities;
     const int num_index = (rel_acts[0].m_rel_activity > rel_acts[1].m_rel_activity) ? 1 : 0;
     const int denom_index = (num_index ? 0 : 1);
@@ -2451,12 +2531,11 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     chi2_title.arg( "" );
   }
   
-  m_chart->setData( solution.m_input.peaks, relActsColors, relEffEqn, chi2_title, relEffEqnUncert );
+  m_chart->setData( solution.peaks_with_effective_yields(), relActsColors, relEffEqn, chi2_title, relEffEqnUncert );
   
   
   // Now update the text
   // TODO: refactor getting these tables from the solution...
-  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   char buffer[2048] = {'\0'};
   stringstream results_html;
   
@@ -2681,17 +2760,21 @@ void RelActManualGui::updateNuclides()
   
   map<const SandiaDecay::Nuclide *,ManRelEffNucDisp *> current_nucs;
   map<const ReactionGamma::Reaction *,ManRelEffNucDisp *> current_rctns;
+  map<const SandiaDecay::Element *,ManRelEffNucDisp *> current_elements;
   
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
     if( !rr )
       continue; // Shielding inputs for Physical Model
-    assert( rr && (rr->m_nuc || rr->m_reaction) && !current_nucs.count(rr->m_nuc) && !current_rctns.count(rr->m_reaction) );
-    if( rr && rr->m_nuc )
+    assert( (rr->m_nuc || rr->m_reaction || rr->m_element) && !current_nucs.count(rr->m_nuc)
+            && !current_rctns.count(rr->m_reaction) && !current_elements.count(rr->m_element) );
+    if( rr->m_nuc )
       current_nucs[rr->m_nuc] = rr;
-    else if( rr && rr->m_reaction )
+    else if( rr->m_reaction )
       current_rctns[rr->m_reaction] = rr;
+    else if( rr->m_element )
+      current_elements[rr->m_element] = rr;
   }//for( auto w : m_nuclidesDisp->children() )
   
   shared_ptr<const SpecUtils::Measurement> foreground = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -2699,6 +2782,7 @@ void RelActManualGui::updateNuclides()
   
   set<const SandiaDecay::Nuclide *> nucs_in_peaks;
   set<const ReactionGamma::Reaction *> reactions_in_peaks;
+  set<const SandiaDecay::Element *> elements_in_peaks;
   const std::shared_ptr<PeakModel> peakModel = m_interspec->peakModel();
   const auto peaks = peakModel ? peakModel->peaks() : nullptr;
   if( peaks )
@@ -2711,6 +2795,8 @@ void RelActManualGui::updateNuclides()
           nucs_in_peaks.insert( p->parentNuclide() );
         else if( p->reaction() )
           reactions_in_peaks.insert( p->reaction() );
+        else if( p->xrayElement() )
+          elements_in_peaks.insert( p->xrayElement() );
       }//if( p->useForManualRelEff() )
     }//for( const auto &p : *peaks )
   }//if( peaks )
@@ -2756,7 +2842,7 @@ void RelActManualGui::updateNuclides()
       }
     }//for( loop over existing displays to find position )
     
-    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nuc, nullptr, age, meas_time );
+    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nuc, nullptr, nullptr, age, meas_time );
     ManRelEffNucDisp *rr = rrOwner.get();
     rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
 
@@ -2795,7 +2881,7 @@ void RelActManualGui::updateNuclides()
     for( size_t index = 0; index < kids.size(); ++index )
     {
       ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
-      assert( prev );
+      assert( prev || kids[index]->hasStyleClass("PhysicalModelShields") );
       if( !prev || !prev->m_reaction )
       {
         if( kids[index] && kids[index]->hasStyleClass("PhysicalModelShields") )
@@ -2828,7 +2914,7 @@ void RelActManualGui::updateNuclides()
       insert_index = static_cast<int>( index + 1 );
     }//for( loop over existing displays to find position )
     
-    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nullptr, reaction, 0.0, meas_time );
+    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nullptr, reaction, nullptr, 0.0, meas_time );
     ManRelEffNucDisp *rr = rrOwner.get();
     //ManRelEffNucDisp::updated() is only emitted for age changes; not relevant for reactions,
     //  but we'll connect up JIC for the future.
@@ -2836,6 +2922,27 @@ void RelActManualGui::updateNuclides()
 
     m_nuclidesDisp->insertWidget( insert_index, std::move(rrOwner) );
   }//for( loop over to add displays for new nuclides )
+
+
+  // Add displays for new fluorescence x-ray elements; these go after the nuclides and reactions, by atomic number.
+  for( const SandiaDecay::Element *el : elements_in_peaks )
+  {
+    if( current_elements.count( el ) )
+      continue;
+
+    int insert_index = 0;
+    const auto kids = m_nuclidesDisp->children();
+    for( size_t index = 0; index < kids.size(); ++index )
+    {
+      const ManRelEffNucDisp * const prev = dynamic_cast<const ManRelEffNucDisp *>( kids[index] );
+      if( prev && prev->m_element && (prev->m_element->atomicNumber > el->atomicNumber) )
+        break;
+      insert_index = static_cast<int>( index + 1 );
+    }//for( loop over existing displays to find position )
+
+    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nullptr, nullptr, el, 0.0, meas_time );
+    m_nuclidesDisp->insertWidget( insert_index, std::move(rrOwner) );
+  }//for( loop over to add displays for new elements )
   
   
   // Loop over and remove displays for any nuclides we no longer need
@@ -2870,11 +2977,19 @@ void RelActManualGui::updateNuclides()
     if( !reactions_in_peaks.count(nuc_widget.first) )
     { auto p = m_nuclidesDisp->removeWidget( nuc_widget.second ); } // auto-deletes
   }//for( loop over to remove any nuclides )
+
+  // Loop over and remove displays for any x-ray element we no longer need
+  for( const auto el_widget : current_elements )
+  {
+    if( !elements_in_peaks.count(el_widget.first) )
+    { auto p = m_nuclidesDisp->removeWidget( el_widget.second ); } // auto-deletes
+  }//for( loop over to remove any elements )
   
-  // We may have deleted some of current_nucs or current_rctns, so lets clear it,
-  //  just to make sure we dont access
+  // We may have deleted some of current_nucs, current_rctns, or current_elements, so lets clear
+  //  them, just to make sure we dont access
   current_nucs.clear();
   current_rctns.clear();
+  current_elements.clear();
   
   bool has_uranium = false;
   for( auto w : m_nuclidesDisp->children() )
