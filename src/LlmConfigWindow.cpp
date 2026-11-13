@@ -44,6 +44,7 @@
 #include <Wt/WJavaScript.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
+#include <Wt/WPasswordEdit.h>
 #include <Wt/WContainerWidget.h>
 
 #include <nlohmann/json.hpp>
@@ -419,9 +420,9 @@ void LlmConfigWindow::buildUi()
   mcpTokLbl->addStyleClass( "LcwFieldLabel" );
   WContainerWidget *mcpTokRow = m_mcpDetail->addNew<WContainerWidget>();
   mcpTokRow->addStyleClass( "LcwTokenRow" );
-  m_mcpToken = mcpTokRow->addNew<WLineEdit>();
+  m_mcpToken = mcpTokRow->addNew<WPasswordEdit>();
+  m_mcpToken->setNativeControl( true );  // a plain password input, without WPasswordEdit's validator
   m_mcpToken->addStyleClass( "LcwInput LcwMono" );
-  m_mcpToken->setEchoMode( EchoMode::Password );
   m_mcpToken->setText( WString::fromUTF8( m_working.mcpServer.bearerToken ) );
   m_mcpToken->changed().connect( std::bind( [this](){
     m_working.mcpServer.bearerToken = m_mcpToken->text().toUTF8();
@@ -430,8 +431,8 @@ void LlmConfigWindow::buildUi()
   } ) );
   m_mcpTokenShow = mcpTokRow->addNew<WPushButton>( WString::tr("lcw-show") );
   m_mcpTokenShow->clicked().connect( std::bind( [this](){
-    const bool reveal = (m_mcpToken->echoMode() == EchoMode::Password);
-    m_mcpToken->setEchoMode( reveal ? EchoMode::Normal : EchoMode::Password );
+    const bool reveal = !m_mcpToken->isTextVisible();
+    m_mcpToken->setTextVisible( reveal );
     m_mcpTokenShow->setText( reveal ? WString::tr("lcw-hide") : WString::tr("lcw-show") );
   } ) );
   m_mcpTokenWarn = m_mcpDetail->addNew<WText>( WString::tr("lcw-mcp-token-invalid") );
@@ -908,9 +909,12 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
   tokLbl->addStyleClass( "LcwFieldLabel" );
   WContainerWidget *tokRow = bodyc->addNew<WContainerWidget>();
   tokRow->addStyleClass( "LcwTokenRow" );
-  WLineEdit *tokEdit = tokRow->addNew<WLineEdit>();
+  // Our own Show/Hide button, rather than WPasswordEdit's reveal button, as that can't be used from
+  //  the keyboard, and its icon doesn't follow the color theme.
+  WPasswordEdit *tokEdit = tokRow->addNew<WPasswordEdit>();
+  tokEdit->setNativeControl( true );  // a plain password input, without WPasswordEdit's validator
   tokEdit->addStyleClass( "LcwInput LcwMono" );
-  tokEdit->setEchoMode( ui.tokenRevealed ? EchoMode::Normal : EchoMode::Password );
+  tokEdit->setTextVisible( ui.tokenRevealed );
   tokEdit->setText( WString::fromUTF8(prov.bearerToken) );
   tokEdit->setPlaceholderText( WString::tr("lcw-token-ph") );
   tokEdit->changed().connect( std::bind( [this,pi,tokEdit](){
@@ -926,7 +930,7 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     if( pi >= m_uiState.size() )
       return;
     m_uiState[pi].tokenRevealed = !m_uiState[pi].tokenRevealed;
-    tokEdit->setEchoMode( m_uiState[pi].tokenRevealed ? EchoMode::Normal : EchoMode::Password );
+    tokEdit->setTextVisible( m_uiState[pi].tokenRevealed );
     revealBtn->setText( m_uiState[pi].tokenRevealed ? WString::tr("lcw-hide") : WString::tr("lcw-show") );
   } ) );
   WPushButton *fetchBtn = tokRow->addNew<WPushButton>( ui.fetchInProgress ? WString::tr("lcw-fetching")

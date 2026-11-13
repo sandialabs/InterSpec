@@ -2210,7 +2210,6 @@ MakeDrf::MakeDrf( InterSpec *viewer )
     const int wh = m_interspec->renderedHeight();
     const double chart_height = (wh > 100) ? std::clamp( 0.45*(0.95*wh - 110.0), 200.0, 420.0 ) : 300.0;
     rightLayout->setRowResizable( 0, true, WLength(chart_height, WLength::Unit::Pixel) );
-    WidgetUtils::compensateRowHandleLeak( rightCol );
 
     layout->addWidget( std::move(rightOwned), 0, 1 );
     layout->setColumnStretch( 1, 1 );

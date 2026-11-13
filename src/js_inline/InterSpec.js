@@ -726,13 +726,15 @@ WT_DECLARE_WT_MEMBER
 (UnclipSuggestionPopups, Wt::JavaScriptFunction, "UnclipSuggestionPopups",
 function()
 {
-  /* Wt (before 4.14) shows a WSuggestionPopup via WT.positionAtWidget(), which re-parents the popup
-   into the nearest scrolling ancestor of the edit, and WT.fitToWindow() then (since Wt 4, WT-7974)
-   fits it inside the visible area of that ancestor.  So the list for an edit inside a scrolling
-   panel (e.g., a shielding material in "Isotopics from peaks") gets squeezed above or below the
-   edit, and the panel clips it.  Instead, we keep suggestion popups in the Wt-domRoot, fitted to
-   the window - which is what Wt does itself when the edit has no scrolling ancestor - and, since
-   the popup is then no longer inside the panel, move it along with its edit when the panel scrolls.
+  /* In browsers without CSS anchor positioning (e.g., the macOS 12-15 WKWebView), Wt shows a
+   WSuggestionPopup via WT.positionAtWidget(), which re-parents the popup into the nearest scrolling
+   ancestor of the edit, and WT.fitToWindow() then (since Wt 4, WT-7974) fits it inside the visible
+   area of that ancestor.  So the list for an edit inside a scrolling panel (e.g., a shielding
+   material in "Isotopics from peaks") gets squeezed above or below the edit, and the panel clips it.
+   Instead, we keep suggestion popups in the Wt-domRoot, fitted to the window - which is what Wt
+   does itself when the edit has no scrolling ancestor - and, since the popup is then no longer
+   inside the panel, move it along with its edit when the panel scrolls.
+   Wt (>= 4.14) gets this right itself when it can anchor the popup to the edit, so we leave those.
    */
   const WT = Wt.WT;
   if( WT.wtPositionAtWidget )
@@ -745,7 +747,8 @@ function()
   {
     const w = WT.getElement( id ), atw = WT.getElement( atId );
     const root = document.querySelector( '.Wt-domRoot' );
-    if( !w || !atw || !root || (orientation !== WT.Vertical) || !w.classList.contains('Wt-suggest') )
+    if( !w || !atw || !root || (orientation !== WT.Vertical) || !w.classList.contains('Wt-suggest')
+        || (WT.useAnchorPosition && WT.useAnchorPosition(w)) )
       return wtPositionAtWidget.apply( WT, arguments );
 
     // Same as the vertical case of the Wt function, minus the walk up to a scrolling ancestor.

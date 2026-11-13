@@ -38,14 +38,14 @@
     },
     {
       "name": "wt",
-      "version": "4.13.2",
+      "version": "4.15.0",
       "type": "library",
       "license": "GPL-2.0-only",
       "url": "https://www.webtoolkit.eu/wt",
       "vcs": "https://github.com/emweb/wt.git",
-      "purl": "pkg:github/emweb/wt@e8dd034d21409847be135b048641a32e214d7ff1",
+      "purl": "pkg:github/emweb/wt@43a1b94e827196ae47a0bdc3ecd3c19f0a89c919",
       "notes": "Built from source, unpatched - Wt 4 needs none of the patching Wt 3.7.1 required. Dual-licensed GPL-2.0 / commercial; built with SSL/FCGI/MySQL/Postgres OFF.",
-      "version_source": "bat:WT_DIR=wt-4.13.2"
+      "version_source": "bat:WT_DIR=wt-4.15.0"
     },
     {
       "name": "eigen",

@@ -219,12 +219,12 @@ fi #if boost.installed exists / else
 cd "${working_directory}"
 
 
-## Build Wt 4.13.2
+## Build Wt 4.15.0
 if [ -f "${working_directory}/wt.installed" ]; then
     echo "Wt already installed (as indicated by existance of wt.installed file) - skipping."
 else
-  src_dir="wt-4.13.2"
-  git_hash="e8dd034d21409847be135b048641a32e214d7ff1"
+  src_dir="wt-4.15.0"
+  git_hash="43a1b94e827196ae47a0bdc3ecd3c19f0a89c919"
 
   if [ -d "${src_dir}" ]; then
     echo "Wt cloned - not doing it again."

@@ -94,7 +94,9 @@ namespace
   std::string m_appid;
   // bindSafe() owns Wt::Core::observing_ptr objects, whose copy/destruction mutates the observed
   //  WObject. Keep the actual bound functions behind immutable shared handles so AppKit and
-  //  WServer::post only copy shared_ptrs, never observing_ptrs.
+  //  WServer::post only copy shared_ptrs, never observing_ptrs.  (Wt 4.15 locks the observer list,
+  //  so the last handle being released off the session thread is now safe - as long as the menu
+  //  item isn't being deleted at the same moment.)
   CallbackValidity m_callbackValid;
   ClickedCallbackHandle m_clickedCallback;
   CheckedCallbackHandle m_checkedCallback;

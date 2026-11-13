@@ -1090,6 +1090,17 @@ height: 16px;
   background-color: var(--interspec-hover-background);
 }
 
+/* Wt 4.15 (WT-14162, in FlexLayoutImpl) gives every item of a flex layout whose height is auto but
+ * has a maximum - as a WDialog given a maximum size is - `flex-shrink: 0`, where Wt 4.13 let the
+ * stretching item shrink.  So a dialog whose contents are taller than its maximum height spills its
+ * contents (and footer) out of the dialog, instead of scrolling them.  Let the stretching item (the
+ * one without flg="0", which Wt puts on non-stretching items) shrink again.
+ */
+.Wt-dialog > .dialog-layout > :not([flg="0"])
+{
+  flex-shrink: 1 !important;
+}
+
 
 .InfoLink
 {

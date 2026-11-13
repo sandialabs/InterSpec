@@ -103,14 +103,19 @@ using namespace Wt;
 static_assert( !PERFORM_DEVELOPER_CHECKS, "PERFORM_DEVELOPER_CHECKS should not be on for iOS or Android builds" );
 #endif//IOS || ANDROID
 
-// data/config/wt_config_*.xml turn <cache-form-data> off to work around a Wt 4.13.2 bug that silently
-//  drops edits (see the comment there).  Newer Wt reworked this (4.13.3: #14513, 4.13.4: #14630), so
-//  re-check on upgrade.
-#if( WT_VERSION > 0x040D0200 )
+// We rely on Wt >= 4.15 fixes and features (e.g., the grid-layout resize-handle spacing fix, so no
+//  compensation for it, and WEnvironment::preferredColorScheme()/positionAnchorSupported()).
+static_assert( WT_VERSION >= 0x040F0000, "InterSpec requires Wt 4.15.0 or newer" );
+
+// data/config/wt_config_*.xml turn <cache-form-data> off to work around a Wt race that can drop
+//  edits (see the comment there); 4.13.3 (#14513) and 4.13.4 (#14630) narrowed it, and 4.15.0
+//  (#14822) removed its usual trigger, but the race itself is still there in 4.15.0 - so re-check
+//  on upgrade.
+#if( WT_VERSION > 0x040F0000 )
 #ifdef _MSC_VER
-#pragma message( "Wt is newer than 4.13.2: check whether its form-data race is fixed (see <cache-form-data> in data/config/wt_config_*.xml); if so, set <cache-form-data> back to true there and update this check in InterSpecApp.cpp" )
+#pragma message( "Wt is newer than 4.15.0: check whether its form-data race is fixed (see <cache-form-data> in data/config/wt_config_*.xml); if so, set <cache-form-data> back to true there and update this check in InterSpecApp.cpp" )
 #else
-#warning "Wt is newer than 4.13.2: check whether its form-data race is fixed (see <cache-form-data> in data/config/wt_config_*.xml); if so, set <cache-form-data> back to true there and update this check in InterSpecApp.cpp"
+#warning "Wt is newer than 4.15.0: check whether its form-data race is fixed (see <cache-form-data> in data/config/wt_config_*.xml); if so, set <cache-form-data> back to true there and update this check in InterSpecApp.cpp"
 #endif
 #endif
 

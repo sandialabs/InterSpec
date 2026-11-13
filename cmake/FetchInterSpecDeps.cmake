@@ -167,7 +167,7 @@ set( CMAKE_POLICY_DEFAULT_CMP0167 NEW )
 set( CMAKE_POLICY_DEFAULT_CMP0144 NEW )
 
 
-# ---- Wt 4.13.2 ----
+# ---- Wt 4.15.0 ----
 set( SHARED_LIBS OFF CACHE INTERNAL "" )
 set( ENABLE_HARU OFF CACHE INTERNAL "" )
 set( ENABLE_SSL OFF CACHE INTERNAL "" )
@@ -216,7 +216,7 @@ if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")
 else()
   set(WT_FETCHCONTENT_SOURCE
     GIT_REPOSITORY https://github.com/emweb/wt.git
-    GIT_TAG        e8dd034d21409847be135b048641a32e214d7ff1 # 4.13.2
+    GIT_TAG        43a1b94e827196ae47a0bdc3ecd3c19f0a89c919 # 4.15.0
     GIT_SHALLOW    ON
   )
 endif()

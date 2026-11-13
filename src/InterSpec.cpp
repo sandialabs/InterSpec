@@ -1024,29 +1024,20 @@ InterSpec::InterSpec()
   LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
 
-#if( WT_VERSION < 0x040E0000 )
-  // Wt < 4.14 re-parents suggestion popups into the nearest scrolling panel, which then clips them
-  //  (see UnclipSuggestionPopups in js_inline/InterSpec.js).  Wt 4.14 fixes this using CSS anchor
-  //  positioning, but only in browsers that support it - not the macOS < 26 WKWebView - so
-  //  consider keeping this for those browsers when upgrading Wt.
-  LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsUnclipSuggestionPopups);
-  doJavaScript( "Wt.WT.UnclipSuggestionPopups();" );
-#endif
+  // Wt (>= 4.14) anchors suggestion popups to their edit with CSS anchor positioning, but only in
+  //  browsers that support it (Chrome 125+, Safari/WKWebView 26+); in others (e.g., the macOS 12-15
+  //  WKWebView) it still re-parents a popup into the nearest scrolling panel, which then clips it
+  //  (see UnclipSuggestionPopups in js_inline/InterSpec.js).
+  if( !app->environment().positionAnchorSupported() )
+  {
+    LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsUnclipSuggestionPopups);
+    doJavaScript( "Wt.WT.UnclipSuggestionPopups();" );
+  }
   
   m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
   m_layout->setVerticalSpacing( 0 );
-
-  // Workaround for Wt 4.12.6 layout bug in StdGridLayoutImpl2.js: when a row
-  // is made resizable via setRowResizable(), the measure pass reserves
-  // SPACING + 2*RESIZE_HANDLE_MARGIN per handle, but the position pass only
-  // consumes SPACING + RESIZE_HANDLE_MARGIN, leaking RESIZE_HANDLE_MARGIN (5px)
-  // out the bottom of the layout.  Returning a negative otherPadding from
-  // wtGetPS for the vertical direction grows cSize by that amount, letting the
-  // stretchable cell absorb the leak.  Counts Wt-hrh2 children dynamically so
-  // it correctly reports 0 when no row is resizable.
-  WidgetUtils::compensateRowHandleLeak( this );
 
   if( m_menuDiv )
     m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), m_layout->rowCount(), 0 );
@@ -15685,19 +15676,24 @@ void InterSpec::addLlmSidePanelToLayout( std::unique_ptr<Wt::WWidget> panel )
   const int firstRow = m_menuDiv ? 1 : 0;
   const int numRows = std::max( 1, m_layout->rowCount() - firstRow );
 
+  // Wt's StdGridLayoutImpl2.js (through at least 4.15.0) sizes an item that spans a resizable
+  //  row/column boundary 5px too big (it adds 2*RESIZE_HANDLE_MARGIN for each such boundary, but
+  //  positions the rows/columns with one), so the menu, which spans the resizable column boundary,
+  //  is shrunk by a 5px right margin, and the panel, which spans the charts/tool-tabs splitter, by
+  //  a 5px bottom margin.
   if( m_menuDiv )
+  {
+    m_menuDiv->setMargin( WLength(5, WLength::Unit::Pixel), Wt::Side::Right );
     m_layout->addWidget( m_layout->removeWidget( m_menuDiv ), 0, 0, 1, 2 );
+  }
 
   // As column 1 does not stretch, the panels explicit width is its width; and once the user drags
   //  the splitter, Wt pins the width of the non-stretching column (see finishResize() in Wt's
   //  StdGridLayoutImpl2.js) - so either way, changes in window width go to the charts.
   panel->setWidth( WLength( m_llmSidePanelWidth, WLength::Unit::Pixel ) );
 
-  // Wt's layout reserves 10px for each splitter, but only uses 5px (see the wtGetPS() workaround in
-  //  our constructor), which, when the charts/tool-tabs splitter is there, pushes the panel 5px past
-  //  the bottom; and when the tool tabs are showing, the charts are pulled up to the menu bar by a
-  //  negative top margin.  So line the panel up with the charts.  (The same leak leaves a 5px gap
-  //  right of the panel - see .LlmSidePanelHeader in LlmToolGui.css)
+  // When the tool tabs are showing, the charts are pulled up to the menu bar by a negative top
+  //  margin (see setToolTabsVisible()), so line the panel up with the charts.
   panel->setMargin( m_charts->margin( Wt::Side::Top ), Wt::Side::Top );
   panel->setMargin( WLength( m_toolsTabs ? 5 : 0, WLength::Unit::Pixel ), Wt::Side::Bottom );
 
@@ -15730,7 +15726,10 @@ std::unique_ptr<Wt::WWidget> InterSpec::takeLlmSidePanelFromLayout()
   m_layout->setColumnResizable( 0, false );
   m_layout->setColumnStretch( 0, 0 );
   if( m_menuDiv )
+  {
+    m_menuDiv->setMargin( WLength(0, WLength::Unit::Pixel), Wt::Side::Right );
     m_layout->addWidget( m_layout->removeWidget( m_menuDiv ), 0, 0 );
+  }
   m_charts->setMinimumSize( WLength::Auto, WLength::Auto );
   removeStyleClass( "HasLlmSidePanel" );
   updateMobileButtonsForLlmSidePanel( false );

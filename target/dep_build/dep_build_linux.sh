@@ -119,9 +119,9 @@ esac
 
 export MY_WT_PREFIX="$install_directory"
 
-# CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  The Wt patch we apply below
-#  raises Wt itself, but zlib and Ceres are not covered, so raise the floor for every sub-build
-#  here rather than patching each dependency.  The variable is new in CMake 3.31 and ignored
+# CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Wt itself asks for 3.13, but
+#  zlib and Ceres ask for less, so raise the floor for every sub-build here rather than patching
+#  each dependency.  The variable is new in CMake 3.31 and ignored
 #  before that.  The top-level InterSpec CMakeLists.txt does the same thing for its own build.
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
@@ -156,7 +156,7 @@ if [ "${WT_ENABLE_SSL}" = "ON" ] && [ -f "${working_directory}/wt.installed" ]; 
     echo "ERROR: WT_ENABLE_SSL=ON, but this working directory already has a Wt built WITHOUT SSL."
     echo "       Wt will not be rebuilt while its sentinel exists.  Remove these and re-run:"
     echo "         rm ${working_directory}/wt.installed"
-    echo "         rm -rf ${working_directory}/wt-4.13.2"
+    echo "         rm -rf ${working_directory}/wt-4.15.0"
     echo ""
     exit 1
   fi
@@ -311,12 +311,12 @@ fi #if zlib.installed exists / else
 cd "${working_directory}"
 
 
-## Build Wt 4.13.2
+## Build Wt 4.15.0
 if [ -f "${working_directory}/wt.installed" ]; then
     echo "Wt already installed (as indicated by existence of wt.installed file) - skipping."
 else
-  _src_dir="wt-4.13.2"
-  _git_hash="e8dd034d21409847be135b048641a32e214d7ff1"
+  _src_dir="wt-4.15.0"
+  _git_hash="43a1b94e827196ae47a0bdc3ecd3c19f0a89c919"
 
   if [ -d "${_src_dir}" ]; then
     echo "Wt cloned - not doing it again."

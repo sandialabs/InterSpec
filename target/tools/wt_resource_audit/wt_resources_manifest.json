@@ -19,6 +19,14 @@
       "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
       "verdict": "KEEP"
     },
+    "datetime.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "datetime.svg": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
+    },
     "expand-rtl.gif": {
       "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
       "verdict": "REMOVE"
@@ -76,11 +84,11 @@
       "verdict": "KEEP"
     },
     "items-not-ok.gif": {
-      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WAbstractItemView.C:412",
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WAbstractItemView.C:414",
       "verdict": "REVIEW"
     },
     "items-ok.gif": {
-      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WAbstractItemView.C:417",
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WAbstractItemView.C:419",
       "verdict": "REVIEW"
     },
     "items.gif": {
@@ -119,6 +127,14 @@
       "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
       "verdict": "REMOVE"
     },
+    "line-last-dark-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "line-last-dark.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
+    },
     "line-last-rtl.gif": {
       "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
       "verdict": "REMOVE"
@@ -126,6 +142,14 @@
     "line-last.gif": {
       "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
       "verdict": "KEEP"
+    },
+    "line-middle-dark-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "line-middle-dark.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
     },
     "line-middle-rtl.gif": {
       "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
@@ -135,9 +159,17 @@
       "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
       "verdict": "KEEP"
     },
+    "line-trunk-dark.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
+    },
     "line-trunk.gif": {
       "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
       "verdict": "KEEP"
+    },
+    "loading-dark.png": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
     },
     "loading.png": {
       "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
@@ -153,6 +185,10 @@
     },
     "plus.gif": {
       "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WTreeNode.C:20",
+      "verdict": "REVIEW"
+    },
+    "resizable-dark.png": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
       "verdict": "REVIEW"
     },
     "resizable.png": {
@@ -196,6 +232,10 @@
       "verdict": "REMOVE"
     },
     "themes/bootstrap/2/date-edit-button.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/datetime.svg": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
@@ -595,6 +635,18 @@
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
+    "themes/bootstrap/5/date-time-edit-button.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/main-rtl.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/main-rtl.css.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
     "themes/bootstrap/5/main.css": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
@@ -603,11 +655,27 @@
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
+    "themes/bootstrap/5/nav-minus-dark-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-minus-dark.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
     "themes/bootstrap/5/nav-minus-rtl.gif": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
     "themes/bootstrap/5/nav-minus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-plus-dark-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-plus-dark.gif": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
@@ -631,7 +699,15 @@
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
+    "themes/bootstrap/sort-arrow-down-dark.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
     "themes/bootstrap/sort-arrow-down.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/sort-arrow-none-dark.gif": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
@@ -639,11 +715,23 @@
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
+    "themes/bootstrap/sort-arrow-up-dark.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
     "themes/bootstrap/sort-arrow-up.gif": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
+    "themes/bootstrap/splitter-h-dark.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
     "themes/bootstrap/splitter-h.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/splitter-v-dark.png": {
       "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
       "verdict": "REMOVE"
     },
@@ -684,131 +772,131 @@
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/generate.sh": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-10px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-11px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-12px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-13px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-14px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-15px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-16px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-17px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-18px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-19px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-20px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-21px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-22px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-23px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-24px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-25px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-26px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-27px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-28px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-29px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-30px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-31px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-32px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-33px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-34px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-35px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-36px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-37px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-38px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-39px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/no-stripes/no-stripe-40px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/slider-thumb-h-disabled.gif": {
@@ -880,131 +968,131 @@
       "verdict": "KEEP"
     },
     "themes/default/stripes/generate.sh": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-10px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-11px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-12px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-13px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-14px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-15px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-16px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-17px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-18px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-19px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-20px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-21px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-22px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-23px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-24px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-25px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-26px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-27px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-28px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-29px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-30px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-31px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-32px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-33px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-34px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-35px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-36px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-37px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-38px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-39px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/stripes/stripe-40px.gif": {
-      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:302); height-parameterized -> confirm exact set via runtime audit",
       "verdict": "KEEP"
     },
     "themes/default/wt.css": {
@@ -1012,11 +1100,11 @@
       "verdict": "KEEP"
     },
     "themes/default/wt_ie.css": {
-      "reason": "IE<9-only stylesheet (Wt WCssTheme.C:59 guards it with agentIsIElt(9)/IE6); InterSpec runs WebKit/modern only",
+      "reason": "IE<9-only stylesheet (Wt WCssTheme.C:60 guards it with agentIsIElt(9)/IE6); InterSpec runs WebKit/modern only",
       "verdict": "REMOVE"
     },
     "themes/default/wt_ie6.css": {
-      "reason": "IE<9-only stylesheet (Wt WCssTheme.C:59 guards it with agentIsIElt(9)/IE6); InterSpec runs WebKit/modern only",
+      "reason": "IE<9-only stylesheet (Wt WCssTheme.C:60 guards it with agentIsIElt(9)/IE6); InterSpec runs WebKit/modern only",
       "verdict": "REMOVE"
     },
     "themes/polished/closeicons-dialog.png": {
@@ -1435,6 +1523,14 @@
       "reason": "Wt core/active-theme entry stylesheet",
       "verdict": "KEEP"
     },
+    "tv-line-last-dark-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "tv-line-last-dark.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
+    },
     "tv-line-last-rtl.gif": {
       "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
       "verdict": "REMOVE"
@@ -1460,7 +1556,9 @@
     "expand-rtl.gif",
     "font-awesome",
     "jPlayer",
+    "line-last-dark-rtl.gif",
     "line-last-rtl.gif",
+    "line-middle-dark-rtl.gif",
     "line-middle-rtl.gif",
     "themes/bootstrap",
     "themes/default/nav-minus-rtl.gif",
@@ -1468,18 +1566,19 @@
     "themes/default/wt_ie.css",
     "themes/default/wt_ie6.css",
     "themes/polished",
+    "tv-line-last-dark-rtl.gif",
     "tv-line-last-rtl.gif"
   ],
   "summary": {
-    "KEEP": 106,
-    "REMOVE": 248,
-    "REVIEW": 7,
-    "total": 361
+    "KEEP": 107,
+    "REMOVE": 264,
+    "REVIEW": 14,
+    "total": 385
   },
   "wt_loaders": {
     "font_awesome": "WIcon.C:89",
-    "ie_css": "WCssTheme.C:59",
+    "ie_css": "WCssTheme.C:60",
     "jplayer": "WMediaPlayer.C:127",
-    "stripes": "WCssTheme.C:295"
+    "stripes": "WCssTheme.C:302"
   }
 }
