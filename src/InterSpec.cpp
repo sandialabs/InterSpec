@@ -1285,9 +1285,17 @@ InterSpec::InterSpec()
 #if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
   initOsColorThemeChangeDetect();
 #endif
-  
+
   applyColorTheme( nullptr );
-  
+
+#if( APPLY_OS_COLOR_THEME_FROM_JS && !BUILD_AS_OSX_APP && !BUILD_AS_ELECTRON_APP )
+  // Wt reports the browsers preferred color scheme when the session starts, so the dark theme can be
+  //  in the first render, instead of switched to once the page asks (see initOsColorThemeChangeDetect()).
+  const string preferredScheme = app->environment().preferredColorScheme();
+  if( !preferredScheme.empty() )
+    osThemeChange( preferredScheme );
+#endif
+
 #if( APP_MENU_STATELESS_FIX )
   // Make sure the menus get pre-loaded
   PopupDivMenu::pre_render(m_fileMenuPopup.get());
@@ -12489,10 +12497,13 @@ void InterSpec::initOsColorThemeChangeDetect()
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", false ) );
   m_osColorThemeChange->connect( [this]( const std::string &v ){ osThemeChange( v ); } );
   
+  // DetectOsColorThemeJs is also used when the "AutoDarkFromOs" preference is changed.
   LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsDetectOsColorThemeJs);
   LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
-  
-  doJavaScript( "Wt.WT.DetectOsColorThemeJs('" + id() + "')" );
+
+  // If Wt got the browsers preferred color scheme at session start, the constructor applies it.
+  if( wApp->environment().preferredColorScheme().empty() )
+    doJavaScript( "Wt.WT.DetectOsColorThemeJs('" + id() + "')" );
   doJavaScript( "Wt.WT.SetupOsColorThemeChangeJs('" + id() + "')" );
 }//void initOsColorThemeChangeDetect()
 #endif
