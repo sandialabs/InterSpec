@@ -181,6 +181,16 @@ T voigt_pdf(const T x, const T mean, const T sigma, const T gamma) {
 // Exponentially-modified Gaussian (low-energy tail) functions
 // ============================================================================
 
+// exp(exp_arg) * erfc(erfc_arg), where exp_arg - erfc_arg^2 == -t^2/2.  Where exp_arg is large the direct
+//  product - and, for Jets, its derivatives - overflow (giving inf*0 = NaN), so there use the overflow-free
+//  equal form erfcx(erfc_arg)*exp(-t^2/2).  Same switch as PeakDists' bortel_indefinite_integral.
+template<typename T>
+T exp_times_erfc(const T exp_arg, const T erfc_arg, const T t) {
+    if ((exp_arg > T(87)) || (erfc_arg > T(10)))
+        return FaddeevaT::erfcx_real(erfc_arg) * voigt_adl::adl_exp(-T(0.5) * t * t);
+    return voigt_adl::adl_exp(exp_arg) * FaddeevaT::erfc_real(erfc_arg);
+}
+
 template<typename T>
 T gaussexp_pdf(const T x, const T mean, const T sigma, const T tau) {
     // Exponentially-modified Gaussian PDF (low-energy/left tail)
@@ -197,12 +207,11 @@ T gaussexp_pdf(const T x, const T mean, const T sigma, const T tau) {
 
     const T lambda = T(1) / tau;
     const T lambda_sigma = lambda * sigma;
-    T arg = (mean - x) / (sigma * sqrt2) + lambda_sigma / sqrt2;
-    T erfc_val = FaddeevaT::erfc_real(arg);
-    T exp_arg = lambda * (mean - x) + T(0.5) * lambda_sigma * lambda_sigma;
-    T exp_val = voigt_adl::adl_exp(exp_arg);
+    const T t = (x - mean) / sigma;
+    const T arg = (lambda_sigma - t) / sqrt2;
+    const T exp_arg = -lambda_sigma * t + T(0.5) * lambda_sigma * lambda_sigma;
 
-    return lambda * T(0.5) * exp_val * erfc_val;
+    return lambda * T(0.5) * exp_times_erfc(exp_arg, arg, t);
 }
 
 template<typename T>
@@ -223,22 +232,13 @@ T gaussexp_cdf(const T x, const T mean, const T sigma, const T tau) {
     const T lambda = T(1) / tau;
     const T lambda_sigma = lambda * sigma;
 
-    T a = (mean - x) / sigma;
-    T phi_a = T(0.5) * (T(1) + FaddeevaT::erf_real(a / sqrt2));          // Φ(a)
-    T phi_shift = T(0.5) * (T(1) + FaddeevaT::erf_real((a - lambda_sigma) / sqrt2)); // Φ(a - λσ)
-    T exp_arg = -lambda * (mean - x) + T(0.5) * lambda_sigma * lambda_sigma;
-    // Guard against overflow/underflow in exp term
-    if (exp_arg > T(700)) {
-        return T(1); // far right tail, CDF ~ 1
-    }
-    if (exp_arg < T(-700)) {
-        T res = T(1) - phi_a; // exponential term vanishes
-        if (res < T(0)) res = T(0);
-        return res;
-    }
-    T exp_term = voigt_adl::adl_exp(exp_arg);
-
-    T result = T(1) - phi_a + exp_term * phi_shift;
+    // F(x) = Phi(t) + exp(lambda*sigma*t + (lambda*sigma)^2/2) * Phi(-t - lambda*sigma),  t = (x - mean)/sigma,
+    //  with Phi(-t - lambda*sigma) = erfc((t + lambda*sigma)/sqrt2)/2.
+    const T t = (x - mean) / sigma;
+    const T phi_t = T(0.5) * (T(1) + FaddeevaT::erf_real(t / sqrt2));
+    const T erfc_arg = (t + lambda_sigma) / sqrt2;
+    const T exp_arg = lambda_sigma * t + T(0.5) * lambda_sigma * lambda_sigma;
+    T result = phi_t + T(0.5) * exp_times_erfc(exp_arg, erfc_arg, t);
 
     // Guard against tiny numerical drift
     if (result < T(0)) result = T(0);

@@ -1,7 +1,7 @@
 // Pseudo-Voigt-based Voigt+Exponential Tail implementation
 // This mirrors the API of voigt_exp_tail.hpp but uses the pseudo-Voigt
 // approximation (Gaussian/Lorentzian mixture) for speed and simplicity.
-// Only standard C++ (cmath) is used; no external deps.
+// Only standard C++ (cmath), and this library's Faddeeva.hpp (for erfcx), are used.
 
 #pragma once
 
@@ -9,6 +9,8 @@
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
+
+#include "Faddeeva.hpp"
 
 namespace ceres
 {
@@ -54,6 +56,17 @@ inline T adl_erfc(const T& v) {
   using std::erfc;
   using namespace ceres;
   return erfc(v);
+}
+
+// exp(exp_arg) * erfc(erfc_arg), where exp_arg - erfc_arg^2 == -t^2/2.  Where exp_arg is large the direct
+//  product - and, for Jets, its derivatives - overflow (giving inf*0 = NaN), so there use the overflow-free
+//  equal form erfcx(erfc_arg)*exp(-t^2/2) (erfcx of a positive argument is in (0,1]).  Same switch as
+//  PeakDists' bortel_indefinite_integral; the two forms are equal, and smooth across the switch.
+template <typename T>
+inline T exp_times_erfc(const T& exp_arg, const T& erfc_arg, const T& t) {
+  if ((exp_arg > T(87)) || (erfc_arg > T(10)))
+    return FaddeevaT::erfcx_real(erfc_arg) * adl_exp(-T(0.5) * t * t);
+  return adl_exp(exp_arg) * adl_erfc(erfc_arg);
 }
 } // namespace pseudo_voigt_adl
 
@@ -187,11 +200,10 @@ inline T gaussexp_pdf(const T x, const T mean, const T sigma, const T tau) {
     }
     const T lambda = T(1) / tau;
     const T lambda_sigma = lambda * sigma;
-    T arg = (mean - x) / (sigma * sqrt2) + lambda_sigma / sqrt2;
-    T erfc_val = pseudo_voigt_adl::adl_erfc(arg);
-    T exp_arg = lambda * (mean - x) + T(0.5) * lambda_sigma * lambda_sigma;
-    T exp_val = pseudo_voigt_adl::adl_exp(exp_arg);
-    return lambda * T(0.5) * exp_val * erfc_val;
+    const T t = (x - mean) / sigma;
+    const T arg = (lambda_sigma - t) / sqrt2;
+    const T exp_arg = -lambda_sigma * t + T(0.5) * lambda_sigma * lambda_sigma;
+    return lambda * T(0.5) * pseudo_voigt_adl::exp_times_erfc(exp_arg, arg, t);
 }
 
 template<typename T>
@@ -204,19 +216,13 @@ inline T gaussexp_cdf(const T x, const T mean, const T sigma, const T tau) {
     const T lambda = T(1) / tau;
     const T lambda_sigma = lambda * sigma;
 
-    T a = (mean - x) / sigma;
-    T phi_a = T(0.5) * (T(1) + pseudo_voigt_adl::adl_erf(a / sqrt2));
-    T phi_shift = T(0.5) * (T(1) + pseudo_voigt_adl::adl_erf((a - lambda_sigma) / sqrt2));
-    T exp_arg = -lambda * (mean - x) + T(0.5) * lambda_sigma * lambda_sigma;
-
-    if (exp_arg > T(700)) return T(1);
-    if (exp_arg < T(-700)) {
-        T res = T(1) - phi_a;
-        if (res < T(0)) res = T(0);
-        return res;
-    }
-    T exp_term = pseudo_voigt_adl::adl_exp(exp_arg);
-    T result = T(1) - phi_a + exp_term * phi_shift;
+    // F(x) = Phi(t) + exp(lambda*sigma*t + (lambda*sigma)^2/2) * Phi(-t - lambda*sigma),  t = (x - mean)/sigma,
+    //  with Phi(-t - lambda*sigma) = erfc((t + lambda*sigma)/sqrt2)/2.
+    const T t = (x - mean) / sigma;
+    const T phi_t = T(0.5) * (T(1) + pseudo_voigt_adl::adl_erf(t / sqrt2));
+    const T erfc_arg = (t + lambda_sigma) / sqrt2;
+    const T exp_arg = lambda_sigma * t + T(0.5) * lambda_sigma * lambda_sigma;
+    T result = phi_t + T(0.5) * pseudo_voigt_adl::exp_times_erfc(exp_arg, erfc_arg, t);
     if (result < T(0)) result = T(0);
     if (result > T(1)) result = T(1);
     return result;
