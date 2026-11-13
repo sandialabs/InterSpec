@@ -414,7 +414,7 @@ void FitSkewParamsTool::initWidgets()
   if( !m_spectra.empty() )
     showSpectrum( m_currentSpectrum );
 
-  // Disable fit button if no peaks or NoSkew
+  // Disable fit button if no peaks
   updateDescription();
   updateFitButton();
 
@@ -452,10 +452,8 @@ size_t FitSkewParamsTool::numPeaksToFit() const
 
 void FitSkewParamsTool::updateFitButton()
 {
-  const int skewIdx = m_skewTypeCombo->currentIndex();
-  const PeakDef::SkewType st = ((skewIdx >= 0) && (skewIdx < static_cast<int>( PeakDef::NumSkewType )))
-                               ? static_cast<PeakDef::SkewType>( skewIdx ) : PeakDef::NoSkew;
-  m_fitBtn->setEnabled( (PeakDef::num_skew_parameters( st ) > 0) && (numPeaksToFit() > 0) && !m_isCalculating );
+  // NoSkew is allowed, so the user can compare chi2 and visuals to a skewed fit
+  m_fitBtn->setEnabled( (numPeaksToFit() > 0) && !m_isCalculating );
 }//void updateFitButton()
 
 
@@ -654,8 +652,21 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
   const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
+  // For NoSkew, strip any skew the input peaks (e.g., from the DRF tool) already have
   if( nparams == 0 )
-    return peaks;
+  {
+    vector<shared_ptr<const PeakDef>> result = peaks;
+    for( shared_ptr<const PeakDef> &peak : result )
+    {
+      if( peak->skewType() != PeakDef::NoSkew )
+      {
+        shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *peak );
+        newPeak->setSkewType( PeakDef::NoSkew );
+        peak = newPeak;
+      }
+    }
+    return result;
+  }//if( nparams == 0 )
 
   // Energy-dependent values are linear between the anchor energies (the foreground's lowest and
   //  highest energies, as PeakFitDetPrefs uses), evaluated at each ROI's center (as PeakFitLM does).
@@ -723,8 +734,6 @@ void FitSkewParamsTool::doFit()
 
   const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
-  if( nparams == 0 )
-    return;
 
   // The peaks of the spectra to fit - they reflect the user's ROI bound, continuum, and deletion changes
   if( !numPeaksToFit() )
@@ -767,7 +776,7 @@ void FitSkewParamsTool::doFit()
   // The refinement fit below keeps the starting skew as given, but a fit could never leave both
   //  GADRAS tail amplitudes at zero (e.g., the shipped generic GADRAS detectors) - so start from the
   //  defaults instead.  GADRAS skew has no energy dependence, so all peaks have the same values.
-  if( !allPeaks.empty() )
+  if( !allPeaks.empty() && (nparams > 0) )
   {
     vector<double> startValues( nparams, 0.0 );
     vector<bool> isFit( nparams, false );
