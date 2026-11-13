@@ -1023,6 +1023,15 @@ InterSpec::InterSpec()
   
   LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
+
+#if( WT_VERSION < 0x040E0000 )
+  // Wt < 4.14 re-parents suggestion popups into the nearest scrolling panel, which then clips them
+  //  (see UnclipSuggestionPopups in js_inline/InterSpec.js).  Wt 4.14 fixes this using CSS anchor
+  //  positioning, but only in browsers that support it - not the macOS < 26 WKWebView - so
+  //  consider keeping this for those browsers when upgrading Wt.
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsUnclipSuggestionPopups);
+  doJavaScript( "Wt.WT.UnclipSuggestionPopups();" );
+#endif
   
   m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
