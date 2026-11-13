@@ -2,20 +2,20 @@
 <messages>
   <!-- pe- is short for PeakEdit -->
   <message id="pe-value">値</message>
-  <message id="pe-uncertainty">不確実性</message>
+  <message id="pe-uncertainty">不確かさ</message>
   <message id="pe-parameter">パラメータ</message>
   <message id="pe-label">ラベル</message>
   <message id="pe-peak-type">ピークタイプ</message>
   <message id="pe-peak-model-gaussian">ガウシアン</message>
   <message id="pe-peak-model-data">データ領域</message>
-  <message id="pe-skew-type">歪度タイプ</message>
+  <message id="pe-skew-type">歪みタイプ</message>
   <message id="pe-btn-refit">再フィット</message>
   <message id="pe-btn-refit-roi-standard">ROI再フィット: 関連半値幅</message>
   <message id="pe-btn-refit-roi-independent">ROI再フィット: 独立半値幅</message>
   <message id="pe-btn-refit-roi-fine">ROI再フィット: 微調整</message>
   <message id="pe-btn-refit-roi-independent-fine">ROI再フィット: 独立半値幅で微調整</message>
   
-  <message id="pe-label-centroid">重心</message>
+  <message id="pe-label-centroid">中心値</message>
   <message id="pe-label-drf-fwhm">DRF予測半値幅</message>
   <message id="pe-label-amp">振幅</message>
   <message id="pe-label-skew0">歪度0</message>
@@ -29,7 +29,7 @@
   <message id="pe-label-cont-p4">連続成分P4</message>
   <message id="pe-label-roi-start">ROI開始 (keV)</message>
   <message id="pe-label-roi-end">ROI終了 (keV)</message>
-  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-chi2-dof">𝜒²/自由度</message>
   <message id="pe-label-peak-color">ピーク色</message>
 
   <message id="pe-multipeak-in-roi">ROI内のピーク{1} / {2}</message>
@@ -77,35 +77,35 @@
   <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
 
   <!-- Tooltips for skew parameters -->
-  <message id="pe-tt-skew-bortel-tau">Exp*Gauss（指数修正ガウシアン）の指数減衰定数。低エネルギー側テールの特性長を表します。有効範囲: 0.0〜15 σ、典型値: 0.5〜3 σ。</message>
+  <message id="pe-tt-skew-bortel-tau">Exp*Gauss（指数関数で歪んだガウシアン）の指数減衰定数。低エネルギー側テールの特性長を表します。有効範囲: 0.0〜15 σ、典型値: 0.5〜3 σ。</message>
 
   <message id="pe-tt-skew-doublebortel-tau1">第1指数減衰定数、通常σに近い値。主要な低エネルギーテール成分を制御します。有効範囲: 0.01〜15 σ。</message>
 
-  <message id="pe-tt-skew-doublebortel-deltatau2">第2指数の追加減衰: τ₂ = τ₁ + Δτ₂。拡張テール成分を制御します。有効範囲: 0.0〜10 σ。</message>
+  <message id="pe-tt-skew-doublebortel-deltatau2">第2指数の追加減衰定数: τ₂ = τ₁ + Δτ₂。拡張テール成分を制御します。有効範囲: 0.0〜10 σ。</message>
 
   <message id="pe-tt-skew-doublebortel-eta">第2指数成分の重み。η=0で単一Exp*Gauss(τ₁)、η=1で純粋なExp*Gauss(τ₂)。有効範囲: 0.0〜1.0。</message>
 
-  <message id="pe-tt-skew-gaussplusbortel-r">ガウシアンとExp*Gaussの混合比。R=0は純粋なガウシアン、R=1は純粋なExp*Gauss。有効範囲: 0.0〜1.0、典型: 0.2〜0.8。</message>
+  <message id="pe-tt-skew-gaussplusbortel-r">ガウシアンとExp*Gaussの混合比。R=0は純粋なガウシアン、R=1は純粋なExp*Gauss。有効範囲: 0.0〜1.0、典型値: 0.2〜0.8。</message>
 
   <message id="pe-tt-skew-gaussplusbortel-tau">混合中のExp*Gauss成分の指数減衰定数。有効範囲: 0.01〜15 σ、典型値: 0.5〜3 σ。</message>
 
-  <message id="pe-tt-skew-gaussexp-k">指数テールが始まる閾値（μ - k·σ）と減衰率の両方を制御します。有効範囲: 0.15〜3.25、典型: 0.5〜2.0。</message>
+  <message id="pe-tt-skew-gaussexp-k">指数テールが始まる閾値（μ - k·σ）と減衰率の両方を制御します。有効範囲: 0.15〜3.25、典型値: 0.5〜2.0。</message>
 
-  <message id="pe-tt-skew-crystalball-alpha">べき乗則テールが始まるσ単位の閾値: x = μ - α·σ。有効範囲: 0.5〜4.0、典型: 1.0〜3.0。</message>
+  <message id="pe-tt-skew-crystalball-alpha">べき乗則テールが始まるσ単位の閾値: x = μ - α·σ。有効範囲: 0.5〜4.0、典型値: 1.0〜3.0。</message>
 
-  <message id="pe-tt-skew-crystalball-n">低エネルギーテールのべき乗則指数: (x - μ + α·σ)^(-n)。nが大きいほど急峻な減衰。有効範囲: 1.05〜100、典型: 2〜10。</message>
+  <message id="pe-tt-skew-crystalball-n">低エネルギーテールのべき乗則指数: (x - μ + α·σ)^(-n)。nが大きいほど急峻な減衰。有効範囲: 1.05〜100、典型値: 2〜10。</message>
 
-  <message id="pe-tt-skew-expgaussexp-kl">下側（左）エネルギーテールの閾値と減衰を制御します。有効範囲: 0.15〜3.25、典型: 0.5〜2.0。</message>
+  <message id="pe-tt-skew-expgaussexp-kl">下側（左）エネルギーテールの閾値と減衰を制御します。有効範囲: 0.15〜3.25、典型値: 0.5〜2.0。</message>
 
-  <message id="pe-tt-skew-expgaussexp-kh">上側（右）エネルギーテールの閾値と減衰を制御します。有効範囲: 0.15〜3.25、典型: 0.5〜2.0。</message>
+  <message id="pe-tt-skew-expgaussexp-kh">上側（右）エネルギーテールの閾値と減衰を制御します。有効範囲: 0.15〜3.25、典型値: 0.5〜2.0。</message>
 
-  <message id="pe-tt-skew-dscb-alphalow">低エネルギーべき乗則テールが始まるσ単位の下側閾値。有効範囲: 0.5〜4.0、典型: 1.0〜3.0。</message>
+  <message id="pe-tt-skew-dscb-alphalow">低エネルギーべき乗則テールが始まるσ単位の下側閾値。有効範囲: 0.5〜4.0、典型値: 1.0〜3.0。</message>
 
-  <message id="pe-tt-skew-dscb-nlow">低エネルギーテールのべき乗則指数。有効範囲: 1.05〜100、典型: 2〜10。</message>
+  <message id="pe-tt-skew-dscb-nlow">低エネルギーテールのべき乗則指数。有効範囲: 1.05〜100、典型値: 2〜10。</message>
 
-  <message id="pe-tt-skew-dscb-alphahigh">高エネルギーべき乗則テールが始まるσ単位の上側閾値。有効範囲: 0.5〜4.0、典型: 1.0〜3.0。</message>
+  <message id="pe-tt-skew-dscb-alphahigh">高エネルギーべき乗則テールが始まるσ単位の上側閾値。有効範囲: 0.5〜4.0、典型値: 1.0〜3.0。</message>
 
-  <message id="pe-tt-skew-dscb-nhigh">高エネルギーテールのべき乗則指数。有効範囲: 1.05〜100、典型: 2〜10。</message>
+  <message id="pe-tt-skew-dscb-nhigh">高エネルギーテールのべき乗則指数。有効範囲: 1.05〜100、典型値: 2〜10。</message>
 
   <message id="pe-tt-skew-voigtplusbortel-gamma">自然X線線幅を表すローレンツHWHM（半値半幅）。有効範囲: 0.0〜10.0 keV、X線の典型値: 0.01〜0.5 keV。</message>
 
