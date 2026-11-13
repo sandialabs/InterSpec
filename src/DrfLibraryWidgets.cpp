@@ -896,8 +896,9 @@ DrfPreviewPanel::DrfPreviewPanel( const Context context )
 
   const shared_ptr<DrfXmlResource> xml_resource = make_shared<DrfXmlResource>( this );
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *xml_anchor = m_actions->addNew<WAnchor>( WLink( xml_resource ), "XML" );
-  xml_anchor->setTarget( AnchorTarget::NewWindow );
+  WLink xml_link( xml_resource );
+  xml_link.setTarget( LinkTarget::NewWindow );
+  WAnchor *xml_anchor = m_actions->addNew<WAnchor>( xml_link, "XML" );
   xml_anchor->addStyleClass( "DrfBtn DrfBtnXml" );
   m_xmlBtn = xml_anchor;
 #else
