@@ -1983,6 +1983,13 @@ struct CachedEnergyCalSplines
 
   /** Spline for the adjusted deviation pairs (incorporating the fitted offsets). */
   std::vector<CubicSplineNodeT<T>> adjusted_dev_spline;
+
+  /** When the energy calibration is fit: the offset, gain, and quadratic adjustments, and the
+   polynomial / full-range-fraction coefficients the adjustment maps through (fit-adjusted, and as-is).
+   They depend only on the parameters, so are computed once per evaluation rather than per energy. */
+  bool has_cal_adjustment = false;
+  T offset_adj = T(0.0), gain_adj = T(0.0), quad_adj = T(0.0);
+  std::vector<T> adjusted_coeffs, orig_coeffs;
 };
 
 

@@ -134,7 +134,7 @@ void gaussian_integral( const T peak_mean,
 
   while( (channel < nchannel) && (energies[channel] < stop_energy) )
   {
-    erfarg = (static_cast<double>(energies[channel+1]) - peak_mean)/(sqrt2*peak_sigma);
+    erfarg = (static_cast<double>(energies[channel+1]) - peak_mean)/sqrt2sigma;
 
     T erfhigh;
     if constexpr ( !std::is_same_v<T, double> )
