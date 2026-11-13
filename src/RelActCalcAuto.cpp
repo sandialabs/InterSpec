@@ -612,13 +612,13 @@ public:
     return success;
   }//Evaluate(...)
 
-  /** Starts (true) or ends (false) the span the memo may be used in; both forget what it holds.
+  /** Starts (true) or ends (false) the span the memo may be used in; both forget what it holds and free
+   its memory (each entry holds a full Jacobian, and the owning Problem may outlive the solve a while).
    `free_parameters` (ascending) are the parameters the solve can move; empty means all. */
   void set_active( const bool active, std::vector<int> free_parameters = {} ) const
   {
     m_active = active;
-    for( Entry &entry : m_entries )
-      entry.valid = false;
+    m_entries = {};
     m_next_entry = 0;
     m_free_parameters = std::move( free_parameters );
   }
