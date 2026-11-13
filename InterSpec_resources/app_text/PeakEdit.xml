@@ -17,6 +17,11 @@
   
   <message id="pe-label-centroid">Centroid</message>
   <message id="pe-label-drf-fwhm">DRF Pred. FWHM</message>
+  <!-- The word "Amplitude reminds K.F of OSCILLATION, but he doesn't
+       think gamma-ray full-energy peak is not an oscilation.
+       Isn't it better to use "Area" (constant multiplied to the Gaussian)
+       or "Height" (the resultant height of the peak) instead, depending
+       on the real meaning of the parameter? -->
   <message id="pe-label-amp">Amplitude</message>
   <message id="pe-label-skew0">Skew 0</message>
   <message id="pe-label-skew1">Skew 1</message>
@@ -77,6 +82,8 @@
   <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
 
   <!-- Tooltips for skew parameters -->
+  <!-- Isn't it better to say "Exponentially Skewed Gaussian" instead of "Modified"?
+       They are said to be "skew parameters". -->
   <message id="pe-tt-skew-bortel-tau">Exponential decay constant for Exp*Gauss (Exponentially Modified Gaussian). Represents the characteristic length scale of the low-energy tail. Valid range: 0.0-15 σ, typical values: 0.5-3 σ.</message>
 
   <message id="pe-tt-skew-doublebortel-tau1">First exponential decay constant, typically close to σ. Controls the primary low-energy tail component. Valid range: 0.01-15 σ.</message>
