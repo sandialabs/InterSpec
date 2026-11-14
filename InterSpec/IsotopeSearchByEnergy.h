@@ -294,17 +294,35 @@ public:
      </NucSearchCategory>
      */
     void deSerialize( const rapidxml::xml_node<char> * const xml_data );
+
+    /** How a category is matched: the i18n key of one of InterSpec's own (e.g. "isbe-category-medical"),
+     else its name as written.
+     */
+    std::string key() const;
   };//struct NucSearchCategory
   
   /** Returns the search categories from "NuclideSearchCatagories.xml"  */
   const std::vector<NucSearchCategory> &search_categories();
   
   
-  /** Reads in both the default 'data/NuclideSearchCatagories.xml' as well as users custom NuclideSearchCatagories.xml (if present).
-   
-   Throws exception if cant load default file, or if the user file exists and not loaded.
+  /** Reads in the default 'data/NuclideSearchCatagories.xml', then the user's and packages' categories
+   (".xml" files in `nuclide_search_categories/`, and the older single NuclideSearchCatagories.xml in the user data
+   folder): for each name, the one from the file UserLibrary::resolve picks; one with the name of an
+   InterSpec category replaces it in place, others are added at the end.
+
+   Throws exception if cant load default file (the results then hold just the hard-coded category).
    */
   static void init_category_info( std::vector<NucSearchCategory> &results );
+
+  /** The categories in one "NuclideSearchCatagories.xml"-format file; categories that can't be read
+   are skipped (with a message to stderr).  Throws if the file can't be read or parsed.
+   */
+  static std::vector<NucSearchCategory> categories_in_file( const std::string &xml_file );
+
+  /** Re-reads the categories (e.g. after a package added some), keeping the current one selected if
+   it is still there.  Nothing to do if they have not been listed yet.
+   */
+  void refreshCategories();
   
   
   static const std::string sm_medical_category_key;    // = "isbe-category-medical";

@@ -28,11 +28,11 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <filesystem>
 
 #include <Wt/Utils.h>
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
-#include <Wt/WServer.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WComboBox.h>
@@ -40,6 +40,9 @@
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WEnvironment.h>
+#include <Wt/WResource.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
 #include <Wt/WRegExpValidator.h>
 
 #include "SpecUtils/DateTime.h"
@@ -51,6 +54,7 @@
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/SimpleDialog.h"
@@ -156,9 +160,8 @@ namespace
     WLineEdit *edit = row->addNew<WLineEdit>();
     lbl->setBuddy( edit );
     edit->setValidator( validator );
-    edit->setAttributeValue( "ondragstart", "return false" );
     edit->setAttributeValue( "autocorrect", "off" );
-    edit->setAttributeValue( "spellcheck", "off" );
+    edit->setAttributeValue( "spellcheck", "false" );
     edit->setPlaceholderText( "cm" );
     edit->setTextSize( 10 );
     return edit;
@@ -166,10 +169,163 @@ namespace
 }//namespace
 
 
+DrfDropBatch::~DrfDropBatch()
+{
+  for( const pair<string,string> &f : files )
+  {
+    if( !f.second.empty() && !SpecUtils::remove_file( f.second ) )
+      cerr << "DrfDropBatch: could not remove '" << f.second << "'" << endl;
+  }
+}//~DrfDropBatch()
+
+
+/** Receives the files of a drop onto the Import tab (see DrfImportDrop.js): each upload carries
+ its path within the drop, and its batch id; a last request says the batch is complete.
+ */
+class DrfBatchUploadResource : public Wt::WResource
+{
+public:
+  DrfBatchUploadResource() : WResource()
+  {
+    // Wt holds the session lock across handleRequest.  Taking it ourselves inside handleRequest
+    //  instead (as FileDragUploadResource does) can deadlock: Wt releases it before calling us, and
+    //  if the dialog closes meanwhile, ~WResource (on the session thread, holding the lock) waits
+    //  for this request to finish while this request waits for the lock.
+    setTakesUpdateLock( true );
+  }
+
+  virtual ~DrfBatchUploadResource()
+  {
+    beingDeleted();
+  }
+
+  Wt::Signal<std::shared_ptr<DrfDropBatch>> &batchReceived()
+  {
+    return m_batchReceived;
+  }
+
+protected:
+  virtual void handleRequest( const Wt::Http::Request &request, Wt::Http::Response &response )
+  {
+    response.setMimeType( "text/plain; charset=utf-8" );
+
+    if( request.tooLarge() )
+    {
+      response.setStatus( 413 );
+      return;
+    }
+
+    WApplication * const app = WApplication::instance();  //we hold the update lock (see constructor)
+    if( !app )
+    {
+      response.setStatus( 403 );
+      return;
+    }
+
+    const string batch_id = request.headerValue( "X-Drf-Batch" );
+    if( batch_id.empty() || (batch_id.size() > 64) )
+    {
+      response.setStatus( 400 );
+      return;
+    }
+
+    // Abandoned batches (an interrupted upload) are not kept around forever.
+    if( (m_pending.size() > 8) && !m_pending.count( batch_id ) )
+      m_pending.erase( begin(m_pending) );
+
+    shared_ptr<DrfDropBatch> &batch = m_pending[batch_id];
+    if( !batch )
+      batch = make_shared<DrfDropBatch>();
+
+    for( const Wt::Http::UploadedFileMap::value_type &name_file : request.uploadedFiles() )
+    {
+      const Wt::Http::UploadedFile &file = name_file.second;
+
+      // The path within the drop; never absolute, and never up out of it.
+      string path = Wt::Utils::urlDecode( request.headerValue( "X-Drf-Path" ) );
+      if( path.empty() )
+        path = file.clientFileName();
+      SpecUtils::ireplace_all( path, "\\", "/" );
+      vector<string> parts, kept;
+      SpecUtils::split( parts, path, "/" );
+      for( const string &part : parts )
+      {
+        if( !part.empty() && (part != ".") && (part != "..") )
+          kept.push_back( part );
+      }
+      path.clear();
+      for( const string &part : kept )
+        path += (path.empty() ? "" : "/") + part;
+      if( path.empty() )
+        path = "file";
+
+      // A drop is read into memory to be grouped: refuse files past a total size (and file count).
+      std::error_code ec;
+      const uintmax_t size = std::filesystem::file_size( file.spoolFileName(), ec );
+      if( ec || ((batch->numBytes + size) > sm_maxBatchBytes) || (batch->files.size() >= sm_maxBatchFiles) )
+      {
+        batch->numRefused += 1;
+        continue;  //Wt deletes the spool file it still owns
+      }
+
+      const string spool = file.spoolFileName();
+      file.stealSpoolFile();
+      batch->files.emplace_back( path, spool );
+      batch->numBytes += size;
+    }//for( uploaded files )
+
+    if( !request.headerValue( "X-Drf-Done" ).empty() )
+    {
+      const shared_ptr<DrfDropBatch> done = batch;
+
+      // Files the browser left out or saw fail to upload, and those it skipped as not detector
+      //  files (DrfImportDrop.js counts them)
+      const auto header_count = [&request]( const char *name ) -> size_t {
+        int n = 0;
+        const string value = request.headerValue( name );
+        if( value.empty() || !SpecUtils::parse_int( value.c_str(), value.size(), n ) || (n < 0) )
+          return 0;
+        return static_cast<size_t>( n );
+      };
+      done->numRefused += header_count( "X-Drf-Failed" );
+      done->numSkipped += header_count( "X-Drf-Skipped" );
+
+#if( BUILD_AS_OSX_APP )
+      // The folder's own path, from the native app (see DrfImportDrop.js).  Only trusted from the
+      //  app's own window, and only for a folder named as the one dropped.
+      const string native = Wt::Utils::urlDecode( request.headerValue( "X-Drf-Native-Folder" ) );
+      if( !native.empty() && InterSpecApp::isPrimaryWindowInstance()
+          && (request.clientAddress().find( "127.0.0.1" ) != string::npos)
+          && SpecUtils::is_directory( native ) && (native.find( ".." ) == string::npos)
+          && !done->files.empty() )
+      {
+        const string &first = done->files.front().first;
+        const size_t pos = first.find( '/' );
+        if( (pos != string::npos) && (first.substr( 0, pos ) == SpecUtils::filename( native )) )
+          done->nativeFolder = native;
+      }
+#endif
+      m_pending.erase( batch_id );
+      if( !done->files.empty() || done->numRefused || done->numSkipped )
+        m_batchReceived.emit( done );  //even with nothing to read, so the user is told why
+    }
+
+    app->triggerUpdate();
+  }//handleRequest(...)
+
+  std::map<std::string,std::shared_ptr<DrfDropBatch>> m_pending;
+  Wt::Signal<std::shared_ptr<DrfDropBatch>> m_batchReceived;
+
+  static const uintmax_t sm_maxBatchBytes = 256*1024*1024;
+  static const size_t sm_maxBatchFiles = 5000;
+};//class DrfBatchUploadResource
+
+
 DrfImportWidget::DrfImportWidget( const Host host )
   : WContainerWidget(),
     m_host( host ),
     m_mainUpload( nullptr ),
+    m_batchUpload( nullptr ),
     m_companionUpload( nullptr ),
     m_mainDrop( nullptr ),
     m_mainDropTxt( nullptr ),
@@ -202,7 +358,8 @@ DrfImportWidget::DrfImportWidget( const Host host )
     m_candidate{},
     m_seed{},
     m_changed{},
-    m_characterizeRequested{}
+    m_characterizeRequested{},
+    m_batchDropped{}
 {
   InterSpec * const viewer = InterSpec::instance();
   if( viewer )
@@ -221,16 +378,32 @@ DrfImportWidget::DrfImportWidget( const Host host )
   //  chosen.  The drop dialog already has its file.
   if( m_host == Host::ImportTab )
   {
-    m_mainUpload = make_unique<FileDragUploadResource>();
-    m_mainUpload->fileDrop().connect( this, [this]( const string &name, const string &spool ){
-      handleUpload( name, spool, false );
-    } );
+    // Files and folders: one file (or a pair) is imported here; more go to the caller.
+    app->require( "InterSpec_resources/DrfImportDrop.js" );
+    m_batchUpload = make_unique<DrfBatchUploadResource>();
+    m_batchUpload->batchReceived().connect( this, &DrfImportWidget::handleBatch );
 
     m_mainDrop = addNew<WContainerWidget>();
     m_mainDrop->addStyleClass( "DrfImportDrop DrfImportMainDrop" );
+    m_mainDrop->addNew<WContainerWidget>()->addStyleClass( "DrfImportDropIcon" );
     m_mainDropTxt = m_mainDrop->addNew<WText>( WString::tr( isMobile ? "dsi-drop-txt-mobile" : "dsi-drop-txt" ) );
-    m_mainDrop->doJavaScript( "BatchInputDropUploadSetup(" + m_mainDrop->jsRef() + ", '"
-                              + m_mainUpload->url() + "', true);" );
+    m_mainDropTxt->addStyleClass( "DrfImportDropTitle" );
+    m_mainDropTxt->setInline( false );
+    WText *sub = m_mainDrop->addNew<WText>( WString::tr( isMobile ? "dsi-drop-sub-mobile" : "dsi-drop-sub" ), Wt::TextFormat::Plain );
+    sub->addStyleClass( "DrfImportDropSub" );
+    sub->setInline( false );
+    WContainerWidget *btns = m_mainDrop->addNew<WContainerWidget>();
+    btns->addStyleClass( "DrfImportDropBtns" );
+    WPushButton *files_btn = btns->addNew<WPushButton>( WString::tr("dsi-browse-files") );
+    files_btn->addStyleClass( "DrfImportBrowse Primary" );
+    WPushButton *folder_btn = btns->addNew<WPushButton>( WString::tr("dsi-browse-folder") );
+    folder_btn->addStyleClass( "DrfImportBrowse" );
+    folder_btn->setHidden( isMobile );  //phones choose files, not folders
+
+    m_mainDrop->setAttributeValue( "data-upload-url", m_batchUpload->url() );  //handy for testing
+    m_mainDrop->doJavaScript( "DrfImportDropSetup(" + m_mainDrop->jsRef() + ", '"
+                              + m_batchUpload->url() + "', " + files_btn->jsRef() + ", "
+                              + folder_btn->jsRef() + ");" );
     HelpSystem::attachToolTipOn( m_mainDrop, WString::tr("dsi-supported-tt"), showToolTips );
   }//if( m_host == Host::ImportTab )
 
@@ -290,9 +463,8 @@ DrfImportWidget::DrfImportWidget( const Host host )
   label = m_nameDiv->addNew<WLabel>( WString::tr("ds-name-label") );
   m_nameEdit = m_nameDiv->addNew<WLineEdit>();
   label->setBuddy( m_nameEdit );
-  m_nameEdit->setAttributeValue( "ondragstart", "return false" );
   m_nameEdit->setAttributeValue( "autocorrect", "off" );
-  m_nameEdit->setAttributeValue( "spellcheck", "off" );
+  m_nameEdit->setAttributeValue( "spellcheck", "false" );
   m_nameEdit->setTextSize( 30 );
   m_nameDiv->hide();
 
@@ -407,6 +579,64 @@ void DrfImportWidget::handleUpload( const std::string &displayName,
   if( app )
     app->triggerUpdate();
 }//handleUpload(...)
+
+
+void DrfImportWidget::handleBatch( std::shared_ptr<DrfDropBatch> batch )
+{
+  if( !batch )
+    return;
+
+  // Nothing could be sent: the found list says why
+  if( batch->files.empty() )
+  {
+    if( batch->numRefused || batch->numSkipped )
+      m_batchDropped.emit( batch );
+    return;
+  }
+
+  // One file, or the two halves of one detector: imported here, with its options.
+  if( batch->files.size() <= 2 )
+  {
+    vector<shared_ptr<const DrfImport::ParsedFile>> parsed;
+    for( const pair<string,string> &f : batch->files )
+    {
+      const string name = SpecUtils::filename( f.first );
+      try
+      {
+        parsed.push_back( DrfImport::parseFile( name, DrfImport::readFile( f.second ), true ) );
+      }catch( std::exception &e )
+      {
+        if( batch->files.size() == 1 )
+          setStatus( WString::tr("dsi-parse-error")
+                       .arg( Wt::Utils::htmlEncode( name ) )
+                       .arg( Wt::Utils::htmlEncode( string( e.what() ) ) ), true );
+      }//try / catch
+    }//for( the files )
+
+    const bool one_detector = (parsed.size() == 1)
+                              || ((parsed.size() == 2) && DrfImport::areCompanions( parsed[0]->kind, parsed[1]->kind ));
+    if( one_detector || parsed.empty() )
+    {
+      for( const shared_ptr<const DrfImport::ParsedFile> &p : parsed )
+        addFile( p );
+      return;
+    }
+  }//if( one or two files )
+
+  m_batchDropped.emit( batch );
+}//handleBatch(...)
+
+
+Wt::Signal<std::shared_ptr<const DrfDropBatch>> &DrfImportWidget::batchDropped()
+{
+  return m_batchDropped;
+}
+
+
+Wt::WString DrfImportWidget::kindLabel( const DrfImport::FileKind kind )
+{
+  return WString::tr( kind_key( kind ) );
+}
 
 
 void DrfImportWidget::addFile( std::shared_ptr<const DrfImport::ParsedFile> file )
@@ -793,17 +1023,13 @@ DrfImportWidget *DrfImportWidget::setupDropDialog( SimpleDialog *dialog,
     DrfSelect::updateLastUsedTimeOrAddToDb( drf, user.id(), sql );
     viewer->detectorChanged().emit( drf );
 
+    // On this (the session) thread: copying the `Dbo::ptr` user is not thread safe.
     for( const pair<WCheckBox *,UseDrfPref::UseDrfType> &cb
           : { make_pair( defaultForSerialNumber, UseDrfPref::UseDrfType::UseDetectorSerialNumber ),
               make_pair( defaultForDetectorModel, UseDrfPref::UseDrfType::UseDetectorModelName ) } )
     {
-      if( !fore || !cb.first || !cb.first->isChecked() )
-        continue;
-
-      const UseDrfPref::UseDrfType preftype = cb.second;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, fore );
-      } ) );
+      if( fore && cb.first && cb.first->isChecked() )
+        DrfSelect::setUserPrefferedDetector( drf, sql, user, cb.second, fore );
     }//for( both "use as default" checkboxes )
 
     UndoRedoManager * const undoManager = viewer->undoRedoManager();

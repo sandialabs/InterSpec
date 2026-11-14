@@ -67,7 +67,6 @@
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ShieldingSelect.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DetectionLimitCalc.h"
@@ -326,6 +325,7 @@ void DetectionLimitSimple::init()
 
   m_resultTxt = resultsDiv->addNew<WText>( "&nbsp;" );
   m_resultTxt->addStyleClass( "ResultsTxtArea" );
+  m_resultTxt->addStyleClass( "SelectableTxt" );
   m_resultTxt->setInline( false );
 
   // Notes that qualify a limit that WAS produced - overlapping regions of interest combined, a
@@ -408,7 +408,6 @@ void DetectionLimitSimple::init()
   m_distance->addStyleClass( "GridFifthCol GridFirstRow GridStretchCol" );
   distanceLabel->setBuddy( m_distance );
 
-  m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );
@@ -460,8 +459,7 @@ void DetectionLimitSimple::init()
   
   
   // Add DRF select
-  SpectraFileModel *specFileModel = m_viewer->fileManager()->model();
-  m_detectorDisplay = generalInput->addNew<DetectorDisplay>( m_viewer, specFileModel );
+  m_detectorDisplay = generalInput->addNew<DetectorDisplay>( m_viewer );
   m_detectorDisplay->addStyleClass( "DetectorDisplay GridFourthCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter" );
   m_viewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   m_viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
@@ -688,7 +686,6 @@ void DetectionLimitSimple::init()
   m_distanceUncert = m_advancedDiv->addNew<WLineEdit>();
   m_distanceUncert->setPlaceholderText( WString::tr("dl-dist-uncert-empty-text") );
   distUncertLabel->setBuddy( m_distanceUncert );
-  m_distanceUncert->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceUncert->setAttributeValue( "autocorrect", "off" );
   m_distanceUncert->setAttributeValue( "spellcheck", "off" );
@@ -2338,6 +2335,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   // Now create rows of text information.
   WTable *table = contents->addNew<WTable>();
   table->addStyleClass( "DeconvoMoreInfoTable" );
+  table->addStyleClass( "SelectableTxt" );
   
   const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( 
                                         const DetectionLimitCalc::DeconComputeResults &result,

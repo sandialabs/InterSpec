@@ -614,6 +614,7 @@ public:
 
     m_status_stack = layout->addWidget( std::make_unique<WStackedWidget>(), 2, 0, 1, 2 );
     m_status_stack->addStyleClass( "RestRidInfoStack" );
+    m_status_stack->addStyleClass( "SelectableTxt" );
 
     // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
     //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS

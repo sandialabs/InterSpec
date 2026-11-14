@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">Betas/Segundo</message>
   <message id="dad-hdr-total-alphas">Alfas Totais</message>
   <message id="dad-yaxis-title-total-alphas">Alfas/Segundo</message>
-  <message id="dad-chart-click-more-info">Clique para mais informações - {1} {2} após T0 temos:</message>
 
   <message id="dcc-window-title-decay-chain">Cadeia de Decaimento de {1}</message>
   <message id="dcc-window-title-decay-through">Decai através de {1}</message>

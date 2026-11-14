@@ -61,6 +61,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -76,30 +77,34 @@ using namespace std;
 
 namespace
 {
-  /** Parses a user distance string to cm; throws std::runtime_error with the
-   field name on invalid input.
+  /** Parses a user distance string to cm; throws a DetectorGeometryInput::FieldError naming the
+   field (`field_id` is the message id of its name) on invalid input.
    */
-  double distance_cm( const Wt::WLineEdit *edit, const char *field,
+  double distance_cm( Wt::WLineEdit *edit, const char *field_id,
                       const bool allow_zero_or_empty )
   {
-    const string txt = edit->text().toUTF8();
+    const string txt = SpecUtils::trim_copy( edit->text().toUTF8() );
     if( txt.empty() )
     {
       if( allow_zero_or_empty )
         return 0.0;
-      throw runtime_error( WString::tr("dgi-err-missing").arg(field).toUTF8() );
+      throw DetectorGeometryInput::FieldError(
+                      WString::tr("dgi-err-missing").arg( WString::tr(field_id) ).toUTF8(), edit );
     }
 
+    double dist = -1.0;
     try
     {
-      const double dist = PhysicalUnits::stringToDistance( txt );
-      if( (dist < 0.0) || (!allow_zero_or_empty && (dist <= 0.0)) )
-        throw runtime_error( "" );
-      return dist / PhysicalUnits::cm;
+      dist = PhysicalUnits::stringToDistance( txt );
     }catch( std::exception & )
     {
-      throw runtime_error( WString::tr("dgi-err-invalid").arg(field).toUTF8() );
     }
+
+    if( IsNan(dist) || IsInf(dist) || (dist < 0.0) || (!allow_zero_or_empty && (dist <= 0.0)) )
+      throw DetectorGeometryInput::FieldError(
+                      WString::tr("dgi-err-invalid").arg( WString::tr(field_id) ).toUTF8(), edit );
+
+    return dist / PhysicalUnits::cm;
   }//distance_cm(...)
 
 
@@ -144,24 +149,7 @@ namespace
    */
   const std::vector<std::string> &crystal_names()
   {
-    static const std::vector<std::string> names = []() -> std::vector<std::string> {
-      std::vector<std::string> n;
-      for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
-      {
-        // Only what can actually be built; a table entry whose formula does not
-        //  resolve would throw the moment it was selected.
-        try
-        {
-          CeeLoUtils::gadrasCrystalMaterial( info.name );
-          n.push_back( info.name );
-        }catch( std::exception & )
-        {
-        }
-      }
-      return n;
-    }();
-
-    return names;
+    return CeeLoUtils::crystalMaterialNames();
   }//crystal_names()
 
 
@@ -171,165 +159,28 @@ namespace
     if( (index >= 0) && (index < static_cast<int>(names.size())) )
       return CeeLoUtils::gadrasCrystalMaterial( names[static_cast<size_t>(index)] );
 
-    throw runtime_error( "Please select a crystal material." );
+    throw runtime_error( WString::tr("dgi-err-crystal").toUTF8() );
   }//crystal_material_spec(...)
 
 
-  /** The crystal a DRFs free text names, as an index into the crystal combo, or -1.
-
-   A DRF seeded from a GADRAS `Detector.dat` records the crystal in its description ("GADRAS
-   geometry, LaBr3; ..."), and shipped detectors carry it in their name ("LaBr 10%").  That text is
-   the only place the crystal survives for a DRF that reaches this form without a
-   `ceelo::GeometryDescriptor` - which is every DRF that was handed to the app as an efficiency
-   curve rather than characterized here.  Guessing from it beats silently rebuilding a LaBr detector
-   out of NaI.
-
-   Matched on the GADRAS material-table names, longest first, and only on whole tokens - so "Si"
-   does not match inside "Since", and "LaBr3" wins over any shorter prefix.
+  /** The crystal a DRFs free text names, as an index into the crystal combo, or -1; see
+   `CeeLoUtils::crystalNameFromText`.
    */
   int crystal_index_from_text( const std::string &text )
   {
-    if( text.empty() )
-      return -1;
-
-    std::string haystack = text;
-    SpecUtils::to_lower_ascii( haystack );
-
-    // Longest name first, so a name that contains a shorter one cannot shadow it.
-    std::vector<std::string> names = crystal_names();
-    std::sort( begin(names), end(names),
-      []( const std::string &lhs, const std::string &rhs ){ return lhs.size() > rhs.size(); } );
-
-    for( const std::string &name : names )
-    {
-      std::string needle = name;
-      SpecUtils::to_lower_ascii( needle );
-
-      for( size_t pos = haystack.find(needle);
-           pos != std::string::npos;
-           pos = haystack.find(needle, pos + 1) )
-      {
-        const bool start_ok = (pos == 0) || !std::isalnum( static_cast<unsigned char>(haystack[pos-1]) );
-        const size_t after = pos + needle.size();
-        const bool end_ok = (after >= haystack.size())
-                            || !std::isalnum( static_cast<unsigned char>(haystack[after]) );
-        if( !start_ok || !end_ok )
-          continue;
-
-        // The combo is populated from `crystal_names()` in order, so its index is the entrys.
-        const std::vector<std::string> &all = crystal_names();
-        for( int i = 0; i < static_cast<int>(all.size()); ++i )
-        {
-          if( all[i] == name )
-            return i;
-        }
-      }//for( each occurrence )
-    }//for( const std::string &name : names )
-
-    return -1;
+    const std::string name = CeeLoUtils::crystalNameFromText( text );
+    const std::vector<std::string> &all = crystal_names();
+    const auto pos = std::find( begin(all), end(all), name );
+    return (name.empty() || (pos == end(all))) ? -1 : static_cast<int>( pos - begin(all) );
   }//crystal_index_from_text(...)
 
 
-  /** The crystal combo index a detector's resolution implies, or -1 when nothing usable says.
-
-   Ordered by how specific the evidence is.  A DRF that states its own FWHM describes *this*
-   detector, so it is preferred over anything read off whatever spectrum happens to be loaded.
-
-   Only ever returns a crystal the evidence actually identifies: below HPGe the FWHM alone does
-   not separate NaI from CsI from LaBr from CZT, and guessing one of them would be no better than
-   the NaI the combo already defaults to - while looking like a determination.
+  /** The crystal combo index a detector's own evidence implies, or -1 when nothing usable says; see
+   `CeeLoUtils::crystalNameFromDrfEvidence`.
    */
   int crystal_index_from_resolution( const std::shared_ptr<const DetectorPeakResponse> &drf )
   {
-    // 1) A detector model named in the DRF's own name/description.  These are the shipped
-    //    relative-efficiency DRFs ("ORTEC Detective EX-100", "GR135"), which carry no FWHM and no
-    //    peak-fit preferences - the model name is the only thing that knows what they are, and
-    //    SpecUtils already names every type it can parse.  Matched longest-first so "Detective EX"
-    //    cannot shadow "Detective EX-100".
-    if( drf )
-    {
-      std::string haystack = drf->name() + " " + drf->description();
-      SpecUtils::to_lower_ascii( haystack );
-
-      SpecUtils::DetectorType best = SpecUtils::DetectorType::Unknown;
-      size_t best_len = 0;
-      for( int i = 0; i < static_cast<int>(SpecUtils::DetectorType::Unknown); ++i )
-      {
-        const SpecUtils::DetectorType type = static_cast<SpecUtils::DetectorType>( i );
-        std::string name = SpecUtils::detectorTypeToString( type );
-        if( name.size() <= best_len )
-          continue;
-
-        SpecUtils::to_lower_ascii( name );
-        if( !name.empty() && (haystack.find(name) != std::string::npos) )
-        {
-          best = type;
-          best_len = name.size();
-        }
-      }//for( each DetectorType )
-
-      if( best != SpecUtils::DetectorType::Unknown )
-      {
-        switch( PeakFitUtils::coarse_type_for_detector_type( best ) )
-        {
-          case PeakFitUtils::CoarseResolutionType::High: return crystal_index_from_text( "HPGe" );
-          case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
-          case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
-          case PeakFitUtils::CoarseResolutionType::Low:  return crystal_index_from_text( "NaI" );
-          case PeakFitUtils::CoarseResolutionType::MedRes:
-          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
-          case PeakFitUtils::CoarseResolutionType::Unknown:
-            break;
-        }//switch( coarse_type_for_detector_type(best) )
-      }//if( a model was recognised )
-    }//if( drf )
-
-    // 2) The DRF's own FWHM.  At 661 keV an HPGe is 1-2 keV where every scintillator here is
-    //    >10 keV (CZT ~2%, LaBr ~3%, NaI ~7%), so the gap is wide and a loose threshold is safe.
-    //
-    //    A not-HPGe answer is not the end of the search: the FWHM alone does not separate the
-    //    scintillators, but tier 4 below may still name one.  It only vetoes tier 4 answering
-    //    HPGe, since a measured resolution outranks a recorded preference.
-    bool fwhm_says_not_hpge = false;
-    if( drf && drf->hasResolutionInfo() )
-    {
-      const float fwhm = drf->peakResolutionFWHM( 661.7f );
-      if( (fwhm > 0.0f) && (fwhm < 5.0f) )
-        return crystal_index_from_text( "HPGe" );
-
-      fwhm_says_not_hpge = (fwhm > 0.0f);
-    }//if( drf && drf->hasResolutionInfo() )
-
-    // 4) The DRF's own peak-fit preferences, when it recorded a detector type.
-    //
-    // Deliberately NOT the loaded spectrum, which was tried and measurably misleads: picking a DRF
-    // in Detector Select makes it the foreground's detector, so "is this the spectrum's detector?"
-    // is always true there, and with an HPGe file open every unrecognised DRF - a GR135, a SAM 945
-    // - came back HPGe.  A spectrum describes the detector that recorded it, not whichever
-    // response the user is about to look at.  When nothing above knows, the combo keeps its
-    // default and the note asks the user to check it.
-    const std::shared_ptr<const PeakFitDetPrefs> prefs = drf ? drf->peakFitDetPrefs() : nullptr;
-    if( prefs )
-    {
-      switch( prefs->m_det_type )
-      {
-        // The DRF's measured resolution wins over what it recorded as its type
-        case PeakFitUtils::CoarseResolutionType::High:
-          return fwhm_says_not_hpge ? -1 : crystal_index_from_text( "HPGe" );
-        case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
-        case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
-
-        // Low is NaI *or* CsI, and the Med/LowOrMed cases are explicitly "cannot tell which" - so
-        //  leave the default rather than dress a coin flip up as an answer.
-        case PeakFitUtils::CoarseResolutionType::Low:
-        case PeakFitUtils::CoarseResolutionType::MedRes:
-        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
-        case PeakFitUtils::CoarseResolutionType::Unknown:
-          break;
-      }//switch( prefs->m_det_type )
-    }//if( prefs )
-
-    return -1;
+    return drf ? crystal_index_from_text( CeeLoUtils::crystalNameFromDrfEvidence( *drf ) ) : -1;
   }//crystal_index_from_resolution(...)
 
 
@@ -354,6 +205,16 @@ namespace
 
   {
     return PhysicalUnits::printToBestLengthUnits( cm * PhysicalUnits::cm, 4 );
+  }
+
+
+  /** The validator for the forms distance inputs: a number, with or without a unit (cm assumed). */
+  std::shared_ptr<WRegExpValidator> distance_validator()
+  {
+    auto validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+    validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+    validator->setInvalidNoMatchText( WString::tr("dgi-tt-dist-format") );
+    return validator;
   }
 }//namespace
 
@@ -383,6 +244,8 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_collimatorMaterial( nullptr ), m_collimatorThickness( nullptr ),
     m_collimatorExtension( nullptr ),
     m_note( nullptr ),
+    m_problemField(),
+    m_body( nullptr ),
     m_compact( false ),
     m_showDetails( true ),
     m_detailsLink( nullptr ),
@@ -414,9 +277,9 @@ void DetectorGeometryInput::init()
 
   // The controls, and beside them (below them when the form is narrow) a live drawing of what
   //  they describe; the notes go full-width underneath the pair.
-  WContainerWidget *body = addNew<WContainerWidget>();
-  body->addStyleClass( "DgiBody" );
-  WContainerWidget *form = body->addNew<WContainerWidget>();
+  m_body = addNew<WContainerWidget>();
+  m_body->addStyleClass( "DgiBody" );
+  WContainerWidget *form = m_body->addNew<WContainerWidget>();
   form->addStyleClass( "DgiForm" );
 
   WTable *table = form->addNew<WTable>();
@@ -434,7 +297,7 @@ void DetectorGeometryInput::init()
     WLineEdit *edit = cell->addNew<WLineEdit>();
     edit->setAutoComplete( false );
     edit->setAttributeValue( "spellcheck", "off" );
-    edit->setValidator( std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex ) );
+    edit->setValidator( distance_validator() );
     edit->setTextSize( 8 );
     return edit;
   };
@@ -566,15 +429,17 @@ void DetectorGeometryInput::init()
     m_collimatorRow->addNew<WLabel>( WString::tr("dgi-collimator-thickness") );
     m_collimatorThickness = m_collimatorRow->addNew<WLineEdit>();
     m_collimatorThickness->setTextSize( 6 );
+    m_collimatorThickness->setValidator( distance_validator() );
     m_collimatorRow->addNew<WLabel>( WString::tr("dgi-collimator-extension") );
     m_collimatorExtension = m_collimatorRow->addNew<WLineEdit>();
     m_collimatorExtension->setTextSize( 6 );
+    m_collimatorExtension->setValidator( distance_validator() );
     for( WLineEdit *edit : { m_collimatorMaterial, m_collimatorThickness, m_collimatorExtension } )
       edit->changed().connect( this, &DetectorGeometryInput::handleUserInput );
     m_collimatorRow->hide();
   }
 
-  m_diagram = body->addNew<DetectorGeometryDiagram>();
+  m_diagram = m_body->addNew<DetectorGeometryDiagram>();
   if( m_interspec && m_interspec->isPhone() )
     m_diagram->hide();   //no room; the CSS hides it on narrow screens too
 
@@ -612,6 +477,13 @@ Wt::Signal<> &DetectorGeometryInput::changed()
 
 void DetectorGeometryInput::handleShapeChange()
 {
+  updateRowVisibility();
+  handleUserInput();
+}//handleShapeChange()
+
+
+void DetectorGeometryInput::updateRowVisibility()
+{
   const int shape = m_shape->currentIndex();
   const bool coax = (shape == 1);
   const bool box = (shape == 2);
@@ -627,9 +499,7 @@ void DetectorGeometryInput::handleShapeChange()
   m_bulletRow->setHidden( box || hide_details );         //a fillet is a cylinder-crystal feature
   m_boreRow->setHidden( !coax || hide_details );         //bore (and its rounded tip) only for coaxial HPGe
   m_deadRow->setHidden( box || hide_details );           //dead layer for cylinders/HPGe, not boxes
-
-  handleUserInput();
-}//handleShapeChange()
+}//updateRowVisibility()
 
 
 void DetectorGeometryInput::handleCrystalDimensionInput()
@@ -666,6 +536,7 @@ void DetectorGeometryInput::updateFromForm()
   const bool want_drawing = (m_diagram && !m_diagram->isHidden());
 
   string problem;
+  WFormWidget *problem_field = nullptr;
   try
   {
     const ceelo::GeometryDescriptor gd = toDescriptor();
@@ -685,11 +556,51 @@ void DetectorGeometryInput::updateFromForm()
     problem = m_seededFromDiameterGuess ? WString::tr("dgi-seeded-note").toUTF8() : string(e.what());
     if( want_drawing )
       m_diagram->setStale( true );   //keep the last valid drawing, dimmed
+
+    const FieldError * const field_err = dynamic_cast<const FieldError *>( &e );
+    problem_field = field_err ? field_err->field() : nullptr;
   }
 
   if( m_note )
     m_note->setText( WString::fromUTF8( problem ) );
+
+  // Mark the input at fault (Wt marks text its validator rejects as the user types; this marks
+  //  blank-but-required, and values that parse but dont make sense)
+  if( m_problemField.get() != problem_field )
+    WidgetUtils::setInputValueError( m_problemField.get(), false );
+  m_problemField = problem_field;
+  WidgetUtils::setInputValueError( problem_field, (problem_field != nullptr) );
+
+  // In compact mode, the input at fault may be one of the rows hidden behind "More geometry..."
+  if( problem_field && m_compact && !m_showDetails
+      && ((problem_field == m_bulletRadius) || (problem_field == m_boreDiam)
+          || (problem_field == m_boreDepth) || (problem_field == m_deadFront)
+          || (problem_field == m_deadSide)) )
+  {
+    m_showDetails = true;
+    m_detailsLink->setText( WString::tr("dgi-fewer-geometry") );
+    updateRowVisibility();
+  }
 }//updateFromForm()
+
+
+Wt::WFormWidget *DetectorGeometryInput::problemField() const
+{
+  return m_problemField.get();
+}//problemField()
+
+
+void DetectorGeometryInput::setDiagramBelow( const bool below )
+{
+  if( m_body )
+    m_body->toggleStyleClass( "DgiDiagramBelow", below );
+}//setDiagramBelow(...)
+
+
+std::string DetectorGeometryInput::crystalMaterialName() const
+{
+  return m_crystalMaterial ? m_crystalMaterial->currentText().toUTF8() : string();
+}//crystalMaterialName()
 
 
 std::string DetectorGeometryInput::problemDescription() const
@@ -734,6 +645,8 @@ void DetectorGeometryInput::addLayerRow( const Wt::WString &material,
   layer.sideThickness->setTextSize( 9 );
   layer.backThickness = m_layersTable->elementAt( row, 3 )->addNew<WLineEdit>( backThick );
   layer.backThickness->setTextSize( 9 );
+  for( WLineEdit *edit : { layer.frontThickness, layer.sideThickness, layer.backThickness } )
+    edit->setValidator( distance_validator() );
   layer.backThickness->setPlaceholderText( WString::tr("dgi-layer-back-ph") );  //blank = open back
 
   for( WLineEdit *edit : { layer.material, layer.frontThickness, layer.sideThickness, layer.backThickness } )
@@ -915,39 +828,47 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
   const bool coax = (shape == 1);
   const bool box = (shape == 2);
 
-  gd.materials.push_back( crystal_material_spec( m_crystalMaterial->currentIndex() ) );
+  try
+  {
+    gd.materials.push_back( crystal_material_spec( m_crystalMaterial->currentIndex() ) );
+  }catch( std::exception &e )
+  {
+    throw FieldError( e.what(), m_crystalMaterial );
+  }
   gd.crystal_material_index = 0;
 
   double crystal_len = 0.0;
   if( box )
   {
-    const double width = distance_cm( m_dim1, "width", false );
-    const double height = distance_cm( m_dim2, "height", false );
-    crystal_len = distance_cm( m_dim3, "length", false );
+    const double width = distance_cm( m_dim1, "dgi-fld-width", false );
+    const double height = distance_cm( m_dim2, "dgi-fld-height", false );
+    crystal_len = distance_cm( m_dim3, "dgi-fld-length", false );
     //The form takes full width/height/length; CeeLo wants the two transverse
     //  extents halved and the axial one left full (CRYSTAL DIMENSION CONVENTION).
     gd.set_dimensions( ceelo::BoxDims{ 0.5*width, 0.5*height, crystal_len } );
     gd.symmetry = ceelo::ResponseSymmetry::Quadrant;
   }else
   {
-    const double diam = distance_cm( m_dim1, "diameter", false );
-    crystal_len = distance_cm( m_dim2, "length", false );
+    const double diam = distance_cm( m_dim1, "dgi-fld-diameter", false );
+    crystal_len = distance_cm( m_dim2, "dgi-fld-length", false );
     gd.set_dimensions( ceelo::CylinderDims{ 0.5*diam, crystal_len } );
     gd.symmetry = ceelo::ResponseSymmetry::Axial;
 
     //Read before the bore, so the bore checks below see the final crystal profile
-    gd.bullet_radius_cm = distance_cm( m_bulletRadius, "front edge fillet radius", true );
+    gd.bullet_radius_cm = distance_cm( m_bulletRadius, "dgi-fld-fillet", true );
 
     if( coax )
     {
-      const double bore_diam = distance_cm( m_boreDiam, "bore diameter", true );
-      const double bore_depth = distance_cm( m_boreDepth, "bore depth", true );
+      const double bore_diam = distance_cm( m_boreDiam, "dgi-fld-bore-diam", true );
+      const double bore_depth = distance_cm( m_boreDepth, "dgi-fld-bore-depth", true );
       if( (bore_diam > 0.0) != (bore_depth > 0.0) )
-        throw runtime_error( WString::tr("dgi-err-bore").toUTF8() );
+        throw FieldError( WString::tr("dgi-err-bore").toUTF8(), (bore_diam > 0.0) ? m_boreDepth : m_boreDiam );
       if( bore_diam > 0.0 )
       {
-        if( (0.5*bore_diam >= 0.5*diam) || (bore_depth >= crystal_len) )
-          throw runtime_error( WString::tr("dgi-err-bore-size").toUTF8() );
+        if( 0.5*bore_diam >= 0.5*diam )
+          throw FieldError( WString::tr("dgi-err-bore-size").toUTF8(), m_boreDiam );
+        if( bore_depth >= crystal_len )
+          throw FieldError( WString::tr("dgi-err-bore-size").toUTF8(), m_boreDepth );
         gd.bore = ceelo::BoreHoleConfig{ 0.5*bore_diam, bore_depth,
                                          m_boreRounded->isChecked() };
       }
@@ -956,8 +877,8 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 
   if( !box )
   {
-    const double dead_front = distance_cm( m_deadFront, "front dead layer", true );
-    const double dead_side = distance_cm( m_deadSide, "side dead layer", true );
+    const double dead_front = distance_cm( m_deadFront, "dgi-fld-dead-front", true );
+    const double dead_side = distance_cm( m_deadSide, "dgi-fld-dead-side", true );
     if( (dead_front > 0.0) || (dead_side > 0.0) )
       gd.dead_layer = ceelo::DeadLayerConfig{ dead_front, dead_side, 0.0 };
   }
@@ -970,8 +891,29 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
   {
     const vector<ceelo::GeometryProblem> problems = gd.problems();
     if( !problems.empty() )
-      throw runtime_error(
-          WString::tr( CeeLoUtils::geometryProblemMsgId( problems.front() ) ).toUTF8() );
+    {
+      // The input to point the user at
+      WFormWidget *field = nullptr;
+      switch( problems.front() )
+      {
+        case ceelo::GeometryProblem::DimensionsMissing:     field = m_dim1;         break;
+        case ceelo::GeometryProblem::DeadLayerTooThick:     field = m_deadFront;    break;
+        case ceelo::GeometryProblem::BulletOnNonCylinder:
+        case ceelo::GeometryProblem::BulletNotFinite:
+        case ceelo::GeometryProblem::BulletTooWide:
+        case ceelo::GeometryProblem::BulletTooLong:
+        case ceelo::GeometryProblem::BulletNoDeadLayerRoom: field = m_bulletRadius; break;
+        case ceelo::GeometryProblem::BoreOnNonCylinder:
+        case ceelo::GeometryProblem::BoreNotFinite:
+        case ceelo::GeometryProblem::BoreTooWide:
+        case ceelo::GeometryProblem::BoreTooDeep:
+        case ceelo::GeometryProblem::BoreTipTooBlunt:
+        case ceelo::GeometryProblem::BoreOutsideFillet:
+        case ceelo::GeometryProblem::BoreInsideDeadLayer:   field = m_boreDiam;     break;
+      }//switch( problems.front() )
+
+      throw FieldError( WString::tr( CeeLoUtils::geometryProblemMsgId( problems.front() ) ).toUTF8(), field );
+    }//if( !problems.empty() )
   }
 
   const shared_ptr<const MaterialDB> matDb = MaterialDB::initialized()
@@ -985,15 +927,15 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
   {
     string mat_name = layer.material->text().toUTF8();
     SpecUtils::trim( mat_name );
-    const double front = distance_cm( layer.frontThickness, "layer front thickness", true );
-    const double side = distance_cm( layer.sideThickness, "layer side thickness", true );
-    const double back = distance_cm( layer.backThickness, "layer back thickness", true );
+    const double front = distance_cm( layer.frontThickness, "dgi-fld-layer-front", true );
+    const double side = distance_cm( layer.sideThickness, "dgi-fld-layer-side", true );
+    const double back = distance_cm( layer.backThickness, "dgi-fld-layer-back", true );
 
     if( mat_name.empty() && (front <= 0.0) && (side <= 0.0) && (back <= 0.0) )
       continue;  //blank row
 
     if( (front <= 0.0) && (side <= 0.0) && (back <= 0.0) )
-      throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
+      throw FieldError( WString::tr("dgi-err-layer").toUTF8(), layer.frontThickness );
 
     back_thicknesses.push_back( back );
 
@@ -1029,7 +971,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     {
       const double thickness = (front > 0.0) ? front : ((side > 0.0) ? side : back);
       if( thickness <= 0.0 )
-        throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
+        throw FieldError( WString::tr("dgi-err-layer").toUTF8(), layer.frontThickness );
 
       ceelo::LayerSpec gspec;
       gspec.material_index = static_cast<int>( gd.materials.size() );
@@ -1048,7 +990,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     {
       mat = lookup_material( matDb, mat_name );
       if( !mat )
-        throw runtime_error( WString::tr("dgi-err-material").arg(mat_name).toUTF8() );
+        throw FieldError( WString::tr("dgi-err-material").arg(mat_name).toUTF8(), layer.material );
     }//if( !use_seeded )
 
     ceelo::LayerSpec spec;
@@ -1066,8 +1008,8 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
   {
     string mat_name = m_collimatorMaterial->text().toUTF8();
     SpecUtils::trim( mat_name );
-    const double thickness = distance_cm( m_collimatorThickness, "collimator thickness", false );
-    const double extension = distance_cm( m_collimatorExtension, "collimator extension", true );
+    const double thickness = distance_cm( m_collimatorThickness, "dgi-fld-coll-thick", false );
+    const double extension = distance_cm( m_collimatorExtension, "dgi-fld-coll-ext", true );
 
     // A collimator of nothing is no collimator - it needs a real material.  "galactic vacuum" is a
     //  real MaterialDB entry (and "galactic" matches it by description), so it has to be refused
@@ -1075,7 +1017,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     const shared_ptr<const Material> mat = CeeLoUtils::isVacuumMaterialName( mat_name )
                                              ? nullptr : lookup_material( matDb, mat_name );
     if( !mat )
-      throw runtime_error( WString::tr("dgi-err-material").arg(mat_name).toUTF8() );
+      throw FieldError( WString::tr("dgi-err-material").arg(mat_name).toUTF8(), m_collimatorMaterial );
 
     ceelo::CollimatorSpec spec;
     spec.material_index = static_cast<int>( gd.materials.size() );

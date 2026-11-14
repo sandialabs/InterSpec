@@ -454,7 +454,7 @@ protected:
   enum InfoRow
   {
     InfoEfficiency, InfoGeometry, InfoSupport, InfoUncert,
-    InfoFwhm, InfoTotalEff, InfoRange, InfoDiameter,
+    InfoFwhm, InfoTotalEff, InfoRange, InfoDiameter, InfoMultiple,
     NumInfoRow
   };//enum InfoRow
 

@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <Wt/WContainerWidget.h>
@@ -89,6 +90,16 @@ public:
    stale prompt would delete the window out from under the user.
    */
   void dismissSaveChangesPrompt();
+
+#if( USE_USER_LIBRARY )
+  /** A colour theme from a file the user library knows (a package's, or one in the user data folder's
+   `color_themes/`), given relative to the user data folder - as the "ColorThemeFile" preference
+   holds it.  Null if the file is gone, disabled, or unreadable.  Such themes are used as they are
+   (not copied into the database), so a package update changes them; "make a copy" gives an
+   editable one.
+   */
+  static std::shared_ptr<ColorTheme> themeFromFile( const std::string &userRelativePath );
+#endif
   
 protected:
   // Constructor is protected; use AuxWindow::make<ColorThemeWindow>() to create.
@@ -116,6 +127,16 @@ protected:
   void cloneThemeCallback();
   void removeThemeCallback();
   void uploadThemeCallback();
+
+  /** Adds a theme the user can edit (one in the database): before the themes from packages and
+   files, if any are listed, so the user's own stay together.
+   */
+  Wt::WMenuItem *addEditableItem( std::unique_ptr<Wt::WMenuItem> item );
+
+  /** Hides #m_fileThemesSeparator when no database themes are above it (it would follow the
+   built-in themes' separator directly).
+   */
+  void updateFileThemesSeparator();
   
   /** Adds the import preview, and a "Yes" button that saves the theme to the database and selects
    it, to `window`; renames `theme` first if its name is already in use.
@@ -140,8 +161,13 @@ private:
   Wt::WContainerWidget *m_removeIcn;
   Wt::WContainerWidget *m_addIcn;
   
-  /** Shown above the editor for built-in themes, which cant be edited, pointing users to cloning. */
+  /** Shown above the editor for themes that cant be edited (built-in, or from a package or file),
+   pointing users to cloning; `m_readOnlyText` says which of those it is. */
   Wt::WContainerWidget *m_readOnlyNote;
+  Wt::WText *m_readOnlyText;
+
+  /** The separator above the themes from packages and files; nullptr if there are none. */
+  Wt::WMenuItem *m_fileThemesSeparator;
   
   /** The upload, import-confirm, and delete-confirm dialogs this window opened; they are owned by
    wApp, so we delete any still open when this window goes away, or their buttons would act on a

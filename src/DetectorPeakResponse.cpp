@@ -41,6 +41,7 @@
 #include <utility>
 #include <sstream>
 #include <numeric>
+#include <algorithm>
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
@@ -90,7 +91,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 7;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 8;
 
 namespace
 {
@@ -717,13 +718,89 @@ struct DetectorPeakResponse::CeeloQueryCache
 
 void DetectorPeakResponse::assignCeeloResponse( shared_ptr<const ceelo::DetectorResponse> response )
 {
+  assert( !m_ceeloResponse || !m_efficiencyMultiple );
+
   // Re-attaching the instance already held keeps what was traced for it.
   if( response && (response == m_ceeloResponse) && m_ceeloCache )
     return;
 
+  // The efficiency multiple has one owner: an attached response's scale, else m_efficiencyMultiple.
+  if( response )
+  {
+    // A response is created carrying the multiple of the detector it was made for, so one arriving
+    //  with a different scale was made by a producer that was not given this DRF's multiple - or
+    //  for another detector, whose scale is the one that goes with it.
+    if( m_efficiencyMultiple && (*m_efficiencyMultiple != response->efficiency_scale) )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Attaching a CeeLo response with efficiency scale "
+                                      + std::to_string(response->efficiency_scale) + " to a DRF whose"
+                                      " efficiency multiple is " + std::to_string(*m_efficiencyMultiple)
+                                      + "; the response's scale is kept.").c_str() );
+#endif
+      assert( 0 );
+    }
+    m_efficiencyMultiple.reset();
+  }else if( m_ceeloResponse )
+  {
+    // Detaching: the scale stays with the detector.
+    const double scale = m_ceeloResponse->efficiency_scale;
+    assert( (scale > 0.0) && std::isfinite(scale) );
+    m_efficiencyMultiple = (scale != 1.0) ? std::optional<double>( scale ) : std::nullopt;
+  }//if( response ) / else if( m_ceeloResponse )
+
   m_ceeloCache = response ? make_shared<CeeloQueryCache>( response ) : nullptr;
   m_ceeloResponse = std::move( response );
+
+  assert( !m_ceeloResponse || !m_efficiencyMultiple );
+  assert( !m_efficiencyMultiple || (*m_efficiencyMultiple != 1.0) );
 }//assignCeeloResponse(...)
+
+
+double DetectorPeakResponse::efficiencyMultiple() const
+{
+  if( m_ceeloResponse )
+  {
+    assert( !m_efficiencyMultiple );
+    return m_ceeloResponse->efficiency_scale;
+  }
+
+  assert( !m_efficiencyMultiple || ((*m_efficiencyMultiple > 0.0) && (*m_efficiencyMultiple != 1.0)) );
+  return m_efficiencyMultiple.value_or( 1.0 );
+}//efficiencyMultiple()
+
+
+void DetectorPeakResponse::setEfficiencyMultiple( const double multiple )
+{
+  if( !(multiple > 0.0) || !std::isfinite(multiple) )
+    throw std::invalid_argument( "DetectorPeakResponse::setEfficiencyMultiple: the multiple must be"
+                                 " finite and greater than zero." );
+
+  if( m_ceeloResponse )
+  {
+    assert( !m_efficiencyMultiple );
+    if( m_ceeloResponse->efficiency_scale != multiple )
+    {
+      // DetectorResponse is not copyable; copy through its one codec (as CeeLoUtils::withoutGrounding).
+      const shared_ptr<ceelo::DetectorResponse> copy
+                      = ceelo::DetectorResponse::from_xml_string( m_ceeloResponse->to_xml_string() );
+      if( !copy )
+        throw runtime_error( "DetectorPeakResponse::setEfficiencyMultiple: could not copy the response." );
+      copy->efficiency_scale = multiple;
+
+      // Straight to the members: through assignCeeloResponse the old response's scale would move to
+      //  m_efficiencyMultiple and then disagree with the copy's.
+      m_ceeloCache = make_shared<CeeloQueryCache>( copy );
+      m_ceeloResponse = copy;
+    }//if( the scale changes )
+  }else
+  {
+    m_efficiencyMultiple = (multiple != 1.0) ? std::optional<double>( multiple ) : std::nullopt;
+  }//if( m_ceeloResponse ) / else
+
+  assert( efficiencyMultiple() == multiple );
+  computeHash();
+}//setEfficiencyMultiple(...)
 
 
 DetectorPeakResponse::CeeloQueryCache &DetectorPeakResponse::ceeloCache() const
@@ -820,7 +897,19 @@ void DetectorPeakResponse::setParentHashValue( const uint64_t val )
 }
 
 
+uint64_t DetectorPeakResponse::hashValueWithSource( const DrfSource source ) const
+{
+  return computeHashValue( source );
+}
+
+
 void DetectorPeakResponse::computeHash()
+{
+  m_hash = computeHashValue( m_efficiencySource );
+}//void computeHash()
+
+
+uint64_t DetectorPeakResponse::computeHashValue( const DrfSource source ) const
 {
   std::size_t seed = 0;
 
@@ -844,7 +933,7 @@ void DetectorPeakResponse::computeHash()
     for( const float val : m_resolutionUncerts )
       boost::hash_combine( seed, val );
 
-  boost::hash_combine( seed, m_efficiencySource );
+  boost::hash_combine( seed, source );
   boost::hash_combine( seed, eff.form() );
 
   for( const EnergyEfficiencyPair &a : eff.energyEfficiencies() )
@@ -928,8 +1017,15 @@ void DetectorPeakResponse::computeHash()
   if( !m_fixedGeomSetupXml.empty() )
     boost::hash_combine( seed, m_fixedGeomSetupXml );
 
-  m_hash = seed;
-}//void computeHash()
+  // Only when stored here; an attached response's scale is in its content hash above.
+  if( m_efficiencyMultiple )
+  {
+    boost::hash_combine( seed, std::string("EfficiencyMultiple") );
+    boost::hash_combine( seed, *m_efficiencyMultiple );
+  }
+
+  return seed;
+}//uint64_t computeHashValue( const DrfSource source ) const
 
 
 //isValid(): Tells wether or not this DetectorPeakResponse has been properly
@@ -980,6 +1076,7 @@ void DetectorPeakResponse::reset()
   m_geomType = EffGeometryType::FarFieldIntrinsic;
   m_totalEfficiency.reset();
   assignCeeloResponse( nullptr );
+  m_efficiencyMultiple.reset();  //after detaching, which would have kept the response's scale
   m_geometry.reset();
   m_geometryDisabled = false;
   m_measuredPoints.reset();
@@ -1005,6 +1102,7 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           //m_createdUtc
           //m_lastUsedUtc
           && m_geomType==rhs.m_geomType
+          && (efficiencyMultiple() == rhs.efficiencyMultiple())
           && ((!m_peakFitDetPrefs && !rhs.m_peakFitDetPrefs)
               || (m_peakFitDetPrefs && rhs.m_peakFitDetPrefs
                   && (*m_peakFitDetPrefs == *rhs.m_peakFitDetPrefs)))
@@ -1183,7 +1281,8 @@ float DetectorPeakResponse::totalIntrinsicEfficiency( const float energy ) const
     throw runtime_error( "DetectorPeakResponse::totalIntrinsicEfficiency:"
                          " no total efficiency defined" );
 
-  return m_totalEfficiency->efficiency( energy );
+  // The curve is the one element's; see #efficiencyMultiple.
+  return static_cast<float>( efficiencyMultiple() * m_totalEfficiency->efficiency( energy ) );
 }//totalIntrinsicEfficiency(...)
 
 
@@ -1205,7 +1304,7 @@ double DetectorPeakResponse::totalEfficiency( const float energy, const double d
 float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) const
 {
   if( m_totalEfficiency )
-    return m_totalEfficiency->efficiency( energy );
+    return totalIntrinsicEfficiency( energy );
 
   if( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() )
   {
@@ -1571,7 +1670,8 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
   const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
   if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse
-      && !m_geometry && m_fixedGeomSetupXml.empty() && !m_peakFitDetPrefs && !m_appearance )
+      && !m_geometry && m_fixedGeomSetupXml.empty() && !m_peakFitDetPrefs && !m_appearance
+      && !m_efficiencyMultiple )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -1589,6 +1689,16 @@ string DetectorPeakResponse::drfExtraToXmlString() const
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, &doc, *m_ceeloResponse );
+
+  // The DB has no column for it; only when no response carries it (see #efficiencyMultiple).
+  if( m_efficiencyMultiple )
+  {
+    assert( !m_ceeloResponse );
+    char buffer[32];
+    snprintf( buffer, sizeof(buffer), "%.17g", *m_efficiencyMultiple );
+    base_node->append_node( doc.allocate_node( rapidxml::node_element, "EfficiencyMultiple",
+                                               doc.allocate_string( buffer ) ) );
+  }
 
   // Written alongside a response as well: a response carries its own descriptor, but detaching one
   //  (Modify Detector Response -> Flat Disk) must not lose the geometry - without this the DRF comes
@@ -1639,6 +1749,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_totalEfficiency.reset();
   m_measuredPoints.reset();
   assignCeeloResponse( nullptr );
+  m_efficiencyMultiple.reset();  //after detaching, which would have kept the old response's scale
   m_geometry.reset();
   m_geometryDisabled = false;
   m_fixedGeomSetupXml.clear();
@@ -1702,6 +1813,19 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( ceelo_node )
       assignCeeloResponse( parse_ceelo_response_node( ceelo_node ) );
 
+    // Never written beside a response, which carries its own (see #efficiencyMultiple).
+    const rapidxml::xml_node<char> *mult_node = base_node->first_node( "EfficiencyMultiple" );
+    if( mult_node )
+    {
+      double multiple = 1.0;
+      if( !SpecUtils::parse_double( mult_node->value(), mult_node->value_size(), multiple )
+          || !(multiple > 0.0) || !std::isfinite(multiple) )
+        throw runtime_error( "invalid EfficiencyMultiple" );
+      if( m_ceeloResponse )
+        throw runtime_error( "an EfficiencyMultiple beside a CeeLoResponse, which carries its own" );
+      m_efficiencyMultiple = (multiple != 1.0) ? std::optional<double>( multiple ) : std::nullopt;
+    }//if( mult_node )
+
     // Read even when a response is attached - `drfExtraToXmlString` writes it there, and
     //  `geometry()` still prefers the response's own descriptor.  Dropping it here is what used to
     //  leave a detached response with no shape to re-attach to.
@@ -1746,6 +1870,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_totalEfficiency.reset();
     m_measuredPoints.reset();
     assignCeeloResponse( nullptr );
+    m_efficiencyMultiple.reset();
     m_geometry.reset();
     m_geometryDisabled = false;
     m_peakFitDetPrefs.reset();
@@ -1874,6 +1999,18 @@ void DetectorPeakResponse::updateLastUsedTimeToNow()
 {
   m_lastUsedUtc = std::time(nullptr);
 }//void updateLastUsedTimeToNow()
+
+
+int64_t DetectorPeakResponse::createdUtc() const
+{
+  return m_createdUtc;
+}
+
+
+int64_t DetectorPeakResponse::lastUsedUtc() const
+{
+  return m_lastUsedUtc;
+}
 
 
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
@@ -2328,6 +2465,16 @@ void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
   //
   //  Note this runs for every shipped GADRAS detector as the DRF list is built - which happens on
   //  a worker thread pool (see GadrasDirectory::parseDetector), not the session thread.
+  //
+  //  GADRAS multiplies its efficiency by parameter 18 - the number of identical crystals summed
+  //  (an H3D M400's four), or an empirical factor - over the one crystal Detector.dat and
+  //  Efficiency.csv describe; so the multiple has to be in place before the response is made.
+  assignCeeloResponse( nullptr );
+  m_efficiencyMultiple.reset();
+  const float eff_scalar = dat.effScalar();
+  if( (eff_scalar > 0.0f) && std::isfinite(eff_scalar) && (std::fabs(eff_scalar - 1.0f) > 1.0e-3f) )
+    m_efficiencyMultiple = static_cast<double>( eff_scalar );
+
   CeeLoUtils::attachCurveTransferResponse( *this );
 
   computeHash();
@@ -2515,7 +2662,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   
   try
   {
-    string name = fields[0] + " (" + fields[1] + ")";
+    string name = fields[1].empty() ? fields[0] : (fields[0] + " (" + fields[1] + ")");
     SpecUtils::ireplace_all( name, "%20", " " );
     SpecUtils::trim( name );
 
@@ -3104,9 +3251,28 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEff
       if( have_line )
         line = pending_line;
 
+      vector<vector<float>> cov_rows;  //the "# Cov row i,..." lines: the coefficient covariance
+
       while( (have_line || SpecUtils::safe_get_line(csvfile, line, max_line_length)) && (++nlineschecked < 200) )
       {
         have_line = false;
+
+        if( SpecUtils::istarts_with( line, "# Cov row" ) )
+        {
+          vector<string> cov_fields;
+          split_escaped_csv( cov_fields, line );
+          vector<float> row;
+          try
+          {
+            for( size_t i = 1; i < cov_fields.size(); ++i )
+              row.push_back( std::stof( cov_fields[i] ) );
+          }catch( std::exception & )
+          {
+            row.clear();
+          }
+          cov_rows.push_back( std::move(row) );
+          continue;
+        }//if( a coefficient covariance row )
 
         if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
         {
@@ -3212,6 +3378,31 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEff
           break;
         }
       }//while( getline )
+
+      // The coefficient covariance, when it is all there and is a possible set of errors - else the
+      //  per-coefficient uncertainties stand alone, as before it was written
+      const size_t ncoef = coefs.size();
+      const bool have_cov = (cov_rows.size() == ncoef)
+                            && std::all_of( begin(cov_rows), end(cov_rows),
+                                            [ncoef]( const vector<float> &r ){ return r.size() == ncoef; } );
+      if( have_cov )
+      {
+        vector<float> cov;
+        for( const vector<float> &row : cov_rows )
+          cov.insert( end(cov), begin(row), end(row) );
+
+        try
+        {
+          const shared_ptr<const DetectorEfficiencyUncert> prev = det->efficiencyUncert();
+          auto uncert = prev ? make_shared<DetectorEfficiencyUncert>( *prev )
+                             : make_shared<DetectorEfficiencyUncert>();
+          uncert->setCoefficientCovariance( cov );
+          det->setEfficiencyUncert( uncert );
+        }catch( std::exception &e )
+        {
+          cerr << "parseInterSpecRelEffCsv: ignoring coefficient covariance: " << e.what() << endl;
+        }
+      }//if( have_cov )
 
       return det;
     }catch( std::exception &e )
@@ -3321,6 +3512,10 @@ std::string DetectorPeakResponse::toAppUrl() const
 
   if( m_detectorSetback > 0.0 )
     parts["SETBK"] = SpecUtils::printCompact( m_detectorSetback / PhysicalUnits::cm, 5 );
+
+  // Never dropped to fit the QR budget: without it every efficiency is off by this factor.
+  if( efficiencyMultiple() != 1.0 )
+    parts["EMULT"] = SpecUtils::printCompact( efficiencyMultiple(), 8 );
 
   const DetectorEfficiencyCurve &eff = *m_efficiency;
 
@@ -3861,6 +4056,14 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     detectorSetback *= PhysicalUnits::cm;
   }//if( parts.count("SETBK") )
 
+  double efficiency_multiple = 1.0;
+  if( parts.count("EMULT") )
+  {
+    if( !(stringstream(parts["EMULT"]) >> efficiency_multiple)
+        || !(efficiency_multiple > 0.0) || !std::isfinite(efficiency_multiple) )
+      throw runtime_error( "fromAppUrl: invalid EMULT component" );
+  }//if( parts.count("EMULT") )
+
   if( parts.count("EUNIT") )
   {
     if( !(stringstream(parts["EUNIT"]) >> efficiencyEnergyUnits) || (efficiencyEnergyUnits <= 0.0) )
@@ -4112,6 +4315,11 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_geomType = geom_type;
   m_absoluteEfficiencyDistance = absoluteEfficiencyDistance;
   m_absEffCorrectForAirAtten = absEffCorrectForAirAtten;
+
+  // A URL never carries a response, so any this object held described some other detector.
+  assignCeeloResponse( nullptr );
+  m_efficiencyMultiple = (efficiency_multiple != 1.0) ? std::optional<double>( efficiency_multiple )
+                                                      : std::nullopt;
 
   if( parts.count( "PFP" ) )
   {
@@ -5366,7 +5574,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 7: Added ResolutionCoefficientUncerts, CeeLoGeometry (a physical geometry carried on
   //              its own, and beside a response), and MeasuredEffPoints provenance (per-point
   //              peak/background/distance-uncert details plus a Sources table) (20260912)
-  static_assert( sm_xmlSerializationVersion == 7, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  // - Version 8: Added EfficiencyMultiple, and a CeeLoResponse with an efficiency scale (20261111).
+  //              Only DRFs with a multiple other than 1 are stamped 8: an older reader would skip
+  //              the element (or fail to read the response) and report one element's efficiency.
+  static_assert( sm_xmlSerializationVersion == 8, "Update DetectorPeakResponse sm_xmlSerializationVersion");
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
   const bool have_eff_uncert = (eff_uncert && !eff_uncert->isEmpty());
@@ -5382,7 +5593,10 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
 
   int version_to_write = 0;
 
-  if( have_res_uncerts || have_geometry || have_provenance )
+  if( efficiencyMultiple() != 1.0 )
+  {
+    version_to_write = 8;
+  }else if( have_res_uncerts || have_geometry || have_provenance )
   {
     version_to_write = 7;
   }else if( m_ceeloResponse || (m_measuredPoints && !m_measuredPoints->empty()) )
@@ -5663,6 +5877,15 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, doc, *m_ceeloResponse );
 
+  // Only when no response carries it (see #efficiencyMultiple).
+  if( m_efficiencyMultiple )
+  {
+    assert( !m_ceeloResponse );
+    snprintf( buffer, sizeof(buffer), "%.17g", *m_efficiencyMultiple );
+    const char *val = doc->allocate_string( buffer );
+    base_node->append_node( doc->allocate_node( node_element, "EfficiencyMultiple", val ) );
+  }
+
   // The geometry is written alongside a response, not just instead of one - see the same note in
   //  drfExtraToXmlString().  A response carries its own descriptor, but detaching it must not be
   //  what loses the detector its shape.
@@ -5706,7 +5929,7 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse invalid version" );
 
   if( version > sm_xmlSerializationVersion )
-    throw runtime_error( "Invalid DetectorPeakResponse version" );
+    throw XmlUtils::FormatTooNew( "Invalid DetectorPeakResponse version" );
 
   const xml_node<char> *node = parent->first_node( "Name", 4 );
   if( !node || !node->value() )
@@ -5828,9 +6051,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }else if( compare(node->value(),node->value_size(),"DefaultRelativeEfficiencyDrf",28,false) )
   {
     m_efficiencySource = DrfSource::DefaultRelativeEfficiencyDrf;
+  }else if( compare(node->value(),node->value_size(),"UserImportedEfficiencyCsvDrf",28,false) )
+  {
+    // Written by #toXml for this source; it used to be read back as UserImportedIntrisicEfficiencyDrf.
+    m_efficiencySource = DrfSource::UserImportedEfficiencyCsvDrf;
   }else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
-          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false)
-          || compare(node->value(),node->value_size(),"UserImportedEfficiencyCsvDrf",28,false)  )
+          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
   {
     m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
   }else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false)
@@ -6127,9 +6353,25 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }
 
   assignCeeloResponse( nullptr );
+  m_efficiencyMultiple.reset();  //after detaching, which would have kept the old response's scale
   node = parent->first_node( "CeeLoResponse", 13 );
   if( node )
     assignCeeloResponse( parse_ceelo_response_node( node ) );  //throws on invalid content
+
+  // Version 8; an attached response carries the multiple itself, so toXml never writes both.
+  node = parent->first_node( "EfficiencyMultiple", 18 );
+  if( node )
+  {
+    double multiple = 1.0;
+    if( !SpecUtils::parse_double( node->value(), node->value_size(), multiple )
+        || !(multiple > 0.0) || !std::isfinite(multiple) )
+      throw runtime_error( "DetectorPeakResponse: invalid EfficiencyMultiple" );
+
+    if( m_ceeloResponse )
+      throw runtime_error( "DetectorPeakResponse: an EfficiencyMultiple beside a CeeLoResponse,"
+                           " which carries its own" );
+    m_efficiencyMultiple = (multiple != 1.0) ? std::optional<double>( multiple ) : std::nullopt;
+  }//if( node )
 
   // The stated physical geometry (version 7).  Read even when a response is attached (whose own
   //  descriptor `geometry()` prefers), so detaching the response leaves the geometry behind.
@@ -6193,6 +6435,14 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: detector setback"
               " of LHS (%1.8E) doesnt match RHS (%1.8E)",
              lhs.m_detectorSetback, rhs.m_detectorSetback );
+    throw runtime_error(buffer);
+  }
+
+  if( fabs(lhs.efficiencyMultiple() - rhs.efficiencyMultiple()) > 1.0E-6*lhs.efficiencyMultiple() )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency multiple"
+              " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.efficiencyMultiple(), rhs.efficiencyMultiple() );
     throw runtime_error(buffer);
   }
 
@@ -6510,6 +6760,36 @@ double DetectorPeakResponse::geometricEfficiency( const double distance ) const
 }//geometricEfficiency(...)
 
 
+double DetectorPeakResponse::relativeEfficiencyIeee325() const
+{
+  // IEEE 325: Co-60 1332.49 keV, point source on axis 25 cm from the detector face; a 3x3 inch
+  //  NaI(Tl) crystal gives 1.2E-3 full-energy-peak counts per emitted gamma there.
+  const float co60_energy = 1332.49f;
+  const double nai3x3_abs_eff = 1.2E-3;
+
+  if( !isValid() || isFixedGeometry() )
+    return -1.0;
+
+  // A curve whose stated range stops short of 1332 keV would be extrapolated - not a number to quote.
+  const bool has_range = ((m_lowerEnergy != 0.0) || (m_upperEnergy != 0.0));
+  if( has_range && ((co60_energy < m_lowerEnergy) || (co60_energy > m_upperEnergy)) )
+    return -1.0;
+
+  try
+  {
+    const double eff = efficiency( co60_energy, 25.0*PhysicalUnits::cm );
+    if( !std::isfinite(eff) || (eff <= 0.0) )
+      return -1.0;
+
+    return 100.0 * eff / nai3x3_abs_eff;
+  }catch( std::exception & )
+  {
+  }
+
+  return -1.0;
+}//double relativeEfficiencyIeee325() const
+
+
 const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::getEnergyEfficiencyPair() const
 {
   return m_efficiency->energyEfficiencies();
@@ -6605,11 +6885,35 @@ float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
 }//float expOfLogPowerSeriesEfficiency(...)
 
 
+double DetectorPeakResponse::expOfLogPowerSeriesEfficiencyUncert( const float energy,
+                                                const std::vector<float> &coefs,
+                                                const std::vector<float> &covariance )
+{
+  const size_t ncoef = coefs.size();
+  if( !ncoef || (covariance.size() != ncoef*ncoef) || !(energy > 0.0f) )
+    return -1.0;
+
+  const double eff = expOfLogPowerSeriesEfficiency( energy, coefs );
+  const double lnx = std::log( static_cast<double>(energy) );
+
+  vector<double> jac( ncoef );
+  for( size_t i = 0; i < ncoef; ++i )
+    jac[i] = eff * std::pow( lnx, static_cast<double>(i) );
+
+  double variance = 0.0;
+  for( size_t i = 0; i < ncoef; ++i )
+    for( size_t j = 0; j < ncoef; ++j )
+      variance += jac[i] * jac[j] * covariance[i*ncoef + j];
+
+  return (std::isfinite(variance) && (variance >= 0.0)) ? std::sqrt( variance ) : -1.0;
+}//expOfLogPowerSeriesEfficiencyUncert(...)
+
+
 float DetectorPeakResponse::farFieldIntrinsicEfficiency( const float energy ) const
 {
   // The curve handles the energy/units division and the form dispatch;
-  //  throws if undefined.
-  float eff = m_efficiency->efficiency( energy );
+  //  throws if undefined.  It is the one element's; see #efficiencyMultiple.
+  float eff = static_cast<float>( efficiencyMultiple() * m_efficiency->efficiency( energy ) );
 
   // Apply absolute-to-intrinsic correction if needed (energy is in keV here)
   if( m_geomType == EffGeometryType::FarFieldAbsolute )
@@ -6631,12 +6935,13 @@ std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyF
   const DetectorEfficiencyCurve curve = *m_efficiency;
   const double lowerEnergy = m_lowerEnergy;
   const double upperEnergy = m_upperEnergy;
+  const double multiple = efficiencyMultiple();  //the curve is the one element's
 
   // Pairs are clamped to the data range internally (akima); for the formula
   //  and exp-of-log forms we additionally clamp to the DRF energy range.
   const bool clampToRange = (curve.form() != kEnergyEfficiencyPairs);
 
-  return [curve, lowerEnergy, upperEnergy, clampToRange]( float energy ) -> float {
+  return [curve, lowerEnergy, upperEnergy, clampToRange, multiple]( float energy ) -> float {
     if( clampToRange )
     {
       if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
@@ -6644,7 +6949,7 @@ std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyF
       else if( (upperEnergy > 10.0) && (energy > upperEnergy) )
         energy = static_cast<float>( upperEnergy );
     }
-    return curve.efficiency( energy );
+    return static_cast<float>( multiple * curve.efficiency( energy ) );
   };
 }//std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyFcn() const
 
@@ -7547,7 +7852,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
       float eff = 0.0f;
       try
       {
-        eff = m_totalEfficiency->efficiency( energy );
+        eff = totalIntrinsicEfficiency( energy );
       }catch( std::exception & )
       {
         continue;

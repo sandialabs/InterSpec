@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <optional>
 #include <set>
 #include <array>
 #include <deque>
@@ -61,6 +62,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/CascadeSummingCalc.h"
@@ -175,28 +177,57 @@ void load_custom_nuc_mixes()
   
   ReferenceLinePredef::load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines, nullptr );
   
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-  
-  string user_data_dir;
-  
-  // `InterSpec::writableDataDirectory()` will throw if it hasnt been set.
-  //  - e.g., in testing or batch mode
+  // The user's and packages' sources over InterSpec's own (`ref_lines/*.xml`, and the older single
+  //  `add_ref_line.xml` in the user data folder): each name from the file UserLibrary::resolve picks
+  //  (the user's choice, else the user's own over a package's over InterSpec's).  Disabled files,
+  //  and package files needing a newer InterSpec, are left out by UserLibrary::items.
   try
   {
-    user_data_dir = InterSpec::writableDataDirectory();
-  }catch( std::exception & )
+    const vector<UserLibrary::Item> items = UserLibrary::items( "ref_lines" );
+    map<string,pair<map<string,ReferenceLinePredef::NucMix>,map<string,ReferenceLinePredef::CustomSrcLines>>> per_file;
+    map<string,string> names;  //the loader's (normalized) key -> the name as written, which UserLibrary uses
+    for( const UserLibrary::Item &item : items )
+    {
+      if( item.source.kind == UserLibrary::SourceKind::BuiltIn )
+        continue;
+      try
+      {
+        auto &file_maps = per_file[item.found.path];
+        ReferenceLinePredef::load_ref_line_file( item.found.path, file_maps.first, file_maps.second, nullptr );
+        for( const auto &m : file_maps.first )
+          names[m.first] = m.second.m_name.empty() ? m.first : m.second.m_name;
+        for( const auto &l : file_maps.second )
+          names[l.first] = l.second.m_name.empty() ? l.first : l.second.m_name;
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to load reference lines from '" << item.found.path << "': " << e.what() << endl;
+        per_file.erase( item.found.path );
+      }
+    }//for( loop over reference-line files )
+
+    for( const pair<const string,string> &name : names )
+    {
+      const string &key = name.first;
+      const optional<UserLibrary::Item> chosen = UserLibrary::resolve( "ref_lines", name.second, items );
+      if( !chosen || (chosen->source.kind == UserLibrary::SourceKind::BuiltIn) )
+        continue;  //InterSpec's own, already loaded
+      const auto file_maps = per_file.find( chosen->found.path );
+      if( file_maps == end(per_file) )
+        continue;
+
+      nuc_mixes->erase( key );
+      custom_lines->erase( key );
+      const auto mix = file_maps->second.first.find( key );
+      if( mix != end(file_maps->second.first) )
+        (*nuc_mixes)[key] = mix->second;
+      const auto lines = file_maps->second.second.find( key );
+      if( lines != end(file_maps->second.second) )
+        (*custom_lines)[key] = lines->second;
+    }//for( loop over names )
+  }catch( std::exception &e )
   {
-  }//try / catch
-  
-  if( !user_data_dir.empty() )
-  {
-    const string custom_lines_path = SpecUtils::append_path( user_data_dir, "add_ref_line.xml" );
-    
-    // Any duplicate names, will overwrite what comes with InterSpec
-    if( SpecUtils::is_file( custom_lines_path ) )
-      ReferenceLinePredef::load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines, nullptr );
-  }//if( !user_data_dir.empty() )
-#endif
+    cerr << "Failed to load user and package reference lines: " << e.what() << endl;
+  }
   
   // Look for fission data
   auto fission_products = make_shared<vector<FissionDataSrcFile>>();

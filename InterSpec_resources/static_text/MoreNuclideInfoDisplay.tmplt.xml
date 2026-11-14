@@ -23,7 +23,7 @@ ${</if-have-prev>}
   </div>
 
   <div class="MoreNucInfoSectionContent">
-    <table class="MoreNucInfoPropsTable">
+    <table class="MoreNucInfoPropsTable SelectableTxt">
       <tr><td>Symbol</td><td><sup>${mass-number}${meta-state}</sup>${element-symbol}</td></tr>
       <tr><td>Names</td><td> ${element}-${mass-number}${meta-state}, ${element-symbol}-${mass-number}${meta-state}</td></tr>
       <tr><td>Half-life (t<sub>1/2</sub>)</td><td>${half-life}</td></tr>

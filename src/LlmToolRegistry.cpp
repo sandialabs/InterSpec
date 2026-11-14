@@ -60,6 +60,8 @@
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfLibrary.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/MaterialDB.h"
@@ -8548,6 +8550,60 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 }//nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
   
 
+namespace
+{
+  /** The detectors in the Detector Efficiency dialog's Library - InterSpec's own, the user data folder,
+   user library packages, and folders the user added (as DrfSelect lists them) - one per name: the one a
+   lookup by that name gets (UserLibrary::resolve: the user's recorded choice, else the user's own over a
+   package's over InterSpec's).  Hidden locations and disabled items are left out.  Sorted by name.
+   */
+  vector<pair<string,DrfLibrary::Entry>> library_detectors_by_name( InterSpec *interspec )
+  {
+    vector<DrfLibrary::Location> locations = DrfLibrary::standardLocations();
+    if( interspec )
+    {
+      try
+      {
+        locations = DrfSelect::libraryLocations( interspec );
+      }catch( std::exception & )
+      {
+      }
+    }//if( interspec )
+
+    DrfLibrary::ScanRequest request;
+    request.locations = locations;
+    const DrfLibrary::Snapshot snapshot = DrfLibrary::scan( request );
+
+    map<string,vector<const DrfLibrary::Entry *>> by_name;
+    for( const DrfLibrary::Entry &e : snapshot.entries )
+    {
+      if( !e.hidden && e.summary && !e.summary->name.empty() )
+        by_name[e.summary->name].push_back( &e );
+    }
+
+    const vector<UserLibrary::Item> items = UserLibrary::items( "drf" );
+    vector<pair<string,DrfLibrary::Entry>> answer;
+    for( const pair<const string,vector<const DrfLibrary::Entry *>> &named : by_name )
+    {
+      const DrfLibrary::Entry *pick = named.second.front();
+      const optional<UserLibrary::Item> chosen = UserLibrary::resolve( "drf", named.first, items );
+      if( chosen )
+      {
+        const string chosen_path = SpecUtils::lexically_normalize_path( chosen->found.path );
+        for( const DrfLibrary::Entry *e : named.second )
+        {
+          if( SpecUtils::lexically_normalize_path( e->path ) == chosen_path )
+            pick = e;
+        }
+      }//if( chosen )
+      answer.emplace_back( named.first, *pick );
+    }//for( loop over names )
+
+    return answer;
+  }//library_detectors_by_name(...)
+}//namespace
+
+
   /** cooresponds to the `available_detector_efficiency_functions` tool call, which has the description:
    "Returns a list of detector efficiency function names, and the detector efficiency source, that can be loaded to the foreground spectrum."
  */
@@ -8567,105 +8623,27 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
       currentDet = meas->detector();
   }
 
-  // Get available RelEff detector files
+  // The detectors in the Detector Efficiency dialog's Library (InterSpec's own, the user data folder,
+  //  user library packages, and folders the user added), one per name.
   try
   {
-    const std::vector<std::string> relEffFiles = DrfSelect::potential_rel_eff_det_files();
-
-    for( const std::string &filepath : relEffFiles )
+    for( const pair<string,DrfLibrary::Entry> &named : library_detectors_by_name( interspec ) )
     {
-      try
-      {
-        std::vector<std::string> credits;
-        std::vector<std::shared_ptr<DetectorPeakResponse>> drfs;
+      if( addedDetectors.count( named.first ) )
+        continue;
 
-#ifdef _WIN32
-        const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
-        std::ifstream input( wfilepath.c_str(), std::ios_base::binary | std::ios_base::in );
-#else
-        std::ifstream input( filepath.c_str(), std::ios_base::binary | std::ios_base::in );
-#endif
+      json detectorInfo;
+      detectorInfo["name"] = named.first;
+      detectorInfo["source"] = "DefaultAvailable";
+      if( named.second.summary && !named.second.summary->description.empty() )
+        detectorInfo["description"] = named.second.summary->description;
 
-        if( !input.is_open() )
-          continue;
-
-        DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
-
-        for( const std::shared_ptr<DetectorPeakResponse> &drf : drfs )
-        {
-          if( !drf || !drf->isValid() || drf->name().empty() )
-            continue;
-
-          // Skip if we've already added this detector
-          if( addedDetectors.count(drf->name()) )
-            continue;
-
-          json detectorInfo;
-          detectorInfo["name"] = drf->name();
-          detectorInfo["source"] = "DefaultAvailable";
-          if( !drf->description().empty() )
-            detectorInfo["description"] = drf->description();
-
-          result.push_back( detectorInfo );
-          addedDetectors.insert( drf->name() );
-        }
-      }catch( std::exception &e )
-      {
-        // Skip files that can't be parsed
-        std::cerr << "Error parsing RelEff file " << filepath << ": " << e.what() << std::endl;
-      }
+      result.push_back( detectorInfo );
+      addedDetectors.insert( named.first );
     }
   }catch( std::exception &e )
   {
-    std::cerr << "Error getting RelEff detector files: " << e.what() << std::endl;
-  }
-
-  // Get available GADRAS detector directories
-  try
-  {
-    const std::vector<std::string> gadrasDirs = DrfSelect::potential_gadras_det_dirs( interspec );
-
-    for( const std::string &dir : gadrasDirs )
-    {
-      try
-      {
-        const std::vector<std::string> drfDirs = DrfSelect::recursive_list_gadras_drfs( dir );
-
-        for( const std::string &drfDir : drfDirs )
-        {
-          try
-          {
-            std::shared_ptr<DetectorPeakResponse> drf = DrfSelect::initAGadrasDetectorFromDirectory( drfDir );
-
-            if( !drf || !drf->isValid() || drf->name().empty() )
-              continue;
-
-            // Skip if we've already added this detector
-            if( addedDetectors.count(drf->name()) )
-              continue;
-
-            json detectorInfo;
-            detectorInfo["name"] = drf->name();
-            detectorInfo["source"] = "DefaultAvailable";
-            if( !drf->description().empty() )
-              detectorInfo["description"] = drf->description();
-
-            result.push_back( detectorInfo );
-            addedDetectors.insert( drf->name() );
-          }catch( std::exception &e )
-          {
-            // Skip directories that can't be parsed
-            std::cerr << "Error parsing GADRAS DRF from " << drfDir << ": " << e.what() << std::endl;
-          }
-        }
-      }catch( std::exception &e )
-      {
-        std::cerr << "Error listing GADRAS DRFs in " << dir << ": " << e.what() << std::endl;
-      }
-    }
-  }catch( std::exception &e )
-  {
-    std::cerr << "Error getting GADRAS detector directories: " << e.what() << std::endl;
+    std::cerr << "Error listing the detector library: " << e.what() << std::endl;
   }
 
   // Add currently loaded detector at the end if it exists and hasn't been added yet
@@ -8983,85 +8961,28 @@ std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
     return nullptr;
   };
 
-  // Try loading based on source hint
+  // Try loading based on source hint: the detector of this name in the Detector Efficiency dialog's
+  //  Library (the one a lookup by name gets - see library_detectors_by_name).
   if( sourceHint == "DefaultAvailable" || sourceHint == "AnySource" )
   {
-    // Try from RelEff files
     try
     {
-      const std::vector<std::string> relEffFiles = DrfSelect::potential_rel_eff_det_files();
-      for( const std::string& filepath : relEffFiles )
+      for( const pair<string,DrfLibrary::Entry> &named : library_detectors_by_name( interspec ) )
       {
-        try
-        {
-          std::vector<std::string> credits;
-          std::vector<std::shared_ptr<DetectorPeakResponse>> drfs;
+        if( named.first != identifier )
+          continue;
 
-#ifdef _WIN32
-          const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
-          std::ifstream input( wfilepath.c_str(), std::ios_base::binary | std::ios_base::in );
-#else
-          std::ifstream input( filepath.c_str(), std::ios_base::binary | std::ios_base::in );
-#endif
-
-          if( input.is_open() )
-          {
-            DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
-            for( const auto& det : drfs )
-            {
-              if( det && det->isValid() && det->name() == identifier )
-              {
-                drf = det;
-                loadedFrom = "DefaultAvailable";
-                break;
-              }
-            }
-          }
-          if( drf )
-            break;
-        }catch( std::exception & )
+        const shared_ptr<const DetectorPeakResponse> det = DrfLibrary::loadDrf( named.second, nullptr );
+        if( det && det->isValid() )
         {
+          drf = make_shared<DetectorPeakResponse>( *det );
+          loadedFrom = "DefaultAvailable";
         }
+        break;
       }
-    }catch( std::exception & )
+    }catch( std::exception &e )
     {
-    }
-
-    // Try from GADRAS directories
-    if( !drf && interspec )
-    {
-      try
-      {
-        const std::vector<std::string> gadrasDirs = DrfSelect::potential_gadras_det_dirs( interspec );
-        for( const std::string& dir : gadrasDirs )
-        {
-          try
-          {
-            const std::vector<std::string> drfDirs = DrfSelect::recursive_list_gadras_drfs( dir );
-            for( const std::string& drfDir : drfDirs )
-            {
-              try
-              {
-                std::shared_ptr<DetectorPeakResponse> det = DrfSelect::initAGadrasDetectorFromDirectory( drfDir );
-                if( det && det->isValid() && det->name() == identifier )
-                {
-                  drf = det;
-                  loadedFrom = "DefaultAvailable";
-                  break;
-                }
-              }catch( std::exception & )
-              {
-              }
-            }
-            if( drf )
-              break;
-          }catch( std::exception & )
-          {
-          }
-        }
-      }catch( std::exception & )
-      {
-      }
+      std::cerr << "Error loading '" << identifier << "' from the detector library: " << e.what() << std::endl;
     }
   }
 
@@ -9515,6 +9436,10 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
     result["crystalDiameter"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalDiameter(), 4 );
     result["crystalSetbackBehindFace"] = PhysicalUnits::printToBestLengthUnits( drf->modeledCrystalSetback(), 4 );
   }
+
+  // Every efficiency is this times the one modeled element's (e.g., identical crystals summed)
+  if( drf->efficiencyMultiple() != 1.0 )
+    result["efficiencyScalarMultiple"] = drf->efficiencyMultiple();
 
   // Hash and source
   result["hash"] = drf->hashValue();

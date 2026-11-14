@@ -1085,7 +1085,11 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     for( const pair<string,string> &key_val : spec_chart_js_and_css )
       data.erase(key_val.first);
-    
+
+    // Lets the summary templates add their back-decay tables only when some file used back-decay.
+    if( data.contains("BackDecay") )
+      summary_json["AnyBackDecay"] = true;
+
     summary_json["Files"].push_back( data );
    }//for( loop over work items of this input file )
   }//for( loop over input files )

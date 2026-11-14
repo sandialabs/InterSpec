@@ -7,6 +7,7 @@
 #include <mutex>
 #include <cctype>
 #include <limits>
+#include <optional>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -19,6 +20,7 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/LlmToolRegistry.h"
 
 using namespace std;
@@ -535,18 +537,46 @@ std::vector<SkillInfo> loadSkills()
 
   std::map<std::string, SkillInfo> skills_by_name;
 
-  // Directories are in increasing precedence, so a later skill with the same name replaces an earlier one.
-  for( const std::string &dir : knowledgeDirectories() )
+  // One skill per name, from InterSpec's own, user library packages, and the user's own: the user's
+  //  recorded choice, else the user's own over a package's over InterSpec's (see UserLibrary::resolve).
+  //  Disabled skills, and package skills needing a newer InterSpec, are left out.
+  const std::vector<UserLibrary::Item> items = UserLibrary::items( "llm_skill" );
+  for( const UserLibrary::Item &item : items )
   {
-    for( SkillInfo &skill : loadSkillsFromKnowledgeDir( dir ) )
+    for( const std::string &name : item.names )
     {
-      const auto pos = skills_by_name.find( skill.canonical_name );
-      if( pos != end(skills_by_name) )
-        cerr << "Info: KnowledgeBase skill '" << skill.canonical_name << "' from '" << skill.file_path
-             << "' overriding '" << pos->second.file_path << "'" << endl;
-      skills_by_name[skill.canonical_name] = std::move(skill);
+      if( skills_by_name.count( name ) )
+        continue;
+
+      const std::optional<UserLibrary::Item> chosen = UserLibrary::resolve( "llm_skill", name, items );
+      if( !chosen )
+        continue;
+
+      for( SkillInfo &skill : loadSkillsFromKnowledgeDir( chosen->found.path ) )
+      {
+        if( skill.canonical_name == name )
+          skills_by_name[name] = std::move( skill );
+      }
+    }//for( loop over the item's names )
+  }//for( loop over items )
+
+  // A deployment's mounted config directory (--llm-config-dir) takes precedence over everything.
+  const std::string config_dir = LlmConfig::configDirectory();
+  if( !config_dir.empty() )
+  {
+    for( const char * const sub_dir : { "llm_knowledge", "gamma_spec_skills/llm_knowledge" } )
+    {
+      const std::string dir = SpecUtils::append_path( config_dir, sub_dir );
+      for( SkillInfo &skill : loadSkillsFromKnowledgeDir( dir ) )
+      {
+        const auto pos = skills_by_name.find( skill.canonical_name );
+        if( pos != end(skills_by_name) )
+          cerr << "Info: KnowledgeBase skill '" << skill.canonical_name << "' from '" << skill.file_path
+               << "' overriding '" << pos->second.file_path << "'" << endl;
+        skills_by_name[skill.canonical_name] = std::move( skill );
+      }
     }
-  }//for( const std::string &dir : knowledgeDirectories() )
+  }//if( !config_dir.empty() )
 
   std::vector<SkillInfo> loaded_skills;
   loaded_skills.reserve( skills_by_name.size() );

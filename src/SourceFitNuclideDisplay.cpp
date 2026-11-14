@@ -30,6 +30,8 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <iostream>
+#include <optional>
 #include <algorithm>
 #include <functional>
 
@@ -39,12 +41,17 @@
 #include <Wt/WLineEdit.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WModelIndex.h>
+#include <Wt/WPushButton.h>
 #include <Wt/WContainerWidget.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/DecayWindow.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -66,6 +73,82 @@ namespace
     RefreshGuard( bool &flag ) : m_flag(flag), m_prev(flag){ m_flag = true; }
     ~RefreshGuard(){ m_flag = m_prev; }
   };
+
+
+  /** PhysicalUnits::printToBestActivityUnits, but also for negative values (which a back-decayed
+   activity can be, when a fitted ancestor's in-growth exceeds the fitted activity). */
+  string print_signed_activity( const double activity, const int ndecimal, const bool curies )
+  {
+    return string( (activity < 0.0) ? "-" : "" )
+           + PhysicalUnits::printToBestActivityUnits( fabs(activity), ndecimal, curies );
+  }
+
+
+  /** What to show for a model row's activity at the back-decay reference time. */
+  struct BackDecayText
+  {
+    /** False when back-decay is not enabled (or there is no result for the row). */
+    bool show = false;
+
+    /** True if the activity was determined, in which case `value` is set. */
+    bool ok = false;
+
+    /** E.g., "2.350 mCi ± 0.04 mCi", in the same units as the rows activity. */
+    string value;
+
+    /** The reference time, and any note or error. */
+    WString tooltip;
+  };//struct BackDecayText
+
+
+  BackDecayText back_decay_text( const SourceFitModel &model, const int row,
+                                 const ShieldingSourceFitCalc::BackDecayResults *bd )
+  {
+    BackDecayText answer;
+    if( !bd )
+      return answer;
+
+    if( !bd->error.empty() )
+    {
+      answer.show = true;
+      answer.tooltip = WString::fromUTF8( bd->error );
+      return answer;
+    }//if( the whole calculation failed )
+
+    const SandiaDecay::Nuclide * const nuc = model.nuclide( row );
+    const ShieldingSourceFitCalc::BackDecaySourceResult * const res = nuc ? bd->source( nuc ) : nullptr;
+    if( !res )
+      return answer;
+
+    answer.show = true;
+
+    const string when = ShieldingSourceFitCalc::back_decay_time_str( bd->ref_time );
+    const char *key = (bd->time_before_meas >= 0.0) ? "sfn-tt-act-tref-before" : "sfn-tt-act-tref-after";
+    answer.tooltip = WString::tr( key )
+                .arg( when.empty() ? WString::tr("sfn-tref-unknown-date") : WString::fromUTF8(when) )
+                .arg( ShieldingSourceDisplay::backDecayDurationText( fabs(bd->time_before_meas) ) )
+                .arg( SpecUtils::printCompact( fabs(res->half_lives), 3 ) )
+                .arg( nuc->symbol );
+    if( !res->note.empty() )
+      answer.tooltip = WString("{1} {2}").arg( answer.tooltip ).arg( WString::fromUTF8(res->note) );
+
+    if( res->status != ShieldingSourceFitCalc::BackDecayStatus::Ok )
+      return answer;
+
+    answer.ok = true;
+
+    // In the same units as the card's activity (the model holds total activities, also for trace sources).
+    const double value = res->activity;
+    const std::optional<double> &uncert = res->activity_uncertainty;
+
+    const bool curies = model.displayCuries();
+    const string postfix = DetectorPeakResponse::det_eff_geom_type_postfix( model.detType() );
+    answer.value = print_signed_activity( value, 3, curies ) + postfix;
+    if( uncert.has_value() && (*uncert > 0.0) )
+      answer.value += " \xC2\xB1 " + PhysicalUnits::printToBestActivityUnits( *uncert, 2, curies ) + postfix;
+
+    return answer;
+  }//BackDecayText back_decay_text(...)
 }//namespace
 
 
@@ -148,13 +231,14 @@ public:
     m_fitActivityCB->addStyleClass( "NucFitCb" );
     m_fitActivityCB->changed().connect( this, &NuclideCard::onFitActivityToggled );
 
-    // ---- mass + act(T0) line ----
+    // ---- mass + act(T_ref) line ----
     WContainerWidget *massLine = fields->addNew<WContainerWidget>();
     massLine->addStyleClass( "NucMass" );
+    massLine->addStyleClass( "SelectableTxt" );
     m_massLabel = massLine->addNew<WText>();
-    m_actT0Label = massLine->addNew<WText>();
-    m_actT0Label->addStyleClass( "NucT0" );
-    m_actT0Label->hide();
+    m_actRefLabel = massLine->addNew<WText>();
+    m_actRefLabel->addStyleClass( "NucTRef" );
+    m_actRefLabel->hide();
 
     // ---- age row ----
     m_ageRow = fields->addNew<WContainerWidget>();
@@ -247,29 +331,28 @@ public:
       m_fitActivityCB->hide();
     }
 
-    // Mass + act(T0)
+    // Mass + act(T_ref)
     const bool fitAct = m_model->fitActivity( row );
     m_massLabel->setText( WString("{1} {2}")
          .arg( WString::tr( fitAct ? "sfn-mass-approx" : "sfn-mass" ) )
          .arg( Wt::asString( m_model->data( m_model->index(m_nuc, SourceFitModel::kIsotopeMass) ) ) ) );
 
-    const bool ageable = !PeakDef::ageFitNotAllowed( m_nuc );
+    // Activity at the back-decay reference time, when that option is enabled.
+    const BackDecayText bdtxt = back_decay_text( *m_model, row, m_disp->m_backDecay.get() );
+    m_actRefLabel->setHidden( !bdtxt.show );
+    if( bdtxt.show )
+    {
+      if( bdtxt.ok )
+        m_actRefLabel->setText( WString("{1}={2}").arg( WString::tr("sfn-act-tref") )
+                                                  .arg( WString::fromUTF8(bdtxt.value) ) );
+      else
+        m_actRefLabel->setText( WString("{1}: {2}").arg( WString::tr("sfn-act-tref") )
+                                                   .arg( WString::tr("sfn-act-tref-undetermined") ) );
+      m_actRefLabel->toggleStyleClass( "ErrorTxt", !bdtxt.ok );
+      m_actRefLabel->setToolTip( bdtxt.tooltip );
+    }//if( bdtxt.show )
 
-    if( ageable )
-    {
-      const double activity = m_model->activity( row );
-      const double age = m_model->age( row );
-      const double hl = m_nuc->halfLife;
-      // Activity at T0 (production) that decays to the current activity at the given age.
-      const double actT0 = (hl > 0.0) ? (activity * std::exp( age * 0.6931471805599453 / hl )) : activity;
-      string t0str = PhysicalUnits::printToBestActivityUnits( actT0, 3, m_model->displayCuries() );
-      t0str += DetectorPeakResponse::det_eff_geom_type_postfix( m_model->detType() );
-      m_actT0Label->setText( WString("{1}={2}").arg( WString::tr("sfn-act-t0") ).arg( WString::fromUTF8(t0str) ) );
-      m_actT0Label->setHidden( age <= 0.0 );
-    }else
-    {
-      m_actT0Label->hide();
-    }
+    const bool ageable = !PeakDef::ageFitNotAllowed( m_nuc );
 
     // Age row
     if( ageable )
@@ -539,6 +622,7 @@ protected:
     {
       WContainerWidget *chip = list->addNew<WContainerWidget>();
       chip->addStyleClass( "NpChip" );
+      chip->addStyleClass( "SelectableTxt" );
       WText *d = chip->addNew<WText>( WString::fromUTF8(kv.first->symbol) );
       d->addStyleClass( "NpDaughter" );
 
@@ -575,7 +659,7 @@ protected:
   Wt::WLineEdit *m_activityEdit;
   Wt::WCheckBox *m_fitActivityCB;
   Wt::WText *m_massLabel;
-  Wt::WText *m_actT0Label;
+  Wt::WText *m_actRefLabel;           //!< "act(T_ref)=..." - activity at the back-decay reference time
   Wt::WContainerWidget *m_ageRow;
   Wt::WLineEdit *m_ageEdit;
   Wt::WCheckBox *m_fitAgeCB;
@@ -596,6 +680,10 @@ SourceFitNuclideDisplay::SourceFitNuclideDisplay( SourceFitModel *model,
     m_interspec( interspec ),
     m_nestPeaks( nestPeaks ),
     m_cardsHolder( nullptr ),
+    m_backDecayFoot( nullptr ),
+    m_backDecayFootTxt( nullptr ),
+    m_backDecayFootSpan( nullptr ),
+    m_showDecayBtn( nullptr ),
     m_refreshing( false )
 {
   addStyleClass( "SourceNuclideDisplay" );
@@ -604,6 +692,24 @@ SourceFitNuclideDisplay::SourceFitNuclideDisplay( SourceFitModel *model,
 
   m_cardsHolder = addNew<WContainerWidget>();
   m_cardsHolder->addStyleClass( "NucCardsHolder" );
+
+  // Only shown while back-decay is in use: the reference time, and a link that opens the decay
+  //  tool from it (see updateBackDecayFooter).
+  m_backDecayFoot = addNew<WContainerWidget>();
+  m_backDecayFoot->addStyleClass( "NucFoot" );
+  WContainerWidget * const footInfo = m_backDecayFoot->addNew<WContainerWidget>();
+  footInfo->addStyleClass( "NucFootInfo" );
+  m_backDecayFootTxt = footInfo->addNew<WText>();
+  m_backDecayFootTxt->addStyleClass( "NucFootRef" );
+  m_backDecayFootTxt->addStyleClass( "SelectableTxt" );
+  m_backDecayFootSpan = footInfo->addNew<WText>( WString(), TextFormat::Plain );
+  m_backDecayFootSpan->addStyleClass( "NucFootSpan" );
+  m_backDecayFootSpan->addStyleClass( "SelectableTxt" );
+  m_showDecayBtn = m_backDecayFoot->addNew<WPushButton>( WString::tr("sfn-show-decay") );
+  m_showDecayBtn->addStyleClass( "SsdLink ShowDecayLink" );
+  m_showDecayBtn->setToolTip( WString::tr("sfn-tt-show-decay") );
+  m_showDecayBtn->clicked().connect( this, &SourceFitNuclideDisplay::showDecayFromRefTime );
+  m_backDecayFoot->hide();
 
   // Observe the model; SourceFitModel stays the single source of truth.
   model->dataChanged().connect( this, &SourceFitNuclideDisplay::handleModelChanged );
@@ -639,6 +745,111 @@ void SourceFitNuclideDisplay::handleModelChanged()
 {
   reconcileCards();
 }
+
+
+void SourceFitNuclideDisplay::setBackDecayProvider( BackDecayProvider provider )
+{
+  m_backDecayProvider = std::move( provider );
+  m_backDecay.reset();
+
+  // Clearing the provider (as on destruction of its owner) does not refresh the cards.
+  if( m_backDecayProvider )
+    reconcileCards();
+}//void setBackDecayProvider( BackDecayProvider provider )
+
+
+void SourceFitNuclideDisplay::updateBackDecayFooter()
+{
+  // (An error - e.g., a date/time with a spectrum that has no start time - is shown by the option's
+  //  status text and on each card, so there is nothing for the footer to offer.)
+  const ShieldingSourceFitCalc::BackDecayResults * const bd = m_backDecay.get();
+  const bool show = bd && bd->error.empty();
+  m_backDecayFoot->setHidden( !show );
+  toggleStyleClass( "HasNucFoot", show );
+  if( !show )
+    return;
+
+  // The reference date, followed by how far it is from the measurement - or just the latter, if the
+  //  spectrum has no start time.  (In date/time mode, the date shows how the entered text was read.)
+  //  (Kept short, to fit on one line next to "Show Decay" at the tool's default size.)
+  const double dt = bd->time_before_meas;
+  const string when = ShieldingSourceFitCalc::back_decay_time_str( bd->ref_time );
+  const string duration = ShieldingSourceDisplay::backDecayDurationText( fabs(dt) );
+  if( when.empty() )
+  {
+    const WString span = WString::tr( (dt >= 0.0) ? "ssd-back-decay-before" : "ssd-back-decay-after" ).arg( duration );
+    m_backDecayFootTxt->setText( WString::tr("sfn-foot-tref").arg( span ) );
+    m_backDecayFootSpan->setText( WString() );
+  }else
+  {
+    m_backDecayFootTxt->setText( WString::tr("sfn-foot-tref").arg( WString::fromUTF8(when) ) );
+    m_backDecayFootSpan->setText( WString::tr( (dt >= 0.0) ? "sfn-foot-before" : "sfn-foot-after" ).arg( duration ) );
+  }//if( when.empty() ) / else
+  m_backDecayFootSpan->setHidden( when.empty() );
+
+  m_showDecayBtn->setEnabled( !decayToolStart( *bd ).empty() );
+}//void updateBackDecayFooter()
+
+
+vector<SourceFitNuclideDisplay::DecayToolSource>
+                SourceFitNuclideDisplay::decayToolStart( const ShieldingSourceFitCalc::BackDecayResults &bd )
+{
+  // Start at the reference time, so the decay runs through the measurement - or, for a reference
+  //  time after the measurement, start at the measurement, so it runs through the reference time.
+  const double dt = bd.time_before_meas;
+  const bool from_ref = (dt >= 0.0);
+
+  vector<DecayToolSource> answer;
+  for( const ShieldingSourceFitCalc::BackDecaySourceResult &src : bd.sources )
+  {
+    DecayToolSource start;
+    start.nuclide = src.nuclide;
+    start.activity = from_ref ? src.activity : src.activity_now;
+    start.age = from_ref ? src.age_at_ref : std::max( 0.0, src.age_at_ref + dt );
+
+    if( start.nuclide && !start.nuclide->isStable()
+       && (src.status == ShieldingSourceFitCalc::BackDecayStatus::Ok)
+       && std::isfinite(start.activity) && (start.activity > 0.0) )
+    {
+      answer.push_back( start );
+    }
+  }//for( loop over sources )
+
+  return answer;
+}//decayToolStart(...)
+
+
+void SourceFitNuclideDisplay::showDecayFromRefTime()
+{
+  // Use the current values, rather than those from the last refresh.
+  const shared_ptr<const ShieldingSourceFitCalc::BackDecayResults> bd
+                                              = m_backDecayProvider ? m_backDecayProvider() : nullptr;
+  if( !bd || !bd->error.empty() || !m_interspec )
+    return;
+
+  const vector<DecayToolSource> sources = decayToolStart( *bd );
+  if( sources.empty() )
+    return;
+
+  DecayWindow * const window = m_interspec->createDecayInfoWindow();
+  if( !window )
+    return;
+
+  // The click that got us here raises the Activity/Shielding window to the front after the decay
+  //  window is shown, so raise the decay window again on a delay (as LlmToolGui does).
+  window->doJavaScript( "setTimeout(function(){Wt.WT.AuxWindowBringToFront('" + window->id() + "');},5);" );
+
+  window->clearAllNuclides();
+
+  const double span = 3.0 * fabs( bd->time_before_meas );
+  const bool curies = m_model->displayCuries();
+  for( const DecayToolSource &src : sources )
+  {
+    const SandiaDecay::Nuclide * const nuc = src.nuclide;
+    window->addNuclide( nuc->atomicNumber, nuc->massNumber, nuc->isomerNumber, src.activity,
+                        curies, src.age, "", ((span > 0.0) ? span : -1.0) );
+  }//for( loop over sources )
+}//void showDecayFromRefTime()
 
 
 void SourceFitNuclideDisplay::handlePeakModelChanged()
@@ -692,6 +903,11 @@ SourceFitNuclideDisplay::activitySummaries() const
     if( actUncert > 0.0 )
       s.activityUncert = PhysicalUnits::printToBestActivityUnits( actUncert, 2, m_model->displayCuries() );
 
+    const BackDecayText bdtxt = back_decay_text( *m_model, i, m_backDecay.get() );
+    if( bdtxt.show )
+      s.backDecayActivity = bdtxt.ok ? bdtxt.value
+                                     : WString::tr("sfn-act-tref-undetermined").toUTF8();
+
     if( !PeakDef::ageFitNotAllowed( nuc ) )
     {
       const double age = m_model->age( i );
@@ -744,7 +960,20 @@ void SourceFitNuclideDisplay::reconcileCards()
     }
   }//for( loop over existing cards )
 
-  // 3) Refresh each surviving card's contents.
+  // 3) Refresh each surviving card's contents, with the back-decay values for the model as it is now.
+  m_backDecay.reset();
+  try
+  {
+    if( m_backDecayProvider )
+      m_backDecay = m_backDecayProvider();
+  }catch( std::exception &e )
+  {
+    cerr << "SourceFitNuclideDisplay: error computing back-decay values: " << e.what() << endl;
+    assert( 0 );  //compute_back_decay should not throw
+  }//try / catch
+
+  updateBackDecayFooter();
+
   for( int i = 0; i < n; ++i )
   {
     auto it = m_cards.find( m_model->nuclide(i) );

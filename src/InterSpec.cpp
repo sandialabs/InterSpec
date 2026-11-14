@@ -136,6 +136,10 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
+#include "InterSpec/UserLibrary.h"
+#include "InterSpec/UserLibraryWindow.h"
+#include "InterSpec/UserLibraryPackage.h"
+#include "InterSpec/UserLibraryImportDialog.h"
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -589,6 +593,10 @@ InterSpec::InterSpec()
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_colorThemeWindow( nullptr ),
+#if( USE_USER_LIBRARY )
+  m_userLibraryWindow( nullptr ),
+#endif
+  m_userLibraryChanged(),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_decayBatchCalc( nullptr ),
@@ -1029,12 +1037,7 @@ InterSpec::InterSpec()
   // wtGetPS for the vertical direction grows cSize by that amount, letting the
   // stretchable cell absorb the leak.  Counts Wt-hrh2 children dynamically so
   // it correctly reports 0 when no row is resizable.
-  setJavaScriptMember( "wtGetPS",
-    "function(c,w,d,r){"
-      "if(d!==1)return 0;"
-      "var n=w.querySelectorAll(':scope > .Wt-hrh2').length;"
-      "return -n*5;"
-    "}" );
+  WidgetUtils::compensateRowHandleLeak( this );
 
   if( m_menuDiv )
     m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), m_layout->rowCount(), 0 );
@@ -1403,6 +1406,9 @@ InterSpec::~InterSpec() noexcept(true)
     removeChild( m_undo.get() );
   AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
   AuxWindow::deleteAuxWindow( m_colorThemeWindow.get() );
+#if( USE_USER_LIBRARY )
+  closeUserLibrary();
+#endif
   
   try
   {
@@ -3079,13 +3085,27 @@ void InterSpec::deletePeakEdit()
 
 void InterSpec::showFitSkewParamsWindow()
 {
+  // When the (modal) "Create Detector Response Function" tool is open, it is what opened us, so the
+  //  skew is fit across the spectra it is using.
+  vector<FitSkewSpectrumInput> drfSpectra;
+  if( m_makeDrfTool && m_makeDrfTool->tool() )
+    drfSpectra = m_makeDrfTool->tool()->skewFitSpectra();
+
   if( m_fitSkewParamsWindow )
   {
-    m_fitSkewParamsWindow->show();
-    return;
-  }
+    FitSkewParamsTool * const tool = m_fitSkewParamsWindow->tool();
+    if( tool && (tool->isDrfMode() == !drfSpectra.empty()) )
+    {
+      m_fitSkewParamsWindow->show();
+      return;
+    }
 
-  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this );
+    // Opened for the other mode - start over (without an undo step for closing it)
+    AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
+    assert( !m_fitSkewParamsWindow );
+  }//if( m_fitSkewParamsWindow )
+
+  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this, std::move(drfSpectra) );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -3119,7 +3139,7 @@ void InterSpec::acceptFitSkewParamsWindow()
     return;
 
   FitSkewParamsTool *tool = m_fitSkewParamsWindow->tool();
-  if( !tool )
+  if( !tool || !tool->canAccept() ) // e.g., an Accept click queued before the fit started
     return;
 
   // Capture old state for undo
@@ -3136,6 +3156,10 @@ void InterSpec::acceptFitSkewParamsWindow()
   {
     UndoRedoManager::BlockUndoRedoInserts block;
     tool->acceptResults();
+
+    // The DRF tool's peaks, refit with the new skew (the DRF tool blocks undo/redo while open)
+    if( !tool->drfPeakReplacements().empty() && m_makeDrfTool && m_makeDrfTool->tool() )
+      m_makeDrfTool->tool()->replacePeaks( tool->drfPeakReplacements() );
   }
 
   // Capture new state
@@ -4128,6 +4152,14 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         theme = m_user->m_colorThemes.find().where( "id = ?" ).bind( colorThemIndex ).resultValue();
       if( theme )
         entry.modify()->colorThemeJson = theme->json_data;
+
+#if( USE_USER_LIBRARY )
+      // A theme from a file is in use instead.
+      const shared_ptr<ColorTheme> file_theme
+            = ColorThemeWindow::themeFromFile( UserPreferences::preferenceValue<string>( "ColorThemeFile", this ) );
+      if( file_theme )
+        entry.modify()->colorThemeJson = ColorTheme::toJson( *file_theme );
+#endif
     }catch(...)
     {
       //Probably shouldnt ever happen
@@ -4820,7 +4852,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           //  of the data, and are hopefully obvious
           static const std::string prefs_to_load[] = {
             "LogY", "ShowVerticalGridlines", "ShowHorizontalGridlines",
-            "ColorThemeIndex", "ShowXAxisSlider", "CompactXAxis",
+            "ColorThemeIndex", "ColorThemeFile", "ShowXAxisSlider", "CompactXAxis",
             "ShowYAxisScalers", "DisplayBecquerel"
           };
           
@@ -5058,6 +5090,22 @@ std::shared_ptr<const ColorTheme> InterSpec::getColorTheme()
     return m_colorTheme;
   
   auto theme = make_shared<ColorTheme>();
+
+#if( USE_USER_LIBRARY )
+  // A theme from a file (a package's, or in the user data folder), if one was chosen and is still there.
+  try
+  {
+    const shared_ptr<ColorTheme> file_theme
+          = ColorThemeWindow::themeFromFile( UserPreferences::preferenceValue<string>( "ColorThemeFile", this ) );
+    if( file_theme )
+    {
+      m_colorTheme = file_theme;
+      return file_theme;
+    }
+  }catch( std::exception & )
+  {
+  }
+#endif
   
   try
   {
@@ -5229,6 +5277,70 @@ void InterSpec::osThemeChange( std::string name )
   }
 }//void osThemeChange( std::string name )
 #endif
+
+
+#if( USE_USER_LIBRARY )
+UserLibraryWindow *InterSpec::showUserLibrary()
+{
+  if( m_userLibraryWindow )
+  {
+    m_userLibraryWindow->show();
+    m_userLibraryWindow->centerWindowHeavyHanded();
+    return m_userLibraryWindow.get();
+  }
+
+  m_userLibraryWindow = AuxWindow::make<UserLibraryWindow>( this );
+  m_userLibraryWindow->finished().connect( this, &InterSpec::closeUserLibrary );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->closeUserLibrary();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->showUserLibrary();
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Packages window." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+
+  return m_userLibraryWindow.get();
+}//UserLibraryWindow *showUserLibrary()
+
+
+void InterSpec::closeUserLibrary()
+{
+  if( !m_userLibraryWindow )
+    return;
+
+  AuxWindow::deleteAuxWindow( m_userLibraryWindow.get() );
+  assert( !m_userLibraryWindow );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->showUserLibrary();
+    };
+    auto redo = [](){
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->closeUserLibrary();
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Packages window." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void closeUserLibrary()
+#endif
+
+
+Wt::Signal<> &InterSpec::userLibraryChanged()
+{
+  return m_userLibraryChanged;
+}
 
 
 ColorThemeWindow *InterSpec::showColorThemeWindow()
@@ -6257,7 +6369,6 @@ void InterSpec::startStoreTestState()
   WLineEdit *edit = new WLineEdit();
   edit->setPlaceholderText( WString::tr("db-name-empty-txt") );
 
-  edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
@@ -6351,7 +6462,6 @@ void InterSpec::stateSaveAs()
   WLineEdit *edit = new WLineEdit();
   edit->setPlaceholderText( WString::tr("db-name-empty-txt") );
   
-  edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
@@ -6417,7 +6527,6 @@ void InterSpec::stateSaveTag()
 
   WLineEdit *edit = new WLineEdit();
 
-  edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
@@ -6917,7 +7026,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   m_exportSpecFileMenu->setNativeAccelerator( "CmdOrCtrl+E" );
   m_exportSpecFileMenu->triggered().connect( this, [this](){ createExportSpectrumFileDialog(); } );
   m_exportSpecFileMenu->disable();
-  
+
 #if( USE_DB_TO_STORE_SPECTRA )
   assert( !m_fileManager || m_saveStateAs );
   assert( !m_fileManager || m_saveState );
@@ -8831,6 +8940,17 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 	item = subPopup->addMenuItem( WString::tr("app-mi-help-pref-theme") );
 	item->triggered().connect( this, [this](){ showColorThemeWindow(); } );
 
+#if( USE_USER_LIBRARY )
+  // Packages of shared data (detector efficiencies, presets, templates, ...): not an everyday tool,
+  //  so it lives with the options rather than in the main menus.
+  if( UserLibrary::available() )
+  {
+    item = subPopup->addMenuItem( WString::tr("app-mi-help-pref-packages") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-packages"), showToolTips );
+    item->triggered().connect( this, [this](){ showUserLibrary(); } );
+  }
+#endif
+
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
   subPopup->addSeparator();
   WCheckBox *promptOnLoad = new WCheckBox( WString::tr("app-mi-help-pref-prompt-prev") );
@@ -9433,6 +9553,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
   if( m_decayInfoWindow )
   {
     initial_uri = m_decayInfoWindow->encodeStateToUrl();
+    m_decayInfoWindow->show(); //Brings it to the front
   }else
   {
     m_decayInfoWindow = AuxWindow::make<DecayWindow>( this );
@@ -9505,12 +9626,11 @@ MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_f
       DrfSelect::updateLastUsedTimeOrAddToDb( drf, user().id(), sql() );
   } );
 
-  if( m_drfSelectWindow )
-  {
-    m_addFwhmTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+  // Detector Select may be closed (or opened) while this tool is up, so look it up when it fires.
+  m_addFwhmTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+    if( m_drfSelectWindow )
       m_drfSelectWindow->widget()->handleFitFwhmFinished( drf );
-    } );
-  }//if( m_drfSelectWindow )
+  } );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9581,14 +9701,11 @@ MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
       DrfSelect::updateLastUsedTimeOrAddToDb( drf, user().id(), sql() );
   } );
 
-  if( m_drfSelectWindow )
-  {
-    m_mcResponseTool->tool()->updatedDrf().connect( this,
-                        [this]( std::shared_ptr<DetectorPeakResponse> drf ){
-      if( m_drfSelectWindow )
-        m_drfSelectWindow->widget()->handleMcResponseFinished( drf );
-    } );
-  }//if( m_drfSelectWindow )
+  m_mcResponseTool->tool()->updatedDrf().connect( this,
+                      [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+    if( m_drfSelectWindow )
+      m_drfSelectWindow->widget()->handleMcResponseFinished( drf );
+  } );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9955,6 +10072,12 @@ void InterSpec::trackToolDialog( Wt::WDialog *dialog )
 
   m_trackedDialogs.emplace_back( dialog );
 }//void InterSpec::trackToolDialog( Wt::WDialog *dialog )
+
+
+void InterSpec::showNuclideSearch()
+{
+  searchOnEnergyFromRightClick();  //which just brings up the tool
+}//void showNuclideSearch()
 
 
 void InterSpec::searchOnEnergyFromRightClick()
@@ -11491,32 +11614,35 @@ void InterSpec::handleCloseMakeDrfWindow( MakeDrfWindow *window )
   
   m_makeDrfTool = nullptr;
   AuxWindow::deleteAuxWindow( window );
+
+  // A fit skew dialog fitting across the DRF tool's spectra no longer has anywhere to put its peaks
+  if( m_fitSkewParamsWindow && m_fitSkewParamsWindow->tool() && m_fitSkewParamsWindow->tool()->isDrfMode() )
+  {
+    AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
+    assert( !m_fitSkewParamsWindow );
+  }
 }//void handleCloseMakeDrfWindow( MakeDrfWindow *window )
 
 
 DrfSelectWindow *InterSpec::showDrfSelectWindow()
 {
-  auto redu = [this](){
-    if( !m_drfSelectWindow )
-      m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
-    else
-      m_drfSelectWindow->show();
-  };
-  
-  auto undo = [this](){
-    if( m_drfSelectWindow )
-    {
-      DrfSelectWindow *window = m_drfSelectWindow.get();
-      m_drfSelectWindow = nullptr;
-      AuxWindow::deleteAuxWindow( window );
-    }
-  };
+  if( m_drfSelectWindow )
+  {
+    m_drfSelectWindow->show();
+    m_drfSelectWindow->centerWindowHeavyHanded();
+    return m_drfSelectWindow.get();
+  }
 
-  redu();
-  
-  if( m_undo )
-    m_undo->addUndoRedoStep( undo, redu, "Show DRF Select Window" );
-  
+  // The window calls closeDrfSelectWindow() itself when it is closed (see DrfSelectWindow).
+  m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ closeDrfSelectWindow(); };
+    auto redo = [this](){ showDrfSelectWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show DRF Select Window" );
+  }//if( m_undo )
+
   return m_drfSelectWindow.get();
 }//void showDrfSelectWindow()
 
@@ -11529,26 +11655,18 @@ DrfSelectWindow *InterSpec::drfSelectWindow() const
 
 void InterSpec::closeDrfSelectWindow()
 {
-  auto undo = [this](){
-    if( !m_drfSelectWindow )
-      m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
-    else
-      m_drfSelectWindow->show();
-  };
-  
-  auto redo = [this](){
-    if( m_drfSelectWindow )
-    {
-      DrfSelectWindow *window = m_drfSelectWindow.get();
-      m_drfSelectWindow = nullptr;
-      AuxWindow::deleteAuxWindow( window );
-    }
-  };
-  
-  redo();
-  
-  if( m_undo )
-    m_undo->addUndoRedoStep( undo, redo, "Close DRF Select Window" );
+  if( !m_drfSelectWindow )
+    return;  //idempotent - and no undo step for closing nothing
+
+  AuxWindow::deleteAuxWindow( m_drfSelectWindow.get() );
+  assert( !m_drfSelectWindow );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showDrfSelectWindow(); };
+    auto redo = [this](){ closeDrfSelectWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close DRF Select Window" );
+  }//if( m_undo )
 }//void closeDrfSelectWindow()
 
 
@@ -11754,16 +11872,25 @@ void InterSpec::closeShieldingSourceFit()
 
 void InterSpec::showHelpWindow( const std::string &preselect )
 {
+  // When Help is opened from a (non-modal) window's footer "?", the click that got us here can raise
+  //  that window after Help raised itself, leaving Help behind it; so, as SimpleDialog does, raise
+  //  Help again on a short delay.
+  auto raise_after_click = []( AuxWindow *window ){
+    window->doJavaScript( "setTimeout(function(){Wt.WT.AuxWindowBringToFront('" + window->id() + "');},60);" );
+  };
+
   if( m_helpWindow )
   {
     m_helpWindow->show();
     m_helpWindow->centerWindow();
     m_helpWindow->setTopic( preselect );
+    raise_after_click( m_helpWindow.get() );
     return;
   }//if( m_helpWindow )
   
   m_helpWindow = AuxWindow::make<HelpSystem::HelpWindow>( preselect );
   m_helpWindow->finished().connect( this, &InterSpec::closeHelpWindow );
+  raise_after_click( m_helpWindow.get() );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -13479,6 +13606,17 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
     
     if( !SpecUtils::is_file(path) )
       throw runtime_error( "Could not access file '" + path + "'" );
+
+#if( USE_USER_LIBRARY )
+    // A package opened from the OS ("open with", a double-click): offer to install it.  Checked
+    //  before trying it as a spectrum, which could read all of a large archive.  Like the other
+    //  non-spectrum files below, no spectrum was opened, so e.g. the previous session still loads.
+    if( UserLibrary::available() && UserLibraryPackage::looksLikePackage( displayFileName, path ) )
+    {
+      UserLibraryImportDialog::start( path, displayFileName );
+      return false;
+    }
+#endif
   
     auto meas = make_shared<SpecMeas>();
     const bool success = meas->load_file( path, SpecUtils::ParserType::Auto, displayFileName );

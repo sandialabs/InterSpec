@@ -16,7 +16,6 @@
   
   <message id="md-det-diam">Диам. дет.</message>
   <message id="md-det-setback">Отступ дет.</message>
-  <message id="md-eff-type">Тип эффективности</message>
   <message id="md-eqn-in-kev">Ур-ние в кэВ</message>
   <message id="md-eqn-in-mev">Ур-ние в МэВ</message>
   <message id="md-geom-intrinsic-eff">Собств. эфф.</message>
@@ -40,7 +39,6 @@
     <br />
     Фиксированная на грамм: похоже на на см2, но на грамм источника.
   </message>
-  <message id="md-fwhm-eqn-form-label">Ур-ние FWHM</message>
   <message id="md-fwhm-gadras">Уравнение Gadras</message>
   <message id="md-sqrt-series">Степенной ряд корня</message>
   <message id="md-atten-for-air-cb">Ослабл. воздухом</message>
@@ -51,7 +49,6 @@
     Это больший эффект при низких энергиях или больших калибровочных расстояниях.
   </message>
   <message id="md-show-fwhm-markers">Показать точки FWHM</message>
-  <message id="md-mi-chart-phone">График/Опции</message>
   <message id="md-mi-peaks-phone">Пики для использования</message>
   <message id="md-export-btn">Сохранить/Экспорт...</message>
   <message id="md-export-window-title">Сохранить/Экспорт DRF</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} кэВ, пик {3} отсчётов</message>
   <message id="md-peak-no-nuc">Нет связ. нуклида, {1} кэВ, пик {2} отсчётов</message>
   
-  <message id="md-err-some-src">У некоторых источников были ошибки.</message>
   <message id="md-n-fit-pars">{1} параметров подгонки</message>
   <message id="md-html-eff-table-caption">Эффективность детектирования полной энергии (% всех гамма)</message>
   <message id="md-html-Intrinsic">Собственная</message>

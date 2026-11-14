@@ -271,9 +271,7 @@ void PeakEdit::init()
     m_values[t] = m_valueTable->elementAt(t+1,1)->addNew<WLineEdit>();
     m_uncertainties[t] = m_valueTable->elementAt(t+1,2)->addNew<WLineEdit>();
     
-    m_values[t]->setAttributeValue( "ondragstart", "return false" );
     label->setBuddy( m_values[t] );
-    m_uncertainties[t]->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_values[t]->setAttributeValue( "autocorrect", "off" );
     m_values[t]->setAttributeValue( "spellcheck", "off" );
@@ -405,6 +403,7 @@ void PeakEdit::init()
   row->elementAt(0)->setColumnSpan(4);
   m_drfFwhm = row->elementAt(0)->addNew<WText>( "" );
   m_drfFwhm->addStyleClass( "PeakEditDrfFwhm" );
+  m_drfFwhm->addStyleClass( "SelectableTxt" );
   row->setHidden( true );
   
   // When the detector changed/modified signal is emitted, the DRF for the foreground
@@ -445,7 +444,6 @@ void PeakEdit::init()
   row->elementAt(1)->setColumnSpan(2);
   m_nuclide = row->elementAt(1)->addNew<WLineEdit>();
   
-  m_nuclide->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclide->setAttributeValue( "autocorrect", "off" );
   m_nuclide->setAttributeValue( "spellcheck", "off" );
@@ -491,7 +489,6 @@ void PeakEdit::init()
   row->elementAt(1)->setColumnSpan(2);
   m_userLabel = row->elementAt(1)->addNew<WLineEdit>();
   
-  m_userLabel->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_userLabel->setAttributeValue( "autocorrect", "off" );
   m_userLabel->setAttributeValue( "spellcheck", "off" );

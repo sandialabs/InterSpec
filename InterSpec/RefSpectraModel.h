@@ -5,6 +5,7 @@
 #include <Wt/WAbstractItemModel.h>
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -31,9 +32,15 @@ public:
   // Custom methods for managing the filesystem data
 
   /** Add a base directory to the model.  Returns the index of the new root node. */
-  Wt::WModelIndex addBaseDirectory( const std::string &path );
+  /** Adds a top-level folder, shown as `displayName` (or, if empty, the folder's name with '_' as ' '). */
+  Wt::WModelIndex addBaseDirectory( const std::string &path, const std::string &displayName = "" );
   /** Remove a base directory from the model. */
   void removeBaseDirectory( const std::string &path );
+  /** Folders (or files) not to list anywhere in the tree, e.g. reference-spectra sets the user disabled
+   in the user library; paths as SpecUtils::lexically_normalize_path gives them.  Set before adding the
+   base directories they are under.
+   */
+  void setHiddenPaths( const std::set<std::string> &paths );
   void refresh();
   std::string getFilePath( const Wt::WModelIndex &index ) const;
   std::string getDisplayName( const Wt::WModelIndex &index ) const;
@@ -55,6 +62,7 @@ private:
   };
 
   std::vector<std::unique_ptr<Node>> m_rootNodes;
+  std::set<std::string> m_hiddenPaths;
   
   void populateNode( Node *node ) const;
   Node* getNode( const Wt::WModelIndex &index ) const;

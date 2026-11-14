@@ -829,6 +829,18 @@ public:
     /// producers set the calibrated value. FEP is unaffected.
     double scatter_in_recapture = 0.0;
 
+    /// Multiplies every efficiency this response gives - FEP and total, and the prefactors a host
+    /// assembles its own kernel with - over the ONE crystal the descriptor describes: the number
+    /// of identical detector elements whose events go into one spectrum, with one live time (four
+    /// for a 2x2 CZT array modeled as one of its crystals; GADRAS's Detector.dat parameter 18), or
+    /// an empirical scale.  Not elements recorded as separate spectra and summed afterward with their
+    /// live times, which leaves one element's efficiency.
+    /// Producers are given it (GenerationOptions / TransferResponseOptions::efficiency_scale) and
+    /// fit everything against the whole detector's efficiency with it in the model, so the
+    /// grounding k(E) stays the physics correction to the one element.  Must be finite and > 0;
+    /// 1 (default) is not serialized, so such responses keep their bytes and content_hash.
+    double efficiency_scale = 1.0;
+
     /// Persisted accuracy scorecard (ResponseGenerator::certify). Additive
     /// metadata: serialized in the XML but EXCLUDED from content_hash, so a
     /// response is identical with or without it. Empty by default.

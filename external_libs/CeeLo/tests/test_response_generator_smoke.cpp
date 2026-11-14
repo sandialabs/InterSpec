@@ -496,3 +496,26 @@ BOOST_AUTO_TEST_CASE(certify_populates_certificate) {
     BOOST_CHECK_CLOSE(r2->certificate.fep_p95, c.fep_p95, 1e-9);
     BOOST_CHECK_EQUAL(r2->content_hash(), hash_before);
 }
+
+
+// The scale is stamped on the finished response: everything generated - and certified - is the one
+//  element's, so a scaled run is the unscaled one times the scale (to within the Monte Carlo, which is
+//  not bit-reproducible across multithreaded runs).
+BOOST_AUTO_TEST_CASE(efficiency_scale_stamped_on_the_element_response) {
+    const GeometryDescriptor gd = small_nai();
+    const GenerationOptions unit_opts = coarse_options();
+    GenerationOptions opts = coarse_options();
+    opts.efficiency_scale = 4.0;
+
+    const std::shared_ptr<DetectorResponse> unit = ResponseGenerator::generate(gd, unit_opts);
+    const std::shared_ptr<DetectorResponse> scaled = ResponseGenerator::generate(gd, opts);
+    BOOST_CHECK_EQUAL(unit->efficiency_scale, 1.0);
+    BOOST_CHECK_EQUAL(scaled->efficiency_scale, 4.0);
+    for (const double d : {2.0, 50.0}) {
+        BOOST_CHECK_CLOSE(scaled->eps_fep(662.0, 0.0, 0.0, d).value, 4.0 * unit->eps_fep(662.0, 0.0, 0.0, d).value, 3.0);
+        BOOST_CHECK_CLOSE(scaled->eps_total(662.0, 0.0, 0.0, d).value, 4.0 * unit->eps_total(662.0, 0.0, 0.0, d).value, 3.0);
+    }
+
+    opts.efficiency_scale = -1.0;
+    BOOST_CHECK_THROW(ResponseGenerator::generate(gd, opts), std::runtime_error);
+}

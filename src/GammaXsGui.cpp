@@ -49,7 +49,6 @@
 #include "InterSpec/ShieldMaterialSuggestion.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -100,8 +99,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
 
   addStyleClass( "GammaXsGui" );
 
-  wApp->useStyleSheet( "InterSpec_resources/GammaXsGui.css" );
-
   m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setColumnStretch( 1, 1 );
 
@@ -113,7 +110,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>( "100" );
     m_energyEdit = edit.get();
     m_energyEdit->setAutoComplete( false );
-    m_energyEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_energyEdit->setAttributeValue( "autocorrect", "off" );
     m_energyEdit->setAttributeValue( "spellcheck", "off" );
@@ -142,7 +138,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>( "C0.5H0.2Ni0.3" );
     m_materialEdit = edit.get();
     m_materialEdit->setAutoComplete( false );
-    m_materialEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_materialEdit->setAttributeValue( "autocorrect", "off" );
     m_materialEdit->setAttributeValue( "spellcheck", "off" );
@@ -164,6 +159,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_totalAttenuation = w.get();
     m_totalAttenuation->addStyleClass( "GxsResult" );
+    m_totalAttenuation->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -178,6 +174,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_compton = w.get();
     m_compton->addStyleClass( "GxsResult" );
+    m_compton->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -192,6 +189,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_rayleigh = w.get();
     m_rayleigh->addStyleClass( "GxsResult" );
+    m_rayleigh->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -206,6 +204,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_photoElectric = w.get();
     m_photoElectric->addStyleClass( "GxsResult" );
+    m_photoElectric->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -220,6 +219,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_conversion = w.get();
     m_conversion->addStyleClass( "GxsResult" );
+    m_conversion->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 #ifndef WT_NO_STD_WSTRING
@@ -234,6 +234,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>( "" );
     m_effectiveZ = w.get();
     m_effectiveZ->addStyleClass( "GxsResult" );
+    m_effectiveZ->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 1 );
   }
 
@@ -246,7 +247,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>();
     m_density = edit.get();
     m_density->setAutoComplete( false );
-    m_density->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_density->setAttributeValue( "autocorrect", "off" );
     m_density->setAttributeValue( "spellcheck", "off" );
@@ -278,7 +278,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>( "1 cm" );
     m_thickness = edit.get();
     m_thickness->setAutoComplete( false );
-    m_thickness->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_thickness->setAttributeValue( "autocorrect", "off" );
     m_thickness->setAttributeValue( "spellcheck", "off" );
@@ -298,6 +297,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_transmissionFraction = w.get();
     m_transmissionFraction->addStyleClass( "GxsResult" );
+    m_transmissionFraction->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( {transFracLabel, m_transmissionFraction}, WString::tr("gxsg-tt-trans-frac"),
@@ -306,8 +306,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
 
   ++row;
   {
-    SpecMeasManager *fileManager = m_specViewer->fileManager();
-    auto dd = std::make_unique<DetectorDisplay>( m_specViewer, fileManager->model() );
+    auto dd = std::make_unique<DetectorDisplay>( m_specViewer );
     m_detectorDisplay = dd.get();
     m_detectorDisplay->setMinimumSize( WLength::Auto, WLength(1.5,WLength::Unit::FontEm) );
     m_layout->addWidget( std::move(dd), row, 0, 1, 3 );
@@ -323,7 +322,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto edit = std::make_unique<WLineEdit>("2 cm");
     m_detectorDistance = edit.get();
     m_detectorDistance->setAutoComplete( false );
-    m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_detectorDistance->setAttributeValue( "autocorrect", "off" );
     m_detectorDistance->setAttributeValue( "spellcheck", "off" );
@@ -348,6 +346,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_intrinsicEfficiency = w.get();
     m_intrinsicEfficiency->addStyleClass( "GxsResult" );
+    m_intrinsicEfficiency->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTips );
@@ -364,6 +363,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_fractionalAngle = w.get();
     m_fractionalAngle->addStyleClass( "GxsResult" );
+    m_fractionalAngle->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTips );
@@ -380,6 +380,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_efficiency = w.get();
     m_efficiency->addStyleClass( "GxsResult" );
+    m_efficiency->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( {m_efficiencyLabel, m_efficiency}, WString::tr("gxsg-tt-det-eff"),
@@ -395,6 +396,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     auto w = std::make_unique<WText>();
     m_totalEfficiency = w.get();
     m_totalEfficiency->addStyleClass( "GxsResult" );
+    m_totalEfficiency->addStyleClass( "SelectableTxt" );
     m_layout->addWidget( std::move(w), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( m_totalEfficiencyLabel,

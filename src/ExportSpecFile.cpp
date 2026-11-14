@@ -1302,7 +1302,6 @@ void ExportSpecFileTool::init()
   validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
 
   m_customSamplesEdit = m_samplesHolder->addNew<WLineEdit>();
-  m_customSamplesEdit->setAttributeValue( "ondragstart", "return false" );
   m_customSamplesEdit->addStyleClass( "SampleNumInput ExportSpecCustomSamples" );
   m_customSamplesEdit->setValidator( validator );
   m_customSamplesEdit->setAutoComplete( false );

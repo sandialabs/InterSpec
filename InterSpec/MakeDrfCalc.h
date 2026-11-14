@@ -30,10 +30,14 @@
 #include <vector>
 
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+class PeakDef;
+struct Material;
 class PeakFitDetPrefs;
 class MeasuredDrfPoints;
+namespace SandiaDecay{ struct Nuclide; }
 namespace ceelo{ struct GeometryDescriptor; class DetectorResponse; }
 
 /** The non-GUI core of the "Create Detector Response Function" tool: turning measured peak
@@ -64,7 +68,193 @@ namespace MakeDrfCalc
     /** True for the fixed-geometry (e.g. activity per area) efficiency types: the measured points
      already are what the equation describes, no source geometry is divided out. */
     bool fixedGeometry = false;
+
+    /** The number of identical detector elements, combined into one spectrum (one live time), that the
+     geometry (or diameter) is one of, or an empirical scale - DetectorPeakResponse::efficiencyMultiple.
+     Not detectors recorded as separate spectra: InterSpec sums those with their live times, which
+     leaves one detector's efficiency.  The measured points are the
+     whole detector's, so #intrinsicFitPoints divides it out and the fitted equation is per element. */
+    double efficiencyMultiple = 1.0;
   };//struct GeometryChoice
+
+
+  /** A gamma line counts toward the nearest fit peak in its spectrum when within this many of the
+   peak's sigma - the rule the Activity/Shielding fit uses. */
+  constexpr double sm_photopeakClusterSigma = 1.25;
+
+  /** A source's decay during the measurement is corrected for when the measurement's real time
+   exceeds this fraction of its half-life - the Activity/Shielding fit's default rule. */
+  constexpr double sm_decayDuringMeasFraction = 0.005;
+
+
+  /** A calibration source in one source spectrum, as the user described it. */
+  struct CalSource
+  {
+    /** Null for a source given only by its activity: each of its peaks then carries the branching
+     ratio the user entered (#SamplePeak::userBr). */
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+
+    /** Activity at the start of the measurement (PhysicalUnits), and its fractional 1-sigma
+     uncertainty. */
+    double activity = 0.0;
+    double fracActivityUncert = 0.0;
+
+    /** Age at the start of the measurement, PhysicalUnits; only used with a nuclide. */
+    double age = 0.0;
+
+    /** Source to detector face, and its 1-sigma uncertainty, PhysicalUnits; air attenuation uses
+     the distance.  Negative for the fixed-geometry efficiency types. */
+    double distance = -1.0;
+    double distanceUncert = 0.0;
+
+    /** Shielding around the source: a named material and its thickness (PhysicalUnits) or, with no
+     material, an atomic number and areal density (PhysicalUnits); an atomic number below 1 or a
+     zero areal density is no shielding. */
+    std::shared_ptr<const Material> shieldMaterial;
+    double shieldThickness = 0.0;
+    double shieldAtomicNumber = 0.0;
+    double shieldArealDensity = 0.0;
+
+    /** False when the inputs have a problem.  Then the source's own peaks are left out, and so are
+     peaks of the other sources its lines would add more than a trace to (that can't be corrected for
+     without knowing its activity). */
+    bool usable = true;
+  };//struct CalSource
+
+
+  /** A fit peak in a source spectrum. */
+  struct SamplePeak
+  {
+    std::shared_ptr<const PeakDef> peak;
+
+    /** Index into #SampleInput::sources of the source this peak's efficiency is for; negative when
+     the peak is not used for the efficiency.  Unused peaks still matter: each gamma line counts
+     toward the nearest of ALL the spectrum's peaks. */
+    int source = -1;
+
+    /** For a peak of a source without a nuclide: the branching ratio the user entered; negative if
+     none (or it isn't valid). */
+    double userBr = -1.0;
+  };//struct SamplePeak
+
+
+  /** A fit peak in a background spectrum. */
+  struct BackgroundPeak
+  {
+    std::shared_ptr<const PeakDef> peak;
+
+    /** Live time of the background spectrum the peak is in, seconds. */
+    double liveTime = 0.0;
+
+    /** Identifies that background spectrum: its live time counts once however many of its peaks
+     match a source peak (e.g., a doublet). */
+    size_t spectrum = 0;
+  };//struct BackgroundPeak
+
+
+  /** A source spectrum (one or more samples of a file, summed), with its peaks and sources. */
+  struct SampleInput
+  {
+    std::vector<CalSource> sources;
+    std::vector<SamplePeak> peaks;
+
+    /** Live and real time, seconds; decay during the measurement is computed over the real time. */
+    double liveTime = 0.0;
+    double realTime = 0.0;
+  };//struct SampleInput
+
+
+  /** What one of the peaks used for the efficiency gave. */
+  struct PeakPoint
+  {
+    enum class Status
+    {
+      /** #measured holds the efficiency point. */
+      Used,
+
+      /** The peak's source has no nuclide, and no branching ratio was entered for the peak. */
+      NoUserBranchRatio,
+
+      /** An unusable source (#interferer) would add more than a trace of gammas to the peak. */
+      NeedsUnusableSource,
+
+      /** The sources put no gammas into the peak (e.g., a short-lived source decayed away by the
+       dates entered, or no line of the nuclide is near the peak). */
+      NoSourceGammas,
+
+      /** Nothing is left of the peak after subtracting the background. */
+      NoNetArea
+    };//enum class Status
+
+    /** Index of the peak in #SampleInput::peaks. */
+    size_t peak = 0;
+
+    Status status = Status::Used;
+
+    /** For NeedsUnusableSource: index of the unusable source in #SampleInput::sources. */
+    int interferer = -1;
+
+    /** keV: the energy of the gamma assigned to the peak, else (no source assigned) its mean. */
+    double energy = 0.0;
+
+    /** Gammas per second from all the spectrum's sources that land in the peak, after their
+     shielding and the air, but before the source geometry - and its fractional 1-sigma uncertainty
+     from the source activities. */
+    double sourceRate = 0.0;
+    double fracSourceUncert = 0.0;
+
+    /** Peak area after any background subtraction, and its 1-sigma uncertainty. */
+    double peakArea = 0.0;
+    double peakAreaUncert = 0.0;
+
+    /** Summed area of the matching background peaks, and the summed live time of the background
+     spectra they are in; zero when there is no background to subtract. */
+    double bkgArea = 0.0;
+    double bkgLiveTime = 0.0;
+
+    /** Whether the FWHM fit uses the peak: not a data-defined peak, which has no width, nor 511 keV
+     annihilation photons, which are Doppler broadened whatever made the positron. */
+    bool useForFwhm = false;
+
+    /** For a Used peak, the absolute-efficiency point with its provenance, but for the caller's
+     identity strings (sourceKey, fileName, sampleNumbers). */
+    MeasuredEffPoint measured;
+  };//struct PeakPoint
+
+
+  /** The efficiency the peaks of one source spectrum give. */
+  struct SampleResult
+  {
+    /** One entry per peak with a source, other than those of unusable sources, in peak order. */
+    std::vector<PeakPoint> points;
+
+    /** Sources found unusable while computing (index into #SampleInput::sources, and why); they act
+     as if marked unusable. */
+    std::vector<std::pair<size_t,std::string>> sourceErrors;
+  };//struct SampleResult
+
+
+  /** The absolute efficiency each of a source spectrum's peaks gives: its net area over the gammas
+   the spectrum's sources put into it during the measurement.
+
+   - Each gamma line of a source counts toward the nearest of the spectrum's peaks, if within
+     #sm_photopeakClusterSigma of its sigma (as the Activity/Shielding fit does), so a line between
+     two peaks counts once, and every source's lines in a peak are counted.
+   - The decay during the measurement is corrected for when the real time exceeds
+     #sm_decayDuringMeasFraction of the source's half-life.
+   - The source's shielding, and the air (if `airAttenuation`) over its distance, are divided out.
+   - Background peaks within 1.5 sigma (or assigned the same gamma) are subtracted, as the rate of
+     their summed area over the summed live time of the spectra they are in.
+   */
+  SampleResult samplePoints( const SampleInput &sample,
+                             const std::vector<BackgroundPeak> &background,
+                             const bool airAttenuation );
+
+
+  /** The number of efficiency or FWHM equation terms offered by default for `npoints` points: two
+   fewer than the points (one, with three points), so chi2/dof says something about the curve; at
+   least min(npoints,2), and at most `maxTerms`.  Zero with no points. */
+  int defaultEquationTerms( const int npoints, const int maxTerms );
 
 
   /** The far-field intrinsic efficiency each absolute measured point corresponds to, ready to be

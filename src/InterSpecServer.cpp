@@ -66,6 +66,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/ReactionGamma.h"
@@ -748,6 +749,9 @@ int start_server( const char *process_name,
     cerr << e.what() << endl;
     return -5;
   }
+
+  // Unfinished user library package installs from an earlier run (e.g. the app was closed mid-install).
+  UserLibrary::cleanupStaleFolders();
 #endif
   
   try

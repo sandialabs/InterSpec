@@ -54,7 +54,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UserPreferences.h"
-#include "InterSpec/DecayActivityDiv.h"
+#include "InterSpec/DecayActivityCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
@@ -155,7 +155,7 @@ void DecaySelectNuclide::setCurrentInfo( int a, int z, int iso,
   else
   {
     assert((activity < 1.0E-6)
-      || (fabs(activity - PhysicalUnits::stringToActivity(activityStr) < 0.001 * activity)) );
+      || (fabs(activity - PhysicalUnits::stringToActivity(activityStr)) < 0.001 * activity) );
   }
 
    m_nuclideActivityEdit->setText( actstr );
@@ -232,9 +232,6 @@ void DecaySelectNuclide::init()
   m_selectedIsotopeHalfLife = halfLifeOwned.get();
   m_isotopeSearch           = isoSearchOwned.get();
 
-  m_nuclideActivityEdit->setAttributeValue( "ondragstart", "return false" );
-  m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
-  m_isotopeSearch->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideActivityEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideActivityEdit->setAttributeValue( "spellcheck", "off" );
@@ -326,6 +323,7 @@ void DecaySelectNuclide::init()
   m_nuclideAgeEdit->addStyleClass( "m_nuclideAgeEdit" );
 
   m_selectedIsotopeHalfLife->addStyleClass( "m_selectedIsotopeHalfLife" );
+  m_selectedIsotopeHalfLife->addStyleClass( "SelectableTxt" );
 
   for( int z = 1; z < 119; ++z )
   {
@@ -497,15 +495,8 @@ void DecaySelectNuclide::emitAccepted()
     selected.activityStr = activityTxt;
     selected.initialAge = age;
 
-    //units activity regex can accept: (bq|becquerel|ci|cu|curie|c)
-    const string::size_type unitpos = activityTxt.find_first_of( "CcBb" );
-    
-    if( unitpos == string::npos )
-      selected.useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    else if( activityTxt[unitpos]=='C' || activityTxt[unitpos]=='c' )
-      selected.useCurie = true;
-    else
-      selected.useCurie = false;
+    selected.useCurie = DecayActivityCalc::activityStringIsCurie( activityTxt )
+          .value_or( !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() ) );
     
     m_selectedSignal.emit( selected );
     m_doneSignal.emit();
@@ -862,10 +853,14 @@ void SimpleIsotopeNameFilterModel::getAlphaAndNumericSubStrs( std::string label,
 
 void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
 {
-  beginRemoveRows( WModelIndex(), 0, rowCount() );
-  m_candidatesElements.clear();
-  m_candidatesNuclides.clear();
-  endRemoveRows();
+  const int ninitialrow = rowCount();
+  if( ninitialrow > 0 )
+  {
+    beginRemoveRows( WModelIndex(), 0, ninitialrow - 1 );
+    m_candidatesElements.clear();
+    m_candidatesNuclides.clear();
+    endRemoveRows();
+  }//if( ninitialrow > 0 )
 
   string testTxt = text.toUTF8();
   const int metalevel = determineAndRemoveIsoLevel( testTxt );
@@ -1016,9 +1011,11 @@ void SimpleIsotopeNameFilterModel::filter( const Wt::WString &text )
                    index_compare_assend<vector<unsigned int>&>(distance) );
   
   
-  const int nrow = static_cast<int>( candidate_elements.size() + nuclide_suggestions.size() );
+  const int nrow = static_cast<int>( suggest_elements.size() + nuclide_suggestions.size() );
+  if( nrow < 1 )
+    return;
   
-  beginInsertRows( WModelIndex(), 0, nrow );
+  beginInsertRows( WModelIndex(), 0, nrow - 1 );
   
   m_candidatesElements.resize( suggest_elements.size() );
   for( size_t i = 0; i < suggest_elements.size(); ++i )

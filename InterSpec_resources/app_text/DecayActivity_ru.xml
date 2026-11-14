@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">Беты/секунда</message>
   <message id="dad-hdr-total-alphas">Общие альфы</message>
   <message id="dad-yaxis-title-total-alphas">Альфы/секунда</message>
-  <message id="dad-chart-click-more-info">Щёлкните для подробной информации - {1} {2} после T0 у нас есть:</message>
 
   <message id="dcc-window-title-decay-chain">Цепь распада {1}</message>
   <message id="dcc-window-title-decay-through">Распады через {1}</message>

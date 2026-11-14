@@ -167,7 +167,6 @@ OneOverR2Calc::OneOverR2Calc()
   m_answer  = cell->addNew<WLineEdit>();
   label->setBuddy( m_answer );
   m_answer->setDisabled( true );
-  m_answer->setAttributeValue( "ondragstart", "return false" );
 
   m_backgroundMeasurment->setText( "" );
 

@@ -37,6 +37,8 @@
 #include <boost/optional.hpp>
 #endif
 
+#include "SpecUtils/DateTime.h"
+
 #include "InterSpec/DetectionLimitCalc.h"
 
 
@@ -469,6 +471,194 @@ private:
   /** Stable identifier for a #DrfUncertaintyMethod value ("None", "ErrorPropagation", "Likelihood"). */
   const char *drfUncertMethodName( const DrfUncertaintyMethod method );
 
+  /** A time - nominally before the measurement - that fitted activities are additionally quoted at;
+   e.g., the end of an irradiation, a release time, or the time of another measurement.
+
+   Does not affect the fit itself; see #compute_back_decay for what is computed.
+   */
+  struct BackDecaySpec
+  {
+    enum class Mode : int
+    {
+      /** `duration` before the measurement start (a negative duration is after it). */
+      DurationBeforeMeas,
+
+      /** The absolute time `date`, in the same time base as the spectrum file start time. */
+      DateTime
+    };//enum class Mode
+
+    bool enabled = false;
+    Mode mode = Mode::DurationBeforeMeas;
+
+    /** How long before the measurement start the reference time is, in PhysicalUnits; only used for
+     #Mode::DurationBeforeMeas.
+     */
+    double duration = 0.0;
+
+    /** The reference time for #Mode::DateTime; "special" (see SpecUtils::is_special) when not set. */
+    SpecUtils::time_point_t date{};
+
+    /** How long before `meas_start` the reference time is (negative if after it), in PhysicalUnits.
+
+     Throws std::runtime_error, with a user-facing message, in #Mode::DateTime if `date` or
+     `meas_start` is not a valid time.
+     */
+    double time_before_meas( const SpecUtils::time_point_t &meas_start ) const;
+
+    /** The reference time; special if it can not be determined (e.g., #Mode::DurationBeforeMeas with
+     an unknown `meas_start`).
+     */
+    SpecUtils::time_point_t reference_time( const SpecUtils::time_point_t &meas_start ) const;
+
+    /** True if nothing has been entered, in which case it is not serialized. */
+    bool is_default() const;
+
+    bool operator==( const BackDecaySpec &rhs ) const;
+    bool operator!=( const BackDecaySpec &rhs ) const;
+
+    /** Writes a <BackDecay> node under `parent_node`, unless #is_default. */
+    void serialize( rapidxml::xml_node<char> *parent_node ) const;
+
+    /** Reads the <BackDecay> node under `parent_node`; resets to default (not enabled) if there is
+     not one, or it can not be read (it is skipped, rather than failing the whole model, since this
+     option does not affect the fit). */
+    void deSerialize( const rapidxml::xml_node<char> *parent_node );
+
+  private:
+    /** Reads `base_node`, the <BackDecay> node; throws if it is invalid. */
+    void deSerializeNode( const rapidxml::xml_node<char> *base_node );
+  };//struct BackDecaySpec
+
+
+  /** How well the activity at a #BackDecaySpec reference time could be determined. */
+  enum class BackDecayStatus : int
+  {
+    /** The activity at the reference time was determined. */
+    Ok,
+
+    /** So many half-lives separate the reference time from the measurement, that the nuclide's
+     activity then has no measurable effect now; see
+     DecayBatchCalc::sm_min_back_decay_surviving_fraction.
+     */
+    DecayedAway,
+
+    /** A fitted ancestor of this nuclide is #DecayedAway, and that ancestor's unknown amount at the
+     reference time would have grown into this nuclide, so this nuclide's activity then is not
+     determined by the measurement either.
+     */
+    DependsOnUndetermined
+  };//enum class BackDecayStatus
+
+  /** Stable identifier for a #BackDecayStatus (e.g., "DecayedAway"), as JSON gives it. */
+  const char *backDecayStatusName( const BackDecayStatus status );
+
+
+  /** The activity of one fitted source at a #BackDecaySpec reference time. */
+  struct BackDecaySourceResult
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+
+    BackDecayStatus status = BackDecayStatus::Ok;
+
+    /** The source's activity at the measurement start (`SourceFitDef::activity`, as total activity). */
+    double activity_now = 0.0;
+
+    /** The source's own share of activity at the reference time - i.e., the same split the fit uses,
+     where a nuclide's activity excludes what other fitted sources grow into it.  Zero unless
+     `status` is #BackDecayStatus::Ok; may be negative when in-growth from a fitted ancestor exceeds
+     the fitted activity (see `note`).
+     */
+    double activity = 0.0;
+
+    /** Uncertainty of `activity`, if the input activity (or age) had an uncertainty. */
+    std::optional<double> activity_uncertainty;
+
+    /** `activity / activity_now`; zero if `activity_now` is zero or `status` is not Ok.  Multiplies
+     any other expression of the source's activity (e.g., a trace sources per-volume activity).
+     */
+    double ratio = 0.0;
+
+    /** Half-lives of this nuclide from the reference time to the measurement (negative if after). */
+    double half_lives = 0.0;
+
+    /** The source's age at the reference time, as the calculation pairs it with `activity` (zero when
+     the source is taken as pure then): `activity` of #nuclide aged this long (as
+     SandiaDecay::NuclideMixture::addAgedNuclideByActivity takes them) is the source at the
+     reference time, and decaying the sources from there reproduces what was fit (e.g., to show
+     the decay in the decay tool).  The age at the measurement is `age_at_ref + time_before_meas`.
+     */
+    double age_at_ref = 0.0;
+
+    /** Whether another fitted source is an ancestor of this nuclide (so their values are coupled). */
+    bool has_fitted_ancestor = false;
+
+    /** A user-facing note; the reason, if `status` is not Ok, otherwise any caveat (empty if none). */
+    std::string note;
+  };//struct BackDecaySourceResult
+
+
+  /** Activities of fitted sources at a #BackDecaySpec reference time; see #compute_back_decay. */
+  struct BackDecayResults
+  {
+    BackDecaySpec spec;
+
+    /** The measurement (spectrum) start time; special if unknown. */
+    SpecUtils::time_point_t meas_start{};
+
+    /** The reference time; special if it can not be determined. */
+    SpecUtils::time_point_t ref_time{};
+
+    /** How long before the measurement start the reference time is (negative if after), in PhysicalUnits. */
+    double time_before_meas = 0.0;
+
+    /** One entry per source, in the order given to #compute_back_decay; empty if `error` is set. */
+    std::vector<BackDecaySourceResult> sources;
+
+    /** Caveats that apply to the result as a whole. */
+    std::vector<std::string> warnings;
+
+    /** Set if nothing could be computed (e.g., a reference date/time with an unknown spectrum start). */
+    std::string error;
+
+    /** Returns the entry for `nuc`, or nullptr if there is not one. */
+    const BackDecaySourceResult *source( const SandiaDecay::Nuclide *nuc ) const;
+  };//struct BackDecayResults
+
+
+  /** Computes each source's activity at the `spec` reference time, from the activities and ages in
+   `sources` (which, for trace sources, must be total activities) at the measurement start `meas_start`.
+
+   Each fitted source is a parent nuclide with its own progeny in-grown over its age.  Moving the
+   reference time later than the measurement just decays each source on its own.  Moving it earlier
+   must account for fitted sources that are descendants of other fitted sources (e.g., Te132 and
+   I132): when an ancestor's age is shorter than the back-decay time, it is taken as pure at the
+   reference time, and the in-growth it has made since is subtracted from the descendant rather than
+   being scaled up with it.  These are solved together with DecayBatchCalc::solve_past_activities.
+
+   `interference_correction` is #ShieldingSourceFitOptions::multiple_nucs_contribute_to_peaks: when
+   true a source's fitted activity excludes what other sources grow into that nuclide (that in-growth
+   is modeled separately), and when false it is taken to be all of the nuclide's activity - so the
+   other fitted sources are taken as pure at the reference time (or, for a later reference time, at
+   the measurement), and their in-growth in between is subtracted (or added).
+
+   Uncertainties are propagated from each source's activity and age uncertainties, neglecting
+   correlations between them (only the diagonal of the fit covariance is available).
+
+   Does not throw; a whole-calculation failure is put in BackDecayResults::error, and per-nuclide
+   problems (e.g., too many half-lives) in each source's status and note.  Does not look at
+   `spec.enabled`.
+   */
+  BackDecayResults compute_back_decay( const std::vector<SourceFitDef> &sources,
+                                       const BackDecaySpec &spec,
+                                       const SpecUtils::time_point_t &meas_start,
+                                       const bool interference_correction );
+
+  /** Formats a back-decay reference (or measurement) time as "2019-12-28 12:00:00" (fractional
+   seconds only if non-zero), which SpecUtils::time_from_string reads back; empty if `t` is special.
+   */
+  std::string back_decay_time_str( const SpecUtils::time_point_t &t );
+
+
   struct ShieldingSourceFitOptions
   {
     bool multiple_nucs_contribute_to_peaks = true;
@@ -552,6 +742,11 @@ private:
      pre-option files for DRFs that carry a response or a geometry.  An explicit FlatDisk forces the
      far-field solid-angle model for point sources too, so the control is a usable escape hatch. */
     VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::Auto;
+
+    /** An optional time the fitted activities are additionally quoted at.  Does not affect the fit;
+     when enabled, a successful fit fills in #ModelFitResults::back_decay.
+     */
+    BackDecaySpec back_decay;
 
 
     void serialize( rapidxml::xml_node<char> *parent_node ) const;
@@ -749,10 +944,19 @@ private:
 
     std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
     std::vector<ShieldingSourceFitCalc::FitShieldingInfo> final_shieldings;
-    
+
     // Need to add: foreground spectrum, background spectrum,
-    
+
+    /** Start time of the foreground spectrum that was fit; special if unknown.  The fit activities
+     are at this time. */
+    SpecUtils::time_point_t foreground_start_time{};
+
     std::vector<ShieldingSourceFitCalc::SourceFitDef> fit_src_info;
+
+    /** The fit activities at the `options.back_decay` reference time; set for successful fits when
+     that option is enabled (computed from `fit_src_info`, after the fit).
+     */
+    std::optional<BackDecayResults> back_decay;
     
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
 

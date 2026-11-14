@@ -78,6 +78,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 
 **For Uranium isotopics:**
   * **HPGe U (120-1001 keV).xml** - RECOMMENDED for U-235/U-238 enrichment analysis; its ROIs are sized from the detector's peak width, so it suits any HPGe resolution
+  * **HPGe U (63-205 keV).xml** - U-235/U-238 enrichment from the 63-205 keV region only (U-238 from the Th-234 92 keV doublet among the K x-rays, and its 63.29 keV line); for planar or other high-resolution HPGe, or spectra that end below ~1 MeV or have weak 766/1001 keV peaks.  Not for shielded items
   * **CZT-std U (130-1010 keV).xml** - U-235/U-238 enrichment from CZT spectra that reach 1001 keV; less accurate than HPGe (typically within 10-20%)
 
 **Other sources:**
@@ -86,6 +87,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 
 **Preset Selection Criteria for U:**
 * Use **HPGe U (120-1001 keV).xml** for standard U-235/U-238 enrichment
+* Use **HPGe U (63-205 keV).xml** for planar/high-resolution HPGe spectra, or when the spectrum ends below ~1 MeV, and the item is not behind shielding
 * Use **CZT-std U (130-1010 keV).xml** for CZT (medium-resolution) spectra
 
 **Transition to:** VALIDATE_CONFIGURATION
@@ -250,7 +252,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Tool>list_isotopics_presets</Tool>
           <Tool>load_isotopics_preset</Tool>
         </SuggestedTools>
-        <PromptGuidance>For Pu: Choose from 'HPGe Pu (120-780 keV).xml' (default), 'HPGe Pu (120-420 keV).xml' (low-energy), or 'HPGe Pu (610-775 keV).xml' (high-energy if Am-241 severe). For U: Use 'HPGe U (120-1001 keV).xml', or 'CZT-std U (130-1010 keV).xml' for CZT spectra. Use list_isotopics_presets to see all available presets. Load chosen preset with load_isotopics_preset. Document choice and rationale. Transition to VALIDATE_CONFIGURATION.</PromptGuidance>
+        <PromptGuidance>For Pu: Choose from 'HPGe Pu (120-780 keV).xml' (default), 'HPGe Pu (120-420 keV).xml' (low-energy), or 'HPGe Pu (610-775 keV).xml' (high-energy if Am-241 severe). For U: Use 'HPGe U (120-1001 keV).xml', 'HPGe U (63-205 keV).xml' for planar HPGe or spectra ending below ~1 MeV (unshielded items only), or 'CZT-std U (130-1010 keV).xml' for CZT spectra. Use list_isotopics_presets to see all available presets. Load chosen preset with load_isotopics_preset. Document choice and rationale. Transition to VALIDATE_CONFIGURATION.</PromptGuidance>
       </State>
 
       <State name="VALIDATE_CONFIGURATION">

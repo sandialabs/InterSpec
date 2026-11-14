@@ -99,6 +99,7 @@ public:
   virtual void doJavaScript( const std::string &js ) override;
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
   void setNuclide( const SandiaDecay::Nuclide * const nuc, const bool useCurie, const DecayChainType decayType );
+  /** Get currently showing nuclide. */
   const SandiaDecay::Nuclide *nuclide() const;
   
   void colorThemeChanged();
@@ -128,9 +129,6 @@ public:
   void showDecayParticleInfo( const std::string &csvIsotopeNames );
   void showPossibleParents( const SandiaDecay::Nuclide *nuclide );
   void deleteMoreInfoDialog();
-  
-  /** Get currently showing nuclide. */
-  const SandiaDecay::Nuclide *nuclide();
   
 protected:
   /** Called during the first full render of the widget; loads all necassary

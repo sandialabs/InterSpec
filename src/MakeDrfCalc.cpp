@@ -23,24 +23,57 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <set>
 #include <cmath>
+#include <cfloat>
 #include <memory>
 #include <string>
 #include <vector>
+#include <cassert>
 #include <iostream>
+#include <algorithm>
 #include <stdexcept>
+
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "io/DetectorResponse.h"
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 using namespace std;
+
+namespace
+{
+  /** The energy a peak's gammas are attributed at: its assigned gamma's, or with none (e.g., a peak
+   of a source the user gave a branching ratio for) its mean. */
+  double peak_gamma_energy( const PeakDef &peak )
+  {
+    if( peak.parentNuclide() || peak.xrayElement() || peak.reaction() )
+    {
+      try
+      {
+        return peak.gammaParticleEnergy();
+      }catch( std::exception & )
+      {
+        //A source without the gamma resolved; use the mean
+      }
+    }//if( the peak has a source )
+
+    return peak.mean();
+  }//peak_gamma_energy(...)
+}//namespace
+
 
 namespace MakeDrfCalc
 {
@@ -102,7 +135,7 @@ std::vector<MakeDrfFit::EffFitPoint> intrinsicFitPoints( const MeasuredDrfPoints
 
     MakeDrfFit::EffFitPoint fp;
     fp.energy = inMeV ? (p.energy / 1000.0f) : p.energy;
-    fp.efficiency = static_cast<float>( p.efficiency / g );
+    fp.efficiency = static_cast<float>( p.efficiency / (g * geom.efficiencyMultiple) );
     fp.fracStatUncert = p.fracStatUncert;
     fp.fracCertUncert = p.fracCertUncert;
     fp.fracDistUncert = static_cast<float>( fabs(slope_per_cm) * (p.distanceUncert / PhysicalUnits::cm) );
@@ -124,6 +157,9 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
   if( fit.eff.coefs.empty() )
     throw runtime_error( "Equation coefficients are empty." );
 
+  if( !(geom.efficiencyMultiple > 0.0) || !std::isfinite(geom.efficiencyMultiple) )
+    throw runtime_error( "The efficiency multiple must be greater than zero." );
+
   for( const float val : fit.eff.coefs )
   {
     if( std::isnan(val) || std::isinf(val) )
@@ -142,6 +178,9 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
                                 far_field ? static_cast<float>(geom.diameter) : 0.0f,
                                 eqnEnergyUnits, fit.lowerEnergy, fit.upperEnergy, fit.geometryType );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
+
+  // Before any response is made: they are given it (the fitted equation is one element's).
+  drf->setEfficiencyMultiple( geom.efficiencyMultiple );
 
   // The flat-disk setback: entered directly, or implied by the geometry's front layers
   double setback = geom.setback;
@@ -196,47 +235,85 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
   //  before switching to the diameter-only flat disk, describes some other detector.
   if( mcResponse && geom.geometry && far_field )
   {
-    try
+    // Re-ground only a response that ARRIVED grounded: the MC tool grounds (or deliberately does
+    //  not, per its "correct to this detector's measured efficiency" checkbox) before handing the
+    //  response over, and re-grounding an ungrounded one would override that choice.  We still
+    //  redo it, because the measured points may have changed since.
+    const bool was_grounded = !mcResponse->grounding.empty();
+
+    // The multiple may have been changed since the Monte Carlo ran; k(E) is fit with the scale in
+    //  the model, so the response has to carry the DRF's before grounding (and before attaching,
+    //  either way - the DRF already holds the multiple, and attaching a response adopts its scale).
+    const bool rescale = (mcResponse->efficiency_scale != geom.efficiencyMultiple);
+
+    // Ground/rescale a COPY: the caller's response is attached to every DRF stored or exported from
+    //  it, so changing it in place would change DRFs already in use (and race threads evaluating
+    //  them).  DetectorResponse is not copyable, so copy through its codec (as
+    //  CeeLoUtils::withoutGrounding does) - only when there is something to change, as that is a
+    //  full serialize and parse.
+    shared_ptr<ceelo::DetectorResponse> response;
+    if( was_grounded || rescale )
     {
-      // Re-ground only a response that ARRIVED grounded: the MC tool grounds (or deliberately does
-      //  not, per its "correct to this detector's measured efficiency" checkbox) before handing the
-      //  response over, and re-grounding an ungrounded one would override that choice.  We still
-      //  redo it, because the measured points may have changed since it was generated.
-      const bool was_grounded = !mcResponse->grounding.empty();
-
-      // k(E) is the ratio of measurement to the UNGROUNDED model, so the old grounding has to go
-      //  before any model efficiency is evaluated - `ground_to_points` clears it too, but only
-      //  after honoring a pre-filled `model_eff`, which would otherwise already carry exp(ln_k)
-      //  and drive the new k(E) to 1 (silently cancelling the grounding).  Clearing here also
-      //  makes this whole block idempotent, which matters because one save calls assembleDrf
-      //  several times (store, N42 export, reference sheet) on this same shared response.
-      mcResponse->grounding = ceelo::GroundingBlock();
-
-      vector<ceelo::GroundingPoint> ground_pts;
-      for( const MeasuredEffPoint &p : points.points() )
+      try
       {
-        if( (p.distance < 0.0f) || (p.efficiency <= 0.0f) )
-          continue;
-        ceelo::GroundingPoint gp;
-        gp.energy_keV = p.energy;
-        gp.measured_eff = p.efficiency;
-        gp.frac_stat_sigma = p.fracStatUncert;
-        gp.frac_cert_sigma = p.fracCertUncert;
-        gp.source_key = p.sourceKey;
-        gp.distance_cm = p.distance / PhysicalUnits::cm;  //from the face; see groundResponseToFacePoints
-        gp.cos_theta = 1.0;  //Create DRF sources are on-axis
-        ground_pts.push_back( std::move(gp) );
-      }//for( const MeasuredEffPoint &p : points.points() )
+        response = ceelo::DetectorResponse::from_xml_string( mcResponse->to_xml_string() );
+      }catch( std::exception &e )
+      {
+        cerr << "MakeDrfCalc::assembleDrf: failed to copy MC response: " << e.what() << endl;
+      }
 
-      if( was_grounded && !ground_pts.empty() )
-        CeeLoUtils::groundResponseToFacePoints( *mcResponse, ground_pts, /*curve_derived=*/false );
+      if( response )
+        response->efficiency_scale = geom.efficiencyMultiple;
+    }//if( was_grounded || rescale )
 
-      drf->setCeeloResponse( mcResponse );
-    }catch( std::exception &e )
+    if( !response )
     {
-      cerr << "MakeDrfCalc::assembleDrf: failed to ground MC response: " << e.what() << endl;
-      drf->setCeeloResponse( mcResponse );  //attach ungrounded
-    }
+      // As handed over, unmodified - unless it carries another multiple, which would make every
+      //  efficiency off by their ratio; then the DRF goes without a response (the curve stands).
+      if( !rescale )
+        drf->setCeeloResponse( mcResponse );
+      else
+        cerr << "MakeDrfCalc::assembleDrf: not attaching the MC response, as it could not be given"
+                " the efficiency multiple." << endl;
+    }else if( was_grounded )
+    {
+      try
+      {
+        // k(E) is the ratio of measurement to the UNGROUNDED model, so the old grounding has to go
+        //  before any model efficiency is evaluated - `ground_to_points` clears it too, but only
+        //  after honoring a pre-filled `model_eff`, which would otherwise already carry exp(ln_k)
+        //  and drive the new k(E) to 1 (silently cancelling the grounding).
+        response->grounding = ceelo::GroundingBlock();
+
+        vector<ceelo::GroundingPoint> ground_pts;
+        for( const MeasuredEffPoint &p : points.points() )
+        {
+          if( (p.distance < 0.0f) || (p.efficiency <= 0.0f) )
+            continue;
+          ceelo::GroundingPoint gp;
+          gp.energy_keV = p.energy;
+          gp.measured_eff = p.efficiency;
+          gp.frac_stat_sigma = p.fracStatUncert;
+          gp.frac_cert_sigma = p.fracCertUncert;
+          gp.source_key = p.sourceKey;
+          gp.distance_cm = p.distance / PhysicalUnits::cm;  //from the face; see groundResponseToFacePoints
+          gp.cos_theta = 1.0;  //Create DRF sources are on-axis
+          ground_pts.push_back( std::move(gp) );
+        }//for( const MeasuredEffPoint &p : points.points() )
+
+        if( !ground_pts.empty() )
+          CeeLoUtils::groundResponseToFacePoints( *response, ground_pts, /*curve_derived=*/false );
+      }catch( std::exception &e )
+      {
+        cerr << "MakeDrfCalc::assembleDrf: failed to ground MC response: " << e.what() << endl;
+        response->grounding = ceelo::GroundingBlock();  //attach ungrounded
+      }
+
+      drf->setCeeloResponse( response );
+    }else
+    {
+      drf->setCeeloResponse( response );  //only rescaled
+    }//if( could not copy the response ) / else if( re-ground ) / else
   }else if( geom.geometry && far_field )
   {
     try
@@ -244,7 +321,8 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
       const CeeLoUtils::TransferAnchor anchor
                   = CeeLoUtils::curveAnchorWithCovarianceForDrf( drf, *geom.geometry, -1.0 );
       const ceelo::AnchorCurve tot_curve = CeeLoUtils::totalTransferAnchorForDrf( drf, anchor );
-      drf->setCeeloResponse( CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, tot_curve, name ) );
+      drf->setCeeloResponse( CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, tot_curve, name,
+                                                               drf->efficiencyMultiple() ) );
     }catch( std::exception &e )
     {
       cerr << "MakeDrfCalc::assembleDrf: could not build the curve-transfer response: " << e.what() << endl;
@@ -268,6 +346,7 @@ GeometryChoice geometryChoiceForDrf( const DetectorPeakResponse &drf )
   answer.geometry = drf.geometry();
   answer.diameter = drf.detectorDiameter();
   answer.setback = drf.detectorSetback();
+  answer.efficiencyMultiple = drf.efficiencyMultiple();
 
   return answer;
 }//geometryChoiceForDrf(...)
@@ -408,5 +487,263 @@ void refitEfficiencyFromPoints( DetectorPeakResponse &drf,
     }
   }
 }//refitEfficiencyFromPoints(...)
+
+
+SampleResult samplePoints( const SampleInput &sample,
+                           const std::vector<BackgroundPeak> &background,
+                           const bool airAttenuation )
+{
+  typedef GammaInteractionCalc::ShieldingSourceChi2Fcn Chi2Fcn;
+
+  const vector<CalSource> &sources = sample.sources;
+  const size_t nsources = sources.size();
+
+  SampleResult answer;
+  vector<bool> usable( nsources, false );
+  for( size_t i = 0; i < nsources; ++i )
+    usable[i] = sources[i].usable;
+
+  // Each gamma line counts toward the nearest of all the spectrum's peaks, used or not.  As
+  //  Chi2Fcn::observedPeakEnergyWidths, but a peak without a source assigned is kept, at its mean.
+  vector<pair<double,double>> energy_widths;
+  for( const SamplePeak &p : sample.peaks )
+  {
+    if( p.peak )
+      energy_widths.emplace_back( peak_gamma_energy( *p.peak ),
+                                  p.peak->gausPeak() ? p.peak->sigma() : 0.25*p.peak->roiWidth() );
+  }
+  std::sort( begin(energy_widths), end(energy_widths) );
+
+  // Per source with a nuclide: the gammas per second (before any attenuation) it puts in each
+  //  peak, keyed by the peak's gamma energy (as `energy_widths` is)
+  vector<map<double,double>> rates( nsources );
+  for( size_t i = 0; i < nsources; ++i )
+  {
+    const CalSource &src = sources[i];
+    if( !usable[i] || !src.nuclide )
+      continue;
+
+    try
+    {
+      const bool decay_during_meas = (sample.realTime > sm_decayDuringMeasFraction*src.nuclide->halfLife);
+      SandiaDecay::NuclideMixture mix;
+      mix.addNuclideByActivity( src.nuclide, Chi2Fcn::sm_activityUnits );
+      Chi2Fcn::cluster_peak_activities( rates[i], energy_widths, mix, src.activity, src.age,
+                                        sm_photopeakClusterSigma, -1.0, decay_during_meas,
+                                        sample.realTime, nullptr );
+    }catch( std::exception &e )
+    {
+      usable[i] = false;
+      answer.sourceErrors.emplace_back( i, e.what() );
+    }//try / catch
+  }//for( size_t i = 0; i < nsources; ++i )
+
+  // The lines of the unusable sources (at unit activity, and the default age, as theirs may be
+  //  what is wrong), and the strongest of each - a peak they add more than a trace to is left out
+  vector<vector<SandiaDecay::EnergyRatePair>> unusable_lines( nsources );
+  vector<double> unusable_max_rate( nsources, 0.0 );
+  for( size_t i = 0; i < nsources; ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = sources[i].nuclide;
+    if( usable[i] || !nuc )
+      continue;
+
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( nuc, 1.0, PeakDef::defaultDecayTime( nuc, nullptr ) );
+    unusable_lines[i] = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    for( const SandiaDecay::EnergyRatePair &line : unusable_lines[i] )
+      unusable_max_rate[i] = std::max( unusable_max_rate[i], line.numPerSecond );
+  }//for( size_t i = 0; i < nsources; ++i )
+
+  // The fraction of a source's gammas at `energy` that get through its shielding and the air
+  auto transmission = [airAttenuation]( const CalSource &src, const double energy ) -> double {
+    double trans = 1.0;
+    if( airAttenuation && (src.distance > 0.0) )
+      trans *= exp( -GammaInteractionCalc::transmission_length_coefficient_air( energy ) * src.distance );
+
+    if( src.shieldMaterial )
+    {
+      // A named material attenuates by its actual composition (an effective atomic number misses,
+      //  e.g., hydrogen's extra electrons per gram - ~10% of mu for water)
+      trans *= exp( -GammaInteractionCalc::transmition_coefficient_material( src.shieldMaterial.get(),
+                                                                             energy, src.shieldThickness ) );
+    }else if( (src.shieldAtomicNumber >= 1.0) && (src.shieldArealDensity > 0.0) )
+    {
+      const double mu = MassAttenuation::massAttenuationCoefficientFracAN( src.shieldAtomicNumber, energy );
+      trans *= exp( -mu * src.shieldArealDensity );
+    }
+    return trans;
+  };//transmission lambda
+
+  for( size_t peak_index = 0; peak_index < sample.peaks.size(); ++peak_index )
+  {
+    const SamplePeak &sp = sample.peaks[peak_index];
+    if( !sp.peak || (sp.source < 0) )
+      continue;
+
+    assert( static_cast<size_t>(sp.source) < nsources );
+    if( (static_cast<size_t>(sp.source) >= nsources) || !usable[sp.source] )
+      continue;  //the source's own problems say why
+
+    const PeakDef &peak = *sp.peak;
+    const CalSource &src = sources[sp.source];
+
+    PeakPoint point;
+    point.peak = peak_index;
+    point.energy = peak_gamma_energy( peak );  //also the key `energy_widths` (so `rates`) use
+
+    // A peak with no nuclide uses the branching ratio the user entered for it
+    if( !src.nuclide && (sp.userBr < 0.0) )
+    {
+      point.status = PeakPoint::Status::NoUserBranchRatio;
+      answer.points.push_back( point );
+      continue;
+    }
+
+    // A data-defined peak has no sigma; a quarter of its ROI stands in, as in `energy_widths`
+    const double peak_sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
+
+    // Leave out peaks an unusable source would add more than a trace to
+    const double match_width = sm_photopeakClusterSigma * peak_sigma;
+    for( size_t i = 0; (i < nsources) && (point.interferer < 0); ++i )
+    {
+      for( const SandiaDecay::EnergyRatePair &line : unusable_lines[i] )
+      {
+        if( (fabs(line.energy - point.energy) < match_width)
+            && (line.numPerSecond > 1.0E-3*unusable_max_rate[i]) )
+        {
+          point.interferer = static_cast<int>( i );
+          break;
+        }
+      }
+    }//for( loop over unusable sources )
+
+    if( point.interferer >= 0 )
+    {
+      point.status = PeakPoint::Status::NeedsUnusableSource;
+      answer.points.push_back( point );
+      continue;
+    }
+
+    // The background rate is the matching peaks' summed area over the summed live time of the
+    //  background spectra they are in - each spectrum counted once, even when two of its peaks
+    //  match (e.g., a doublet).
+    double bkg_area = 0.0, bkg_area_uncert_sq = 0.0, bkg_lt = 0.0;
+    set<size_t> bkg_spectra_used;
+    for( const BackgroundPeak &b : background )
+    {
+      if( !b.peak )
+        continue;
+
+      const PeakDef &bpeak = *b.peak;
+      if( (fabs(bpeak.mean() - peak.mean()) < 1.5*peak_sigma)
+         || (bpeak.parentNuclide() && peak.parentNuclide()
+             && (fabs(peak_gamma_energy(bpeak) - point.energy) < 1.0)) )
+      {
+        bkg_area += bpeak.peakArea();
+        bkg_area_uncert_sq += bpeak.peakAreaUncert() * bpeak.peakAreaUncert();
+        if( bkg_spectra_used.insert( b.spectrum ).second )
+          bkg_lt += b.liveTime;
+      }
+    }//for( const BackgroundPeak &b : background )
+
+    point.peakArea = peak.peakArea();
+    point.peakAreaUncert = peak.peakAreaUncert();
+
+    const bool sub_back = ((bkg_area > DBL_EPSILON) && (bkg_lt > DBL_EPSILON));
+    double scaled_back = -1.0, scaled_back_uncert = 0.0;
+    if( sub_back )
+    {
+      point.bkgArea = bkg_area;
+      point.bkgLiveTime = bkg_lt;
+
+      scaled_back = sample.liveTime * bkg_area / bkg_lt;
+      scaled_back_uncert = scaled_back * sqrt( bkg_area_uncert_sq ) / bkg_area;
+      point.peakArea -= scaled_back;
+      point.peakAreaUncert = sqrt( point.peakAreaUncert*point.peakAreaUncert
+                                   + scaled_back_uncert*scaled_back_uncert );
+    }//if( sub_back )
+
+    // Annihilation photons are Doppler broadened, whatever made the positron, so a 511 keV peak is
+    //  wider than the detector resolution
+    const bool is_annihilation = (peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma)
+                                 || (peak.gausPeak() && (fabs(peak.mean() - 510.9989) < 0.5*peak.fwhm()));
+    point.useForFwhm = (peak.gausPeak() && !is_annihilation);
+
+    // The gammas per second that land in this peak, from each of the spectrum's sources, after
+    //  their shielding and the air; their activity uncertainties add in quadrature.
+    double rate_sq_uncert = 0.0;
+    for( size_t i = 0; i < nsources; ++i )
+    {
+      if( !usable[i] )
+        continue;
+
+      const CalSource &s = sources[i];
+      double rate = 0.0;
+      if( s.nuclide )
+      {
+        const auto pos = rates[i].find( point.energy );
+        if( pos != end(rates[i]) )
+          rate = pos->second;
+      }else if( i == static_cast<size_t>(sp.source) )
+      {
+        rate = sp.userBr * s.activity;
+      }
+
+      if( rate <= 0.0 )
+        continue;
+
+      rate *= transmission( s, point.energy );
+      point.sourceRate += rate;
+      rate_sq_uncert += pow( rate * s.fracActivityUncert, 2.0 );
+    }//for( size_t i = 0; i < nsources; ++i )
+
+    point.fracSourceUncert = (point.sourceRate > 0.0) ? (sqrt(rate_sq_uncert) / point.sourceRate) : 0.0;
+
+    // Absolute efficiency at this source's own distance
+    const double expected = point.sourceRate * sample.liveTime;
+    const double eff = point.peakArea / expected;
+
+    if( !(expected > 0.0) || std::isnan(eff) || std::isinf(eff) )
+    {
+      point.status = PeakPoint::Status::NoSourceGammas;
+    }else if( !(point.peakArea > 0.0) )
+    {
+      point.status = PeakPoint::Status::NoNetArea;
+    }else
+    {
+      // The statistical (peak area) and certificate (source activity) parts are kept separate, plus
+      //  the provenance - the fit, a Monte-Carlo grounding, and a later re-fit from the DRF alone all
+      //  start from exactly this.
+      MeasuredEffPoint &raw = point.measured;
+      raw.energy = static_cast<float>( point.energy );
+      raw.efficiency = static_cast<float>( eff );
+      raw.fracStatUncert = static_cast<float>( point.peakAreaUncert / point.peakArea );
+      raw.fracCertUncert = static_cast<float>( point.fracSourceUncert );
+      raw.distance = static_cast<float>( src.distance );
+      raw.distanceUncert = (src.distance > 0.0) ? static_cast<float>( src.distanceUncert ) : 0.0f;
+      raw.peakArea = static_cast<float>( point.peakArea );
+      raw.peakAreaUncert = static_cast<float>( point.peakAreaUncert );
+      raw.liveTime = static_cast<float>( sample.liveTime );
+      if( sub_back )
+      {
+        raw.bkgPeakArea = static_cast<float>( scaled_back );
+        raw.bkgPeakAreaUncert = static_cast<float>( scaled_back_uncert );
+      }
+    }//if( no gammas ) / else if( no net area ) / else
+
+    answer.points.push_back( point );
+  }//for( loop over peaks )
+
+  return answer;
+}//samplePoints(...)
+
+
+int defaultEquationTerms( const int npoints, const int maxTerms )
+{
+  if( (npoints < 1) || (maxTerms < 1) )
+    return 0;
+  return std::min( maxTerms, std::max( std::min(npoints, 2), npoints - 2 ) );
+}//defaultEquationTerms(...)
 
 }//namespace MakeDrfCalc

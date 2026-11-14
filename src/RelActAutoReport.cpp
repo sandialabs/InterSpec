@@ -50,6 +50,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/RelEffChart.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
@@ -1737,6 +1738,17 @@ namespace
       if( SpecUtils::is_file(full) )
         return { "", full };
     }
+    // By name, through the user library: the user's own templates (in `report_templates/isotopics_auto`
+    //  or the older `IsotopicsByNuclidesReportTmplts`) and those from packages - per its precedence and
+    //  the user's choices.  InterSpec's own are looked for last (below), after a file of that name in
+    //  the working folder, as before.
+    if( SpecUtils::filename( t ) == t )
+    {
+      const optional<UserLibrary::Item> item = UserLibrary::resolve( "isotopics_template", t );
+      if( item && (item->source.kind != UserLibrary::SourceKind::BuiltIn) )
+        return { "", item->found.path };
+    }
+
     const string user_dir = writable_template_dir();
     if( !user_dir.empty() )
     {
@@ -1842,6 +1854,19 @@ string render_template( inja::Environment &env,
   if( !content.empty() && content.back() == '\0' )
     content.pop_back();
   const std::string content_str( content.begin(), content.end() );
+
+  // A template from a user library package resolves its includes in its own folder, and only there.
+  if( UserLibrary::available()
+      && UserLibrary::isInPackages( full_path ) )
+  {
+    string dir = SpecUtils::parent_path( full_path );
+    if( !dir.empty() && (dir.back() != ns_path_sep) )
+      dir += ns_path_sep;
+    inja::Environment pkg_env = get_default_inja_env( dir );
+    UserLibrary::confineTemplateIncludes( pkg_env, full_path );  //includes only from its own folder
+    inja::Template parsed = pkg_env.parse( content_str );
+    return pkg_env.render( parsed, data );
+  }//if( from a package )
 
   inja::Template parsed = env.parse( content_str );
   return env.render( parsed, data );

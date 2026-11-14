@@ -30,8 +30,12 @@
 
 namespace Wt
 {
+  class WDate;
   class WDialog;
+  class WString;
   class WWidget;
+  class WDateEdit;
+  class WFormWidget;
   class WPushButton;
   class WContainerWidget;
 }//namespace Wt
@@ -190,6 +194,63 @@ namespace WidgetUtils
    Safe to call with a null `button`.
    */
   void applyButtonRole( Wt::WPushButton *button, ButtonRole role );
+
+
+  /** Marks (or clears the mark on) an input whose text is well-formed, but whose value cannot be
+   used - a negative distance, a required field left blank, an assay date after the measurement.
+
+   Uses the "InputValueError" style class, which InterSpec.css styles the same as Wt's own
+   "Wt-invalid".  It is a separate class so that Wt's client-side validation (which only knows the
+   regex, and re-evaluates on every keystroke) does not clear a mark the server set.  Also sets
+   `aria-invalid`.  Safe to call with a null `w`.
+   */
+  void setInputValueError( Wt::WFormWidget *w, const bool error );
+
+  /** Brings an input into view and gives it focus: expands every collapsed WPanel it is inside
+   (Wt ignores events for hidden widgets, so this has to come first), then scrolls it to the
+   middle of its scroll area and focuses it.  Safe to call with a null `w`.
+   */
+  void revealAndFocus( Wt::WFormWidget *w );
+
+  /** For a container whose WGridLayout has a resizable row: Wt's layout reserves 10px for each
+   row-resize handle but positions with 5px, leaking 5px out of the bottom of the layout.  This
+   sets the `wtGetPS` JS member that lets the stretching row absorb it (see InterSpec::InterSpec).
+   */
+  void compensateRowHandleLeak( Wt::WContainerWidget *layoutOwner );
+
+
+  /** How #parseLenientDate classified some text. */
+  enum class DateParse
+  {
+    Valid,      ///< A real date, in an unambiguous form.
+    Empty,      ///< Only whitespace.
+    Ambiguous,  ///< Day and month could be either way around (e.g. "1/5/2019"), or a 2-digit year.
+    Invalid     ///< Not a date (or not a real one, e.g. 2019-02-30).
+  };//enum class DateParse
+
+  /** Parses a date the way a person is likely to type it, rather than only in `format`.
+
+   Accepted, in order: an exact match of `format` (a WDate format, e.g. "yyyy-MM-dd" or
+   "MM/dd/yyyy"); numbers in the order `format` gives, with 1 or 2 digit day and month
+   ("2019-1-5"); year-first numbers with any of '-', '/', '.' or ' ' between them ("2019/1/5");
+   "yyyyMMdd"; and a month name with a 4-digit year and a day, in any order ("5 Jan 2019",
+   "January 5, 2019", "2019-Jan-05").  A trailing time ("2019-01-05T13:00") is ignored.
+   Numeric forms with a 2-digit year, or whose day and month order disagrees with `format` and is
+   not year-first, are `Ambiguous` - never guessed.
+
+   `result` is only set when `Valid` is returned.
+   */
+  DateParse parseLenientDate( const std::string &text, const std::string &format, Wt::WDate &result );
+
+  /** Sets a WDateEdit to `format` (kept through WDateEdit::refresh()), with the format, lower-cased,
+   as the placeholder, and with the range limited to years 1900 to 2200.
+   */
+  void setupDateEdit( Wt::WDateEdit *edit, const Wt::WString &format );
+
+  /** Re-writes the text of a WDateEdit into its own format, if #parseLenientDate can read it -
+   call when the user has finished editing (the `changed()` signal).  Returns the classification.
+   */
+  DateParse normalizeDateEdit( Wt::WDateEdit *edit );
 }//namespace WidgetUtils
 
 #endif //WidgetUtils_h

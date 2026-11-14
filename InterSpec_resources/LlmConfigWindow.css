@@ -350,11 +350,6 @@
   padding: 12px; border-radius: 8px;
   overflow: auto; max-height: 260px;
   white-space: pre;
-  /* Allow the user to select/copy the generated XML. */
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  user-select: text;
-  cursor: text;
 }
 
 /* Footer */

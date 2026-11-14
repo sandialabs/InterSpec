@@ -7,11 +7,32 @@
   <message id="raag-presets">Presets</message>
   <message id="raag-preset-blank">Blank</message>
   <message id="raag-user-preset">User: {1}</message>
+  <message id="raag-package-preset">{1} ({2})</message>
   
   <!-- Status messages -->
   <message id="raag-not-calculated">Not Calculated.</message>
   <message id="raag-calculating">Calculating...</message>
-  
+
+  <!-- Calculation progress, shown in place of "Calculating..."; raag-calc-elapsed[-min] append the time since the start. -->
+  <message id="raag-calc-elapsed">{1} ({2} s)</message>
+  <message id="raag-calc-elapsed-min">{1} ({2} m {3} s)</message>
+  <message id="raag-calc-phase-step">{1} - {2}</message>
+  <message id="raag-calc-iteration">{1}: iteration {2}, &#967;&#178;/dof={3}</message>
+  <message id="raag-calc-phase-roi-refine">Refining ROIs</message>
+  <message id="raag-calc-phase-roi-refine-n">Refining ROIs (pass {1} of {2})</message>
+  <message id="raag-calc-phase-nested-source">Checking if each source is needed</message>
+  <message id="raag-calc-phase-merged-curve">Comparing to a single rel. eff. curve</message>
+  <message id="raag-calc-phase-tied-enrich">Comparing to the same isotopics on every curve</message>
+  <message id="raag-calc-phase-profile">Computing profile-likelihood intervals</message>
+  <message id="raag-calc-step-setup">Setting up problem</message>
+  <message id="raag-calc-step-peak-search">Searching for peaks</message>
+  <message id="raag-calc-step-initial-estimate">Estimating starting activities</message>
+  <message id="raag-calc-step-pre-fit">Pre-fitting</message>
+  <message id="raag-calc-step-main-fit">Fitting</message>
+  <message id="raag-calc-step-alt-starts">Trying alternate starting points ({1} of {2})</message>
+  <message id="raag-calc-step-simplify">Testing model simplifications (round {1})</message>
+  <message id="raag-calc-step-uncertainties">Computing uncertainties</message>
+
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Spectrum and Peak Options</message>
   <message id="raag-rel-eff-curve-options">Relative Efficiency Curve Options</message>

@@ -30,7 +30,7 @@
 // means against those, the isotropic limit, and the geometry of direction_at_angle.
 
 #define BOOST_TEST_MODULE cascade_angular
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include "cascade/AngularSampling.h"
 

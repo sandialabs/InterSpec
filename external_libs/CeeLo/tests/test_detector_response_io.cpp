@@ -1372,6 +1372,7 @@ std::shared_ptr<DetectorResponse> make_kitchen_sink_response() {
     r->tot_eff.tier = TotEffTier::EtaTotTable;
     r->tot_eff.eta_tot = r->eta_fep;
     r->scatter_in_recapture = 0.8;
+    r->efficiency_scale = 4.0;
     r->model_transfer = SigmaTransferModel{};
     r->floors.fep_far = 0.012;
     r->grounding.curve_derived = true;
@@ -2124,5 +2125,111 @@ BOOST_AUTO_TEST_CASE(back_near_field_round_trip_and_policy) {
         const std::shared_ptr<DetectorResponse> front = DetectorResponse::from_xml_string(xml);
         front->back_near_field.cos_thetas = {-0.5, 0.5};
         BOOST_CHECK_THROW(front->finalize(), std::runtime_error);
+    }
+}
+
+
+// --- efficiency scale ---------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(efficiency_scale_multiplies_every_efficiency) {
+    // One factor on every efficiency - FEP, total in each tier, and the prefactors a host builds its
+    //  own kernel sum with - and on nothing fractional: sigmas scale with the value, flags and the
+    //  covariance do not move.
+    for (const std::shared_ptr<DetectorResponse>& unit :
+         {make_synthetic_nai(0.5, true), make_kitchen_sink_response()}) {
+        unit->efficiency_scale = 1.0;
+        const std::shared_ptr<DetectorResponse> scaled = DetectorResponse::from_xml_string(unit->to_xml_string());
+        scaled->efficiency_scale = 4.0;
+
+        for (const Eigen::Vector3d& pos : {source_position(20.0, 1.0), source_position(3.0, 0.5),
+                                           Eigen::Vector3d(0.0, 3.0, -1.0)}) {
+            const ApertureQuadrature q1 = unit->make_quadrature(pos), q4 = scaled->make_quadrature(pos);
+            for (const double E : {60.0, 662.0, 2000.0}) {
+                const EffResult f1 = unit->eps_fep_at(E, pos, q1), f4 = scaled->eps_fep_at(E, pos, q4);
+                BOOST_CHECK_CLOSE(f4.value, 4.0 * f1.value, 1e-9);
+                BOOST_CHECK_CLOSE(f4.sigma, 4.0 * f1.sigma, 1e-9);
+                BOOST_CHECK_CLOSE(f4.sigma_model, 4.0 * f1.sigma_model, 1e-9);
+                BOOST_CHECK_EQUAL(static_cast<int>(f4.flag), static_cast<int>(f1.flag));
+
+                const EffResult t1 = unit->eps_total_at(E, pos, q1), t4 = scaled->eps_total_at(E, pos, q4);
+                BOOST_CHECK_CLOSE(t4.value, 4.0 * t1.value, 1e-9);
+                BOOST_CHECK_CLOSE(t4.sigma, 4.0 * t1.sigma, 1e-9);
+
+                BOOST_CHECK_CLOSE(scaled->fep_prefactor(E, pos, q4).value,
+                                  4.0 * unit->fep_prefactor(E, pos, q1).value, 1e-9);
+                BOOST_CHECK_CLOSE(scaled->total_prefactor(E, pos, q4).value,
+                                  4.0 * unit->total_prefactor(E, pos, q1).value, 1e-9);
+            }
+
+            const std::vector<double> es{100.0, 662.0};
+            const std::vector<double> c1 = unit->frac_covariance(es, pos, q1);
+            const std::vector<double> c4 = scaled->frac_covariance(es, pos, q4);
+            BOOST_REQUIRE_EQUAL(c1.size(), c4.size());
+            for (size_t i = 0; i < c1.size(); ++i)
+                BOOST_CHECK_CLOSE(c4[i], c1[i], 1e-9);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(efficiency_scale_serialization) {
+    const std::shared_ptr<DetectorResponse> unit = make_synthetic_nai(0.5, true);
+    const std::string unit_xml = unit->to_xml_string();
+    BOOST_CHECK(unit_xml.find("EfficiencyScale") == std::string::npos);  // 1 is not written
+
+    const std::shared_ptr<DetectorResponse> scaled = DetectorResponse::from_xml_string(unit_xml);
+    scaled->efficiency_scale = 4.0;
+    const std::string xml = scaled->to_xml_string();
+    BOOST_CHECK(xml.find("<EfficiencyScale>") != std::string::npos);
+    // Stamped v5, so a reader that would skip the element refuses the file instead.
+    BOOST_CHECK(xml.find("version=\"5\"") != std::string::npos);
+    BOOST_CHECK_NE(scaled->content_hash(), unit->content_hash());
+
+    const std::shared_ptr<DetectorResponse> back = DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK_EQUAL(back->efficiency_scale, 4.0);
+    BOOST_CHECK_EQUAL(back->to_xml_string(), xml);
+    BOOST_CHECK_EQUAL(back->content_hash(), scaled->content_hash());
+
+    // Back at 1: the bytes and hash of a response that was never scaled.
+    back->efficiency_scale = 1.0;
+    BOOST_CHECK_EQUAL(back->to_xml_string(), unit_xml);
+    BOOST_CHECK_EQUAL(back->content_hash(), unit->content_hash());
+
+    for (const double bad : {0.0, -4.0, std::numeric_limits<double>::quiet_NaN(),
+                             std::numeric_limits<double>::infinity()}) {
+        const std::shared_ptr<DetectorResponse> r = DetectorResponse::from_xml_string(unit_xml);
+        r->efficiency_scale = bad;
+        BOOST_CHECK_THROW(r->finalize(), std::runtime_error);
+    }
+
+    std::string bad_xml = xml;
+    const size_t pos = bad_xml.find("<EfficiencyScale>");
+    bad_xml.insert(pos + std::string("<EfficiencyScale>").size(), "-");
+    BOOST_CHECK_THROW(DetectorResponse::from_xml_string(bad_xml), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(efficiency_scale_grounds_against_the_whole_detector) {
+    // Points that are the whole detector's efficiency - four elements' worth - need no correction
+    //  once the response carries the scale: k(E) stays the correction to the one element.
+    const std::shared_ptr<DetectorResponse> element = make_synthetic_nai(0.5, false);
+    const std::shared_ptr<DetectorResponse> resp = DetectorResponse::from_xml_string(element->to_xml_string());
+    resp->efficiency_scale = 4.0;
+
+    std::vector<GroundingPoint> points;
+    for (const double E : {100.0, 300.0, 662.0, 1332.0}) {
+        GroundingPoint gp;
+        gp.energy_keV = E;
+        gp.distance_cm = 25.0;
+        gp.cos_theta = 1.0;
+        gp.frac_stat_sigma = 0.01;
+        gp.measured_eff = 4.0 * element->eps_fep(E, 0.0, 0.0, 25.0).value;
+        points.push_back(gp);
+    }
+    ResponseGenerator::ground_to_points(*resp, points, false);
+
+    for (const double E : {100.0, 662.0, 1332.0}) {
+        bool clamped = false;
+        BOOST_CHECK_SMALL(resp->grounding.eval_ln_k(E, clamped), 1e-6);
+        BOOST_CHECK_CLOSE(resp->eps_fep(E, 0.0, 0.0, 25.0).value,
+                          4.0 * element->eps_fep(E, 0.0, 0.0, 25.0).value, 1e-4);
     }
 }

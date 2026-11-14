@@ -20,6 +20,30 @@
 				<string>sandia.InterSpec.spectrum</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Detector Efficiency File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>sandia.InterSpec.drf</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>InterSpec Package</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>sandia.InterSpec.package</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>${EXECUTABLE_NAME}</string>
@@ -142,6 +166,46 @@
 				</array>
 				<key>public.mime-type</key>
 				<string>spectrum/x-calp</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Detector Efficiency File</string>
+			<key>UTTypeIdentifier</key>
+			<string>sandia.InterSpec.drf</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>par</string>
+					<string>ecc</string>
+					<string>outx</string>
+					<string>detx</string>
+					<string>tsv</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>InterSpec Package</string>
+			<key>UTTypeIdentifier</key>
+			<string>sandia.InterSpec.package</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ispkg</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-interspec-package</string>
 			</dict>
 		</dict>
 	</array>

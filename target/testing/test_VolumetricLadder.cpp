@@ -537,7 +537,7 @@ shared_ptr<ceelo::DetectorResponse> ladder_anchor_response( const AngleDetector 
   ostringstream nm;
   nm << "ladder anchor d=" << fixed << setprecision(2) << distance_cm << " cm";
   const shared_ptr<ceelo::DetectorResponse> resp =
-        CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+        CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() , 1.0);
   BOOST_REQUIRE( resp );
   return resp;
 }//ladder_anchor_response(...)
@@ -2606,7 +2606,7 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
     ostringstream nm;
     nm << "sphere centre anchor (d=" << fixed << setprecision(2) << d_cm << " cm)";
     shared_ptr<const ceelo::DetectorResponse> resp
-          = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+          = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() , 1.0);
     BOOST_REQUIRE( resp );
     anchored[key] = resp;
     return resp;
@@ -2808,7 +2808,7 @@ BOOST_AUTO_TEST_CASE( Rung9_FepWindowCreditProbe, * boost::unit_test::disabled()
     ostringstream nm;
     nm << "sphere centre anchor (d=" << fixed << setprecision(2) << d_cm << " cm)";
     shared_ptr<const ceelo::DetectorResponse> resp
-          = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+          = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() , 1.0);
     BOOST_REQUIRE( resp );
     anchored[key] = resp;
     return resp;

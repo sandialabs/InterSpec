@@ -75,7 +75,11 @@ namespace ceelo {
 // v4 = side & back coverage: eta tables with nodes below cos theta = 0.  A pre-v4 reader would
 // interpolate one PCHIP across the front and back node sets (EtaTable::eval_ln keeps them apart),
 // changing values in FRONT of the face too, so only covered responses are stamped v4.
-const int DetectorResponse::sm_xmlSerializationVersion = 4;
+//
+// v5 = efficiency_scale != 1.  A pre-v5 reader skips the unknown element and would report the one
+// modeled element's efficiency for the whole detector (a factor of 4 for a 2x2 array), so only
+// scaled responses are stamped v5.
+const int DetectorResponse::sm_xmlSerializationVersion = 5;
 
 namespace {
 
@@ -902,6 +906,9 @@ double GroundingBlock::var_ln_k(double energy_keV) const {
 // ---------------------------------------------------------------------------
 
 void DetectorResponse::finalize() {
+    if (!(efficiency_scale > 0.0) || !std::isfinite(efficiency_scale))
+        throw std::runtime_error("DetectorResponse: efficiency_scale must be finite and > 0");
+
     geometry_ = descriptor.build_geometry(owned_materials_);
     geometry_built_ = true;
 
@@ -1423,7 +1430,7 @@ EffResult DetectorResponse::fep_prefactor(
     fep_budget(energy_keV, ec, ln_N, ln_k);
 
     EffResult res;
-    res.value = std::exp(ln_eta + ln_N + ln_k);
+    res.value = efficiency_scale * std::exp(ln_eta + ln_N + ln_k);
     const double model2 = ec.budget.model2();
     res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
     res.sigma_model = res.value * std::sqrt(model2);
@@ -1479,7 +1486,7 @@ EffResult DetectorResponse::total_prefactor(
 
     EffResult res;
     ec.budget.node2 = node_sig * node_sig;
-    res.value = value * std::exp(total_near_ln(energy_keV, ec));
+    res.value = efficiency_scale * value * std::exp(total_near_ln(energy_keV, ec));
     ec.budget.model[SigmaBudget::Floor] = ec.near_regime ? floors.tot_near : floors.tot_far;
     const double model2 = ec.budget.model2();
     res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
@@ -1553,7 +1560,7 @@ EffResult DetectorResponse::eps_total_impl(
     }
 
     ec.budget.node2 = node_sig * node_sig;
-    value *= std::exp(total_near_ln(energy_keV, ec));
+    value *= efficiency_scale * std::exp(total_near_ln(energy_keV, ec));
 
     EffResult res;
     res.value = value;
@@ -2021,8 +2028,11 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         const bool needs_v4 = (!eta_fep.cos_thetas.empty() && (eta_fep.cos_thetas.front() < 0.0))
                               || (!tot_eff.eta_tot.empty() && !tot_eff.eta_tot.cos_thetas.empty()
                                   && (tot_eff.eta_tot.cos_thetas.front() < 0.0));
+        // v5 = an efficiency scale (see sm_xmlSerializationVersion).
+        const bool needs_v5 = (efficiency_scale != 1.0);
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%i", needs_v4 ? 4 : (needs_v3 ? 3 : (needs_v2 ? 2 : 1)));
+        std::snprintf(buf, sizeof(buf), "%i",
+                      needs_v5 ? 5 : (needs_v4 ? 4 : (needs_v3 ? 3 : (needs_v2 ? 2 : 1))));
         append_attrib(doc, root, "version", buf);
     }
 
@@ -2056,6 +2066,9 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
                           fmt_double(provenance.min_distance_cm));
         append_attrib(doc, p, "method", to_string(provenance.method));
     }
+
+    if (efficiency_scale != 1.0)
+        append_value_node(doc, root, "EfficiencyScale", fmt_double(efficiency_scale));
 
     // Detector geometry
     write_detector_node(doc, root, descriptor);
@@ -2269,6 +2282,13 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         }
     }
 
+    if (const char* v = child_value(root, "EfficiencyScale")) {
+        char* end = nullptr;
+        resp->efficiency_scale = std::strtod(v, &end);
+        if ((end == v) || !(resp->efficiency_scale > 0.0) || !std::isfinite(resp->efficiency_scale))
+            throw std::runtime_error("CeeLoResponse: invalid EfficiencyScale");
+    }
+
     const XmlNode* d = root->first_node("Detector");
     if (!d) throw std::runtime_error("CeeLoResponse: missing Detector node");
     resp->descriptor = read_detector_node(d);
@@ -2462,6 +2482,11 @@ uint64_t DetectorResponse::content_hash() const {
     h.number(provenance.valid_e_max_keV);
     h.number(provenance.min_distance_cm);
     h.text(to_string(provenance.method));
+
+    if (efficiency_scale != 1.0) {
+        h.tag("EfficiencyScale");
+        h.number(efficiency_scale);
+    }
 
     hash_detector(h, descriptor);
 

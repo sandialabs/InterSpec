@@ -1,77 +1,87 @@
     <div align="center">
       <h1 id="detector-edit-dialog">
-            <b>Detector Select</b>
+            <b>Detector Efficiency</b>
       </h1>
       <hr />
-	  </div>
-
-            <img src="InterSpec_resources/static_text/images/DetEditSelect.png"  class="imageBorder" style="float:left;display:block;margin-right:30px; max-height:300px;" />
+    </div>
 
       <div style="padding-top: 10px">
-        InterSpec may attempt to automatically guess the detector response function for newly
-        loaded spectra if you have set the appropriate directories (described below) and a detector
-        response function (DRF) with either a name matching the model of detector is found, or a generic
-        detector with a similar efficiency to manufacturer published specifications is found.
-
-         If an appropriate DRF is not found, or an incorrect one is guessed, you can change the detector via menu
-         <b>Tools &#8594; Detector Select</b>, or by clicking on the detector widget (
-         <img src="InterSpec_resources/static_text/images/detector_widget.png" valign="middle" style="max-height:30px;" />
-         ) found in the following locations:
-      <ul>
-            <li>
-                <b>Tools &#8594; Activity/ Shielding Fit</b> menu
-            </li>
-            <li>
-                <b>Tools &#8594; Gamma XS Calc</b> menu
-            </li>
-            <li>
-                <b>Tools &#8594; Reference Photopeaks </b> menu (if tool tabs hidden) or 3rd tab <b> Reference Photopeaks </b> (if tool tabs shown)
-            </li>
-      </ul>
-      Changing the DRF in any of the above locations is equivalent.
+        The detector efficiency (a <em>detector response function</em>, or DRF) tells <i>InterSpec</i>
+        what fraction of the gammas from a source are recorded in each full-energy peak.  Activity,
+        shielding and detection-limit calculations need one.  When a spectrum is opened, <i>InterSpec</i>
+        picks one automatically if it can: the one you chose before for that detector's serial number
+        or model, else a built-in detector of the same type.
       </div>
       <div style="padding-top: 10px">
-         The primary component of the detector response function is the
-         <span title="The fraction of gammas incident upon the front face of the detector, that will be recorded within the full energy peak at that energy">
-            <em>intrinsic efficiency</em>
-         </span>
-         of the detector as a function of energy; the detector response can also
-optionally contain the Full Width at Half Maximum (FWHM) for peaks as a function
-of energy. Some of the peak fitting routines loosely consult the FWHM of the
-detector response, if its available, for the initial value of peak width when
-fitting a new peak; the fit for the peak is in no way constrained by the FWHM
-of the detector response. If the detector response does not contain FWHM
-information, initial values of the peak width for the fit are derived from the
-data, and are almost always sufficiently close to the true width to allow the
-fit to converge.
+        Open this dialog with <b>Tools &#8594; Detector Response Select</b>, or by clicking the detector
+        name (
+        <img src="InterSpec_resources/static_text/images/detector_widget.png" valign="middle" style="max-height:30px;" />
+        ) shown in tools such as <b>Activity/Shielding Fit</b>, <b>Gamma XS Calc</b> and
+        <b>Reference Photopeaks</b>.  Changing the detector in any of these places is the same.
       </div>
-	  <div style="padding-top: 10px">
-         The
-         <b>Detector Select</b>
-         will provide some generic detector response functions (DRFs) as well as
-         an oppritunity to use DRFs from <code>GADRAS</code>, <code>SimpleMass</code>, free from equations,
-         standard equation coefficients, or absolute efficiencies specified using a comma seperated value
-         (CSV) or tab seperated value (TSV) file.
-         The DRFs are used when fitting for shieldings and source activity, and
-         displaying refernce photopeak amplitudes..
-      </div>
-      <div style="padding-top: 10px">
-         User defined detectors (either via upload or manual equation entry) can currently only
-         contain efficiency information.
-		  </div>
-
 
       <div>
-         <h3>Selecting Response Functions</h3>
-         Once a detector is selected from the below described source options, the 
-         various indicators such as the reference gamma lines should reflect the change
-         efficiencies.  However, if the detector select dialog is closed, or the
-         <b>Cancel</b> button <u>clicked</u>, <i>InterSpec</i> will revert back to using your previously selected
-         detector.  You must <u>click</u> the <b>Accept</b> button to continue using your
-         newly selected detector.
+         <h3>In use now</h3>
+         The strip at the top shows the detector in use.  <b>Show in list</b> finds it in the Library;
+         <b>Use none</b> stops using any detector.
+      </div>
+
+      <div>
+         <h3>The Library</h3>
+         The Library lists every detector <i>InterSpec</i> knows about: the ones that ship with it,
+         ones found in the standard folders of GADRAS, ISOCS and ANGLE (on Windows) and in
+         <i>InterSpec</i>'s own folder, and the ones you have made or used.  Detectors are grouped as
+         <b>Suggested for this spectrum</b> (chosen before for this serial number or model, included in
+         the spectrum file, or <i>InterSpec</i>'s default for this type of detector), <b>Recently used</b>,
+         and <b>Everything else</b>.  Search by name, crystal, model or file; the chips below the search
+         show only detectors from one source, or only those with a recorded crystal geometry.
+         <div style="padding-top: 10px">
+            Customized copies of a detector (see below) are listed under the detector they were made
+            from; click <b>Show N customized copies</b> to see them.
+         </div>
+         <div style="padding-top: 10px">
+            The list is re-checked each time the dialog opens: files that changed are read again, and the
+            rest come from memory, so the dialog opens quickly.
+         </div>
+      </div>
+
+      <div>
+         <h3>Previewing and using a detector</h3>
+         Clicking a detector only <em>previews</em> it: its efficiency curve is drawn as a solid line,
+         with the detector in use drawn dashed for comparison, and <b>What it includes</b> lists what
+         it can do.  Nothing changes until you click <b>Use &#8220;&#8230;&#8221;</b>; closing the dialog
+         (or <b>Cancel</b>) never applies a detector you only previewed.  A change can be undone with
+         <b>Edit &#8594; Undo</b>.
+         <ul>
+            <li><b>Rel. eff.</b> is the full-energy-peak efficiency at 1332 keV for a Co-60 point source
+              25 cm away, as a percent of a 3&#215;3 inch NaI(Tl) detector (the IEEE 325 definition).</li>
+            <li><b>far-field only</b> detectors scale their efficiency by the solid angle, which is fine for
+              sources more than a few detector diameters away on the detector axis.  <b>near-field OK</b>
+              detectors have a modeled response, so close and off-axis sources are handled too.
+              <b>fixed geometry</b> detectors are only valid for the setup they were made for.</li>
+            <li>Tick <b>Also pick it automatically next time</b> to have this detector chosen for spectra
+              from the same serial number or detector model.</li>
+            <li><b>Customize a copy&#8230;</b> makes your own copy of a detector, to rename it, give it a
+              crystal geometry and Monte-Carlo response, fit its peak widths to your spectra, or anchor it
+              to a measured efficiency.  The copy is saved under <b>Made by you</b>.</li>
+            <li><b>XML</b> downloads the detector (including any Monte-Carlo response); <b>QR code</b>
+              shows it as a code another <i>InterSpec</i> can scan.  Detectors you made can be deleted.</li>
+         </ul>
+      </div>
+
+      <div>
+         <h3>Import</h3>
+         The <b>Import</b> tab brings in a detector from a file, or from a formula; or use
+         <b>Or make one from calibration spectra</b> to fit one to peaks from known sources (the
+         <b>Make Detector Response</b> tool).  An imported detector is previewed before you use it, and
+         once used it is saved under <b>Made by you</b>.
+      </div>
+
+      <div>
+         <h3>Detector file formats</h3>
          <ul>
             <li style="padding-top:10px;">
-               <b>GADRAS:</b>
+               <b>GADRAS detector folders:</b>
                <div>
                  InterSpec can use the same format DRF as used by
                  <a target="_blank" href="https://rsicc.ornl.gov/codes/psr/psr6/psr-610.html">GADRAS-DRF</a>
@@ -80,9 +90,8 @@ fit to converge.
                  of including both intrinsic efficiency and FWHM information (which may help peak fitting).  For further information
                  on <code>GADRAS-DRF</code> detector response functions see:
                  <a target="_blank" href="http://prod.sandia.gov/techlib/access-control.cgi/2014/1420625.pdf">GADRAS-DRF 18.5 User’s Manual</a>.
-                 In order to use GADRAS-DRF response functions you must point the <em>GADRAS</em> tab of the <em>Detector Select</em>
-                 to the root directory of your GADRAS-DRF detectors.  This root directory will be saved as a user preference across
-                 sessions.
+                 GADRAS detector folders found in <i>InterSpec</i>'s own folders, and in the standard GADRAS
+                 install folder, are listed in the Library automatically.
 
                  The discrete energy/efficiency pairs in the <code>Efficiency.csv</code> file are interpolated between using
                  Akima interpolation. The <code>Detector.dat</code> file that defines the detector in
@@ -109,7 +118,7 @@ def getFWHM( energy ):
                </div>
             </li>
             <li style="padding-top:10px;">
-               <b>Rel. Eff:</b>
+               <b>Relative-efficiency tables:</b>
                <div style="padding-top:10px;">
                  The &#34;Rel. Eff.&#34; detector response functions are specified using
                  CSV or TSV files that provide detector dimensions and relative efficiencies at a given distance.
@@ -123,7 +132,7 @@ def getFWHM( energy ):
                      </code></div>
                      Where <code>x</code> is the energy in MeV, and <code>c0</code>, <code>c1</code>, etc are specified in the CSV or TSV file.
                    </li>
-                   <li>Multiple files containing DRFs may be specified, and will remembered across user sessions.</li>
+                   <li>Tables in <i>InterSpec</i>'s own folders are listed in the Library automatically; others can be imported.</li>
                    <li>The columns in the CSV/TSV are:
 <div style="width: 100%; overflow-x: auto">
 <table style="border: 1px solid black;">
@@ -150,7 +159,7 @@ def getFWHM( energy ):
                </div>
             </li>
             <li style="padding-top:10px;">
-               <b>Import:</b>
+               <b>Import &#8250; From a file:</b>
                <div style="padding-top:10px;">
                   Drop a detector efficiency file onto the area on this tab, or click it to browse
                   for the file.  While this tab is showing, files dropped elsewhere in
@@ -166,12 +175,12 @@ def getFWHM( energy ):
                         sources off to the side of, or close to, the detector.</li>
                      <li>A &#34;GADRAS&#34; <b>Detector.dat</b> by itself.  This describes the detector,
                         but not its efficiency, so either add its <b>Efficiency.csv</b>, or click
-                        <em>Characterize...</em> to compute the efficiency with a Monte-Carlo simulation.</li>
+                        <em>Compute efficiency&#8230;</em> to compute it with a Monte-Carlo simulation.</li>
                      <li>A <b>.par</b> full-energy-peak efficiency grid, together with its
                         <b>DETECTOR.txt</b> geometry file; both are required.  If the <b>DETECTOR.txt</b>
                         describes several detectors, the one naming the <b>.par</b> file is used, or
                         you will be asked to choose.  The grid has no total efficiency, which
-                        cascade-summing corrections need; add one by Monte Carlo with <em>Modify...</em>,
+                        cascade-summing corrections need; add one by Monte Carlo with <em>Customize a copy&#8230;</em>,
                         on its &#34;Geom &amp; MC&#34; tab.</li>
                      <li>An ISOCS <b>.ecc</b> file, or an ANGLE file.  If an ANGLE file describes the
                         detector as well as a measured reference efficiency, it can be used as a
@@ -197,7 +206,7 @@ def getFWHM( energy ):
                      intrinsic efficiencies (for gammas striking the detector face, which needs the
                      detector diameter), as absolute efficiencies at a given distance, or for a fixed
                      source geometry.  The detector name defaults to the file name, and can be edited.
-                     The <em>Modify...</em> button lets you further edit the imported detector before using it.
+                     After using it, <em>Customize a copy&#8230;</em> lets you further edit the imported detector.
                   </div>
                </div>
                <div style="padding-top:10px;">
@@ -219,7 +228,7 @@ of intrinsic efficiency pairs provided by &#34;GADRAS&#34; for a hand-held detec
                </div>
             </li>
             <li style="padding-top:10px;">
-               <b>Formula:</b>
+               <b>Import &#8250; From a formula:</b>
                <div style="padding-top:10px;">
                   If either the
                   <i>intrinsic</i>
@@ -299,26 +308,21 @@ Then once you click the <b>Set</b> button, the text will be transformed into:
                      </div>
 
                      <div style="margin-top:20px;">
-                        After a formula is entered you may <u>click</u> the <b>Set</b> button to display the
-function on the chart to ensure the function is reasonable; the y-axis
-of this chart will always be set to display form 0 to 1.
-Any syntax errors encountered during parsing of the formula will be reported in 
-the
-                        <b>Information and Warnings</b>
-                        widget, with some diagnostics.
+                        As you type, the formula is checked, its efficiency at 662 keV shown, and its
+curve drawn in the preview, so you can see it is reasonable before using it.  Instead of a
+formula, you can choose <b>Coefficients of the standard form</b> and enter (or paste from a
+spreadsheet) just the coefficients.  An efficiency that is absolute at a given distance, or for a
+fixed geometry, and the energy range the formula is valid for, are under <b>More options&#8230;</b>.
                      </div>
                   </div>
                </div>
             </li>
             <li style="padding-top:10px;">
-               <b>Recent:</b>
+               <b>Made by you:</b>
                <div style="padding-top:10px;">
-                  This is a list of recently used detector response functions you can choose to 
-use again - currently this list just lists all used detector - in the future it 
-is planned to only hold detectors defined from uploaded, manually entered formula,
-or created from test data (a planned feature).
-                  <ul> <div style="padding-top: 10px"> It is a good idea to uniquely name your uploaded or formula defined
-detector response functions for later identification.</div> </ul>
+                  Detectors you import, enter as a formula, make from calibration spectra, or customize are
+saved inside <i>InterSpec</i> and listed under <b>Made by you</b>.  It is a good idea to give them
+names you will recognize later.
                </div>
             </li>
          </ul>

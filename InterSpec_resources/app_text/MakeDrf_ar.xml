@@ -16,7 +16,6 @@
   
   <message id="md-det-diam">قطر الكاشف</message>
   <message id="md-det-setback">تراجع الكاشف</message>
-  <message id="md-eff-type">نوع الكفاءة</message>
   <message id="md-eqn-in-kev">المعادلة بالكيلوإلكترون فولت</message>
   <message id="md-eqn-in-mev">المعادلة بالميجا إلكترون فولت</message>
   <message id="md-geom-intrinsic-eff">الكفاءة الجوهرية</message>
@@ -40,7 +39,6 @@
     <br />
     ثابت لكل جرام: مشابه لكل سم2، لكن لكل جرام من المصدر.
   </message>
-  <message id="md-fwhm-eqn-form-label">معادلة FWHM</message>
   <message id="md-fwhm-gadras">معادلة جادراس</message>
   <message id="md-sqrt-series">سلسلة قوى الجذر التربيعي</message>
   <message id="md-atten-for-air-cb">امتصاص للهواء</message>
@@ -51,7 +49,6 @@
     هذا تأثير أكبر في الطاقات المنخفضة، أو مسافات المعايرة الأكبر.
   </message>
   <message id="md-show-fwhm-markers">إظهار نقاط FWHM</message>
-  <message id="md-mi-chart-phone">المخطط/الخيارات</message>
   <message id="md-mi-peaks-phone">القمم للاستخدام</message>
   <message id="md-export-btn">تخزين/تصدير...</message>
   <message id="md-export-window-title">تخزين/تصدير DRF</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} كيلوإلكترون فولت، القمة {3} عدد</message>
   <message id="md-peak-no-nuc">لا توجد نواة مرتبطة، {1} كيلوإلكترون فولت، القمة {2} عدد</message>
   
-  <message id="md-err-some-src">بعض المصادر كان بها أخطاء.</message>
   <message id="md-n-fit-pars">{1} معاملات الملائمة</message>
   <message id="md-html-eff-table-caption">كفاءة الكشف كاملة الطاقة (% إجمالي الجاما)</message>
   <message id="md-html-Intrinsic">جوهري</message>

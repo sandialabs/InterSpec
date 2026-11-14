@@ -44,6 +44,8 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
+#include "SpecUtils/Filesystem.h"
+
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/HelpSystem.h"
@@ -52,6 +54,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/ColorThemeWidget.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/ColorThemeWindow.h"
 
 using namespace std;
@@ -65,14 +68,19 @@ namespace
   public:
     ThemeMenuItem( const Wt::WString &text,
                   std::unique_ptr<ColorTheme> theme,
-                  const bool editable )
+                  const bool editable,
+                  const std::string &filePath = "" )
     : WMenuItem(text, nullptr, Wt::ContentLoading::Lazy),
-      m_editable(editable), m_isEditedSinceApply(false), m_theme( std::move(theme) )
+      m_editable(editable), m_isEditedSinceApply(false), m_theme( std::move(theme) ),
+      m_filePath( filePath )
     {
     }
     
     const ColorTheme *theme() const { return m_theme.get(); }
     bool editable() const { return m_editable;  }
+
+    /** For a theme from a file (a package's): its path relative to the user data folder; else empty. */
+    const std::string &filePath() const { return m_filePath; }
     
     bool isEditedSinceApply() const { return m_isEditedSinceApply; }
     void setEditedSinceApply( const bool edited ) { m_isEditedSinceApply = edited; }
@@ -86,6 +94,7 @@ namespace
     const bool m_editable;
     bool m_isEditedSinceApply;
     std::unique_ptr<ColorTheme> m_theme;
+    const std::string m_filePath;
   };//class ThemeMenuItem
   
   
@@ -174,6 +183,8 @@ m_edit( nullptr ),
 m_removeIcn( nullptr ),
 m_addIcn( nullptr ),
 m_readOnlyNote( nullptr ),
+m_readOnlyText( nullptr ),
+m_fileThemesSeparator( nullptr ),
 m_close( nullptr ),
 m_save( nullptr ),
 m_apply( nullptr )
@@ -201,11 +212,12 @@ m_apply( nullptr )
   WContainerWidget *editDiv = editDivOwner.get();
   editDiv->addStyleClass( "ColorThemeEditContainer" );
 
-  // Built-in themes show up in a disabled editor; without a note, users take that to mean colours
-  //  cant be customized at all, rather than that they should clone the theme first.
+  // Built-in themes, and those from a package or file, show up in a disabled editor; without a note,
+  //  users take that to mean colours cant be customized at all, rather than that they should clone
+  //  the theme first.
   m_readOnlyNote = editDiv->addNew<WContainerWidget>();
   m_readOnlyNote->addStyleClass( "ColorThemeReadOnlyNote" );
-  m_readOnlyNote->addNew<WText>( WString::tr("ctw-builtin-readonly") );
+  m_readOnlyText = m_readOnlyNote->addNew<WText>( WString::tr("ctw-builtin-readonly") );
   WPushButton *copyBtn = m_readOnlyNote->addNew<WPushButton>( WString::tr("ctw-make-copy-btn") );
   copyBtn->addStyleClass( "LinkBtn" );
   copyBtn->clicked().connect( this, &ColorThemeWindow::cloneThemeCallback );
@@ -366,6 +378,46 @@ m_apply( nullptr )
   }//for( unique_ptr<ColorTheme> &p : dbThemes )
 
 
+#if( USE_USER_LIBRARY )
+  // Themes from files - installed packages, or put in the user data folder's `color_themes/` - are
+  //  used as they are (read-only; "make a copy" gives an editable one in the database).
+  if( UserLibrary::available() )
+  {
+    string active_file;
+    try
+    {
+      active_file = UserPreferences::preferenceValue<string>( "ColorThemeFile", m_interspec );
+    }catch( std::exception & )
+    {
+    }
+
+    const string user_dir = InterSpec::writableDataDirectory();
+    for( const UserLibrary::Item &file_item : UserLibrary::items( "color_theme" ) )
+    {
+      const string rel_path = UserLibrary::relativePath( user_dir, file_item.found.path );
+      const shared_ptr<ColorTheme> file_theme = rel_path.empty() ? nullptr : themeFromFile( rel_path );
+      if( !file_theme )
+        continue;
+
+      if( !m_fileThemesSeparator )
+        m_fileThemesSeparator = m_menu->addSeparator();
+
+      const WString label = (file_item.source.kind == UserLibrary::SourceKind::Package)
+                ? WString::tr("ctw-theme-from-package").arg( file_theme->theme_name ).arg( WString::fromUTF8( file_item.source.label ) )
+                : WString::tr("ctw-theme-from-file").arg( file_theme->theme_name );
+      auto itemOwner = std::make_unique<ThemeMenuItem>( label, std::make_unique<ColorTheme>( *file_theme ), false, rel_path );
+      ThemeMenuItem *item = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(itemOwner) ) );
+      item->setToolTip( label );  //the package's name is usually cut off
+      item->clicked().connect( this, [this, item](){ selectItem( item ); } );
+
+      if( !active_file.empty() && (active_file == rel_path) )
+        currentItem = item;
+    }//for( loop over theme files )
+
+    updateFileThemesSeparator();
+  }//if( UserLibrary::available() )
+#endif
+
   bool currentThemeSelected = true;
   if( !currentItem )
   {
@@ -379,6 +431,8 @@ m_apply( nullptr )
     m_edit->setTheme( currentItem->theme(), currentItem->editable() );
     m_removeIcn->setHidden( !currentItem->editable() );
     m_readOnlyNote->setHidden( currentItem->editable() );
+    m_readOnlyText->setText( WString::tr( currentItem->filePath().empty() ? "ctw-builtin-readonly"
+                                                                          : "ctw-file-readonly" ) );
     if( currentThemeSelected )
       m_apply->setDisabled( true );
   }//if( currentItem )
@@ -391,6 +445,40 @@ m_apply( nullptr )
   show();
   centerWindow();
 }//ColorThemeWindow
+
+
+#if( USE_USER_LIBRARY )
+std::shared_ptr<ColorTheme> ColorThemeWindow::themeFromFile( const std::string &userRelativePath )
+{
+  if( userRelativePath.empty() || !UserLibrary::available() )
+    return nullptr;
+
+  try
+  {
+    const string path = SpecUtils::append_path( InterSpec::writableDataDirectory(), userRelativePath );
+    if( !SpecUtils::is_file( path ) )
+      return nullptr;
+    if( UserLibrary::disabledPaths( "color_theme" ).count( SpecUtils::lexically_normalize_path( path ) ) )
+      return nullptr;
+
+    std::vector<char> data;
+    SpecUtils::load_file_data( path.c_str(), data );
+    if( data.empty() )
+      return nullptr;
+    if( data.back() == '\0' )
+      data.pop_back();
+
+    auto theme = make_shared<ColorTheme>();
+    ColorTheme::fromJson( string( begin(data), end(data) ), *theme );
+    theme->dbIndex = 0;  //neither built in (negative) nor in the database (positive)
+    return theme;
+  }catch( std::exception &e )
+  {
+    cerr << "ColorThemeWindow::themeFromFile('" << userRelativePath << "'): " << e.what() << endl;
+  }
+  return nullptr;
+}//themeFromFile(...)
+#endif
 
 
 ColorThemeWindow::~ColorThemeWindow()
@@ -419,12 +507,33 @@ void ColorThemeWindow::cloneThemeCallback()
   newtheme->modified_time = newtheme->creation_time;
   auto themename = newtheme->theme_name;
   auto newitemOwner = std::make_unique<ThemeMenuItem>( themename, std::move(newtheme), true );
-  ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
+  ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( addEditableItem( std::move(newitemOwner) ) );
   m_menu->select( newitem );
   newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
   
   showOrHideApplyButton();
 }//void cloneThemeCallback()
+
+
+Wt::WMenuItem *ColorThemeWindow::addEditableItem( std::unique_ptr<Wt::WMenuItem> item )
+{
+  WMenuItem *answer = m_fileThemesSeparator
+                        ? m_menu->insertItem( m_menu->indexOf( m_fileThemesSeparator ), std::move(item) )
+                        : m_menu->addItem( std::move(item) );
+  updateFileThemesSeparator();
+  return answer;
+}//addEditableItem(...)
+
+
+void ColorThemeWindow::updateFileThemesSeparator()
+{
+  if( !m_fileThemesSeparator )
+    return;
+
+  const int index = m_menu->indexOf( m_fileThemesSeparator );
+  const WMenuItem * const before = (index > 0) ? m_menu->itemAt( index - 1 ) : nullptr;
+  m_fileThemesSeparator->setHidden( !before || before->isSeparator() );
+}//updateFileThemesSeparator()
 
 
 void ColorThemeWindow::removeThemeCallback()
@@ -470,6 +579,7 @@ void ColorThemeWindow::removeThemeCallback()
     std::unique_ptr<WMenuItem> removed = m_menu->removeItem( item );
     m_menu->select( 0 );
     removed.reset(); // destroy the removed item
+    updateFileThemesSeparator();
     conf->hide();
     
     showOrHideApplyButton();
@@ -643,7 +753,7 @@ void ColorThemeWindow::populateImportConfirm( AuxWindow *window, std::shared_ptr
     if( newtheme )
     {
       auto newitemOwner = std::make_unique<ThemeMenuItem>( newtheme->theme_name, std::move( newtheme ), true );
-      ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
+      ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( addEditableItem( std::move(newitemOwner) ) );
       m_menu->select( newitem );
       newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
       m_apply->setDisabled( false );
@@ -895,10 +1005,23 @@ void ColorThemeWindow::applyCallback()
     return;
   }
   
-  saveCallback();
-  
   const ColorTheme *theme = item->theme();
   assert( theme ); //def shouldnt ever happen
+
+#if( USE_USER_LIBRARY )
+  // A theme from a file is used from that file (so a package update changes it).
+  if( !item->filePath().empty() )
+  {
+    UserPreferences::setPreferenceValue<string>( "ColorThemeFile", item->filePath(), m_interspec );
+    m_interspec->applyColorTheme( make_shared<ColorTheme>(*theme) );
+    item->setEditedSinceApply( false );
+    m_apply->setDisabled( true );
+    return;
+  }
+  UserPreferences::setPreferenceValue<string>( "ColorThemeFile", "", m_interspec );
+#endif
+
+  saveCallback();
   
   UserPreferences::setPreferenceValue( "ColorThemeIndex", static_cast<int>(theme->dbIndex), m_interspec );
   
@@ -980,6 +1103,8 @@ void ColorThemeWindow::themeSelected( Wt::WMenuItem *item )
   m_edit->setTheme( themeItem->theme(), themeItem->editable() );
   m_removeIcn->setHidden( !themeItem->editable() );
   m_readOnlyNote->setHidden( themeItem->editable() );
+  m_readOnlyText->setText( WString::tr( themeItem->filePath().empty() ? "ctw-builtin-readonly"
+                                                                      : "ctw-file-readonly" ) );
   m_save->setDisabled( true );
   
   showOrHideApplyButton();
@@ -998,9 +1123,21 @@ void ColorThemeWindow::showOrHideApplyButton()
   }
   
   std::shared_ptr<const ColorTheme> currentTheme = m_interspec->getColorTheme();
+
+  string active_file;
+#if( USE_USER_LIBRARY )
+  try
+  {
+    active_file = UserPreferences::preferenceValue<string>( "ColorThemeFile", m_interspec );
+  }catch( std::exception & )
+  {
+  }
+#endif
   
   bool showApply = false;
-  if( !currentTheme || !themeItem->theme() )
+  if( !themeItem->filePath().empty() || !active_file.empty() )
+    showApply = (themeItem->filePath() != active_file);  //a file theme is the one in use only if it is the file in use
+  else if( !currentTheme || !themeItem->theme() )
     showApply = true;
   else if( currentTheme->dbIndex < 0 || themeItem->theme()->dbIndex < 0 )
     showApply = true;

@@ -87,13 +87,35 @@
   <message id="ssd-tt-export-model">Export / download the current model as an XML config.</message>
   <message id="ssd-tt-import-model">Import a previously exported model from an XML file.</message>
   <message id="ssd-tt-database">Open, save, or clone this model in the database.</message>
+  <message id="ssd-preset">Preset</message>
+  <message id="ssd-preset-choose">Choose...</message>
+  <message id="ssd-preset-from-package">{1} ({2})</message>
+  <message id="ssd-preset-from-db">{1} (database)</message>
+  <message id="ssd-tt-preset">Load a saved setup: yours, one from an installed package, or one saved in the database by an earlier InterSpec.</message>
+  <message id="ssd-tt-save-preset">Save this setup as a preset, so it is in the Preset menu (and can be put in a package to share).</message>
+  <message id="ssd-save-preset-title">Save as Preset</message>
+  <message id="ssd-save-preset-msg">Name for this setup:</message>
+  <message id="ssd-save-preset-placeholder">e.g. Steel drum, 1 m</message>
+  <message id="ssd-save-preset-replace">A preset named “{1}” already exists.  Replace it?</message>
+  <message id="ssd-save-preset-replace-btn">Replace</message>
+  <message id="ssd-save-preset-done">Saved preset “{1}”.</message>
+  <message id="ssd-save-preset-error">Could not save the preset: {1}</message>
   <!-- Phase 2: per-nuclide card display (sfn- = SourceFitNuclideDisplay) -->
   <message id="sfn-activity">Activity</message>
   <message id="sfn-age">Age</message>
   <message id="sfn-fit">Fit</message>
   <message id="sfn-mass">mass =</message>
   <message id="sfn-mass-approx">mass &#8776;</message>
-  <message id="sfn-act-t0">act(T<sub>0</sub>)</message>
+  <message id="sfn-act-tref">act(T<sub>ref</sub>)</message>
+  <message id="sfn-act-tref-undetermined">not determinable</message>
+  <message id="sfn-tt-act-tref-before">Activity at the back-decay reference time, {1}, which is {2} before the start of the measurement ({3} half-lives of {4}).</message>
+  <message id="sfn-tt-act-tref-after">Activity at the back-decay reference time, {1}, which is {2} after the start of the measurement ({3} half-lives of {4}).</message>
+  <message id="sfn-tref-unknown-date">date not known</message>
+  <message id="sfn-foot-tref">T<sub>ref</sub>: {1}</message>
+  <message id="sfn-foot-before">({1} before meas.)</message>
+  <message id="sfn-foot-after">({1} after meas.)</message>
+  <message id="sfn-show-decay">Show Decay</message>
+  <message id="sfn-tt-show-decay">Opens the Nuclide Decay tool with the activities at the back-decay reference time, decaying through the start of the measurement, to three times the time between them (for a reference time after the measurement, it starts from the measurement instead).  Each nuclide is added with its age then, as the back-decay calculation has it, so the activities at the measurement are those fit for.  Nuclides whose activity at the reference time could not be determined, or is negative, are left out.</message>
   <message id="sfn-via-progeny">via progeny</message>
   <message id="sfn-tag-trace">trace source</message>
   <message id="sfn-tag-shield-src">shielding source</message>
@@ -173,6 +195,24 @@
     fixed-geometry response that supports them can be made with the "Create MC Eff" link next to "Shielding",
     starting from a detector response with a Monte-Carlo detector model.</message>
   <message id="ssd-cascade-open-drf-editor">Open detector editor</message>
+  <message id="ssd-cb-back-decay">Back decay</message>
+  <message id="ssd-tt-back-decay">Also quote the activities at another time - e.g., the end of an irradiation, a release,
+    or another measurement - entered as a duration before the measurement start, or as a date/time (in the spectrum
+    file's time zone).  Does not change the fit.  A nuclide also fed by another nuclide being fit (e.g., I132 from
+    Te132) is quoted as its own share; a parent whose age is shorter than the back-decay time is taken as pure at the
+    reference time.  More than about 47 half-lives back can not be determined.  See the help for details.</message>
+  <message id="ssd-back-decay-mode-duration">time before meas.</message>
+  <message id="ssd-back-decay-mode-date">to date/time</message>
+  <message id="ssd-back-decay-ph-duration">e.g., 3.5 d</message>
+  <message id="ssd-back-decay-ph-date">e.g., 2026-01-31 14:30</message>
+  <message id="ssd-back-decay-before">{1} before meas. start</message>
+  <message id="ssd-back-decay-after">{1} after meas. start</message>
+  <message id="ssd-back-decay-status-dated">= {1} ({2})</message>
+  <message id="ssd-back-decay-status-undated">({1})</message>
+  <message id="ssd-back-decay-enter-value">Enter a time</message>
+  <message id="ssd-back-decay-err-duration">Could not interpret "{1}" as a duration</message>
+  <message id="ssd-back-decay-err-date">Could not interpret "{1}" as a date/time</message>
+  <message id="ssd-back-decay-err-no-start">The spectrum start time is not known; enter a duration instead</message>
   <message id="ssd-lbl-vol-eff">Detector eff. model</message>
   <message id="ssd-tt-vol-eff">The detector-efficiency model used for every source in the fit -
     point sources at the assembly centre, and trace or self-attenuating (volumetric) sources
@@ -262,6 +302,7 @@
   <message id="ssd-phone-col-nuclide">Nuclide</message>
   <message id="ssd-phone-col-activity">Activity</message>
   <message id="ssd-phone-col-age">Age</message>
+  <message id="ssd-phone-col-act-tref">act(T<sub>ref</sub>)</message>
   <message id="ssd-phone-view-log">View calculation log</message>
   <message id="ssd-phone-done">Done</message>
   <message id="ssd-warn-no-back-peaks">There are no background peaks defined, not subtracting them</message>
@@ -280,6 +321,7 @@
   <message id="ssd-calc-log-export-txt">TXT file</message>
   <message id="ssd-calc-log-html-title">Calculation Log</message>
   <message id="ssd-template-text-log">Standard Log (Text)</message>
+  <message id="ssd-template-from-package">{1} ({2})</message>
   <message id="ssd-template-html-report">Activity Fit Report (HTML)</message>
   <message id="ssd-no-fit-results">No fit results available to display.</message>
   <message id="ssd-error-creating-html-log">Error creating HTML calculation log: {1}</message>

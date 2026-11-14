@@ -47,6 +47,31 @@ input[type="text"], input[type="number"], textarea:not(.pm-textarea) {
   color: var(--interspec-text-color);
 }
 
+/* An input that cannot be used.  Wt's validators toggle `Wt-invalid` client-side as the user types
+   (and put the reason in the tooltip); `InputValueError` is what the server sets for text that is
+   well-formed but unusable (see WidgetUtils::setInputValueError) - kept separate so the client-side
+   validation, which only knows the regex, cannot clear it.
+   The `!important`s are deliberate: component rules like `.DrfFormulaForm input[type="text"]` are
+   more specific, and an invalid field must look invalid wherever it is.  Only the background
+   *colour* changes: date edits and spin boxes draw their buttons as a background image. */
+input.Wt-invalid, textarea.Wt-invalid, select.Wt-invalid,
+input.InputValueError, textarea.InputValueError, select.InputValueError {
+  background-color: var(--interspec-error-background) !important;
+  border-color: var(--interspec-error-color) !important;
+}
+
+/* Anything else Wt-invalid is toggled on by hand (e.g. a table of values) */
+.Wt-invalid:not(input):not(textarea):not(select) {
+  background-color: var(--interspec-error-background);
+}
+
+/* A short message beside or under the input it is about */
+.FieldErrorMsg {
+  color: var(--interspec-error-color);
+  font-size: 90%;
+  white-space: pre-line;
+}
+
 textarea, select {
   outline: none;
   color: var(--interspec-text-color);
@@ -829,6 +854,14 @@ ul.Wt-tv-root > li {
   background-color: var(--interspec-header-background) !important;
 }
 
+/* Wt's default cell editor (WItemDelegate::createEditor) sizes its <input> to 100% of the cell; with
+   content-box sizing the input's padding and border push it past the cell, which clips it (text sits
+   low, right/bottom borders hidden).  Editors laid out with a WLayout (e.g. PhotopeakDelegate) are not
+   direct children of the cell, and are sized by the layout instead. */
+.Wt-itemview .Wt-tv-c > input[type="text"] {
+  box-sizing: border-box;
+}
+
 /* Link-style buttons carry their icon as an <img>, which dark themes flip. */
 .LinkBtn img, .DownloadBtn img, .UploadBtn img, .MoreInfoBtn img {
   filter: var(--interspec-icon-filter);
@@ -1116,6 +1149,22 @@ a, .InfoLink {
 .FainterTxt { color: var(--interspec-fainter-text-color); }
 .SecondaryTxt { color: var(--interspec-secondary-text-color); }
 .InfoTxt { color: var(--interspec-link-color); }
+
+/* Opt-in text selection, for values/summaries/messages a user may want to copy; selection is off
+   app-wide (.specviewer, .AuxWindow-content) so click-drags don't highlight unrelated UI.  Put these
+   on the leaf element holding the text - not on a container that also has buttons, or on a drag
+   handle or clickable element.  Must be `text`/`all`, not `auto`: under a user-select:none
+   ancestor `auto` resolves to `none`.  Safari/WKWebView only honours the -webkit- prefixed form. */
+.SelectableTxt {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+/* One click selects the whole element; only for a short standalone value (no inputs or links). */
+.SelectAllTxt {
+  -webkit-user-select: all;
+  user-select: all;
+}
 
 /* Peak Manager colour column: the swatch's own colour is inline (it is data), the rest is here. */
 .PeakColorSwatch {
@@ -1621,6 +1670,13 @@ button.Wt-btn.with-label.LightButton,
   .DetectorDisplay:hover
   {
     background: var(--interspec-hover-background);  /* translucent, so it reads on any surface */
+  }
+
+  /* Keyboard focus (it is a role="button" with tabindex="0"); not shown for mouse clicks */
+  .DetectorDisplay:focus-visible
+  {
+    outline: 2px solid var(--interspec-accent-color);
+    outline-offset: 1px;
   }
 
   /* The chevron at the right end */

@@ -23,7 +23,7 @@
  */
 
 #define BOOST_TEST_MODULE EnvScatterTest
-#include <boost/test/included/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include "geometry/EnvironmentGeometry.h"
 #include "physics/BremsAngular.h"
@@ -40,6 +40,7 @@
 
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <random>
 #include <utility>
 #include <vector>

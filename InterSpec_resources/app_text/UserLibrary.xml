@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ul- is short for UserLibrary, the code name of the "Packages" window (UserLibraryWindow) and its install dialog (UserLibraryImportDialog) -->
+
+  <!-- Window -->
+  <message id="ul-window-title">Packages</message>
+  <message id="ul-tab-packages">Installed</message>
+  <message id="ul-tab-items">By type</message>
+  <message id="ul-tab-create">Create package</message>
+  <message id="ul-unavailable">This InterSpec has no user data folder, so packages can not be installed.</message>
+  <message id="ul-loading">Checking…</message>
+
+  <!-- Item types -->
+  <message id="ul-type-drf">Detector efficiency functions</message>
+  <message id="ul-type-rel-act-preset">Isotopics-by-nuclides presets</message>
+  <message id="ul-type-act-shield-setup">Activity/Shielding Fit setups</message>
+  <message id="ul-type-act-shield-template">Activity/Shielding report templates</message>
+  <message id="ul-type-isotopics-template">Isotopics-by-nuclides report templates</message>
+  <message id="ul-type-isotopics-summary-template">Isotopics-by-nuclides batch summary templates</message>
+  <message id="ul-type-peak-fit-template">Peak fit batch report templates (per file)</message>
+  <message id="ul-type-peak-fit-summary-template">Peak fit batch summary templates</message>
+  <message id="ul-type-act-shield-summary-template">Activity/Shielding batch summary templates</message>
+  <message id="ul-type-color-theme">Color themes</message>
+  <message id="ul-type-ref-lines">Reference-line sources</message>
+  <message id="ul-type-materials">Shielding materials</message>
+  <message id="ul-type-source-lib">Check-source libraries</message>
+  <message id="ul-type-nuc-search-category">Nuclide Search categories</message>
+  <message id="ul-type-ref-spectra">Reference spectra</message>
+  <message id="ul-type-llm-skill">LLM assistant knowledge</message>
+  <message id="ul-type-llm-agent">LLM assistant agents</message>
+
+  <!-- Where items come from -->
+  <message id="ul-source-builtin">InterSpec</message>
+  <message id="ul-source-user">My files</message>
+  <message id="ul-source-package">Package: {1}</message>
+  <message id="ul-source-database">Saved in InterSpec (made or customized here)</message>
+  <message id="ul-source-location">Folder: {1}</message>
+
+  <!-- Packages page -->
+  <message id="ul-packages-intro">Packages bundle detector efficiencies, presets, report templates, and other data, to share with colleagues.  Install one by dropping its file onto InterSpec, or:</message>
+  <message id="ul-install-btn">Install a package…</message>
+  <message id="ul-no-packages">No packages are installed.</message>
+  <message id="ul-pkg-version">version {1}</message>
+  <message id="ul-pkg-by">By {1}</message>
+  <message id="ul-pkg-created">Created {1}</message>
+  <message id="ul-pkg-installed">Installed {1}</message>
+  <message id="ul-pkg-contact">Contact: {1}</message>
+  <message id="ul-pkg-handling">Handling: {1}</message>
+  <message id="ul-pkg-review-by">Review by {1}</message>
+  <message id="ul-pkg-review-passed">Its authors asked for this package to be reviewed by {1}; check with them for a newer version.</message>
+  <message id="ul-pkg-not-recorded">Added to the packages folder by hand (not installed through InterSpec).</message>
+  <message id="ul-pkg-modified">{1} file(s) in it were changed after it was installed.</message>
+  <message id="ul-pkg-needs-newer">{1} item(s) need a newer InterSpec, and are not used until you upgrade.</message>
+  <message id="ul-pkg-unreadable">{1} item(s) could not be read.</message>
+  <message id="ul-pkg-counts">Contains: {1}</message>
+  <message id="ul-pkg-count-type">{1} {2}</message>
+  <message id="ul-pkg-history">Changes</message>
+  <message id="ul-pkg-history-entry">Version {1}{2}</message>
+  <message id="ul-pkg-notes">Notes</message>
+  <message id="ul-uninstall">Uninstall…</message>
+  <message id="ul-uninstall-confirm">Uninstall</message>
+  <message id="ul-recheck">Re-check</message>
+  <message id="ul-uninstall-title">Uninstall package</message>
+  <message id="ul-uninstall-msg">Uninstall “{1}”?  Its files are deleted now, and anything it provided is no longer available.</message>
+  <message id="ul-uninstalled">Uninstalled “{1}”.</message>
+  <message id="ul-uninstall-error">Could not uninstall the package: {1}</message>
+
+  <!-- By type page -->
+  <message id="ul-items-type">Type</message>
+  <message id="ul-items-search">Search</message>
+  <message id="ul-items-none">None.</message>
+  <message id="ul-items-restart">InterSpec reads these when it starts: changes here take effect after InterSpec is restarted.</message>
+  <message id="ul-items-show-me">Open where these are used</message>
+  <message id="ul-item-in-use">In use</message>
+  <message id="ul-item-not-used">Not used: another item with this name is used</message>
+  <message id="ul-item-disabled">Disabled</message>
+  <message id="ul-item-needs-newer">Needs a newer InterSpec</message>
+  <message id="ul-item-unreadable">Can not be read</message>
+  <message id="ul-item-your-choice">your choice</message>
+  <message id="ul-item-use-this">Use this one</message>
+  <message id="ul-item-reset-choice">Reset choice</message>
+  <message id="ul-item-enabled">Enabled</message>
+  <message id="ul-item-delete">Delete…</message>
+  <message id="ul-item-delete-confirm">Delete</message>
+  <message id="ul-item-more-names">and {1} more</message>
+  <message id="ul-delete-title">Delete file</message>
+  <message id="ul-delete-msg">Delete “{1}” from your files?  This can not be undone.</message>
+  <message id="ul-delete-error">Could not delete: {1}</message>
+
+  <!-- Create page -->
+  <message id="ul-create-intro">Put your own files (and items from packages you installed) into a package for others to install.  Your own files stay where they are.</message>
+  <message id="ul-create-start">Start from</message>
+  <message id="ul-create-new">A new package</message>
+  <message id="ul-create-new-version">New version of “{1}” (last made: version {2})</message>
+  <message id="ul-create-details">Package details</message>
+  <message id="ul-field-name">Name</message>
+  <message id="ul-field-version">Version</message>
+  <message id="ul-field-author">Author</message>
+  <message id="ul-field-organization">Organization</message>
+  <message id="ul-field-contact">Contact</message>
+  <message id="ul-field-description">Description (one line)</message>
+  <message id="ul-field-notes">Notes (purpose, which detectors or setups, how to use)</message>
+  <message id="ul-field-changes">What changed in this version</message>
+  <message id="ul-field-handling">Handling marking (optional)</message>
+  <message id="ul-field-review-by">Review by (optional date)</message>
+  <message id="ul-field-min-version">Needs InterSpec version</message>
+  <message id="ul-create-items">Items</message>
+  <message id="ul-create-no-items">You have no items to share yet.  Detector efficiencies you keep, presets, and templates you put in your user data folder show up here.</message>
+  <message id="ul-create-item-notes">Notes for this item</message>
+  <message id="ul-create-item-override">If whoever installs this already has an item with this name, suggest using this one instead</message>
+  <message id="ul-create-includes">Includes: {1}</message>
+  <message id="ul-create-from-package">From package “{1}” - it will say where it came from</message>
+  <message id="ul-create-moved">“{1}” was in the last version, but is no longer found.</message>
+  <message id="ul-create-changed">changed since the last version</message>
+  <message id="ul-create-num-selected">{1} item(s) selected</message>
+  <message id="ul-create-btn">Check and create</message>
+  <message id="ul-create-checking">Checking the items…</message>
+  <message id="ul-create-issues">Fix these before creating the package:</message>
+  <message id="ul-create-warnings">Note:</message>
+  <message id="ul-create-done">Created “{1}” version {2}.</message>
+  <message id="ul-create-download">Download the package file</message>
+  <message id="ul-create-error">Could not create the package: {1}</message>
+
+  <!-- Import dialog -->
+  <message id="ul-import-title">Install package</message>
+  <message id="ul-import-checking">Checking “{1}”…</message>
+  <message id="ul-import-error">“{1}” can not be installed: {2}</message>
+  <message id="ul-import-unknown-error">it could not be read.</message>
+  <message id="ul-upload-too-large">The file is larger than can be uploaded.</message>
+  <message id="ul-import-sha">Package fingerprint (SHA-256), to check with whoever sent it:</message>
+  <message id="ul-import-no-manifest">This file has no package description; it will be installed as a new package named after the file, which can not be updated later.</message>
+  <message id="ul-import-update">Updates the installed version {1} to version {2}.</message>
+  <message id="ul-import-update-summary">{1} added · {2} changed · {3} removed</message>
+  <message id="ul-import-reinstall">Version {1} is already installed, with the same content.  Installing it again changes nothing.</message>
+  <message id="ul-import-same-version">Version {1} is already installed, but with different content.  Installing replaces it.</message>
+  <message id="ul-import-downgrade">This is version {1}, older than the installed version {2}.  Installing replaces the newer version.</message>
+  <message id="ul-import-modified">{1} file(s) of the installed version were changed after it was installed; installing replaces them.</message>
+  <message id="ul-import-author-changed">The author or organization differs from the installed version (was “{1}”, now “{2}”).  Make sure this comes from whom you expect.</message>
+  <message id="ul-import-changes-since">Changes since your version</message>
+  <message id="ul-import-summary">{1} new · {2} already installed · {3} need a choice</message>
+  <message id="ul-import-keep-all">Keep all existing</message>
+  <message id="ul-import-use-all">Use all incoming</message>
+  <message id="ul-import-state-new">New</message>
+  <message id="ul-import-state-have">Already installed</message>
+  <message id="ul-import-state-unchanged">Unchanged</message>
+  <message id="ul-import-state-update">Updated</message>
+  <message id="ul-import-state-conflict">Name in use</message>
+  <message id="ul-import-state-newer">Needs a newer InterSpec</message>
+  <message id="ul-import-state-unreadable">Can not be read</message>
+  <message id="ul-import-hash-mismatch">Its content does not match the package description.</message>
+  <message id="ul-import-conflict-with">“{1}” already comes from {2}.  Which one should InterSpec use?</message>
+  <message id="ul-import-conflict-builtin">“{1}” replaces one that comes with InterSpec.  Which one should InterSpec use?</message>
+  <message id="ul-import-keep-existing">Keep the existing one</message>
+  <message id="ul-import-use-incoming">Use the one from this package</message>
+  <message id="ul-import-both-listed">Both stay in the list; this decides which one is used when looked up by name.</message>
+  <message id="ul-import-sensitive">This item tells InterSpec's AI assistant what to do.  Read it before installing.</message>
+  <message id="ul-import-sensitive-show">Show its text</message>
+  <message id="ul-import-sensitive-confirm">I have read it, and want to install it</message>
+  <message id="ul-import-not-installed">Not installed ({1}):</message>
+  <message id="ul-import-refused">never accepted from a package</message>
+  <message id="ul-import-ignored">not a kind of file InterSpec uses</message>
+  <message id="ul-install">Install</message>
+  <message id="ul-import-installed">Installed “{1}”.</message>
+  <message id="ul-import-install-error">Could not install the package: {1}</message>
+  <message id="ul-import-where">Where to find what it added:</message>
+  <message id="ul-import-restart">Some of what it added (reference lines, shielding materials, or AI assistant agents) is read when InterSpec starts: restart InterSpec to use it.</message>
+  <message id="ul-open-library">Manage packages</message>
+  <message id="ul-show-drf">Detector Efficiency</message>
+  <message id="ul-show-rel-act">Isotopics by nuclides</message>
+  <message id="ul-show-act-shield">Activity/Shielding Fit (calculation log)</message>
+  <message id="ul-show-act-shield-setup">Activity/Shielding Fit (Preset menu)</message>
+  <message id="ul-show-ref-spectra">Reference spectra</message>
+  <message id="ul-show-color-theme">Color Themes</message>
+  <message id="ul-show-make-drf">Make Detector Response (check sources)</message>
+  <message id="ul-show-nuc-search">Nuclide Search (category menu)</message>
+  <message id="ul-show-llm">AI assistant</message>
+  <message id="ul-show-isotopics-template">Used in batch isotopics reports (by file name)</message>
+
+  <!-- About dialog link -->
+  <message id="ul-about-link">Manage packages of shared detector efficiencies, presets, and templates.</message>
+</messages>

@@ -25,7 +25,11 @@
 
 #include <map>
 #include <set>
+#include <cmath>
+#include <mutex>
+#include <chrono>
 #include <cstdio>
+#include <optional>
 
 #include <boost/math/distributions/chi_squared.hpp>
 
@@ -37,6 +41,7 @@
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WPoint.h>
+#include <Wt/WTimer.h>
 #include <Wt/WServer.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
@@ -77,6 +82,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/RelEffChart.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -370,7 +376,115 @@ namespace
     for( const size_t index : inner_and_behind )
       shielded_by[index].insert( begin(outer_and_beyond), end(outer_and_beyond) );
   }//void add_shielding_curve(...)
+
+
+  /** The text `RelActAutoGui::m_status_indicator` shows while calculating; `progress` is empty until
+   the calculation first reports. */
+  WString calc_progress_text( const std::optional<RelActCalcAuto::SolveProgress> &progress,
+                              const double elapsed_seconds )
+  {
+    using RelActCalcAuto::SolveProgress;
+
+    WString step_txt, phase_txt;
+    if( progress && progress->step )
+    {
+      const SolveProgress::Step step = *progress->step;
+      switch( step )
+      {
+        case SolveProgress::Step::Setup:
+          step_txt = WString::tr("raag-calc-step-setup");
+          break;
+        case SolveProgress::Step::PeakSearch:
+          step_txt = WString::tr("raag-calc-step-peak-search");
+          break;
+        case SolveProgress::Step::InitialEstimate:
+          step_txt = WString::tr("raag-calc-step-initial-estimate");
+          break;
+        case SolveProgress::Step::PreFit:
+          step_txt = WString::tr("raag-calc-step-pre-fit");
+          break;
+        case SolveProgress::Step::MainFit:
+          step_txt = WString::tr("raag-calc-step-main-fit");
+          break;
+        case SolveProgress::Step::AlternateStarts:
+          step_txt = WString::tr("raag-calc-step-alt-starts")
+                       .arg( static_cast<unsigned long long>(progress->step_index) )
+                       .arg( static_cast<unsigned long long>(progress->step_count) );
+          break;
+        case SolveProgress::Step::ModelSimplification:
+          step_txt = WString::tr("raag-calc-step-simplify")
+                       .arg( static_cast<unsigned long long>(progress->step_index) );
+          break;
+        case SolveProgress::Step::Uncertainties:
+          step_txt = WString::tr("raag-calc-step-uncertainties");
+          break;
+      }//switch( step )
+
+      // The chi2 of the other steps is of trial fits, so would just be confusing.
+      const bool is_fit = ((step == SolveProgress::Step::PreFit) || (step == SolveProgress::Step::MainFit));
+      if( is_fit && (progress->num_iterations > 0) && std::isfinite(progress->chi2) && (progress->dof > 0) )
+        step_txt = WString::tr("raag-calc-iteration")
+                     .arg( step_txt )
+                     .arg( static_cast<unsigned long long>(progress->num_iterations) )
+                     .arg( SpecUtils::printCompact(progress->chi2 / progress->dof, 4) );
+    }//if( progress && progress->step )
+
+    if( progress )
+    {
+      switch( progress->phase )
+      {
+        case SolveProgress::Phase::InitialFit:
+          break;
+        case SolveProgress::Phase::RoiRefinement:
+          if( progress->phase_count > 1 )
+            phase_txt = WString::tr("raag-calc-phase-roi-refine-n")
+                          .arg( static_cast<unsigned long long>(progress->phase_index) )
+                          .arg( static_cast<unsigned long long>(progress->phase_count) );
+          else
+            phase_txt = WString::tr("raag-calc-phase-roi-refine");
+          break;
+        case SolveProgress::Phase::NestedSourceCheck:
+          phase_txt = WString::tr("raag-calc-phase-nested-source");
+          break;
+        case SolveProgress::Phase::MergedCurveComparison:
+          phase_txt = WString::tr("raag-calc-phase-merged-curve");
+          break;
+        case SolveProgress::Phase::TiedEnrichmentComparison:
+          phase_txt = WString::tr("raag-calc-phase-tied-enrich");
+          break;
+        case SolveProgress::Phase::ProfileLikelihood:
+          phase_txt = WString::tr("raag-calc-phase-profile");
+          break;
+      }//switch( progress->phase )
+    }//if( progress )
+
+    WString desc;
+    if( !phase_txt.empty() && !step_txt.empty() )
+      desc = WString::tr("raag-calc-phase-step").arg( phase_txt ).arg( step_txt );
+    else if( !phase_txt.empty() )
+      desc = phase_txt;
+    else if( !step_txt.empty() )
+      desc = step_txt;
+    else
+      desc = WString::tr("raag-calculating");
+
+    // Shown once a second, so whole seconds are precise enough.
+    const long long seconds = std::llround( elapsed_seconds );
+    if( seconds < 60 )
+      return WString::tr("raag-calc-elapsed").arg( desc ).arg( seconds );
+    return WString::tr("raag-calc-elapsed-min").arg( desc ).arg( seconds / 60 ).arg( seconds % 60 );
+  }//calc_progress_text(...)
 }//namespace
+
+
+/** Shared between `RelActAutoGui` and its calculation thread, so a calculation the GUI has moved on
+ from just writes into its own instance, which nothing reads. */
+struct RelActAutoGui::CalcProgress
+{
+  std::mutex m_mutex;
+  std::optional<RelActCalcAuto::SolveProgress> m_latest;
+  const std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now();
+};//struct RelActAutoGui::CalcProgress
 
 
 std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *viewer  )
@@ -514,6 +628,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_background_sf( 0.0 ),
   m_back_sub_foreground( nullptr ),
   m_status_indicator( nullptr ),
+  m_calc_progress{},
+  m_progress_timer( nullptr ),
   m_spectrum( nullptr ),
   m_peak_model( nullptr ),
   m_rel_eff_chart( nullptr ),
@@ -689,14 +805,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_interspec->peakFitDetPrefsChanged().connect( this, &RelActAutoGui::handlePeakFitDetPrefsChanged );
 
   m_default_par_sets_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
-  const vector<string> default_par_sets = SpecUtils::recursive_ls( m_default_par_sets_dir, ".xml" );
-  
-  vector<string> user_par_sets;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+#if( USE_USER_LIBRARY )
   try
   {
     m_user_par_sets_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "rel_act" );
-    user_par_sets = SpecUtils::recursive_ls( m_user_par_sets_dir, ".xml" );
   }catch( std::exception & )
   {
     cerr << "RelActAutoGui: Writable data directory not set.\n";
@@ -712,25 +824,32 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_presets->addItem( WString::tr("raag-preset-blank") );
   m_preset_paths.push_back( "" );
   
-  for( const string &filename : default_par_sets )
+  // InterSpec's own presets, then those from user library packages, then the user's own (disabled
+  //  ones, and package presets that need a newer InterSpec, are left out).
+  const vector<UserLibrary::Item> preset_items = UserLibrary::items( "rel_act_preset" );
+  for( const UserLibrary::SourceKind kind : { UserLibrary::SourceKind::BuiltIn,
+                                              UserLibrary::SourceKind::Package,
+                                              UserLibrary::SourceKind::User } )
   {
-    string dispname = SpecUtils::filename(filename);
-    if( dispname.size() > 4 )
-      dispname = dispname.substr(0, dispname.size() - 4);
-    
-    m_presets->addItem( WString::fromUTF8(dispname) );
-    m_preset_paths.push_back( filename );
-  }//for( string filename : default_par_sets )
-  
-  for( const string &filename : user_par_sets )
-  {
-    string dispname = SpecUtils::filename(filename);
-    if( dispname.size() > 4 )
-      dispname = dispname.substr(0, dispname.size() - 4);
+    for( const UserLibrary::Item &item : preset_items )
+    {
+      if( item.source.kind != kind )
+        continue;
 
-    m_presets->addItem( WString::tr("raag-user-preset").arg(WString::fromUTF8(dispname)) );
-    m_preset_paths.push_back( filename );
-  }//for( string filename : default_par_sets )
+      string dispname = item.names.empty() ? SpecUtils::filename( item.found.path ) : item.names.front();
+      if( SpecUtils::iends_with( dispname, ".xml" ) )
+        dispname = dispname.substr( 0, dispname.size() - 4 );
+
+      WString txt = WString::fromUTF8( dispname );
+      if( kind == UserLibrary::SourceKind::User )
+        txt = WString::tr("raag-user-preset").arg( txt );
+      else if( kind == UserLibrary::SourceKind::Package )
+        txt = WString::tr("raag-package-preset").arg( txt ).arg( WString::fromUTF8( item.source.label ) );
+
+      m_presets->addItem( txt );
+      m_preset_paths.push_back( item.found.path );
+    }//for( loop over preset items )
+  }//for( loop over source kinds )
   
   // m_presets->addItem( WString::fromUTF8("Custom") );
   
@@ -754,13 +873,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
 
   m_error_msg = presetDiv->addNew<WText>( WString::tr("raag-not-calculated") );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
+  m_error_msg->addStyleClass( "SelectableTxt" );
 
   m_fit_chi2_msg = presetDiv->addNew<WText>( WString() );
   m_fit_chi2_msg->addStyleClass( "RelActAutoChi2Msg" );
+  m_fit_chi2_msg->addStyleClass( "SelectableTxt" );
 
   m_status_indicator = presetDiv->addNew<WText>( WString::tr("raag-calculating") );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
+  m_status_indicator->addStyleClass( "SelectableTxt" );
   m_status_indicator->hide();
+
+  m_progress_timer = addChild( std::make_unique<WTimer>() );
+  m_progress_timer->setInterval( std::chrono::seconds(1) );
+  m_progress_timer->timeout().connect( this, &RelActAutoGui::updateCalcProgressText );
 
   if( isPhone )
   {
@@ -6707,6 +6833,8 @@ void RelActAutoGui::startUpdatingCalculation()
       m_cancel_calc->store( true );
    
     m_is_calculating = false;
+    m_progress_timer->stop();
+    m_calc_progress.reset();
     m_error_msg->setText( e.what() );
     m_error_msg->show();
 
@@ -6726,6 +6854,17 @@ void RelActAutoGui::startUpdatingCalculation()
   m_calc_number += 1;
   shared_ptr<atomic_bool> cancel_calc = make_shared<std::atomic_bool>(false);
   m_cancel_calc = cancel_calc;
+
+  // The solve reports progress many times a second, from its own thread, so it just records the
+  //  latest, and `m_progress_timer` shows it once a second.
+  const shared_ptr<CalcProgress> calc_progress = make_shared<CalcProgress>();
+  m_calc_progress = calc_progress;
+  const RelActCalcAuto::SolveProgressFcn progress_fcn
+                               = [calc_progress]( const RelActCalcAuto::SolveProgress &progress ){
+    std::lock_guard<std::mutex> lock( calc_progress->m_mutex );
+    calc_progress->m_latest = progress;
+  };
+  m_progress_timer->start();
   
   shared_ptr<const DetectorPeakResponse> cached_drf = m_cached_drf;
   if( !cached_drf )
@@ -6786,7 +6925,7 @@ void RelActAutoGui::startUpdatingCalculation()
     {
       RelActCalcAuto::RelActAutoSolution answer
         = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, det_type,
-                                 cancel_calc, peak_fit_prefs );
+                                 cancel_calc, peak_fit_prefs, progress_fcn );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();
@@ -6870,6 +7009,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   } );
 
   m_is_calculating = false;
+  m_progress_timer->stop();
+  m_calc_progress.reset();
   m_status_indicator->hide();
 
   // If solution is background subtracted, check if we need to upldate our display
@@ -7647,6 +7788,8 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
     return;
 
   m_is_calculating = false;
+  m_progress_timer->stop();
+  m_calc_progress.reset();
   m_status_indicator->hide();
 
   string msg = "Calculation error: ";
@@ -7672,3 +7815,24 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   m_render_flags.clear( RenderActions::AddUndoRedoStep );
   scheduleRender();
 }//void handleCalcException( std::shared_ptr<std::string> message )
+
+
+void RelActAutoGui::updateCalcProgressText()
+{
+  // A canceled calculation (e.g., by `deSerialize`) is not reported on, even before it returns.
+  const shared_ptr<CalcProgress> calc_progress = m_calc_progress;
+  if( !m_is_calculating || !calc_progress || (m_cancel_calc && m_cancel_calc->load()) )
+  {
+    m_progress_timer->stop();
+    return;
+  }
+
+  std::optional<RelActCalcAuto::SolveProgress> latest;
+  {
+    std::lock_guard<std::mutex> lock( calc_progress->m_mutex );
+    latest = calc_progress->m_latest;
+  }
+
+  const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - calc_progress->m_start;
+  m_status_indicator->setText( calc_progress_text( latest, elapsed.count() ) );
+}//void updateCalcProgressText()

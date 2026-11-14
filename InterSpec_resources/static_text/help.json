@@ -303,6 +303,12 @@
         "title":"Exporting Spectrum Files",
         "help-xml":"export_spec_file_help.xml",
         "keywords":"Save Work Spectrum N42 SPC XML"
+      },
+      {
+        "id":"user-library",
+        "title":"Packages",
+        "help-xml":"user_library_help.xml",
+        "keywords":"user library package packages share install uninstall update detector efficiency DRF preset template reference spectra skill ispkg zip team"
       }
     ]
   }

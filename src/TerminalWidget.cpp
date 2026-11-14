@@ -105,7 +105,6 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   m_edit = edit_owner.get();
   
   m_edit->setAutoComplete( false );
-  m_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_edit->setAttributeValue( "autocorrect", "off" );
   m_edit->setAttributeValue( "spellcheck", "off" );

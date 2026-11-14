@@ -40,7 +40,17 @@
  */
 namespace XmlUtils
 {
-  
+  /** Thrown when XML was written by a newer InterSpec (its `version` is newer than this one reads), so
+   callers can tell "needs a newer InterSpec" from "unreadable".  A `std::runtime_error`, so existing
+   `catch` blocks are unaffected.
+   */
+  class FormatTooNew : public std::runtime_error
+  {
+  public:
+    explicit FormatTooNew( const std::string &msg ) : std::runtime_error( msg ) {}
+  };//class FormatTooNew
+
+
   inline void append_float_node( rapidxml::xml_node<char> *base_node, const char *node_name, const double value )
   {
     assert( base_node && base_node->document() );
@@ -215,10 +225,13 @@ namespace XmlUtils
     
     const int version = get_int_attribute( node, "version" );
     
-    if( (version < 0) || (version > required_version) )
-      throw std::runtime_error( "Invalid version: " + std::to_string(version) + ".  "
+    if( version > required_version )
+      throw FormatTooNew( "Invalid version: " + std::to_string(version) + ".  "
                           + "Only up to version " + std::to_string(required_version)
                           + " supported." );
+
+    if( version < 0 )
+      throw std::runtime_error( "Invalid version: " + std::to_string(version) + "." );
   }//check_xml_version(...)
 
   template<size_t n>

@@ -109,6 +109,60 @@
   </tr>
 </table>
 
+## if exists("AnyBackDecay") and AnyBackDecay
+<div id="BackDecaySummary" style="margin-top: 25px; margin-bottom: 25px">
+  <h1 class="title">Back-decayed activities</h1>
+  <table class="BackDecaySummary ResultTable">
+    <thead><tr>
+      <th>File</th>
+      <th>Nuclide</th>
+      <th>Measurement Start</th>
+      <th>Reference Time</th>
+      <th>Time Before Meas.</th>
+      <th>Activity at Measurement</th>
+      <th>Activity at Reference Time</th>
+      <th>Uncertainty</th>
+      <th>Note</th>
+    </tr></thead>
+    <tbody>
+## for file in Files
+{% if existsIn(file,"BackDecay") %}
+{% if file.BackDecay.HasError %}
+      <tr>
+      <td> {{ file.Filename }} </td>
+      <td></td>
+      <td> {{ file.BackDecay.MeasStartTime }} </td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td> {{ file.BackDecay.Error }} </td>
+      </tr>
+{% else if existsIn(file,"Sources") %}
+## for src in file.Sources
+{% if existsIn(src,"HasBackDecay") %}
+      <tr>
+      <td> {{ file.Filename }} </td>
+      <td> {{ src.Nuclide }} </td>
+      <td> {{ file.BackDecay.MeasStartTime }} </td>
+      <td> {{ file.BackDecay.RefTime }} </td>
+      <td> {{ file.BackDecay.TimeBeforeMeasSigned }} </td>
+      <td> {{ src.Activity }} </td>
+      <td> {% if src.BackDecayIsValid %}{{ src.BackDecayActivity }}{% else %}not determinable{% endif %} </td>
+      <td> {% if src.BackDecayIsValid and src.BackDecayHasUncert %}{{ src.BackDecayActivityUncert }}{% endif %} </td>
+      <td> {{ src.BackDecayNote }} </td>
+      </tr>
+{% endif %}
+## endfor
+{% endif %}
+{% endif %}
+## endfor
+    </tbody>
+  </table>
+</div>
+
+## endif
 
 ## for file in Files
 <div class="FileInfo">

@@ -39,6 +39,7 @@ struct AngleOutxContents;
 class DetectorPeakResponse;
 
 namespace SandiaDecay{ class SandiaDecayDataBase; }
+namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 
 /** Small shared helpers for mapping InterSpec objects onto the CeeLo
  Monte-Carlo library's types.  Used by the detector-geometry MC UI
@@ -174,6 +175,10 @@ namespace CeeLoUtils
    becomes the total-efficiency anchor when it has at least two points, else
    the bare-crystal kernel-exact total tier is used.
 
+   The anchors are the whole detector's efficiency (what a DRF's evaluators give); the response is
+   made carrying `efficiency_scale` - the DRF's DetectorPeakResponse::efficiencyMultiple - with the
+   one modeled element's efficiency being the anchor divided by it.
+
    Touches nothing but its arguments (in particular, no DetectorPeakResponse),
    so it may run on a worker thread with value-captured inputs.  No Monte
    Carlo is run - this is deterministic and sub-second.
@@ -196,7 +201,8 @@ namespace CeeLoUtils
                       const ceelo::GeometryDescriptor &geom,
                       const TransferAnchor &anchor,
                       const ceelo::AnchorCurve &tot_curve,
-                      const std::string &detector_name );
+                      const std::string &detector_name,
+                      const double efficiency_scale );
 
   /** MC-free full-energy-peak kernel K(E, position) of a detector geometry - the attenuation-weighted
    effective solid angle the EFFTRAN transfer is built on (see external_libs/CeeLo/src/io/EfficiencyTransfer.h).
@@ -457,6 +463,38 @@ namespace CeeLoUtils
    */
   ceelo::MaterialSpec gadrasCrystalMaterial( const std::string &gadras_material_name );
 
+  /** The crystal materials a detector can be made of: the GADRAS material-table names that
+   #gadrasCrystalMaterial can actually build, in table order.
+
+   Driven by the table rather than hand-listed, so any crystal a `Detector.dat` can name is one the
+   geometry form offers, and an imported descriptor matches an entry by name.
+   */
+  const std::vector<std::string> &crystalMaterialNames();
+
+  /** The crystal a DRF's free text names - an entry of #crystalMaterialNames, or empty.
+
+   A DRF seeded from a GADRAS `Detector.dat` records the crystal in its description ("GADRAS
+   geometry, LaBr3; ..."), and shipped detectors carry it in their name ("LaBr 10%").  Matched on
+   the table names, longest first, and only on whole tokens - so "Si" does not match inside
+   "Since", and "LaBr3" wins over any shorter prefix.
+   */
+  std::string crystalNameFromText( const std::string &text );
+
+  /** The crystal a DRF's own evidence implies - an entry of #crystalMaterialNames, or empty when
+   nothing usable says.  Does not look at the DRF's free text for a crystal name (see
+   #crystalNameFromText) or at its geometry.
+
+   In order: a detector model named in its name/description (SpecUtils::DetectorType names); its
+   own FWHM at 661 keV (below 5 keV is HPGe; above only vetoes an HPGe answer below); its recorded
+   peak-fit detector type.  Never guesses among scintillators the evidence does not separate.
+   */
+  std::string crystalNameFromDrfEvidence( const DetectorPeakResponse &drf );
+
+  /** The crystal a coarse detector class stands for - HPGe, LaBr3, CZT, or NaI for the low-resolution
+   class - or empty for the classes that do not say (medium resolution, unknown).
+   */
+  std::string crystalNameForResolutionType( const PeakFitUtils::CoarseResolutionType type );
+
   /** A stand-in material for a GADRAS attenuator, which is specified only as an
    effective atomic number and an areal density (g/cm2) - never a composition or
    a thickness.
@@ -554,6 +592,10 @@ namespace CeeLoUtils
    The detector diameter (the crystal's), setback (the response's endcap offset), geometry type and
    energy range are taken from the response, so the flat-disk model places the crystal where the
    response does; @p drf's DRF-source is preserved across the call.
+
+   The curve is the one modeled element's - the response's efficiency divided by its
+   `efficiency_scale` - as a DRF's stored curves are (DetectorPeakResponse::efficiencyMultiple); so
+   @p drf must carry the same multiple, which attaching @p response gives it.
 
    Throws std::runtime_error for a null response, or if fewer than two positive
    points can be sampled.

@@ -38,6 +38,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -157,7 +158,7 @@ void load_ref_line_file( const string& filepath,
         if( color && color->value_size() )
         {
           const string color_str = SpecUtils::xml_value_str(color);
-          comp.m_color = Wt::WColor( color_str );
+          comp.m_color = ColorTheme::colorFromText( color_str );  //shared files: no CSS/JS injection
           if( comp.m_color.isDefault() )
           {
             const string msg = "NucMixture named '" + mix_name_str + "'"
@@ -299,7 +300,7 @@ void load_ref_line_file( const string& filepath,
         if( color_attrib && color_attrib->value_size() )
         {
           const string color_str = SpecUtils::xml_value_str(color_attrib);
-          color = Wt::WColor( color_str );
+          color = ColorTheme::colorFromText( color_str );  //shared files: no CSS/JS injection
           if( color.isDefault() )
           {
             // Parsing of color failed

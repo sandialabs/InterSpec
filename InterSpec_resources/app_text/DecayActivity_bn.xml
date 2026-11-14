@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">বিটা/সেকেন্ড</message>
   <message id="dad-hdr-total-alphas">মোট আলফা</message>
   <message id="dad-yaxis-title-total-alphas">আলফা/সেকেন্ড</message>
-  <message id="dad-chart-click-more-info">আরও তথ্যের জন্য ক্লিক করুন - {1} {2} T0 পরে আমাদের আছে:</message>
 
   <message id="dcc-window-title-decay-chain">{1} ক্ষয় চেইন</message>
   <message id="dcc-window-title-decay-through">{1}-এর মাধ্যমে ক্ষয়</message>

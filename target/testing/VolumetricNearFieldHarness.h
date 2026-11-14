@@ -150,7 +150,7 @@ AngleDetector load_angle_detector()
   BOOST_REQUIRE_GE( anchor.curve.energies_keV.size(), size_t(2) );
 
   det.measured_transfer = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{},
-                                                            "ANGLE GEM35-70 (EFFTRAN, measured)" );
+                                                            "ANGLE GEM35-70 (EFFTRAN, measured)" , 1.0);
   BOOST_REQUIRE( det.measured_transfer );
 
   // The transfer used for the MODEL comparison is anchored on the recorded Monte-Carlo curve
@@ -170,7 +170,7 @@ AngleDetector load_angle_detector()
       mc_anchor.curve.frac_sigma.push_back( row.frac_sigma );
     }
     det.mc_transfer = CeeLoUtils::makeTransferResponse( det.gd, mc_anchor, ceelo::AnchorCurve{},
-                                                        "ANGLE GEM35-70 (EFFTRAN, MC-anchored)" );
+                                                        "ANGLE GEM35-70 (EFFTRAN, MC-anchored)" , 1.0);
     BOOST_REQUIRE( det.mc_transfer );
   }//if( an MC anchor has been recorded )
 
@@ -387,7 +387,7 @@ shared_ptr<const ceelo::DetectorResponse> centre_anchored_response( const AngleD
   {
     ostringstream nm;
     nm << "centre-anchored (d=" << fixed << setprecision(2) << d_cm << " cm)";
-    resp = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+    resp = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() , 1.0);
   }
 
   cache[key] = resp;
@@ -617,7 +617,7 @@ shared_ptr<ceelo::DetectorResponse> make_centre_anchor_response( const AngleDete
   nm << "near-anchored (centre, d=" << fixed << setprecision(2) << centre_distance_cm << " cm)";
 
   const shared_ptr<ceelo::DetectorResponse> resp =
-        CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+        CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() , 1.0);
   BOOST_REQUIRE( resp );
 
   return resp;

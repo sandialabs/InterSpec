@@ -1846,6 +1846,7 @@ struct ShippedPresetCase
 #define PU_JRC_DIR "rel_act_auto/pu_610_775/"
 const ShippedPresetCase sm_shipped_preset_cases[] = {
   { "HPGe U (120-1001 keV)", "uranium_40pct_selfatten_HPGe_15cm.n42", nullptr, nullptr },
+  { "HPGe U (63-205 keV)", "rel_act_auto/planar_u/69_0044623U235.spe", nullptr, "2.5x1.5 Planar HPGe (1%)" },
   { "CZT-std U (130-1010 keV)", "rel_act_auto/czt_u/CZT500_CBNM-446_@20mm_01.cnf", nullptr, "CZT 1cm-1cm-1cm" },
   { "HPGe Pu (120-420 keV)", PU_JRC_DIR "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe", PU_JRC_DIR "mDT-BKG-2017-09-20_summed.n42", "ORTEC MicroDetective_LANL_025cm (7%)" },
   { "HPGe Pu (120-780 keV)", PU_JRC_DIR "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe", PU_JRC_DIR "mDT-BKG-2017-09-20_summed.n42", "ORTEC MicroDetective_LANL_025cm (7%)" },
@@ -1980,6 +1981,7 @@ const map<string,vector<pair<string,double>>> sm_expected_mass_fractions = {
   { "HPGe Pu (120-780 keV)", { {"Pu239", 0.70219371128927988}, {"Pu240", 0.26405451388018375}, {"Pu241", 0.00028259074930945578}, {"Pu238", 8.8543539608913389e-05} } },
   { "HPGe Pu (610-775 keV)", { {"Pu239", 0.92248150921563232}, {"Pu240", 0.061533804235755281}, {"Pu241", 0.0031884633812390897}, {"Pu238", 9.5264588011255967e-05} } },
   { "HPGe U (120-1001 keV)", { {"U235", 0.20570893386920336}, {"U238", 0.79413621097210496}, {"U234", 0.00015485515805940882}, {"U232", 6.3227347235272192e-13} } },
+  { "HPGe U (63-205 keV)", { {"U235", 0.044589539300246429}, {"U238", 0.95504163320694813}, {"U234", 0.00036882749280547678} } },
   { "HPGe multiple U objects", { {"U234", 3.6283206204684303e-12}, {"U235", 0.99999999999418965}, {"U238", 0}, {"U232", 2.1818680103382042e-12} } },
   { "Multi-enrich U - back higher", { {"U234", 1.1252499944891748e-06}, {"U235", 0.93041469855223924}, {"U238", 0.069584175796914491}, {"U232", 4.0085180887697826e-10} } },
   { "Multi-enrich U - front higher", { {"U234", 0}, {"U235", 1}, {"U238", 0} } }
@@ -2102,6 +2104,7 @@ BOOST_AUTO_TEST_CASE( test_shippedIsotopicsPresetsAllTested )
 
 
 BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_U ) { checkShippedPresetResult( "HPGe U (120-1001 keV)" ); }
+BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_U_63_205 ) { checkShippedPresetResult( "HPGe U (63-205 keV)" ); }
 BOOST_AUTO_TEST_CASE( test_isotopicsResult_CZT_U ) { checkShippedPresetResult( "CZT-std U (130-1010 keV)" ); }
 BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_Pu_120_420 ) { checkShippedPresetResult( "HPGe Pu (120-420 keV)" ); }
 BOOST_AUTO_TEST_CASE( test_isotopicsResult_HPGe_Pu_120_780 ) { checkShippedPresetResult( "HPGe Pu (120-780 keV)" ); }

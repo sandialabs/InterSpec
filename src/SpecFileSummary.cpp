@@ -249,6 +249,7 @@ void addField( WText *&edit, WGridLayout *table, const WString &labelstr,
   label->setStyleClass( "SpectrumFileSummaryLabel" );
   auto editOwner = std::make_unique<WText>();
   edit = editOwner.get();
+  edit->addStyleClass( "SelectAllTxt" );
   table->addWidget( std::move(editOwner), row, col+1, rowspan, colspan,
                     Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Left );
 }
@@ -475,7 +476,6 @@ void SpecFileSummary::init()
     m_displaySampleNumEdit = m_displaySampleDiv->addNew<WLineEdit>();
 
     m_displaySampleNumEdit->setAutoComplete( false );
-    m_displaySampleNumEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
     m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );

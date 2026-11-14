@@ -46,14 +46,17 @@
 #include "geometry/Geometry.h"
 #include "cross_sections/CrossSectionData.h"
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 
 #include "SandiaDecay.h"
 
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/AngleOutxImport.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/GadrasDetectorDat.h"
@@ -514,7 +517,8 @@ bool attachCurveTransferResponse( DetectorPeakResponse &drf )
     const TransferAnchor anchor = transferAnchorForDrf( drf_ptr, *geom, -1.0 );
     const ceelo::AnchorCurve tot_curve = totalTransferAnchorForDrf( drf_ptr, anchor );
     const shared_ptr<ceelo::DetectorResponse> resp
-                    = makeTransferResponse( *geom, anchor, tot_curve, drf.name() );
+                    = makeTransferResponse( *geom, anchor, tot_curve, drf.name(),
+                                            drf.efficiencyMultiple() );
     if( !resp )
       return false;
 
@@ -533,10 +537,13 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
                       const ceelo::GeometryDescriptor &geom,
                       const TransferAnchor &anchor,
                       const ceelo::AnchorCurve &tot_curve,
-                      const std::string &detector_name )
+                      const std::string &detector_name,
+                      const double efficiency_scale )
 {
   if( anchor.curve.energies_keV.size() < 2 )
     throw runtime_error( "makeTransferResponse: need at least two anchor points." );
+  if( !(efficiency_scale > 0.0) || !std::isfinite(efficiency_scale) )
+    throw runtime_error( "makeTransferResponse: the efficiency scale must be finite and > 0." );
 
   // The kernel positions are in the crystal-face frame (z = 0 at the crystal face, source in front
   //  at negative z); the anchor distance is from the DETECTOR FACE, as every InterSpec distance is
@@ -545,6 +552,7 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
 
   ceelo::TransferResponseOptions opts;
   opts.detector_name = detector_name;
+  opts.efficiency_scale = efficiency_scale;
 
   const ceelo::AnchorCurve * const tot_anchor
                        = (tot_curve.energies_keV.size() >= 2) ? &tot_curve : nullptr;
@@ -1545,6 +1553,156 @@ ceelo::MaterialSpec gadrasCrystalMaterial( const std::string &gadras_material_na
 }//gadrasCrystalMaterial(...)
 
 
+const std::vector<std::string> &crystalMaterialNames()
+{
+  static const std::vector<std::string> names = []() -> std::vector<std::string> {
+    std::vector<std::string> n;
+    for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
+    {
+      // Only what can actually be built; a table entry whose formula does not resolve would throw
+      //  the moment it was used.
+      try
+      {
+        gadrasCrystalMaterial( info.name );
+        n.push_back( info.name );
+      }catch( std::exception & )
+      {
+      }
+    }
+    return n;
+  }();
+
+  return names;
+}//crystalMaterialNames()
+
+
+std::string crystalNameFromText( const std::string &text )
+{
+  if( text.empty() )
+    return std::string();
+
+  std::string haystack = text;
+  SpecUtils::to_lower_ascii( haystack );
+
+  // Longest name first, so a name that contains a shorter one cannot shadow it.
+  std::vector<std::string> names = crystalMaterialNames();
+  std::stable_sort( begin(names), end(names),
+    []( const std::string &lhs, const std::string &rhs ){ return lhs.size() > rhs.size(); } );
+
+  for( const std::string &name : names )
+  {
+    std::string needle = name;
+    SpecUtils::to_lower_ascii( needle );
+    if( needle.empty() )
+      continue;
+
+    for( size_t pos = haystack.find(needle); pos != std::string::npos; pos = haystack.find(needle, pos + 1) )
+    {
+      const bool start_ok = (pos == 0) || !std::isalnum( static_cast<unsigned char>(haystack[pos-1]) );
+      const size_t after = pos + needle.size();
+      const bool end_ok = (after >= haystack.size())
+                          || !std::isalnum( static_cast<unsigned char>(haystack[after]) );
+      if( start_ok && end_ok )
+        return name;
+    }//for( each occurrence )
+  }//for( const std::string &name : names )
+
+  return std::string();
+}//crystalNameFromText(...)
+
+
+std::string crystalNameFromDrfEvidence( const DetectorPeakResponse &drf )
+{
+  // 1) A detector model named in the DRF's own name/description.  These are the shipped
+  //    relative-efficiency DRFs ("ORTEC Detective EX-100", "GR135"), which carry no FWHM and no
+  //    peak-fit preferences - the model name is the only thing that knows what they are, and
+  //    SpecUtils already names every type it can parse.  Matched longest-first so "Detective EX"
+  //    cannot shadow "Detective EX-100".
+  {
+    std::string haystack = drf.name() + " " + drf.description();
+    SpecUtils::to_lower_ascii( haystack );
+
+    SpecUtils::DetectorType best = SpecUtils::DetectorType::Unknown;
+    size_t best_len = 0;
+    for( int i = 0; i < static_cast<int>(SpecUtils::DetectorType::Unknown); ++i )
+    {
+      const SpecUtils::DetectorType type = static_cast<SpecUtils::DetectorType>( i );
+      std::string name = SpecUtils::detectorTypeToString( type );
+      if( name.size() <= best_len )
+        continue;
+
+      SpecUtils::to_lower_ascii( name );
+      if( !name.empty() && (haystack.find(name) != std::string::npos) )
+      {
+        best = type;
+        best_len = name.size();
+      }
+    }//for( each DetectorType )
+
+    const std::string crystal = (best == SpecUtils::DetectorType::Unknown) ? std::string()
+                  : crystalNameForResolutionType( PeakFitUtils::coarse_type_for_detector_type(best) );
+    if( !crystal.empty() )
+      return crystal;
+  }
+
+  // 2) The DRF's own FWHM.  At 661 keV an HPGe is 1-2 keV where every scintillator here is
+  //    >10 keV (CZT ~2%, LaBr ~3%, NaI ~7%), so the gap is wide and a loose threshold is safe.
+  //    A not-HPGe answer only vetoes tier 3 answering HPGe, since a measured resolution outranks a
+  //    recorded preference.
+  bool fwhm_says_not_hpge = false;
+  if( drf.hasResolutionInfo() )
+  {
+    const float fwhm = drf.peakResolutionFWHM( 661.7f );
+    if( (fwhm > 0.0f) && (fwhm < 5.0f) )
+      return crystalNameFromText( "HPGe" );
+
+    fwhm_says_not_hpge = (fwhm > 0.0f);
+  }//if( drf.hasResolutionInfo() )
+
+  // 3) The DRF's own peak-fit preferences, when it recorded a detector type.  Deliberately NOT a
+  //    loaded spectrum: a spectrum describes the detector that recorded it, not whichever response
+  //    the user is looking at.
+  const std::shared_ptr<const PeakFitDetPrefs> prefs = drf.peakFitDetPrefs();
+  if( prefs )
+  {
+    switch( prefs->m_det_type )
+    {
+      case PeakFitUtils::CoarseResolutionType::High:
+        return fwhm_says_not_hpge ? std::string() : crystalNameFromText( "HPGe" );
+      case PeakFitUtils::CoarseResolutionType::LaBr: return crystalNameFromText( "LaBr3" );
+      case PeakFitUtils::CoarseResolutionType::CZT:  return crystalNameFromText( "CZT" );
+
+      // Low is NaI *or* CsI, and the Med/LowOrMed cases are explicitly "cannot tell which".
+      case PeakFitUtils::CoarseResolutionType::Low:
+      case PeakFitUtils::CoarseResolutionType::MedRes:
+      case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+      case PeakFitUtils::CoarseResolutionType::Unknown:
+        break;
+    }//switch( prefs->m_det_type )
+  }//if( prefs )
+
+  return std::string();
+}//crystalNameFromDrfEvidence(...)
+
+
+std::string crystalNameForResolutionType( const PeakFitUtils::CoarseResolutionType type )
+{
+  switch( type )
+  {
+    case PeakFitUtils::CoarseResolutionType::High: return crystalNameFromText( "HPGe" );
+    case PeakFitUtils::CoarseResolutionType::LaBr: return crystalNameFromText( "LaBr3" );
+    case PeakFitUtils::CoarseResolutionType::CZT:  return crystalNameFromText( "CZT" );
+    case PeakFitUtils::CoarseResolutionType::Low:  return crystalNameFromText( "NaI" );
+    case PeakFitUtils::CoarseResolutionType::MedRes:
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+    case PeakFitUtils::CoarseResolutionType::Unknown:
+      break;
+  }//switch( type )
+
+  return std::string();
+}//crystalNameForResolutionType(...)
+
+
 ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
                                                const double areal_density_g_cm2,
                                                const double thickness_cm )
@@ -1870,14 +2028,14 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
                         + " cm further back than Detector.dat's setback." );
   }
 
-  // GADRAS scales its own efficiency by this; a Monte Carlo of the geometry
-  //  will not reproduce that scaling.
+  // GADRAS scales its own efficiency by this; the DRF carries it as its efficiency multiple
+  //  (DetectorPeakResponse::applyGadrasDat), over the one crystal described here.
   if( (dat.effScalar() > 0.0f) && (std::fabs(dat.effScalar() - 1.0f) > 1.0e-3f) )
-    warnings.push_back( "Detector.dat applies an efficiency scalar of "
+    warnings.push_back( "Detector.dat multiplies its efficiency by "
                         + SpecUtils::printCompact(dat.effScalar(), 4)
-                        + ", which a Monte Carlo of the geometry does not"
-                        " reproduce; expect the computed efficiency to differ by"
-                        " about that factor." );
+                        + " (several identical crystals summed, or an empirical factor); this"
+                        " geometry is one crystal, and the detector response carries the factor"
+                        " as its efficiency multiple." );
 
   relaxGeometryFeatures( gd, warnings );
 
@@ -1994,12 +2152,16 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
 
     const vector<double> energies = responseSampleEnergies( *response, num_points );
 
+    // The stored curve is the one element's; the snapshot keeps the scale as its multiple (it is
+    //  moved there when the response is detached below).
+    const double scale = response->efficiency_scale;
+
     vector<DetectorPeakResponse::EnergyEffPoint> points;
     points.reserve( energies.size() );
     for( const double energy : energies )
     {
       const ceelo::EffResult res = response->eps_fep_at( energy, src_pos, quad );
-      const double eff = res.value / omega;
+      const double eff = res.value / (omega * scale);
       if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
         continue;
 
@@ -2007,7 +2169,7 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
       p.energy = static_cast<float>( energy );
       p.efficiency = static_cast<float>( eff );
       if( res.sigma > 0.0 )
-        p.efficiencyUncert = static_cast<float>( res.sigma / omega );
+        p.efficiencyUncert = static_cast<float>( res.sigma / (omega * scale) );
       points.push_back( p );
     }//for( const double energy : energies )
 
@@ -2019,6 +2181,8 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
     // The response must NOT come along: it is what `efficiency()` would dispatch to, and the
     //  whole point is that the curve now answers instead.
     snapshot->setCeeloResponse( nullptr );
+
+    assert( snapshot->efficiencyMultiple() == scale );
 
     // setEfficiencyPoints resets the setback and the DRF source along with the curve.
     const DetectorPeakResponse::DrfSource source = drf->drfSource();
@@ -2071,12 +2235,15 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   const Eigen::Vector3d src_pos = farFieldSourcePosition( response->descriptor );
   const ceelo::ApertureQuadrature quad = response->make_quadrature( src_pos );
 
+  // Stored curves are the one element's (DetectorPeakResponse::efficiencyMultiple).
+  const double scale = response->efficiency_scale;
+
   vector<DetectorPeakResponse::EnergyEffPoint> points;
   points.reserve( energies.size() );
   for( const double energy : energies )
   {
     const ceelo::EffResult res = response->eps_fep_at( energy, src_pos, quad );
-    const double eff = res.value / omega;
+    const double eff = res.value / (omega * scale);
     if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
       continue;
 
@@ -2084,7 +2251,7 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
     p.energy = static_cast<float>( energy );
     p.efficiency = static_cast<float>( eff );
     if( res.sigma > 0.0 )
-      p.efficiencyUncert = static_cast<float>( res.sigma / omega );
+      p.efficiencyUncert = static_cast<float>( res.sigma / (omega * scale) );
     points.push_back( p );
   }//for( const double energy : energies )
 

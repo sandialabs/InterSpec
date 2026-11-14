@@ -711,6 +711,32 @@ BOOST_AUTO_TEST_CASE( MakeDrfCsvFullExport )
     check_drf( DetectorPeakResponse::parseInterSpecRelEffCsv( strm ), false );
   }
 
+  // The coefficient covariance written after the uncertainties is read back; one that is not a
+  //  possible set of errors is left off, without losing the DRF.
+  {
+    const string cov =
+      "# Coefficient covariance matrix (row-major, c0..c2)\r\n"
+      "# Cov row 0,0.01,-0.0015,0.0001\r\n"
+      "# Cov row 1,-0.0015,0.0004,-0.00003\r\n"
+      "# Cov row 2,0.0001,-0.00003,0.000009\r\n";
+
+    std::istringstream strm( header + uncerts + cov + rest + fwhm );
+    const shared_ptr<DetectorPeakResponse> drf = DetectorPeakResponse::parseInterSpecRelEffCsv( strm );
+    check_drf( drf, true );
+    BOOST_REQUIRE( drf->efficiencyUncert() );
+    const vector<float> &read_cov = drf->efficiencyUncert()->coefficientCovariance();
+    BOOST_REQUIRE_EQUAL( read_cov.size(), 9 );
+    BOOST_CHECK_CLOSE( read_cov[1], -0.0015f, 1.0E-4 );
+    BOOST_CHECK_CLOSE( read_cov[8], 0.000009f, 1.0E-4 );
+
+    string impossible = cov;  //a correlation of 1.5 between c0 and c1
+    SpecUtils::ireplace_all( impossible, "-0.0015", "0.003" );
+    std::istringstream bad_strm( header + uncerts + impossible + rest + fwhm );
+    const shared_ptr<DetectorPeakResponse> bad_drf = DetectorPeakResponse::parseInterSpecRelEffCsv( bad_strm );
+    check_drf( bad_drf, true );
+    BOOST_CHECK( !bad_drf->efficiencyUncert() || bad_drf->efficiencyUncert()->coefficientCovariance().empty() );
+  }
+
   // An unusable intrinsic table must not fall through to the absolute one after it
   {
     string bad = header + uncerts + rest + fwhm;
@@ -805,3 +831,128 @@ BOOST_AUTO_TEST_CASE( MoreImportChoices )
     BOOST_CHECK( std::find( begin(kinds), end(kinds), FileKind::EfficiencyCsv ) != end(kinds) );
   }
 }//BOOST_AUTO_TEST_CASE( MoreImportChoices )
+
+
+BOOST_AUTO_TEST_CASE( GroupFilesOfAFolder )
+{
+  set_dirs();
+
+  using DrfImport::InputFile;
+  using DrfImport::FoundDetector;
+
+  const string det_eff = SpecUtils::append_path( g_test_file_dir, "det_eff" );
+  const string generic = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
+  const auto file = []( const string &relative, const string &path ) -> InputFile {
+    InputFile f;
+    f.relativePath = relative;
+    f.data = DrfImport::readFile( path );
+    return f;
+  };
+
+  // A dropped folder: two GADRAS detectors, a geometry-only GADRAS detector, an ISOCS .par grid
+  //  with its DETECTOR.txt in the ISOCS layout, an .ecc, a three-row relative-efficiency table,
+  //  and two files that are not detectors.
+  vector<InputFile> files;
+  for( const char *name : { "HPGe 40%", "NaI 3x3" } )
+  {
+    for( const char *f : { "Detector.dat", "Efficiency.csv" } )
+      files.push_back( file( string("Lab/") + name + "/" + f,
+                             SpecUtils::append_path( SpecUtils::append_path( generic, name ), f ) ) );
+  }
+  files.push_back( file( "Lab/Portal NaI/Detector.dat",
+                         SpecUtils::append_path( g_test_file_dir, "gadras_detectors/NaI_3x3_text/Detector.dat" ) ) );
+  files.push_back( file( "Lab/isocs/DCG/DET1/mock.par", SpecUtils::append_path( det_eff, "mock.par" ) ) );
+  files.push_back( file( "Lab/isocs/PARAMETERS/DETECTOR.TXT", SpecUtils::append_path( det_eff, "mock_DETECTOR.txt" ) ) );
+  files.push_back( file( "Lab/insitu.ecc", SpecUtils::append_path( det_eff, "Detective-X_in-situ.ecc" ) ) );
+
+  {
+    // The first three detectors of the shipped table
+    ifstream input( SpecUtils::append_path( g_data_dir, "common_drfs.tsv" ).c_str() );
+    string line, table;
+    size_t num_rows = 0;
+    while( std::getline( input, line ) && (num_rows < 3) )
+    {
+      if( SpecUtils::istarts_with( line, "FLAT" ) )  //a placeholder row with no efficiency
+        continue;
+      table += line + "\n";
+      const string trimmed = SpecUtils::trim_copy( line );  //the file has rows of only tabs
+      if( !trimmed.empty() && (trimmed[0] != '#') )
+        ++num_rows;
+    }
+    InputFile f;
+    f.relativePath = "Lab/site_effs.tsv";
+    f.data = make_shared<string>( table );
+    files.push_back( f );
+  }
+
+  InputFile notes;
+  notes.relativePath = "Lab/README.txt";
+  notes.data = make_shared<string>( "These are our detectors.\n" );
+  files.push_back( notes );
+  InputFile picture;
+  picture.relativePath = "Lab/HPGe 40%/photo.jpg";
+  picture.data = make_shared<string>( string("\xFF\xD8\xFF\xE0", 4) + string( 200, '\0' ) );
+  files.push_back( picture );
+
+  vector<string> skipped;
+  const vector<FoundDetector> found = DrfImport::groupFiles( files, &skipped );
+
+  const auto find = [&found]( const string &folder, const FileKind kind ) -> const FoundDetector * {
+    for( const FoundDetector &d : found )
+    {
+      if( (d.folder == folder) && (d.kind == kind) )
+        return &d;
+    }
+    return nullptr;
+  };
+
+  BOOST_CHECK_EQUAL( skipped.size(), 2u );
+
+  // GADRAS pairs: one detector each, named for their folders, ready to use
+  for( const char *name : { "HPGe 40%", "NaI 3x3" } )
+  {
+    const string folder = string("Lab/") + name;
+    const FoundDetector *d = nullptr;
+    for( const FoundDetector &f : found )
+    {
+      if( f.folder == folder )
+        d = &f;
+    }
+    BOOST_REQUIRE_MESSAGE( d, "No detector found in " << folder );
+    BOOST_CHECK_EQUAL( d->files.size(), 2u );
+    BOOST_CHECK( d->source.status == Status::Ready );
+    BOOST_CHECK( d->drf && d->drf->isValid() );
+    BOOST_CHECK_MESSAGE( d->drf && (d->drf->name() == name), "DRF named '" << (d->drf ? d->drf->name() : "") << "'" );
+  }
+
+  // The lone Detector.dat needs characterizing
+  const FoundDetector * const portal = find( "Lab/Portal NaI", FileKind::GadrasDetectorDat );
+  BOOST_REQUIRE( portal );
+  BOOST_CHECK( portal->source.status == Status::NeedsCharacterization );
+  BOOST_CHECK( !portal->drf );
+
+  // The .par grid found the DETECTOR.txt in the PARAMETERS folder above it
+  const FoundDetector * const grid = find( "Lab/isocs/DCG/DET1", FileKind::ParGrid );
+  BOOST_REQUIRE( grid );
+  BOOST_REQUIRE_EQUAL( grid->files.size(), 2u );
+  BOOST_CHECK_EQUAL( grid->files[1], "Lab/isocs/PARAMETERS/DETECTOR.TXT" );
+  BOOST_CHECK( grid->source.status == Status::Ready );
+  BOOST_CHECK( grid->source.recordNames.empty() );
+
+  BOOST_CHECK( find( "Lab", FileKind::IsocsEcc ) );
+
+  // One detector per row of the table, each with its own name
+  size_t num_table_rows = 0;
+  for( const FoundDetector &d : found )
+  {
+    if( (d.folder == "Lab") && (d.files.size() == 1) && (d.files[0] == "Lab/site_effs.tsv") )
+    {
+      ++num_table_rows;
+      BOOST_CHECK( !d.name.empty() && (d.name != "site_effs") );
+      BOOST_CHECK( d.drf );
+    }
+  }
+  BOOST_CHECK_EQUAL( num_table_rows, 3u );
+
+  BOOST_CHECK_EQUAL( found.size(), 2u + 1u + 1u + 1u + 3u );
+}//BOOST_AUTO_TEST_CASE( GroupFilesOfAFolder )

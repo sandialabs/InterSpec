@@ -1,7 +1,21 @@
 .MakeDrfSrcDef {
   border: 1px solid var(--interspec-outline-color);
+  border-radius: 3px;
   padding: 3px;
-  display: inline-block;
+}
+
+/* A source with something wrong in it - see MakeDrfSrcDef::validate() */
+.MakeDrfSrcDef.SrcDefHasError {
+  border-color: var(--interspec-error-color);
+}
+
+/* The messages saying what is wrong, at the bottom of the source.  They wrap to the width the
+   inputs above them give the box, rather than widening it: `width: 0` keeps the text out of the
+   tables width calculation, and `min-width: 100%` then fills the cell. */
+.SrcProblems {
+  width: 0;
+  min-width: 100%;
+  padding-top: 3px;
 }
 
 .SrcInputTable > tbody > tr > td:nth-child(1) {
@@ -24,6 +38,3 @@
   font-size: smaller;
 }
 
-.SrcInputError {
-  color: var(--interspec-error-color);
-}

@@ -40,7 +40,22 @@ function()
       return el && (el.getClientRects().length > 0);
     } );
   };
-  
+
+  // Only external drags of files (folders also report 'Files'), or the Windows Outlook file-contents
+  //  drag (see InterSpec::dragEventWithFileContentsStarted), are drops for us.
+  var isFileDrag = function(event){
+    const types = event.dataTransfer ? event.dataTransfer.types : null;
+    return !!window._IS.DropFileContents || (!!types && (Array.prototype.indexOf.call(types, 'Files') >= 0));
+  };
+
+  // Nothing in InterSpec is dragged with HTML5 drag-n-drop, so stop links, images, and selected text
+  //  from being dragged (which would otherwise look like a file being dropped onto the app).
+  //  External drags (files/folders) do not fire 'dragstart' in this document, so are unaffected.
+  if( !window._IS.BlocksElementDrags ){
+    window._IS.BlocksElementDrags = true;
+    document.addEventListener( 'dragstart', function(e){ e.preventDefault(); }, true );
+  }
+
   var uploadFcn = function(evt,urlid){
     try
     {
@@ -300,8 +315,9 @@ function()
   };
   
   target.addEventListener("dragover", function(event){
-    event.preventDefault();
-    window._IS.IsDragging = true;
+    event.preventDefault(); //Also for non-file drags, so a dropped link or text never navigates the page away
+    if( isFileDrag(event) )
+      window._IS.IsDragging = true;
   }, false);
   
   target.addEventListener("drop", function(event){
@@ -335,6 +351,9 @@ function()
   
   
   target.addEventListener("dragenter", function(event){
+
+    if( !isFileDrag(event) )
+      return;
 
       // If the "batch analysis" GUI is showing, then any file we drop will be uploaded to the batch upload URL.
     if( window._IS.BlockFileDrops || dropAreaShowing() ){

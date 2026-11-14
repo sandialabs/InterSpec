@@ -6,6 +6,7 @@
   -->
   <message id="dp-back-sub-txt">will sub. {1} cps for bckgrnd</message>
   <message id="dp-no-peak-preview">Unable to generate preview</message>
+  <message id="dp-use-cb">Use</message>
 
   <message id="dsfs-sample">Sample</message>
   <message id="dsfs-samples">Samples</message>
@@ -16,7 +17,6 @@
   
   <message id="md-det-diam">Det. Diameter</message>
   <message id="md-det-setback">Det. Setback</message>
-  <message id="md-eff-type">Efficiency Type</message>
   <message id="md-eqn-in-kev">Eqn. in keV</message>
   <message id="md-eqn-in-mev">Eqn. in MeV</message>
   <message id="md-geom-intrinsic-eff">Intrinsic Eff.</message>
@@ -40,7 +40,6 @@
     <br />
     Fixed per gram: similar to per cm2, but for per gram of source.
   </message>
-  <message id="md-fwhm-eqn-form-label">FWHM Eqn.</message>
   <message id="md-fwhm-gadras">Gadras Equation</message>
   <message id="md-sqrt-series">Sqrt Power Series</message>
   <message id="md-atten-for-air-cb">Atten. for air</message>
@@ -52,7 +51,6 @@
   </message>
   <message id="md-peak-fit-prefs-title">Peak Fit Prefs</message>
   <message id="md-show-fwhm-markers">Show FWHM points</message>
-  <message id="md-mi-chart-phone">Chart/Options</message>
   <message id="md-mi-peaks-phone">Peaks To Use</message>
   <message id="md-export-btn">Store/Export...</message>
   <message id="md-export-window-title">Store/Export DRF</message>
@@ -80,6 +78,14 @@
     in principal, except for detector diameter and equation orders,
     provide all the input information used to create the DRF.
   </message>
+  <message id="md-export-drf-xml">Export detector efficiency XML.</message>
+  <message id="md-tt-export-drf-xml">
+    Exports the detector response function as an XML file - the format InterSpec itself stores
+    detector responses in - with its efficiency and FWHM equations, their uncertainties, the
+    measured points, and (if given) the detector geometry and its response.<br />
+    Use it to keep a record of the detector, or to import it into InterSpec elsewhere, using the
+    &quot;Detector Response Select&quot; tool.
+  </message>
   <message id="md-export-as-csv">Export DRF as CSV.</message>
   <message id="md-tt-export-as-csv">
     Exports the DRF into a CSV file that contains all of the information of the DRF.
@@ -95,10 +101,13 @@
   <message id="md-peak-counts">{1} {2} keV, Peak {3} counts</message>
   <message id="md-peak-no-nuc">No assoc. nuclide, {1} keV, Peak {2} counts</message>
   <message id="md-err-det-diam-invalid">Detector diameter is not a valid distance; no efficiency was fit.</message>
-  <message id="md-err-some-src">Some sources had errors.</message>
   <message id="md-n-fit-pars">{1} Fit Params</message>
   <message id="md-html-eff-table-caption">Full-Energy Detection Efficiency (% total gammas)</message>
   <message id="md-html-Intrinsic">Intrinsic</message>
+  <message id="md-eqn-x-units">(x = energy in {1})</message>
+  <message id="md-html-rel-eff">{1}% eff. rel. to 3x3 NaI (IEEE 325)</message>
+  <message id="md-html-rel-eff-approx">≈{1}% eff. rel. to 3x3 NaI (IEEE 325)</message>
+  <message id="md-html-fwhm-661">FWHM(661)={1}%</message>
   <message id="md-chart-data-intrinsic-eff-label">Data Intrinsic Eff.</message>
   <message id="md-chart-data-fwhm-label">Data FWHM</message>
   <message id="md-chart-fit-intrinsic-eff-label">Fit Intrinsic Eff.</message>
@@ -119,16 +128,93 @@
   <message id="msd-assay-date">Assay Date</message>
   <message id="msd-spec-date">Spec. Date</message>
   <message id="msd-age-at-assay">Age@Assay</message>
+  <message id="msd-age-at-assay-ph">optional, e.g. 2 y</message>
+  <message id="msd-assay-act">Assay Act.</message>
+  <message id="msd-aging-res">Aging Res.</message>
+  <message id="msd-use-age-cb">Age?</message>
+  <message id="msd-shielded-cb">Shielded?</message>
+  <message id="msd-non-specified-nuc">Non-specified Nuclide</message>
+  <message id="msd-tt-lib-src">Sources defined in Source.lib file in your users data directory.<br/>When clicked, this button will display a menu with all sources for this nuclide - and when one of the items is selected, its information will be populated.</message>
+  <!-- Tool-tips for inputs whose text does not match what is expected -->
+  <message id="msd-tt-dist-format">A distance, e.g. 50 cm or 1.5 ft</message>
+  <message id="msd-tt-act-format">An activity, e.g. 10 uCi or 370 kBq</message>
+  <message id="msd-tt-age-format">A time, e.g. 2 y, 6 months, or 1.5 HL</message>
+  <!-- What is wrong with a sources inputs; shown in the source box, and in the list under the chart -->
+  <message id="msd-err-dist-missing">Enter the distance from the source to the detector face.</message>
+  <message id="msd-err-dist-invalid">Distance: not a valid distance (e.g. 50 cm).</message>
+  <message id="msd-err-dist-nonpos">Distance must be larger than zero.</message>
+  <message id="msd-err-dist-uncert-invalid">Dist. uncertainty: not a valid distance (e.g. 0.5 cm); or leave it blank.</message>
+  <message id="msd-err-dist-uncert-range">Dist. uncertainty must be smaller than the distance.</message>
+  <message id="msd-err-act-missing">Enter the source activity.</message>
+  <message id="msd-err-act-invalid">Activity: not a valid activity (e.g. 10 uCi or 370 kBq).</message>
+  <message id="msd-err-act-nonpos">Activity must be larger than zero.</message>
+  <message id="msd-err-act-uncert">Act. uncertainty must be a percentage from 0 to 100.</message>
+  <message id="msd-err-assay-date-missing">Enter the assay date, as yyyy-mm-dd.</message>
+  <message id="msd-err-spec-date-missing">Enter the date the spectrum was taken, as yyyy-mm-dd.</message>
+  <message id="msd-err-date-invalid">{1}: not a date - use yyyy-mm-dd, e.g. 2019-01-15.</message>
+  <message id="msd-err-date-ambiguous">{1}: &quot;{2}&quot; could be day/month or month/day - use yyyy-mm-dd, e.g. 2019-01-15.</message>
+  <message id="msd-err-assay-after-spec">The assay date ({1}) is after the spectrum date ({2}).</message>
+  <message id="msd-err-age-invalid">Age@Assay: not a valid time (e.g. 2 y); or leave it blank.</message>
+  <message id="msd-err-age-neg">Age@Assay can not be negative.</message>
+  <message id="msd-err-shield-material">Shielding: enter a material, e.g. Fe or Pb.</message>
+  <message id="msd-err-shield-thick">Shielding: enter a valid thickness, e.g. 1 mm.</message>
+  <message id="msd-err-shield-an">Shielding: enter an atomic number from 1 to 100.</message>
+  <message id="msd-err-shield-ad">Shielding: enter a valid areal density, in g/cm2.</message>
 
   <message id="md-geom-mode-diameter">Diameter only</message>
   <message id="md-geom-mode-geometry">Detector geometry</message>
   <message id="md-tt-geom-mode">How much you know about the detector. The crystal diameter is all that is required; describing the crystal material and dimensions (and endcap) lets the response be evaluated correctly close to the detector and off-axis, and lets you optionally characterize it by Monte Carlo.</message>
   <message id="md-geom-guidance">Usually the crystal diameter is all you need. If you also know the crystal material, length and endcap, switch to &quot;Detector geometry&quot; for better near-field and off-axis answers.</message>
   <message id="md-det-setback-ph">optional, e.g. 0.5 cm</message>
+  <message id="md-eff-multiple">Scalar multiple</message>
+  <message id="md-tt-eff-multiple">The number of identical detector elements combined into each spectrum (one spectrum, one live time), when the diameter or geometry describes just one of them - for example 4 for an H3D M400's 2x2 CZT array modeled as one crystal.  The fitted efficiency is of one element, and every efficiency the detector response reports is this many times it.  Leave blank (1) for an ordinary detector, and for detectors recorded as separate spectra (e.g., 8 detectors of a portal): InterSpec sums those with their live times, so their sum already has one detector's efficiency.</message>
+  <message id="md-err-eff-multiple-invalid">The scalar multiple must be a number greater than zero, or left blank.</message>
   <message id="md-tt-det-diam">Diameter of the active detector crystal (not the housing). The setback is the distance from the outside face of the detector to the crystal; leave it blank if unknown.</message>
-  <message id="md-options-title">Options</message>
   <message id="md-fit-warning-birge">The efficiency points scatter more than their stated uncertainties allow, so the coefficient uncertainties have been inflated by {1}x to match.</message>
   <message id="md-err-geometry-invalid">The detector geometry is incomplete or invalid; please correct it, or switch to &quot;Diameter only&quot;.</message>
+  <message id="md-err-geometry">Detector geometry: {1}</message>
+  <message id="md-err-det-diam-missing">Enter the detector crystal diameter.</message>
+  <message id="md-err-det-diam-nonpos">The detector diameter must be larger than zero.</message>
+  <message id="md-warn-det-diam-unusual">A detector diameter of {1} is unusual - please check the units.</message>
+  <message id="md-err-setback-invalid">The detector setback must be a distance of zero or more, or left blank.</message>
+  <message id="md-err-peak-br">The {1} keV peak has no nuclide, so needs a branching ratio from 0 to 1.</message>
+  <message id="md-warn-peak-no-src-gammas">The {1} keV peak is not used: as entered, the source gives no gammas there - check its activity, dates and age.</message>
+  <message id="md-warn-peak-no-net-area">The {1} keV peak is not used: no counts are left after subtracting the background.</message>
+  <message id="md-warn-peak-needs-bad-src">Peak(s) at {1} keV not used: {2} also gives gammas there, and its inputs have a problem.</message>
+  <message id="md-warn-det-type-crystal">The peak fit prefs have the detector type as {1}, but the crystal is {2}.</message>
+  <message id="md-warn-det-type-peaks">The peak fit prefs have the detector type as {1}, but the peak widths look like {2}.</message>
+
+  <!-- Store/Export when a Monte-Carlo response was asked for, but is not there (yet) -->
+  <message id="md-mc-none-title">Monte Carlo Not Generated</message>
+  <message id="md-mc-none-body">You chose a Monte Carlo method under <em>Location Support</em>, but have not generated its response for this detector geometry.<br/><br/>You can generate it now - it may take a few minutes, and the Store/Export dialog will open when it is done - or store the detector response without it, using the instant transfer from the measured efficiency curve instead (less accurate close to the detector, and off-axis).</message>
+  <message id="md-mc-cant-body">You chose a Monte Carlo method under <em>Location Support</em>, but it can not be generated yet: {1}<br/><br/>You can store the detector response without it.</message>
+  <message id="md-mc-running-title">Monte Carlo Still Running</message>
+  <message id="md-mc-running-body">The Monte Carlo response for this detector geometry is still being generated.<br/><br/>The Store/Export dialog can open when it is done, or you can store the detector response now without it, using the instant transfer from the measured efficiency curve instead (less accurate close to the detector, and off-axis).</message>
+  <message id="md-mc-generate-then-store">Generate, then Store</message>
+  <message id="md-mc-store-when-done">Store When Done</message>
+  <message id="md-mc-store-without">Store Without It</message>
+  <message id="md-mc-will-store">The Store/Export dialog will open when the Monte Carlo is done.</message>
+  <message id="md-mc-not-started">The Monte Carlo could not be started: {1}</message>
+  <message id="md-mc-not-stored">The Monte Carlo did not finish, so the detector response was not stored.</message>
+
+  <!-- The setup sidebar -->
+  <message id="md-section-detector">Detector</message>
+  <message id="md-section-eff">Efficiency Fit</message>
+  <message id="md-section-fwhm">FWHM Fit</message>
+  <message id="md-lbl-eqn-terms">Parameters</message>
+  <message id="md-lbl-eqn-units">Energy units</message>
+  <message id="md-lbl-eff-type">Type</message>
+  <message id="md-lbl-fwhm-form">Equation</message>
+  <message id="md-fit-needs-data">Select peaks, and enter their sources, to fit.</message>
+  <message id="md-det-not-used-fixed">Not used for a fixed-geometry efficiency.</message>
+  <message id="md-tab-setup">Setup</message>
+  <message id="md-tab-chart">Chart</message>
+
+  <!-- The status under the chart -->
+  <message id="md-status-no-peaks">Select peaks below, and enter the activity and distance of their sources, to fit an efficiency.</message>
+  <message id="md-status-using">Using {1} of the {2} selected peaks.</message>
+  <message id="md-prob-src">{1} ({2}): {3}</message>
+  <message id="md-prob-src-noloc">{1}: {3}</message>
   <message id="md-make-without-data-btn">Make without data...</message>
   <message id="md-export-n42-anchor">Export data as N42-2012 file.</message>
   <message id="md-err-window-title">Error</message>

@@ -714,7 +714,6 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   m_nuclide_edit = upper_container->addNew<WLineEdit>( "" );
   
   m_nuclide_edit->setAutoComplete( false );
-  m_nuclide_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclide_edit->setAttributeValue( "autocorrect", "off" );
   m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
@@ -772,7 +771,6 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
   m_age_edit->setValidator(validator);
   m_age_edit->setAutoComplete( false );
-  m_age_edit->setAttributeValue( "ondragstart", "return false" );
   m_age_edit->changed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   m_age_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   
@@ -833,7 +831,6 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   m_fit_age_min_edit->setWidth( WLength(40.0, WLength::Unit::Pixel) );
   m_fit_age_min_edit->setValidator(min_max_validator);
   m_fit_age_min_edit->setAutoComplete( false );
-  m_fit_age_min_edit->setAttributeValue( "ondragstart", "return false" );
   m_fit_age_min_edit->changed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
   m_fit_age_min_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
 
@@ -844,7 +841,6 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   m_fit_age_max_edit->setWidth( WLength(40.0, WLength::Unit::Pixel) );
   m_fit_age_max_edit->setValidator(min_max_validator);
   m_fit_age_max_edit->setAutoComplete( false );
-  m_fit_age_max_edit->setAttributeValue( "ondragstart", "return false" );
   m_fit_age_max_edit->changed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
   m_fit_age_max_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
 
@@ -857,6 +853,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   //  shows either a result or italic placeholder text, so the widget height stays stable.
   m_summary_text = addNew<WText>();
   m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
+  m_summary_text->addStyleClass( "SelectableTxt" );
   setSummaryText( WString(), WString() );
 
 

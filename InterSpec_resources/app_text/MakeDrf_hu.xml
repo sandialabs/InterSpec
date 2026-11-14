@@ -16,7 +16,6 @@
 
   <message id="md-det-diam">Det. átmérő</message>
   <message id="md-det-setback">Det. visszahúzás</message>
-  <message id="md-eff-type">Hatásfok típus</message>
   <message id="md-eqn-in-kev">Egyenlet keV-ben</message>
   <message id="md-eqn-in-mev">Egyenlet MeV-ben</message>
   <message id="md-geom-intrinsic-eff">Belső hat.</message>
@@ -40,7 +39,6 @@
     <br />
     Fix per gramm: hasonló a per cm2-hez, de a forrás grammjára vonatkozóan.
   </message>
-  <message id="md-fwhm-eqn-form-label">FWHM egyenlet</message>
   <message id="md-fwhm-gadras">Gadras egyenlet</message>
   <message id="md-sqrt-series">Sqrt hatványsor</message>
   <message id="md-atten-for-air-cb">Levegő csillapítás</message>
@@ -51,7 +49,6 @@
     Ez nagyobb hatás alacsonyabb energiákon vagy nagyobb kalibrációs távolságokon.
   </message>
   <message id="md-show-fwhm-markers">FWHM pontok mutatása</message>
-  <message id="md-mi-chart-phone">Diagram/Opciók</message>
   <message id="md-mi-peaks-phone">Használandó csúcsok</message>
   <message id="md-export-btn">Tárolás/Export...</message>
   <message id="md-export-window-title">DRF tárolás/export</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} keV, csúcs {3} impulzus</message>
   <message id="md-peak-no-nuc">Nincs társított nuklid, {1} keV, csúcs {2} impulzus</message>
   
-  <message id="md-err-some-src">Néhány forrásnál hibák voltak.</message>
   <message id="md-n-fit-pars">{1} illesztési paraméter</message>
   <message id="md-html-eff-table-caption">Teljes energiájú detektálási hatásfok (% összes gamma)</message>
   <message id="md-html-Intrinsic">Belső</message>

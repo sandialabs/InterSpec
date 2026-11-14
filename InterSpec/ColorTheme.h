@@ -112,6 +112,12 @@ struct ColorTheme
      Throws exception if error.
    */
   static void fromJson( const std::string &json, ColorTheme &info );
+
+  /** A colour from untrusted text (a theme or other shared file).  Wt writes a colour's text verbatim
+   into CSS and JavaScript, so text that is not plain colour syntax (e.g. "#aabbcc", "rgba(1,2,3,0.5)",
+   "red") gives the default colour (`isDefault()`) instead.
+   */
+  static Wt::WColor colorFromText( const std::string &text );
   
   /** Not serialized to/from JSON, but used for saving to database.  Will be -1
       if not saved to DB.

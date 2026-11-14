@@ -128,8 +128,10 @@ DecayChainChart = function(elem, options) {
   //Lets create arrow-head markers for the decay lines
   this.defs = this.svg.append('defs');
   
+  // Marker ids must be unique in the document, as more than one of these charts can be shown.
+  this.arrowheadId = "decayarrowhead" + this.area.id;
   this.defs.append("marker")
-  .attr("id","decayarrowhead")
+  .attr("id", this.arrowheadId)
   .attr("orient","auto-start-reverse")
   .attr("markerWidth","5")
   .attr("markerHeight","5")
@@ -291,7 +293,12 @@ DecayChainChart.prototype.redraw = function() {
   // cx and cy are total width and height of this widget
   const cx = this.area.clientWidth;
   const cy = this.area.clientHeight;
-  
+
+  // While hidden (e.g., its tab is not showing) there is no size to lay out in; we get redrawn
+  //  when resized on being shown.
+  if( (cx <= 0) || (cy <= 0) )
+    return;
+
   this.svg.attr("width", cx);
   this.svg.attr("height", cy);
   this.chartbackground.attr("width", cx).attr("height", cy);
@@ -578,7 +585,7 @@ DecayChainChart.prototype.redraw = function() {
   
   decaylines
     .attr("class", function(d){ return "DecayLine " + d.parent.nuclide + (d.parent===self.selectedNuclide ? " selected" : ""); } )
-    .attr("marker-end", "url(#decayarrowhead)")
+    .attr("marker-end", "url(#" + self.arrowheadId + ")")
     .attr("x1", function(d){ return decayLineCoords(d)[0]; })
     .attr("y1", function(d){ return decayLineCoords(d)[1]; } )
     .attr("x2", function(d){ return decayLineCoords(d)[2]; })
@@ -628,7 +635,7 @@ DecayChainChart.prototype.redraw = function() {
   .attr("stroke-width", function(d){ return (d===self.selectedNuclide ? 1.35 : 1)*strokew;} )
   .attr("fill","none")
   .attr("class","iso")
-  .attr("marker-end", "url(#decayarrowhead)")
+  .attr("marker-end", "url(#" + self.arrowheadId + ")")
   ;
   isoarcs.exit().remove();
   
@@ -906,7 +913,6 @@ DecayChainChart.prototype.showNuclideDecayProducts = function( d ) {
 }
 
 DecayChainChart.prototype.emitShowDecaysThrough = function() {
-  console.log( 'emitShowDecaysThrough', this.selectedNuclide );
   let d = this.selectedNuclide;
   this.WtEmit(this.area.id, {name: 'ShowDecaysThrough'}, ((d && d.nuclide) ? d.nuclide : '') );
 }
@@ -919,7 +925,7 @@ DecayChainChart.prototype.WtEmit = function(elem, event) {
   }
   
   // To support ES5 syntax in IE11, we replace spread operator with this
-  let args = Array.prototype.slice.call(arguments, SpectrumChartD3.prototype.WtEmit.length);
+  let args = Array.prototype.slice.call(arguments, DecayChainChart.prototype.WtEmit.length);
   
   Wt.emit.apply(Wt, [elem, event].concat(args));
 }

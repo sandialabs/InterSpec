@@ -45,6 +45,7 @@ RelActTxtResults::RelActTxtResults()
   wApp->useStyleSheet( "InterSpec_resources/RelActTxtResults.css" );
 
   addStyleClass( "RelActTxtResults" );
+  addStyleClass( "SelectableTxt" );
 
   // Without using a layout the formatting messes up and the contents move over
   //  onto the tabs... not sure why, but using a layout fixes this.

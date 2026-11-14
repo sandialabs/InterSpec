@@ -210,6 +210,41 @@ namespace DrfImport
   };//struct Result
 
   Result build( const Source &src, const Options &options );
+
+
+  /** One file of a drop of several files, or of a folder. */
+  struct InputFile
+  {
+    /** Path within the drop, '/' separated - "LabDetectors/HPGe-A/Detector.dat" - or just the
+     file name for a loose file. */
+    std::string relativePath;
+    std::shared_ptr<const std::string> data;
+  };//struct InputFile
+
+  /** A detector found among the files of a drop. */
+  struct FoundDetector
+  {
+    std::string name;                 ///< from the file; else its folder's (or file's) name
+    std::string folder;               ///< the folder (within the drop) it was found in
+    std::vector<std::string> files;   ///< the relative paths it was made from, main file first
+    FileKind kind = FileKind::DrfXml; ///< of the main file
+    Source source;                    ///< `Source::status` says what it still needs
+    /** Built with `source.defaultInterpretation` when `source.status` is Ready; else null. */
+    std::shared_ptr<DetectorPeakResponse> drf;
+  };//struct FoundDetector
+
+  /** The detectors a drop of several files (or of a folder of them) holds:
+   - a GADRAS Detector.dat and the Efficiency.csv in its folder are one detector;
+   - a .par grid is paired with the DETECTOR.txt that names it, from its own folder, a folder
+     above it, or a `PARAMETERS` folder in one of those (the ISOCS layout);
+   - a file listing several detectors gives one per row;
+   - every other detector file is one detector (an .ecc, an ANGLE file, InterSpec XML, ...).
+   Other files are left out, and their paths put in `skipped` (if given).  Detectors are sorted
+   by folder, then name.  Slow for .par grids (seconds each), so call it off the session thread.
+   Never throws.
+   */
+  std::vector<FoundDetector> groupFiles( const std::vector<InputFile> &files,
+                                         std::vector<std::string> *skipped = nullptr );
 }//namespace DrfImport
 
 #endif //DrfImport_h

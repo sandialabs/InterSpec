@@ -144,6 +144,50 @@
   margin-left: 6px;
 }
 
+/* The "Back decay" row: checkbox, mode combo, the value entry, and a status saying what the entered
+   value means (e.g. "= 2019-12-28 12:00:00 (2 d before meas. start)"), de-emphasized like the
+   statuses above; the status uses .ErrorTxt when the entry can not be used. */
+.ShieldingSourceDisplay .FitOptionsRow.BackDecayRow
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+}
+
+.ShieldingSourceDisplay .FitOptionsRow > .BackDecayEdit
+{
+  width: 10em;
+  font-size: inherit;
+}
+
+.ShieldingSourceDisplay .FitOptionsRow > .BackDecayStatus
+{
+  font-size: smaller;
+  font-style: italic;
+  opacity: 0.8;
+  color: var(--interspec-fainter-text-color);
+}
+
+.ShieldingSourceDisplay .FitOptionsRow > .BackDecayStatus.ErrorTxt
+{
+  opacity: 1.0;
+  color: var(--interspec-error-color);
+}
+
+/* Result and info text the user may want to copy gets the shared .SelectableTxt class in C++ (see
+   InterSpec.css).  The nuclide name and half-life are the exception: they are only selectable while
+   the header is not the tappable phone accordion header, so that is done here.  Text that is
+   clickable (the detector name, the phone accordion header, nested peak rows, and activity strip) is
+   left out, since a drag-select would also click it. */
+.ShieldingSourceDisplay .NucHead:not(.NucHeadTap) .NucName,
+.ShieldingSourceDisplay .NucHead:not(.NucHeadTap) .NucHl
+{
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
 /* The "Off-axis" checkbox is added to a WGridLayout cell with an alignment flag, so Wt positions it
    absolutely with an inline display:block that overrides .CbNoLineBreak's flex (the inline style can
    only be beaten with !important).  Re-assert flex so its label vertically centers with the box,
@@ -385,12 +429,6 @@
   padding: 6px 9px;
   font-size: 12px;
   line-height: 1.35;
-  /* Allow selecting/copying the message text (InterSpec disables selection by default). */
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
-  user-select: text;
-  cursor: text;
 }
 .ShieldingSourceDisplay .FitMessage.FitMsgInfo
 {
@@ -580,6 +618,34 @@
   filter: var(--interspec-icon-filter);
 }
 
+/* The footer "Preset" menu (saved setups), beside the model icons; hidden when there are none. */
+.SsdPresetRow
+{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.SsdPresetRow select
+{
+  max-width: 220px;
+}
+
+/* An anchor (macOS/iOS export link) carries its icon as a child <img>, like the buttons. */
+a.SsdFooterIcon
+{
+  display: inline-flex;
+  align-items: center;
+}
+
+.SsdPresetName
+{
+  min-width: 260px;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+
 /* Desktop footer: the model icons (export/import/database) sit just after the help icon, left of the
    decision buttons.  That needs no rule now - `.DialogFooter` is a flex row and these carry no role
    class, so they keep the default `order: 0` and group left, spaced by the footer's `gap`.  This
@@ -610,6 +676,57 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+/* Back-decay footer under the nuclide cards (only shown while back-decay is used): the reference
+   time on the left, the "Show Decay" link on the right.  The cards box's bottom border is the rule
+   above it, so the two read as one bordered box - like the shielding box and its add-footer. */
+.ShieldingSourceDisplay .NucFoot
+{
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--interspec-border-color);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background: var(--interspec-background-color);
+}
+.ShieldingSourceDisplay .SourceNuclideDisplay.HasNucFoot > .NucCardsHolder
+{
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* "T_ref: <date> (<duration> before meas. start)": one line when it fits (the footer is then the
+   height of the Shielding column's, set by the link), the duration wrapping to a second line when not. */
+.ShieldingSourceDisplay .NucFootInfo
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.35em;
+  font-size: 11px;
+}
+.ShieldingSourceDisplay .NucFootRef,
+.ShieldingSourceDisplay .NucFootSpan
+{
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--interspec-label-color);
+}
+.ShieldingSourceDisplay .NucFootSpan
+{
+  color: var(--interspec-fainter-text-color);
+}
+.ShieldingSourceDisplay .NucFoot .ShowDecayLink
+{
+  flex: 0 0 auto;
 }
 .ShieldingSourceDisplay .NucCard
 {
@@ -697,9 +814,13 @@
   flex-wrap: wrap;
   gap: 4px 12px;
 }
-.ShieldingSourceDisplay .NucT0
+.ShieldingSourceDisplay .NucTRef
 {
   color: var(--interspec-text-color);
+}
+.ShieldingSourceDisplay .NucTRef.ErrorTxt
+{
+  color: var(--interspec-error-color);
 }
 .ShieldingSourceDisplay .NucProgeny
 {
@@ -1187,6 +1308,13 @@
   background: transparent;
   padding: 2px;
   gap: 11px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucFoot
+{
+  /* No box around the phone cards, so the footer is a box of its own. */
+  margin-top: 6px;
+  border-top: 1px solid var(--interspec-border-color);
+  border-radius: 8px;
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCard
 {

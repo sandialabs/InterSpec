@@ -193,8 +193,10 @@ public:
   /** Explicitly initializes the singleton.
 
    Should be called at application startup, after DecayDataBaseServer::initialize().
-   Parses `staticDataDirectory()/MaterialDataBase.txt`, then optionally
-   `writableDataDirectory()/MaterialDataBase.txt` to allow user overrides.
+   Parses `staticDataDirectory()/MaterialDataBase.txt`, then the user's and user library packages'
+   material files (".txt" files in `materials/`, and the older single `MaterialDataBase.txt` in the user data
+   folder), taking each name from the file UserLibrary::resolve picks (the user's choice, else the
+   user's own over a package's over InterSpec's).
 
    Thread-safe; subsequent calls after successful init are no-ops.
    */
@@ -205,6 +207,11 @@ public:
 
   /** Returns the initialization error message, or empty string if no error. */
   static const std::string &init_error();
+
+  /** The names of the materials in a GADRAS-style material file (as MaterialDataBase.txt); throws if
+   it can not be read.  Used to list the materials a user library package or user file provides.
+   */
+  static std::vector<std::string> namesInFile( const std::string &file );
 
   ~MaterialDB();
 
@@ -300,10 +307,13 @@ private:
   //If swapNameDescription==true, then the material name and descriptions will
   //  be swapped (I like this better from the GADRAS original material DB).
   //If overwrite==true, materials with the same name as existing ones will replace them.
+  //If startAtAir==false, materials are read from the start of the file (after '!' comment lines) -
+  //  for files holding just a few materials, such as a user library package's.
   void parseGadrasMaterialFile( const std::string &file,
                                 const SandiaDecay::SandiaDecayDataBase *db,
                                 const bool swapNameDescription = true,
-                                const bool overwrite = false );
+                                const bool overwrite = false,
+                                const bool startAtAir = true );
 
 
   //parseG4MaterialFile(...)

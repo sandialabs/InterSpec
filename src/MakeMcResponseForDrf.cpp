@@ -35,6 +35,7 @@
 
 #include <boost/asio/io_service.hpp>
 
+#include <Wt/Utils.h>
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WTable.h>
@@ -54,6 +55,7 @@
 #include <Wt/WApplication.h>
 #include <Wt/WProgressBar.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
 
 // CeeLo (external_libs/CeeLo/src)
 #include "io/DetectorResponse.h"
@@ -226,6 +228,23 @@ namespace
 
     return WString::tr("mmr-est-minutes").arg( static_cast<int>( std::ceil(minutes) ) );
   }//duration_phrase(...)
+
+
+  /** Attaches a generated `response` to `drf`, a copy of the seed DRF - or, without one, of the
+   foreground's detector.  The response was made with the seed's efficiency multiple (1 with no seed;
+   see #generationOptions), and the multiple goes with the response (DetectorPeakResponse::
+   setCeeloResponse), so a copy of some other detector takes the response's rather than tripping
+   setCeeloResponse's check that a response was made for the DRF it is attached to.  (A copy that
+   already carries a response adopts the new one's scale on its own.) */
+  void attach_generated_response( DetectorPeakResponse &drf,
+                                  const shared_ptr<const ceelo::DetectorResponse> &response )
+  {
+    assert( response );
+    if( !drf.ceeloResponse() && (drf.efficiencyMultiple() != response->efficiency_scale) )
+      drf.setEfficiencyMultiple( response->efficiency_scale );
+    drf.setCeeloResponse( response );
+    assert( drf.efficiencyMultiple() == response->efficiency_scale );
+  }//attach_generated_response(...)
 }//namespace
 
 
@@ -330,6 +349,9 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
     m_hideGenerateButton( false ),
+    m_autoBuildTransfer( true ),
+    m_alwaysOfferImport( false ),
+    m_anchorHidden( false ),
     m_gridResponse{},
     m_gridNote( nullptr ),
     m_gridFepOnly{},
@@ -357,6 +379,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_result( nullptr ),
     m_validationChanged(),
     m_geometryChanged(),
+    m_geometryImported(),
     m_hideChart( false ),
     m_responseGenerated(),
     m_updatedDrf(),
@@ -564,6 +587,12 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_refDistance = add_row( WString::tr("mmr-ref-distance") )->addNew<WLineEdit>();
   m_anchorRow = optsTable->rowAt( opt_row - 1 );
   m_refDistance->setTextSize( 10 );
+  {
+    auto validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+    validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+    validator->setInvalidNoMatchText( WString::tr("dgi-tt-dist-format") );
+    m_refDistance->setValidator( validator );
+  }
   m_refDistance->changed().connect( this, &MakeMcResponseForDrf::handleGeometryChanged );
   HelpSystem::attachToolTipOn( m_refDistance, WString::tr("mmr-tt-ref-distance"), true );
   m_anchorRow->hide();
@@ -927,8 +956,7 @@ void MakeMcResponseForDrf::updateMethodRows()
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
   // The transfer methods have no back scan; an imported grid's total efficiency does.
   m_backCoverageRow->setHidden( (method != Method::FullMc) && !grid );
-  m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
-  m_anchorRow->setHidden( method != Method::CurveTransfer );
+  // The anchor rows are shown by updateAnchorInfo(), which every method change reaches.
 
   // The measured-curve transfer is instant and rebuilds automatically - no
   //  explicit "Generate" step (this is what guarantees that entering geometry
@@ -951,9 +979,35 @@ void MakeMcResponseForDrf::updateMethodRows()
 void MakeMcResponseForDrf::updateImportGeometryLink()
 {
   if( m_importGeomRow && m_geometry )
-    m_importGeomRow->setHidden( m_geometry->generationReady()
+    m_importGeomRow->setHidden( (m_geometry->generationReady() && !m_alwaysOfferImport)
                                 || (selectedMethod() == Method::ImportedGrid) );
 }//updateImportGeometryLink()
+
+
+void MakeMcResponseForDrf::setImportGeometryAlwaysOffered( const bool always )
+{
+  m_alwaysOfferImport = always;
+  updateImportGeometryLink();
+}//setImportGeometryAlwaysOffered(...)
+
+
+void MakeMcResponseForDrf::setAutoBuildTransfer( const bool build )
+{
+  m_autoBuildTransfer = build;
+}//setAutoBuildTransfer(...)
+
+
+void MakeMcResponseForDrf::setAnchorHidden( const bool hidden )
+{
+  m_anchorHidden = hidden;
+  updateAnchorInfo();
+}//setAnchorHidden(...)
+
+
+Wt::Signal<> &MakeMcResponseForDrf::geometryImported()
+{
+  return m_geometryImported;
+}
 
 
 void MakeMcResponseForDrf::showImportGeometryDialog()
@@ -983,11 +1037,13 @@ void MakeMcResponseForDrf::importGeometryFromUpload( const std::string &spool_fi
 {
   shared_ptr<const ceelo::GeometryDescriptor> geom;
   string from_name;
+  vector<string> parse_notes;  //why a file that parsed has no geometry (e.g., a zero crystal length)
 
   try
   {
     const shared_ptr<const string> data = DrfImport::readFile( spool_file );
     const shared_ptr<const DrfImport::ParsedFile> parsed = DrfImport::parseFile( display_name, data, false );
+    parse_notes = parsed->notes;
 
     // A DRF that states its shape (a saved geometry, or an attached response's own descriptor).
     for( const shared_ptr<const DetectorPeakResponse> &drf : parsed->drfs )
@@ -1019,15 +1075,19 @@ void MakeMcResponseForDrf::importGeometryFromUpload( const std::string &spool_fi
     }//if( !geom )
   }catch( std::exception &e )
   {
-    passMessage( WString::tr("mmr-import-geom-error").arg( WString::fromUTF8(display_name) )
-                   .arg( WString::fromUTF8(e.what()) ), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("mmr-import-geom-error").arg( Wt::Utils::htmlEncode(display_name) )
+                   .arg( Wt::Utils::htmlEncode( string(e.what()) ) ), WarningWidget::WarningMsgHigh );
     return;
   }//try / catch
 
   if( !geom )
   {
-    passMessage( WString::tr("mmr-import-geom-none").arg( WString::fromUTF8(display_name) ),
-                 WarningWidget::WarningMsgHigh );
+    // The notes are plain text from the parsers, and the message is XHTML
+    WString msg = WString::tr("mmr-import-geom-none").arg( Wt::Utils::htmlEncode(display_name) );
+    if( !parse_notes.empty() )
+      msg = WString::tr("mmr-import-geom-none-why").arg( Wt::Utils::htmlEncode(display_name) )
+                                                    .arg( Wt::Utils::htmlEncode(parse_notes.front()) );
+    passMessage( msg, WarningWidget::WarningMsgHigh );
     return;
   }//if( !geom )
 
@@ -1039,6 +1099,7 @@ void MakeMcResponseForDrf::importGeometryFromUpload( const std::string &spool_fi
   // Emits userChanged (through the form's change, and handleGeometryChanged), so an owner records
   //  this as one undo step.
   setGeometryFromDescriptor( *geom, { note } );
+  m_geometryImported.emit();
 }//importGeometryFromUpload(...)
 
 
@@ -1105,7 +1166,8 @@ void MakeMcResponseForDrf::handleGeometryChanged()
 
   // Auto-build the instant transfer whenever the inputs are usable - except while the constructor
   //  is still seeding, where a response the DRF already carries is about to be installed.
-  if( !m_seedingFromDrf && (selectedMethod() == Method::CurveTransfer) && m_geometry->generationReady() )
+  if( m_autoBuildTransfer && !m_seedingFromDrf
+      && (selectedMethod() == Method::CurveTransfer) && m_geometry->generationReady() )
     startGeneration();
 
   if( !m_restoringState )
@@ -1123,13 +1185,22 @@ CeeLoUtils::TransferAnchor MakeMcResponseForDrf::transferAnchor( const ceelo::Ge
 
   // A DRF whose curve carries a covariance (a fitted equation's coefficient covariance, or per-point
   //  node covariance) is anchored on that curve with the covariance, so correlations between
-  //  energies survive into the response; otherwise the raw-point / sampled-curve anchor.
-  const shared_ptr<const DetectorEfficiencyCurve> curve = m_seedDrf ? m_seedDrf->efficiencyCurve() : nullptr;
-  const bool have_curve_cov = (curve && curve->uncertainty() && !curve->uncertainty()->isEmpty());
-  if( have_curve_cov )
-    return CeeLoUtils::curveAnchorWithCovarianceForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+  //  energies survive into the response; otherwise the raw-point / sampled-curve anchor.  The
+  //  former takes no reference distance (see #anchorsOnCurveCovariance), so a stale typed one
+  //  cannot reach it.
+  if( anchorsOnCurveCovariance() )
+    return CeeLoUtils::curveAnchorWithCovarianceForDrf( m_seedDrf, gd, -1.0 );
   return CeeLoUtils::transferAnchorForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
 }//transferAnchor(...)
+
+
+bool MakeMcResponseForDrf::anchorsOnCurveCovariance() const
+{
+  if( m_gridResponse || !m_seedDrf )
+    return false;
+  const shared_ptr<const DetectorEfficiencyCurve> curve = m_seedDrf->efficiencyCurve();
+  return (curve && curve->uncertainty() && !curve->uncertainty()->isEmpty());
+}//anchorsOnCurveCovariance()
 
 
 void MakeMcResponseForDrf::setMethod( const Method method )
@@ -1329,7 +1400,11 @@ void MakeMcResponseForDrf::revertToImportedGeometry()
 
 void MakeMcResponseForDrf::updateAnchorInfo()
 {
-  if( selectedMethod() != Method::CurveTransfer )
+  m_anchorRow->hide();  //shown below, only where a typed distance changes the transfer
+
+  const bool shown = (selectedMethod() == Method::CurveTransfer) && !m_anchorHidden;
+  m_anchorInfoRow->setHidden( !shown );
+  if( !shown )
     return;
 
   if( !m_geometry->isValid() )
@@ -1338,34 +1413,41 @@ void MakeMcResponseForDrf::updateAnchorInfo()
     return;
   }
 
+  if( !m_gridResponse && (!m_seedDrf || !m_seedDrf->isValid()) )
+  {
+    m_anchorInfo->setText( WString::tr("mmr-anchor-no-curve") );
+    return;
+  }
+
   try
   {
     const ceelo::GeometryDescriptor gd = m_geometry->toDescriptor();
     const CeeLoUtils::TransferAnchor anchor = transferAnchor( gd );
 
-    const string dist_str = PhysicalUnits::printToBestLengthUnits(
-                                    anchor.ref_distance_cm * PhysicalUnits::cm );
+    const WString dist_str = WString::fromUTF8( PhysicalUnits::printToBestLengthUnits(
+                                                    anchor.ref_distance_cm * PhysicalUnits::cm ) );
     const int npoints = static_cast<int>( anchor.curve.energies_keV.size() );
 
-    if( anchor.curve_derived )
+    if( !anchor.curve_derived )
     {
-      // The reference distance is only meaningful input for a sampled curve.
-      m_refDistance->setEnabled( true );
-      if( m_refDistance->text().empty() )
-        m_refDistance->setText( WString::fromUTF8(dist_str) );
-      m_anchorInfo->setText( WString::tr( m_gridResponse ? "mmr-anchor-src-grid" : "mmr-anchor-src-curve" )
-                              .arg( npoints ).arg( dist_str ) );
+      // Raw measured points pin the distance
+      m_refDistance->setText( "" );
+      m_anchorInfo->setText( WString::tr("mmr-anchor-src-points").arg( npoints ).arg( dist_str ) );
+    }else if( anchorsOnCurveCovariance() )
+    {
+      m_anchorInfo->setText( WString::tr("mmr-anchor-src-curve-cov") );
     }else
     {
-      // Raw measured points pin the distance - display it, read-only.
-      m_refDistance->setEnabled( false );
-      m_refDistance->setText( WString::fromUTF8(dist_str) );
-      m_anchorInfo->setText( WString::tr("mmr-anchor-src-points")
-                              .arg( npoints ).arg( dist_str ) );
+      // The imported grid, or the curve sampled through the flat-disk model: where it is sampled
+      //  matters.  The field's text is only ever the user's override; the distance used when it
+      //  is blank is its placeholder, so it follows the geometry and seed.
+      m_refDistance->setPlaceholderText( dist_str );
+      m_anchorRow->show();
+      const char *msg = m_gridResponse ? "mmr-anchor-src-grid" : "mmr-anchor-src-curve";
+      m_anchorInfo->setText( WString::tr(msg).arg( npoints ).arg( dist_str ) );
     }
   }catch( std::exception &e )
   {
-    m_refDistance->setEnabled( false );
     m_anchorInfo->setText( WString::tr("mmr-anchor-unusable")
                             .arg( WString::fromUTF8(e.what()) ) );
   }
@@ -1432,6 +1514,9 @@ void MakeMcResponseForDrf::updateGroundingInfo()
 
 double MakeMcResponseForDrf::refDistanceOverrideCm() const
 {
+  if( m_anchorHidden )
+    return -1.0;
+
   string txt = m_refDistance->text().toUTF8();
   SpecUtils::trim( txt );
   if( txt.empty() )
@@ -1496,7 +1581,7 @@ void MakeMcResponseForDrf::updateResponseChart()
                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
   }//if( !preview )
 
-  preview->setCeeloResponse( m_result );
+  attach_generated_response( *preview, m_result );
 
   // Chart source distance (absolute mode); default to 25 cm when unparseable.
   double dist = 25.0 * PhysicalUnits::cm;
@@ -1863,16 +1948,17 @@ bool MakeMcResponseForDrf::startGeneration()
     const ceelo::AnchorCurve tot_curve
                        = CeeLoUtils::totalTransferAnchorForDrf( m_seedDrf, anchor );
     const string det_name = m_seedDrf ? m_seedDrf->name() : string("user geometry");
+    const double efficiency_scale = m_seedDrf ? m_seedDrf->efficiencyMultiple() : 1.0;
 
     const string sessionId = wApp->sessionId();
     const string widgetId = id();
 
-    auto worker = [gd,anchor,tot_curve,det_name,sessionId,widgetId,generation_id](){
+    auto worker = [gd,anchor,tot_curve,det_name,efficiency_scale,sessionId,widgetId,generation_id](){
       shared_ptr<ceelo::DetectorResponse> response;
       string errmsg;
       try
       {
-        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name );
+        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name, efficiency_scale );
       }catch( std::exception &e )
       {
         errmsg = e.what();
@@ -2223,6 +2309,10 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
 
   opts.num_threads = CeeLoUtils::monteCarloThreadCount();
 
+  // The seed's multiple (its geometry is one of that many summed elements) - set here, so the
+  //  measured-point grounding that follows generation fits k(E) with it in the model.
+  opts.efficiency_scale = m_seedDrf ? m_seedDrf->efficiencyMultiple() : 1.0;
+
   return opts;
 }//generationOptions()
 
@@ -2551,7 +2641,7 @@ void MakeMcResponseForDrf::acceptResponse()
     //an incomplete form; the response's own descriptor is still there
   }
 
-  new_det->setCeeloResponse( m_result );
+  attach_generated_response( *new_det, m_result );
 
   m_interspec->detectorChanged().emit( new_det );
 

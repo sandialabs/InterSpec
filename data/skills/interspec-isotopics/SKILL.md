@@ -46,6 +46,7 @@ Use `list_isotopics_presets` to see available presets, then `load_isotopics_pres
 | Preset | When to use |
 |---|---|
 | HPGe U (120-1001 keV).xml | **Default** for U-235/U-238 enrichment analysis; its ROIs are sized from the detector's peak width, so it suits any HPGe resolution. |
+| HPGe U (63-205 keV).xml | Planar or other high-resolution HPGe, or spectra that end below ~1 MeV: uses only 63-205 keV, with U-238 from the Th-234 92 keV doublet among the K x-rays, and its 63.29 keV line. Not for items behind shielding. |
 | CZT-std U (130-1010 keV).xml | U-235/U-238 enrichment from CZT spectra that reach 1001 keV; less accurate than HPGe (typically within 10-20%). |
 
 **For other sources:**

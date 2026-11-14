@@ -25,15 +25,20 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfCalc.h"
 #include "InterSpec/MakeDrfChart.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DetectorEfficiency.h"
 
 namespace ceelo{ class DetectorResponse; }
@@ -46,14 +51,18 @@ class SwitchCheckbox;
 class DetectorPeakResponse;
 class PeakFitDetPrefsGui;
 class MakeMcResponseForDrf;
+struct FitSkewSpectrumInput;
 
 namespace Wt
 {
   class WText;
-
+  class WLabel;
+  class WPanel;
   class WComboBox;
   class WLineEdit;
   class WCheckBox;
+  class WTabWidget;
+  class WFormWidget;
   class WGridLayout;
   class WDoubleSpinBox;
   class WSuggestionPopup;
@@ -92,6 +101,13 @@ public:
      dialog that will pop up will state as such.
    */
   void startSaveAs();
+
+  /** What the "Store/Export..." button does: #startSaveAs, unless a Monte-Carlo method is selected
+   for the detector geometry but its response has not been generated (or is still generating) - the
+   DRF would then silently use the instant curve transfer instead.  In that case asks whether to
+   generate (or wait) and store when done, or store without it.
+   */
+  void requestStoreExport();
   
   /** Returns whether it is worthwhile to call #startSaveAs */
   bool isIntrinsicEfficiencyValid();
@@ -157,6 +173,18 @@ public:
    */
   void useSourceLibrary( const std::vector<std::shared_ptr<const SrcLibLineInfo>> &srcs,
                          const bool auto_populate );
+
+  /** The spectra, and their peaks, the DRF is being made from - one entry per sample(s) with peaks, of
+   each file; for fitting the peak skew across all the calibration spectra (see FitSkewParamsTool).
+   */
+  std::vector<FitSkewSpectrumInput> skewFitSpectra();
+
+  /** Replaces peaks (e.g., refit with a new peak skew) with the ones they map to in `old_to_new`, both in
+   this tool and in the spectrum files, then re-fits the efficiency and FWHM.  The keys are peaks from
+   #skewFitSpectra.
+   */
+  void replacePeaks( const std::map<std::shared_ptr<const PeakDef>,std::shared_ptr<const PeakDef>> &old_to_new );
+
 protected:
   /** Recomputes the fits from the current source/peak inputs.
 
@@ -164,6 +192,7 @@ protected:
    #handleFixedGeometryChanged) isnt seen part-applied; the caller re-fits once it is done.
    */
   void handleSourcesUpdates();
+  void handleEffEqnOrderChange();
   void handleSqrtEqnOrderChange();
   void handleFwhmTypeChanged();
   void handleShowFwhmPointsToggled();
@@ -172,6 +201,45 @@ protected:
   /** "Diameter only" <-> "Detector geometry" toggle: seeds the geometry form from the diameter the
    first time, back-fills the diameter from the geometry, and re-fits. */
   void handleGeometryModeChanged();
+
+  /** Sets the sidebars width: wider when the full geometry form is showing.  Width is only ever set
+   from here, never in CSS - Wt's layout measures its items off-screen, so CSS sizes confuse it. */
+  void updateSidebarWidth();
+
+  /** Something the user should fix (or know about), listed under the chart. */
+  struct StatusItem
+  {
+    /** XHTML; anything user-entered in it is already escaped. */
+    std::string html;
+    /** The same, as plain text - for the CSV summary. */
+    std::string plain;
+    /** The input to take the user to when the item is clicked; may be null. */
+    Wt::Core::observing_ptr<Wt::WFormWidget> field;
+    /** An error stops something being used; otherwise it is a warning. */
+    bool isError = true;
+  };//struct StatusItem
+
+  /** A status item for a plain-text message (escaped for the XHTML). */
+  static StatusItem makeStatusItem( const Wt::WString &message, Wt::WFormWidget *field,
+                                    const bool is_error );
+
+  /** Checks the detector diameter and setback (or the geometry form, in geometry mode), marking
+   the inputs at fault; returns what is wrong. */
+  std::vector<StatusItem> validateDetectorInputs();
+
+  /** A warning if the peak-fit preferences' detector type plainly disagrees with the detector being
+   characterized (e.g. "HPGe" for a NaI crystal); empty otherwise. */
+  std::vector<StatusItem> detectorTypeMismatch() const;
+
+  /** Re-draws the status area under the chart from #m_inputProblems and #m_fitProblems. */
+  void updateStatusDisplay();
+
+  /** Takes the user to an input from a status item: switches phone tab, expands panels, focuses. */
+  void focusProblemField( Wt::WFormWidget *field );
+
+  /** The foreground's peak-fit preferences changed (here, or elsewhere): refreshes the controls and
+   the one-line summary in the collapsed section title. */
+  void handlePeakFitPrefsChanged();
   
   void peakPreviewShown( DrfPeak *peak );
   
@@ -199,8 +267,8 @@ protected:
   /** Everything the fits produced, packaged for MakeDrfCalc::assembleDrf. */
   MakeDrfCalc::FitResults currentFitResults() const;
 
-  /** A hint at the detector type ("HPGe", "NaI", ...) from the loaded spectra, for seeding the
-   crystal material of the geometry form. */
+  /** A hint at the detector type ("HPGe", "NaI", ...) from the loaded spectra's instrument, else
+   their fitted peak widths, for seeding the crystal material of the geometry form. */
   std::string detectorTypeHint() const;
 
   
@@ -217,9 +285,17 @@ protected:
   
   Wt::WContainerWidget *m_files;
 
-  /** The left column: diameter-only / full-geometry toggle, then either the diameter inputs or the
-   embedded geometry + location-support tool. */
-  Wt::WContainerWidget *m_geomPanel;
+  /** The left column: what the detector is, how the equations are fit, and the peak-fit
+   preferences - in sections, scrolling on its own.  A tab on phones (see #m_phoneTabs). */
+  Wt::WContainerWidget *m_sidebar;
+
+  /** The "Detector" section, and its body (hidden for fixed geometries, which dont use it). */
+  GroupBox *m_detSection;
+  Wt::WContainerWidget *m_detSectionBody;
+  Wt::WText *m_detNotUsedTxt;
+
+  /** In the detector section: the diameter-only / full-geometry toggle, then either the diameter
+   inputs or the embedded geometry + location-support tool. */
   SwitchCheckbox *m_geomMode;
   Wt::WText *m_geomGuidance;
   Wt::WContainerWidget *m_diameterDiv;
@@ -228,28 +304,20 @@ protected:
   /** Whether the geometry form has been seeded from the diameter yet (only done once). */
   bool m_geomSeeded;
 
-  /** The top-level layout; the upper row (geometry panel, chart, fit options) is given more height
-   when the geometry form is showing - see #handleGeometryModeChanged.  Null on phones, which put
-   the upper area in its own tab instead.
-   */
-  Wt::WGridLayout *m_mainLayout;
-
-  /** Height, in pixels, of the layout row holding the geometry panel, chart and fit options, for
-   the "Diameter only" and "Detector geometry" modes.  The latter is capped to a fraction of the
-   apps height so the peaks below stay visible; see #handleGeometryModeChanged.
-   */
-  static const int sm_diam_mode_height = 400;
-  static const int sm_geom_mode_height = 560;
+  /** On phones the sidebar, chart and peaks are each a tab; null otherwise. */
+  Wt::WTabWidget *m_phoneTabs;
 
   /** Set while updating all the source widgets, to keep the sources' "updated" signals from
    re-entering #handleSourcesUpdates() while only some of them have been updated.
    */
   bool m_blockSourceUpdates;
   
-  GroupBox *m_detDiamGroup;
-  
   Wt::WLineEdit *m_detDiameter;
   Wt::WLineEdit *m_detSetback;
+
+  /** The efficiency scalar multiple (DetectorPeakResponse::efficiencyMultiple): the detector is
+   this many identical elements, combined into one spectrum, of the one described; empty means 1. */
+  Wt::WLineEdit *m_efficiencyMultiple;
 
   Wt::WComboBox *m_geometry;
   
@@ -260,6 +328,7 @@ protected:
   Wt::WComboBox *m_fwhmEqnType;
   
   Wt::WComboBox *m_sqrtEqnOrder;
+  Wt::WLabel *m_sqrtEqnOrderLabel;
   
   Wt::WComboBox *m_effEqnOrder;
   
@@ -269,12 +338,43 @@ protected:
   
   Wt::WCheckBox *m_airAttenuate;
 
+  /** "Select peaks..." hint in the fit sections, shown until there are data points to fit. */
+  Wt::WText *m_fitNeedsDataTxt;
+
+  /** The collapsible "Peak Fit Prefs" section; its title carries a one-line summary. */
+  Wt::WPanel *m_pfpPanel;
+
   /** Whether the chart's x-range has been set from the data yet (only the first time; later
    re-fits keep the users zoom). */
   bool m_chartRangeSet;
   
-  Wt::WText *m_errorMsg;
+  /** Under the chart: a one-line summary, the list of problems (each one clickable, to go to the
+   input at fault), and the fitted equation. */
+  Wt::WContainerWidget *m_statusArea;
+  Wt::WText *m_statusSummary;
+  Wt::WContainerWidget *m_problemList;
   Wt::WText *m_intrinsicEffAnswer;
+
+  /** Problems with the detector or source inputs, from #handleSourcesUpdates. */
+  std::vector<StatusItem> m_inputProblems;
+
+  /** Problems or warnings from the last efficiency fit; cleared when a new fit starts. */
+  std::vector<StatusItem> m_fitProblems;
+
+  /** How many peaks are selected for use (not counting background), and how many of those could
+   actually be used, as of the last #handleSourcesUpdates. */
+  size_t m_numPeaksSelected, m_numPeaksUsed;
+
+  /** The kind of detector the widths of the used peaks suggest, for #detectorTypeMismatch. */
+  PeakFitUtils::CoarseResolutionType m_peaksResolutionType;
+
+  /** The MC tool generation (MakeMcResponseForDrf::generationId) that, once it delivers its response,
+   opens the Store/Export dialog - see #requestStoreExport; -1 when none. */
+  int m_storeAfterGenerationId;
+
+  /** The open Store/Export dialog, if any.  Its download resources point at this widget, so it is
+   closed in the destructor (e.g. a phone rotation closes the tool under it). */
+  Wt::Core::observing_ptr<AuxWindow> m_saveAsWindow;
   
   /** Identifies current fit for FWHM.  Fits are done in an auxiliary thread,
    and the user may change things before the fit is done, and some fits take a
@@ -288,6 +388,13 @@ protected:
   std::vector<float> m_fwhmCoefs, m_fwhmCoefUncerts;
   
   double m_effEqnChi2;
+  /** Degrees of freedom of the efficiency fit (fit points minus coefficients). */
+  int m_effEqnDof;
+
+  /** The number of terms the user picked for the efficiency equation, and for the sqrt-series FWHM;
+   -1 until they pick one, and until then the term counts follow the number of points. */
+  int m_effEqnUserTerms;
+  int m_sqrtEqnUserTerms;
   float m_effLowerEnergy; ///< The lowest energy peak used for eff calculation
   float m_effUpperEnergy; ///< The highest energy peak used for eff calculation
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
@@ -300,6 +407,10 @@ protected:
    diameter it was computed with. */
   std::vector<MakeDrfChart::DataPoint> m_dataPoints;
   double m_dataDiameter;
+
+  /** The efficiency multiple (MakeDrfCalc::GeometryChoice::efficiencyMultiple) #m_dataPoints were fit
+   with: the fitted equation is one element's, so everything shown for the detector is this times it. */
+  double m_dataEfficiencyMultiple;
 
   /** The raw per-peak efficiency points (absolute, at each source's own distance) and the sources
    they came from - what the fit is derived from, and what the DRF stores for provenance and for
@@ -321,6 +432,9 @@ private:
   /** The setback typed into the diameter-mode field (PhysicalUnits; 0.0 if empty or invalid) -
    #detectorSetback is what the DRF is actually assembled with. */
   double enteredSetback() const;
+
+  /** #m_efficiencyMultiple's value, 1 when empty; throws std::runtime_error when not a positive number. */
+  double enteredEfficiencyMultiple() const;
 
   /** Optional peak fitting preferences to embed in the created DRF. */
   PeakFitDetPrefsGui *m_peakFitDetPrefsGui;

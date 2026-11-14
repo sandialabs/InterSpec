@@ -388,6 +388,12 @@ struct FitPeaksResults
      See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
      */
     std::optional<std::pair<double,double>> non_energy_dependent_skew_pars[sm_max_num_skew_pars];
+
+    /** The value of skew parameter `index` (0 for `SkewPar0`, ...) at `energy`: linear between (and beyond)
+     the `energy_range` anchors for an energy-dependent parameter - exactly the fit value at either anchor -
+     else the parameter's (energy-independent) value.  Returns nullopt if the parameter was not fit.
+     */
+    std::optional<double> value_at( const size_t index, const double energy ) const;
   };//struct SkewRelation
   
   /** If skew was fit for more than one ROI, and `PeakFitLMOptions::IndependentSkewValues` was not specified, then the final fit skew energy relation
@@ -427,7 +433,57 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<cons
                                const Wt::WFlags<PeakFitLMOptions> fit_options = {},
                                const std::function<bool(const PeakDef &,const PeakDef &)>
                                  &may_remove_close_pair = {} ) throw();
-  
+
+
+/** A spectrum, and the peaks in it to fit; see `fit_peaks_in_spectra_LM(...)`. */
+struct SpectrumPeaks
+{
+  std::shared_ptr<const SpecUtils::Measurement> data;
+  std::vector<std::shared_ptr<const PeakDef>> peaks;
+};//struct SpectrumPeaks
+
+
+/** Results of `fit_peaks_in_spectra_LM(...)`. */
+struct MultiSpectrumFitResults
+{
+  FitPeaksResults::FitPeaksResultsStatus status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+
+  /** Only non-empty if `status == FitPeaksResultsStatus::Failure` */
+  std::string error_message;
+
+  /** The fit results of each input spectrum, in the order given; each has `status` Success when the fit
+   succeeds (a spectrum with no peaks gets no fit peaks), and never has a `skew_relation`.
+   */
+  std::vector<FitPeaksResults> spectra;
+
+  /** The skew relation shared by all the ROIs, of all the spectra, if there was more than one ROI.  Its
+   `energy_range` is the lowest to highest energy of all the spectra.
+   */
+  std::optional<FitPeaksResults::SkewRelation> skew_relation;
+};//struct MultiSpectrumFitResults
+
+
+/** Like `fit_peaks_in_spectrum_LM(...)` with a `skew_type` given, but fits the peaks of several spectra
+ (e.g., the calibration spectra of a detector) together: each ROI is fit to its own spectrum, but all ROIs,
+ of all spectra, share one set of skew values - with the energy-dependent ones linear in energy across the
+ combined energy span of all the ROIs (between the lowest and highest energies of all the spectra), see
+ `FitPeaksResults::SkewRelation`.  Significance tests, and removing peaks within a sigma of each other,
+ are done separately for each spectrum.
+
+ With a single spectrum, gives the same results as `fit_peaks_in_spectrum_LM(...)`.
+
+ If `cancel_flag` becomes true, the fit is abandoned, and a failure returned.
+ */
+MultiSpectrumFitResults fit_peaks_in_spectra_LM( const std::vector<SpectrumPeaks> &spectra,
+                               const double stat_threshold,
+                               const double hypothesis_threshold,
+                               const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
+                               const PeakDef::SkewType skew_type,
+                               const Wt::WFlags<PeakFitLMOptions> fit_options = {},
+                               const std::function<bool(const PeakDef &,const PeakDef &)>
+                                 &may_remove_close_pair = {},
+                               const std::shared_ptr<const std::atomic<bool>> &cancel_flag = nullptr ) noexcept;
+
 
 /** Whether the default fit refits the ROI of `peaks` (peaks sharing one continuum, as fit) by Poisson
  likelihood: its peak region is sparse (see `sm_sparse_data_likelihood_threshold` in PeakFitLM.cpp), and

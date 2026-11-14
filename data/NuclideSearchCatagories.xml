@@ -4,10 +4,13 @@
 
 The entries in this file define the default categories the "Nuclide Search" tab will allow you to select.
 
-You create your own version of this file, and place in the InterSpec user data directory (see
-Help -> "About InterSpec" -> "Data" for this path; on Windows this might be 
-"C:\Users\<user>\AppData\Roaming\InterSpec"), and your entries will be appended after the default ones (after
-you restart InterSpec).
+To add your own categories, make a file in this format holding just your <NucSearchCategory>
+entries, and put it in the "nuclide_search_categories" folder of the InterSpec user data directory
+(see Help -> "About InterSpec" -> "Data" for this path; on Windows this might be
+"C:\Users\<user>\AppData\Roaming\InterSpec"), or name it "NuclideSearchCatagories.xml" and put it
+directly in that directory.  Packages (Help -> Options -> Packages...) can add categories too.
+Your categories are listed after the default ones; one with the same <Name> as a default category
+(e.g., "isbe-category-medical") replaces it.
 
 -->
 

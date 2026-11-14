@@ -204,12 +204,6 @@
   border-radius: 4px;
   padding: 4px;
   overflow: auto;
-
-  /* Override the app-wide user-select:none so the results table can be selected/copied.  Must be an
-     explicit `text` (not `auto`): with `auto`, the used value inherits `none` from the <body> rule. */
-  user-select: text;
-  -moz-user-select: text;
-  -webkit-user-select: text;
 }
 
 .DecayBatchCalcWidget .DbcWarning

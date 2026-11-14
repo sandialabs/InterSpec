@@ -100,6 +100,7 @@
 #include "InterSpec/RelActAutoReport.h"
 #endif
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/SimpleDialog.h"
@@ -506,6 +507,11 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
     [this]( const std::string &a, const std::string &b ){ perFileCustomReportUploaded( a, b ); } );
   m_per_file_custom_report_container->hide();
 
+  m_per_file_saved_templates = custom_rpt_per_file_opts->addNew<Wt::WComboBox>();
+  m_per_file_saved_templates->addStyleClass( "SavedReportTemplates" );
+  m_per_file_saved_templates->activated().connect( this, [this]( int ){ addSavedTemplate( false ); } );
+  m_per_file_saved_templates->hide();
+
   // Group summary custom report elements together
   Wt::WContainerWidget *custom_rpt_summary_opts = m_reports_container->addNew<Wt::WContainerWidget>();
   custom_rpt_summary_opts->addStyleClass( "CustomReportOptions" );
@@ -534,6 +540,16 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   m_summary_custom_report_resource->fileDrop().connect(
     [this]( const std::string &a, const std::string &b ){ summaryCustomReportUploaded( a, b ); } );
   m_summary_custom_report_container->hide();
+
+  m_summary_saved_templates = custom_rpt_summary_opts->addNew<Wt::WComboBox>();
+  m_summary_saved_templates->addStyleClass( "SavedReportTemplates" );
+  m_summary_saved_templates->activated().connect( this, [this]( int ){ addSavedTemplate( true ); } );
+  m_summary_saved_templates->hide();
+
+  refreshSavedTemplates();
+  InterSpec * const viewer = InterSpec::instance();
+  if( viewer )
+    viewer->userLibraryChanged().connect( this, &BatchGuiPeakFitWidget::refreshSavedTemplates );
 
   // Connect signals to update analysis capability
   m_fit_all_peaks->checked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
@@ -668,6 +684,88 @@ void BatchGuiPeakFitWidget::summaryCustomReportUploaded( const std::string &, co
   optionsChanged();
 }// void summaryCustomReportUploaded( const std::string &, const std::string & )
 
+void BatchGuiPeakFitWidget::setReportTemplateTypes( const std::string &perFileType, const std::string &summaryType )
+{
+  m_per_file_template_type = perFileType;
+  m_summary_template_type = summaryType;
+  refreshSavedTemplates();
+}//setReportTemplateTypes(...)
+
+
+void BatchGuiPeakFitWidget::refreshSavedTemplates()
+{
+  const pair<WComboBox *,vector<string> *> menus[] = {
+    { m_per_file_saved_templates, &m_per_file_saved_paths },
+    { m_summary_saved_templates, &m_summary_saved_paths }
+  };
+  const string types[] = { m_per_file_template_type, m_summary_template_type };
+
+  for( size_t i = 0; i < 2; ++i )
+  {
+    WComboBox * const menu = menus[i].first;
+    vector<string> &paths = *menus[i].second;
+    if( !menu )
+      continue;
+
+    menu->clear();
+    paths.clear();
+    menu->addItem( WString::tr( "bgw-saved-template-choose" ) );
+    paths.push_back( "" );
+
+    // The user's own templates, then those from installed packages (labelled with the package).
+    for( const UserLibrary::Item &item : UserLibrary::items( types[i] ) )
+    {
+      if( item.source.kind == UserLibrary::SourceKind::BuiltIn )
+        continue;
+      const WString name = WString::fromUTF8( SpecUtils::filename( item.found.path ) );
+      menu->addItem( (item.source.kind == UserLibrary::SourceKind::Package)
+                     ? WString::tr( "bgw-saved-template-package" ).arg( name ).arg( WString::fromUTF8( item.source.label ) )
+                     : name );
+      paths.push_back( item.found.path );
+    }//for( loop over saved templates )
+    menu->setCurrentIndex( 0 );
+  }//for( per-file, then summary )
+
+  // Not optionsChanged(): this runs from derived constructors, before their widgets exist.
+  if( m_per_file_saved_templates && m_per_file_custom_report )
+    m_per_file_saved_templates->setHidden( !m_per_file_custom_report->isChecked() || (m_per_file_saved_paths.size() <= 1) );
+  if( m_summary_saved_templates && m_summary_custom_report )
+    m_summary_saved_templates->setHidden( !m_summary_custom_report->isChecked() || (m_summary_saved_paths.size() <= 1) );
+}//refreshSavedTemplates()
+
+
+void BatchGuiPeakFitWidget::addSavedTemplate( const bool summary )
+{
+  WComboBox * const menu = summary ? m_summary_saved_templates : m_per_file_saved_templates;
+  const vector<string> &paths = summary ? m_summary_saved_paths : m_per_file_saved_paths;
+  WContainerWidget * const container = summary ? m_summary_custom_report_container : m_per_file_custom_report_container;
+  if( !menu || !container )
+    return;
+
+  const int index = menu->currentIndex();
+  menu->setCurrentIndex( 0 );
+  if( (index <= 0) || (index >= static_cast<int>( paths.size() )) )
+    return;
+
+  // Already added?
+  for( WWidget *child : container->children() )
+  {
+    const BatchGuiInputFile * const input = dynamic_cast<const BatchGuiInputFile *>( child );
+    if( input && (input->path_to_file() == paths[index]) )
+      return;
+  }
+
+  // The saved file itself is used (and never deleted afterwards, unlike an upload's temporary copy).
+  BatchGuiInputFile *input = container->addNew<BatchGuiInputFile>( SpecUtils::filename( paths[index] ), paths[index], false );
+  if( summary )
+    input->remove_self_request().connect( [this]( BatchGuiInputFile *inp ){ handle_remove_summary_custom_report_upload( inp ); } );
+  else
+    input->remove_self_request().connect( [this]( BatchGuiInputFile *inp ){ handle_remove_per_file_custom_report_upload( inp ); } );
+
+  optionsChanged();
+}//addSavedTemplate(...)
+
+
 void BatchGuiPeakFitWidget::handle_remove_per_file_custom_report_upload( BatchGuiInputFile *input )
 {
   if( input && input->parent() )
@@ -793,6 +891,11 @@ void BatchGuiPeakFitWidget::optionsChanged()
 
   m_per_file_custom_report_container->setHidden( !m_per_file_custom_report->isChecked() );
   m_summary_custom_report_container->setHidden( !m_summary_custom_report->isChecked() );
+
+  if( m_per_file_saved_templates )
+    m_per_file_saved_templates->setHidden( !m_per_file_custom_report->isChecked() || (m_per_file_saved_paths.size() <= 1) );
+  if( m_summary_saved_templates )
+    m_summary_saved_templates->setHidden( !m_summary_custom_report->isChecked() || (m_summary_saved_paths.size() <= 1) );
 
   const bool have_per_file_custom_report = !m_per_file_custom_report_container->children().empty();
   const bool per_file_has_empty_class = m_per_file_custom_report_container->hasStyleClass( "EmptyReportUpload" );
@@ -1297,6 +1400,7 @@ BatchGuiActShieldAnaWidget::BatchGuiActShieldAnaWidget()
   m_csv_report( nullptr )
 {
   addStyleClass( "BatchGuiActShieldAnaWidget" );
+  setReportTemplateTypes( "act_shield_template", "act_shield_summary_template" );
 
   m_fit_all_peaks->setChecked( false );
   m_fit_all_peaks->hide();
@@ -1807,6 +1911,7 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget()
 : BatchGuiPeakFitWidget()
 {
   addStyleClass( "BatchGuiIsotopicsByNuclidesWidget" );
+  setReportTemplateTypes( "isotopics_template", "isotopics_summary_template" );
 
   // Make clear these options are for the "Isotopics by nuclides" tool, and not "Isotopics by peaks".
   //  The base-class ctor has already added its widgets to `this`, so insert at the front.

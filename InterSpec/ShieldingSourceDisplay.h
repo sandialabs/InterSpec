@@ -679,6 +679,28 @@ public:
   void deSerializeShieldings( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings );
   
   void startModelUpload();
+
+  /** Lists the setups the footer "Preset" menu offers - the user's own (`act_shield_setups/` in the
+   user data folder), those from installed packages, and those saved in the database - and hides the
+   menu when there are none.
+   */
+  void refreshPresets();
+
+  /** Loads the setup chosen in the "Preset" menu (an undo/redo step). */
+  void presetSelected();
+
+  /** Asks for a name, and saves the current setup as `<user data>/act_shield_setups/<name>.act.shield.xml`. */
+  void startSavePreset();
+
+  /** Writes the current setup to a preset file; asks first (when `overwrite` is false) if one of that
+   name exists.
+   */
+  void savePreset( const std::string &name, const bool overwrite );
+
+  /** Loads a setup from an XML file, as an upload does; an undo/redo step.  On error the setup is
+   left as it was, and the user told.  Returns success.
+   */
+  bool loadModelFromFile( const std::string &path, const std::string &undo_label );
   void modelUploadError( const ::int64_t size_tried );
   void finishModelUpload( Wt::WFileUpload *upload );
   void closeModelUploadWindow();
@@ -783,6 +805,31 @@ public:
 
   /** Handler for the volumetric-efficiency method combo; records undo/redo and refits the chart. */
   void volEffMethodChanged();
+
+  /** Handler for the "Back decay" checkbox and value entry: reads the widgets into #m_backDecaySpec,
+   records undo/redo, and updates the shown back-decay values.  Does not re-fit, as back-decay does
+   not affect the fit. */
+  void backDecayInputChanged();
+
+  /** Handler for the back-decay mode combo; converts the entered value to the new mode when it can
+   (e.g., a duration to the date/time it corresponds to), then as #backDecayInputChanged. */
+  void backDecayModeChanged();
+
+  /** Sets #m_backDecaySpec and the back-decay widgets to `spec`, and updates what is shown; does
+   not add an undo/redo step. */
+  void setBackDecaySpec( const ShieldingSourceFitCalc::BackDecaySpec &spec );
+
+  /** Updates the back-decay widgets visibility and status text, the nuclide cards act(T_ref), and
+   the back-decay results of #m_lastFitResults (so the calc log reflects the current setting). */
+  void updateBackDecayDisplay();
+
+  /** Back-decay results for the sources as currently in the model (so they reflect manual edits);
+   nullptr when back-decay is not enabled, or the entered value is not valid. */
+  std::shared_ptr<const ShieldingSourceFitCalc::BackDecayResults> currentBackDecayResults() const;
+
+  /** A back-decay duration as (localized) text, e.g. "3.5 d" - without the trailing zeros
+   PhysicalUnitsLocalized::printToBestTimeUnits pads to its number of decimals. */
+  static std::string backDecayDurationText( const double duration );
 
   /** Enables the volumetric-efficiency method combo only when a volumetric (trace / self-attenuating)
    source exists and the DRF is not fixed-geometry; enables the MC / EFFTRAN items per-DRF, and sets
@@ -920,17 +967,36 @@ protected:
   /** Footer model import/export controls + the download resource they link to
    (replaces the old upper-right "..." menu's Import/Export items). */
   Wt::WPushButton *m_importModelBtn;
-  Wt::WPushButton *m_exportModelBtn;
+  Wt::WInteractWidget *m_exportModelBtn;  ///< a button, or on macOS/iOS an anchor (their web views need one to download)
   /** The XML model download resource (the concrete type is file-local in the .cpp, so it
    is held here as its Wt::WResource base; the footer "Export Model" link uses its url()). */
   Wt::WResource *m_xmlDownloadResource;
 
 #if( USE_DB_TO_STORE_SPECTRA )
-  /** Footer database button + menu (Open / Save / Clone), replacing the old menu items. */
+  /** Footer database button + menu (Open / Save / Clone): only where there is no user data folder
+   for preset files (e.g., web deployments); elsewhere setups are saved as presets (#m_presetSelect).
+   */
   Wt::WPushButton *m_dbButton;
   PopupDivMenu *m_dbMenu;
   PopupDivMenuItem *m_saveAsNewModelInDb;
 #endif
+
+  /** Footer "Save as preset..." button; null where there is no user data folder. */
+  Wt::WPushButton *m_savePresetBtn;
+
+  /** Footer "Preset" label + menu; hidden when there are no presets. */
+  Wt::WContainerWidget *m_presetRow;
+  Wt::WComboBox *m_presetSelect;
+
+  /** What each #m_presetSelect entry loads (index 0 is the "choose" placeholder): a file, or a setup
+   saved in the database (`dbId`; read until a database upgrade writes them out as files).
+   */
+  struct PresetChoice
+  {
+    std::string path;
+    long long dbId = -1;
+  };
+  std::vector<PresetChoice> m_presetChoices;
 
   Wt::Dbo::ptr<ShieldingSourceModel> m_modelInDb;
 
@@ -994,6 +1060,21 @@ protected:
 
   /** The combo index before the most recent #volEffMethodChanged, for undo/redo. */
   int m_lastVolEffMethodIndex = 0;
+
+  /** The "Back decay" option row: enable checkbox, mode (duration before meas. or date/time), the
+   value entry, and a status text saying what is wrong with the entered value (on phones, also what
+   it means; on desktop the nuclides' footer shows that - see SourceFitNuclideDisplay). */
+  Wt::WCheckBox *m_backDecayCb = nullptr;
+  Wt::WComboBox *m_backDecayMode = nullptr;
+  Wt::WLineEdit *m_backDecayEdit = nullptr;
+  Wt::WText *m_backDecayStatus = nullptr;
+
+  /** The back-decay option; the source of truth for #fitOptions.  Holds the last valid entered
+   values, so an invalid entry does not lose them. */
+  ShieldingSourceFitCalc::BackDecaySpec m_backDecaySpec;
+
+  /** Non-empty when the value currently in #m_backDecayEdit could not be used; shown as the status. */
+  Wt::WString m_backDecayInputError;
 
   Wt::WPushButton *m_fixedGeomMcBtn = nullptr;
   Wt::WText *m_fixedGeomLockedNote;
@@ -1113,7 +1194,10 @@ protected:
   //A class to draw the chi2 distribution of the fit to activity/shielding.
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
-  
+
+  /** The minor version written when the XML does not use back-decay (i.e., the version before it). */
+  static const int sm_preBackDecayMinorVersion;
+
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   // So the tester can call updateChi2ChartActual
   friend class SpectrumViewerTester;

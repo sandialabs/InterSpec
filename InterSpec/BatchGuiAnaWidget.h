@@ -180,6 +180,27 @@ protected:
   Wt::WContainerWidget *m_summary_custom_report_container = nullptr;
   FileDragUploadResource *m_summary_custom_report_resource = nullptr;
 
+  /** "Add a saved template..." menus beside the custom-report drop areas: report templates of the kind
+   this analysis renders, from the user's own files and installed packages (see UserLibrary); hidden
+   when there are none.  Index-matched paths; entry 0 is the placeholder.
+   */
+  Wt::WComboBox *m_per_file_saved_templates = nullptr;
+  Wt::WComboBox *m_summary_saved_templates = nullptr;
+  std::vector<std::string> m_per_file_saved_paths, m_summary_saved_paths;
+
+  /** The UserLibrary types of this analysis's per-file and summary report templates. */
+  std::string m_per_file_template_type = "peak_fit_template";
+  std::string m_summary_template_type = "peak_fit_summary_template";
+
+  /** Sets the kinds of saved report template this analysis uses (derived analyses call it), and re-lists them. */
+  void setReportTemplateTypes( const std::string &perFileType, const std::string &summaryType );
+
+  /** Re-lists the saved report templates in the "Add a saved template..." menus. */
+  void refreshSavedTemplates();
+
+  /** Adds the template chosen in a "saved template" menu to the per-file (or summary) custom reports. */
+  void addSavedTemplate( const bool summary );
+
 public:
   BatchGuiPeakFitWidget();
 

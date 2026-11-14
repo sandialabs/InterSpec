@@ -110,12 +110,33 @@
   flex-wrap: wrap;
 }
 
+/* A custom report's checkbox, drop area, and saved-template menu, on a line of their own; the menu
+   wraps below on narrow windows, rather than squeezing the drop area or widening the options past
+   the dialog. */
 .BatchGuiWidget .ReportsContainer .CustomReportOptions
 {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  flex: 1 1 100%;
+  min-width: 0;
   gap: 10px;
   align-items: center;
+}
+
+.BatchGuiWidget .ReportsContainer .CustomReportOptions > .CbNoLineBreak,
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader
+{
+  flex: 0 0 auto;
+}
+
+/* A <select> is as wide as its longest option (a template name with its package's name), but it only
+   ever shows "Add a saved template..." - the list it opens still shows the full names. */
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .SavedReportTemplates
+{
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 16em;
 }
 
 .BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader,

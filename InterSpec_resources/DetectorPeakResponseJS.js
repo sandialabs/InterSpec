@@ -79,25 +79,24 @@ function peakResolutionFWHM(energy, form, pars) {
         throw new Error('DetectorPeakResponse::peakResolutionFWHM(): pars not defined');
       }
       
-      const a = pars[0];
-      const b = pars[1];
-      const c = pars[2];
-      
-      if (energy >= 661.0 || Math.abs(a) < 1.0e-6) {
+      // GADRAS Fortran GetFWHM "form C" - must match the C++ DetectorPeakResponse::peakResolutionFWHM
+      const a = pars[0];   // resolution offset ("FWHM @ 0"); its sign selects the low-energy branch
+      const b = pars[1];   // resolution @ 661 (percent)
+      const c = pars[2];   // resolution power
+      energy = Math.max(energy, 10.0);
+
+      if (energy > 661.0) {
         return 6.61 * b * Math.pow(energy / 661.0, c);
       }
-      
-      if (a < 0.0) {
-        const p = Math.pow(c, 1.0 / Math.log(1.0 - a));
-        return 6.61 * b * Math.pow(energy / 661.0, p);
+
+      if (a >= 0.0) {
+        const zeroLimit = Math.max(0.0, a * (661.0 - energy) / 661.0);
+        const fwhm = 6.61 * b * Math.pow(energy / 661.0, c);
+        return Math.sqrt(zeroLimit * zeroLimit + fwhm * fwhm);
       }
-      
-      if (a > 6.61 * b) {
-        return a;
-      }
-      
-      const A7 = Math.sqrt(Math.pow(6.61 * b, 2.0) - a * a) / 6.61;
-      return Math.sqrt(a * a + Math.pow(6.61 * A7 * Math.pow(energy / 661.0, c), 2.0));
+
+      const p = Math.pow(c, 1.0 / Math.log(1.0 - a));
+      return 6.61 * b * Math.pow(Math.max(30.0, energy) / 661.0, p);
     }
 
     case 'kSqrtEnergyPlusInverse':

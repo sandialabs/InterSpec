@@ -53,7 +53,6 @@
   <message id="dad-yaxis-title-total-betas">البيتا/ثانية</message>
   <message id="dad-hdr-total-alphas">إجمالي الألفا</message>
   <message id="dad-yaxis-title-total-alphas">الألفا/ثانية</message>
-  <message id="dad-chart-click-more-info">انقر للمزيد من المعلومات - {1} {2} بعد T0 لدينا:</message>
 
   <message id="dcc-window-title-decay-chain">سلسلة تحلل {1}</message>
   <message id="dcc-window-title-decay-through">يتحلل خلال {1}</message>

@@ -50,4 +50,13 @@
     <glob pattern="*.lis" weight="60"/>
     <glob pattern="*.chn" weight="60"/>
   </mime-type>
+
+  <!-- Packages of InterSpec user data (detector efficiencies, report templates, ...); zip files
+       inside, but a type of their own so double-clicking one opens InterSpec, not an unzipper. -->
+  <mime-type type="application/x-interspec-package">
+    <comment>InterSpec data package</comment>
+    <sub-class-of type="application/zip"/>
+    <icon name="interspec"/>
+    <glob pattern="*.ispkg" weight="60"/>
+  </mime-type>
 </mime-info>

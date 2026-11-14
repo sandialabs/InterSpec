@@ -1621,3 +1621,52 @@ BOOST_AUTO_TEST_CASE( activity_text_round_trip )
 
 // Data directories are found lazily by init_data_dirs(), on first use by a test case; doing it from a
 //  BOOST_GLOBAL_FIXTURE instead aborts the whole run on any BOOST_REQUIRE there.
+
+
+/** The public coupled solver reports - rather than throws for - a nuclide too many half-lives back,
+ flags what that nuclide feeds, and returns the linear (unclamped) solution when asked to.
+ */
+BOOST_AUTO_TEST_CASE( solve_past_activities_statuses )
+{
+  init_data_dirs();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const SandiaDecay::Nuclide * const zr95 = db->nuclide( "Zr95" );
+  const SandiaDecay::Nuclide * const nb95m = db->nuclide( "Nb95m" );
+  const SandiaDecay::Nuclide * const nb95 = db->nuclide( "Nb95" );
+  BOOST_REQUIRE( zr95 && nb95m && nb95 );
+
+  // 200 days is ~55 half-lives of Nb95m (3.6 d): it decayed away, and it feeds Nb95.
+  const double age = 200.0 * PhysicalUnits::day;
+  const PastActivitySolution sol = solve_past_activities( { zr95, nb95m, nb95 }, { 1.0, 0.01, 2.0 },
+                                                          { 0.0, 0.0, 0.0 }, age, false );
+  BOOST_REQUIRE_EQUAL( sol.status.size(), 3 );
+  BOOST_CHECK( sol.status[0] == PastActivityStatus::Solved );
+  BOOST_CHECK( sol.status[1] == PastActivityStatus::DecayedAway );
+  BOOST_CHECK( sol.status[2] == PastActivityStatus::Solved );
+  BOOST_CHECK( !sol.depends_on_decayed_away[0] );
+  BOOST_CHECK( !sol.depends_on_decayed_away[1] );
+  BOOST_CHECK( sol.depends_on_decayed_away[2] );
+  BOOST_CHECK_EQUAL( sol.past_activities[1], 0.0 );
+  BOOST_CHECK_CLOSE( sol.past_activities[0], std::exp( zr95->decayConstant() * age ), 1.0E-8 );
+  BOOST_REQUIRE_EQUAL( sol.solve_order.size(), 3 );
+  BOOST_CHECK_EQUAL( sol.solve_order[0], 0 );  //Zr95 is the ancestor of the others
+
+  // Ba140 -> La140, with less La140 than Ba140 grows in over a day: negative when not clamping,
+  //  zero when clamping; and without clamping the result is linear in the inputs.
+  const SandiaDecay::Nuclide * const ba140 = db->nuclide( "Ba140" );
+  const SandiaDecay::Nuclide * const la140 = db->nuclide( "La140" );
+  BOOST_REQUIRE( ba140 && la140 );
+  const double day = 1.0 * PhysicalUnits::day;
+  const PastActivitySolution unclamped = solve_past_activities( { ba140, la140 }, { 1.0, 0.01 }, { 0.0, 0.0 }, day, false );
+  const PastActivitySolution clamped = solve_past_activities( { ba140, la140 }, { 1.0, 0.01 }, { 0.0, 0.0 }, day, true );
+  BOOST_CHECK( unclamped.past_activities[1] < 0.0 );
+  BOOST_CHECK_EQUAL( clamped.past_activities[1], 0.0 );
+  BOOST_CHECK_CLOSE( unclamped.past_activities[0], clamped.past_activities[0], 1.0E-12 );
+  BOOST_CHECK( unclamped.from_ancestors_atoms[1] > unclamped.now_atoms_total[1] );
+
+  const PastActivitySolution a = solve_past_activities( { ba140, la140 }, { 1.0, 0.0 }, { 0.0, 0.0 }, day, false );
+  const PastActivitySolution b = solve_past_activities( { ba140, la140 }, { 0.0, 0.01 }, { 0.0, 0.0 }, day, false );
+  BOOST_CHECK_CLOSE( a.past_activities[1] + b.past_activities[1], unclamped.past_activities[1], 1.0E-6 );
+}//BOOST_AUTO_TEST_CASE( solve_past_activities_statuses )

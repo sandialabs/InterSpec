@@ -1,0 +1,358 @@
+/* user library window (UserLibraryWindow) and its package install dialog (UserLibraryImportDialog).
+   Colours come only from the --interspec-* theme tokens. */
+
+.UserLibTabs
+{
+  padding: 4px 8px 0 8px;
+}
+
+/* InterSpec.css floats link buttons right; here they sit in the text flow. */
+.UserLibWindow .LinkBtn, .UserLibImportDialog .LinkBtn
+{
+  float: none;
+}
+
+.UserLibStack
+{
+  min-height: 0;
+}
+
+.UserLibPage
+{
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px 12px 12px;
+}
+
+.UserLibIntro
+{
+  margin-bottom: 8px;
+  color: var(--interspec-secondary-text-color);
+}
+
+.UserLibIntro .LinkBtn
+{
+  margin-left: 4px;
+  padding-left: 0;
+}
+
+.UserLibControls
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+
+.UserLibSearch
+{
+  min-width: 160px;
+  flex: 1 1 160px;
+  max-width: 320px;
+}
+
+.UserLibBusy, .UserLibNone
+{
+  color: var(--interspec-secondary-text-color);
+  font-style: italic;
+  margin: 8px 0;
+}
+
+/* Cards (packages) and rows (items) */
+.UserLibCard
+{
+  border: 1px solid var(--interspec-border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: var(--interspec-panel-background);
+}
+
+.UserLibPkgTitleLine, .UserLibItemLine
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.UserLibPkgName
+{
+  font-weight: bold;
+  font-size: 1.1em;
+  overflow-wrap: anywhere;
+}
+
+.UserLibPkgVersion, .UserLibPkgMeta
+{
+  color: var(--interspec-secondary-text-color);
+}
+
+.UserLibPkgDesc
+{
+  margin-top: 4px;
+}
+
+.UserLibPkgNotes, .UserLibHistText, .UserLibItemNotes
+{
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.UserLibItemNotes
+{
+  color: var(--interspec-secondary-text-color);
+  font-size: 0.95em;
+}
+
+/* A handling marking ("Internal use only") is shown prominently. */
+.UserLibHandling
+{
+  display: inline-block;
+  margin: 4px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--interspec-warning-border-color);
+  border-radius: 4px;
+  background: var(--interspec-warning-background);
+  color: var(--interspec-warning-color);
+  font-weight: bold;
+}
+
+.UserLibSubhead
+{
+  margin-top: 8px;
+  font-weight: bold;
+}
+
+.UserLibChanges
+{
+  margin-top: 4px;
+}
+
+.UserLibHistVersion
+{
+  margin-top: 4px;
+  color: var(--interspec-secondary-text-color);
+}
+
+.UserLibActions
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 6px;
+}
+
+.UserLibActions .LinkBtn, .UserLibSummary .LinkBtn
+{
+  margin: 0;
+}
+
+.LinkBtn.UserLibDanger, .LinkBtn.UserLibDanger:hover
+{
+  color: var(--interspec-error-color);
+}
+
+.UserLibGroup
+{
+  margin-bottom: 10px;
+}
+
+.UserLibGroupTitle
+{
+  font-weight: bold;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--interspec-border-color);
+  margin-bottom: 2px;
+}
+
+.UserLibItem
+{
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--interspec-border-color);
+}
+
+.UserLibItem.Disabled .UserLibItemName
+{
+  color: var(--interspec-disabled-text-color);
+}
+
+.UserLibItemName
+{
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.UserLibPath
+{
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--interspec-fainter-text-color);
+  overflow-wrap: anywhere;
+}
+
+.UserLibMono
+{
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.UserLibBadge
+{
+  font-size: 0.85em;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--interspec-border-color);
+  color: var(--interspec-secondary-text-color);
+  white-space: nowrap;
+}
+
+.UserLibBadge.Ok
+{
+  border-color: var(--interspec-success-border-color);
+  color: var(--interspec-success-color);
+}
+
+.UserLibBadge.Warn
+{
+  border-color: var(--interspec-warning-border-color);
+  color: var(--interspec-warning-color);
+}
+
+.UserLibBadge.Error
+{
+  border-color: var(--interspec-error-border-color);
+  color: var(--interspec-error-color);
+}
+
+.UserLibWarn
+{
+  color: var(--interspec-warning-color);
+  margin: 4px 0;
+}
+
+.UserLibError
+{
+  color: var(--interspec-error-color);
+  margin: 4px 0;
+}
+
+.UserLibOk
+{
+  color: var(--interspec-success-color);
+  margin: 4px 0;
+  font-weight: bold;
+}
+
+.UserLibInfo
+{
+  margin: 6px 0;
+}
+
+/* Create page */
+.UserLibForm
+{
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.UserLibForm textarea
+{
+  resize: vertical;
+}
+
+.UserLibItemOptions
+{
+  margin: 4px 0 2px 22px;
+}
+
+.UserLibItemOptions input[type="text"]
+{
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+}
+
+.UserLibCreateRow
+{
+  margin: 10px 0;
+}
+
+.UserLibCreateStatus .UserLibDownload
+{
+  display: inline-block;
+  margin-top: 6px;
+}
+
+/* Install dialog */
+.UserLibImport
+{
+  padding: 4px 6px;
+}
+
+.UserLibPkgHead
+{
+  margin-bottom: 8px;
+}
+
+.UserLibSummary
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 10px 0;
+  font-weight: bold;
+}
+
+.UserLibConflict, .UserLibSensitive
+{
+  margin: 6px 0 2px 12px;
+  padding-left: 8px;
+  border-left: 3px solid var(--interspec-warning-border-color);
+}
+
+.UserLibSkillText
+{
+  white-space: pre-wrap;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--interspec-border-color);
+  background: var(--interspec-input-background);
+  padding: 6px;
+  margin: 4px 0;
+}
+
+.UserLibSkipped, .UserLibSha
+{
+  margin-top: 10px;
+}
+
+.UserLibShowMe
+{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 4px 0 10px 0;
+}
+
+/* Phones: the form stacks */
+@media (max-width: 600px)
+{
+  .UserLibForm
+  {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .UserLibSearch
+  {
+    max-width: none;
+  }
+}

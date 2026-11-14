@@ -590,6 +590,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         Wt::WString summary = WString::tr("fpn-summary").arg( static_cast<int>(num_peaks) ).arg( static_cast<int>(num_sources) );
         Wt::WText *summary_text = contents->addNew<Wt::WText>( summary );
         summary_text->addStyleClass( "FitSourcesSummary" );
+        summary_text->addStyleClass( "SelectableTxt" );
         summary_text->setInline( false );
 
         // Size the chart to a comfortable width, then (below) size the dialog to match it so
@@ -663,6 +664,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         {
           Wt::WContainerWidget *warnings_div = contents->addNew<Wt::WContainerWidget>();
           warnings_div->addStyleClass( "fpn-warnings fpn-warnings-has-warnings" );
+          warnings_div->addStyleClass( "SelectableTxt" );
           for( const std::string &w : result->warnings )
           {
             Wt::WText *wt = warnings_div->addNew<Wt::WText>( Wt::WString::fromUTF8( "• " + w ) );
@@ -1075,6 +1077,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
 
   m_status = addNew<WText>( WString::tr("fpn-calculating") );
   m_status->addStyleClass( "fpn-status" );
+  m_status->addStyleClass( "SelectableTxt" );
   m_status->addStyleClass( "calculating" );
 
   m_options_div = addNew<WContainerWidget>();
@@ -1083,6 +1086,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
 
   m_warnings_div = addNew<WContainerWidget>();
   m_warnings_div->addStyleClass( "fpn-warnings" );
+  m_warnings_div->addStyleClass( "SelectableTxt" );
   m_warnings_div->addStyleClass( "fpn-warnings-computing" );
 
   m_render_flags |= UpdateCalculations;

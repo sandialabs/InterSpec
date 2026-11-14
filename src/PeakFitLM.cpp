@@ -273,6 +273,18 @@ static Wt::WFlags<PeakFitLMOptions> effective_options( Wt::WFlags<PeakFitLMOptio
 }//effective_options(...)
 
 
+/** `effective_options(...)` over every spectrum of a joint fit: a negative channel in any of them turns
+ the likelihood off for the whole fit, so the joint fit and its per-spectrum polish fits agree.
+ */
+static Wt::WFlags<PeakFitLMOptions> effective_options( Wt::WFlags<PeakFitLMOptions> options,
+                                                       const std::vector<SpectrumPeaks> &spectra )
+{
+  for( const SpectrumPeaks &spectrum : spectra )
+    options = effective_options( options, spectrum.data );
+  return options;
+}//effective_options( options, spectra )
+
+
 /** `options` for a plain chi2 fit: the likelihood off. */
 static Wt::WFlags<PeakFitLMOptions> chi2_only_options( Wt::WFlags<PeakFitLMOptions> options )
 {
@@ -435,6 +447,15 @@ struct RoiInfo
    own amplitude has not been fit yet (see `roi_amp_par_scale`).
    */
   double data_area = 0.0;
+
+  /** The spectrum this ROI is fit to, and its index in the spectra given to the fit - a joint fit
+   may span the ROIs of several spectra (see `fit_peaks_in_spectra_LM(...)`).
+   */
+  std::shared_ptr<const SpecUtils::Measurement> data;
+  size_t spectrum_index = 0;
+
+  /** The continuum spectrum of an `External` continuum ROI; null for other continuum types. */
+  std::shared_ptr<const SpecUtils::Measurement> external_continuum;
 };//struct RoiInfo
 
 
@@ -627,35 +648,65 @@ struct PeakFitDiffCostFunction
   };//struct ProblemSetup
 
 
-  /** Build the vector of RoiInfo structs from starting peaks and data.
-   Groups peaks by shared PeakContinuum pointer, fills channel bounds, sigma, etc.
-   Static so it can be called from the constructor initializer list via a lambda.
+  /** Build the vector of RoiInfo structs from the starting peaks of each spectrum.
+   Groups each spectrum's peaks by shared PeakContinuum pointer, fills channel bounds, sigma, etc.
+   The ROIs are ordered by spectrum, then by lower energy within each spectrum.
+   Static so it can be called from the constructor initializer list.
   */
-  static std::vector<RoiInfo> make_rois(
-      const std::shared_ptr<const SpecUtils::Measurement> &data,
-      const std::vector<std::shared_ptr<const PeakDef>> &starting_peaks,
-      const FitObjective objective )
+  static std::vector<RoiInfo> make_rois( const std::vector<SpectrumPeaks> &spectra,
+                                         const FitObjective objective )
   {
-    // Group peaks by continuum pointer
-    std::map<std::shared_ptr<const PeakContinuum>, std::vector<std::shared_ptr<const PeakDef>>> cont_to_peaks;
-    for( const auto &p : starting_peaks )
-      cont_to_peaks[p->continuum()].push_back( p );
-
     std::vector<RoiInfo> rois;
-    rois.reserve( cont_to_peaks.size() );
 
-    for( auto &kv : cont_to_peaks )
+    for( size_t spectrum_index = 0; spectrum_index < spectra.size(); ++spectrum_index )
+    {
+      const std::shared_ptr<const SpecUtils::Measurement> &data = spectra[spectrum_index].data;
+      if( !data || !data->gamma_counts() || data->gamma_counts()->empty() )
+        throw runtime_error( "PeakFitDiffCostFunction: !data or !gamma_counts() for spectrum "
+                             + std::to_string(spectrum_index) );
+
+      // Group peaks by continuum pointer - within this spectrum only, so the ROIs of two spectra are
+      //  never merged, even if they share PeakContinuum objects.
+      std::map<std::shared_ptr<const PeakContinuum>, std::vector<std::shared_ptr<const PeakDef>>> cont_to_peaks;
+      for( const auto &p : spectra[spectrum_index].peaks )
+        cont_to_peaks[p->continuum()].push_back( p );
+
+      const size_t first_roi_index = rois.size();
+      add_spectrum_rois( data, spectrum_index, cont_to_peaks, objective, rois );
+
+      // Sort this spectrum's ROIs by lower energy
+      std::sort( rois.begin() + first_roi_index, rois.end(), []( const RoiInfo &a, const RoiInfo &b ){
+        return a.lower_energy < b.lower_energy;
+      } );
+    }//for( loop over spectra )
+
+    return rois;
+  }//make_rois(...)
+
+
+  /** Appends a RoiInfo to `rois` for each continuum of `cont_to_peaks`, all fit to `data`. */
+  static void add_spectrum_rois( const std::shared_ptr<const SpecUtils::Measurement> &data,
+      const size_t spectrum_index,
+      const std::map<std::shared_ptr<const PeakContinuum>, std::vector<std::shared_ptr<const PeakDef>>> &cont_to_peaks,
+      const FitObjective objective,
+      std::vector<RoiInfo> &rois )
+  {
+    for( const auto &kv : cont_to_peaks )
     {
       RoiInfo roi;
       roi.peaks = kv.second;
       std::sort( roi.peaks.begin(), roi.peaks.end(), &PeakDef::lessThanByMeanShrdPtr );
 
       const std::shared_ptr<const PeakContinuum> &cont = kv.first;
+      roi.data = data;
+      roi.spectrum_index = spectrum_index;
       roi.lower_energy = cont->lowerEnergy();
       roi.upper_energy = cont->upperEnergy();
       roi.lower_channel = data->find_gamma_channel( static_cast<float>( roi.lower_energy ) );
       roi.upper_channel = data->find_gamma_channel( static_cast<float>( roi.upper_energy ) );
       roi.offset_type = cont->type();
+      if( roi.offset_type == PeakContinuum::OffsetType::External )
+        roi.external_continuum = cont->externalContinuum();
 
       const double prev_ref = cont->referenceEnergy();
       roi.ref_energy = ((prev_ref >= roi.lower_energy) && (prev_ref <= roi.upper_energy))
@@ -723,32 +774,71 @@ struct PeakFitDiffCostFunction
 
       rois.push_back( std::move(roi) );
     }//for( auto &kv : cont_to_peaks )
-
-    // Sort ROIs by lower energy
-    std::sort( rois.begin(), rois.end(), []( const RoiInfo &a, const RoiInfo &b ){
-      return a.lower_energy < b.lower_energy;
-    } );
-
-    return rois;
-  }//make_rois(...)
+  }//add_spectrum_rois(...)
 
 
+  /** The lowest and highest energies of the spectra - the anchors energy-dependent skew is linear
+   between (see #roi_skew_frac).  For a single spectrum, its own energy range.
+   */
+  static double spectra_lower_energy( const std::vector<SpectrumPeaks> &spectra )
+  {
+    double answer = std::numeric_limits<double>::infinity();
+    for( const SpectrumPeaks &spectrum : spectra )
+    {
+      if( spectrum.data && spectrum.data->num_gamma_channels() )
+        answer = (std::min)( answer, static_cast<double>( spectrum.data->gamma_channel_lower( 0 ) ) );
+    }
+    return answer;
+  }//spectra_lower_energy(...)
+
+
+  static double spectra_upper_energy( const std::vector<SpectrumPeaks> &spectra )
+  {
+    double answer = -std::numeric_limits<double>::infinity();
+    for( const SpectrumPeaks &spectrum : spectra )
+    {
+      const size_t nchannel = spectrum.data ? spectrum.data->num_gamma_channels() : size_t(0);
+      if( nchannel )
+        answer = (std::max)( answer, static_cast<double>( spectrum.data->gamma_channel_upper( nchannel - 1 ) ) );
+    }
+    return answer;
+  }//spectra_upper_energy(...)
+
+
+  /** Fits the ROIs of one spectrum (the `roi_lower_energy`, `roi_upper_energy`, and
+   `continuum_ref_energy` arguments are kept for API compatibility, and ignored - the ROIs come from
+   the peaks).
+   */
   PeakFitDiffCostFunction( const std::shared_ptr<const SpecUtils::Measurement> data,
                            const std::vector<std::shared_ptr<const PeakDef>> &starting_peaks,
-                           const double roi_lower_energy,    // kept for API compat, ignored (ROI info comes from peaks)
-                           const double roi_upper_energy,    // kept for API compat, ignored
-                           const double continuum_ref_energy, // kept for API compat, ignored
+                           const double roi_lower_energy,
+                           const double roi_upper_energy,
+                           const double continuum_ref_energy,
                            const PeakDef::SkewType skew_type,
                            const PeakFitUtils::CoarseResolutionType det_type,
                            const Wt::WFlags<PeakFitLM::PeakFitLMOptions> options,
                            const FitObjective objective = FitObjective::NeymanChi2 )
-  : m_data( data ),
+  : PeakFitDiffCostFunction( std::vector<SpectrumPeaks>{ SpectrumPeaks{ data, starting_peaks } },
+                             skew_type, det_type, options, objective )
+  {
+  }
+
+
+  /** Fits the ROIs of one or more spectra (e.g., of the same detector) together: each ROI is fit to
+   its own spectrum, but the skew is shared (or related) across all of them.
+   */
+  PeakFitDiffCostFunction( const std::vector<SpectrumPeaks> &spectra,
+                           const PeakDef::SkewType skew_type,
+                           const PeakFitUtils::CoarseResolutionType det_type,
+                           const Wt::WFlags<PeakFitLM::PeakFitLMOptions> options,
+                           const FitObjective objective = FitObjective::NeymanChi2 )
+  : m_num_spectra( spectra.size() ),
     m_skew_type( skew_type ),
     m_det_type( det_type ),
-    m_options( effective_options( options, data ) ),
+    m_options( effective_options( options, spectra ) ),
     m_objective( objective ),
     m_ncalls( 0 ),
-    m_rois( make_rois( data, starting_peaks, m_objective ) ),
+    m_rois( make_rois( spectra, m_objective ) ),
     m_total_num_peaks( ([this]() -> size_t {
       size_t n = 0;
       for( const RoiInfo &r : m_rois )
@@ -776,27 +866,18 @@ struct PeakFitDiffCostFunction
       }
       if( !any_energy_dep )
         return false;
-      // Only energy-dependent if ROIs span more than 100 keV
-      const double lower = m_rois.front().lower_energy;
-      const double upper = m_rois.back().upper_energy;
-      return (upper - lower) >= 100.0;
-    })() ),
-    m_skew_anchor_lower_energy( data->gamma_channel_lower( 0 ) ),
-    m_skew_anchor_upper_energy( data->gamma_channel_upper( data->num_gamma_channels() - 1 ) ),
-    m_external_continuum( ([this]() -> std::shared_ptr<const SpecUtils::Measurement> {
+      // Only energy-dependent if ROIs span more than 100 keV (the ROIs are only sorted within each
+      //  spectrum, so take the extremes over all of them)
+      double lower = m_rois.front().lower_energy, upper = m_rois.front().upper_energy;
       for( const RoiInfo &roi : m_rois )
       {
-        if( roi.offset_type == PeakContinuum::OffsetType::External )
-        {
-          for( const auto &p : roi.peaks )
-          {
-            if( p->continuum()->externalContinuum() )
-              return p->continuum()->externalContinuum();
-          }
-        }
+        lower = (std::min)( lower, roi.lower_energy );
+        upper = (std::max)( upper, roi.upper_energy );
       }
-      return nullptr;
+      return (upper - lower) >= 100.0;
     })() ),
+    m_skew_anchor_lower_energy( spectra_lower_energy( spectra ) ),
+    m_skew_anchor_upper_energy( spectra_upper_energy( spectra ) ),
     m_num_parameters( number_parameters() ),
     m_num_residuals( number_residuals() )
 #if( PEAK_FIT_LM_PARALLEL_ROIS )
@@ -807,43 +888,43 @@ struct PeakFitDiffCostFunction
         : nullptr )
 #endif
   {
-    if( !m_data || !m_data->gamma_counts() || m_data->gamma_counts()->empty() )
-      throw runtime_error( "PeakFitDiffCostFunction: !m_data or !gamma_counts()" );
-
     if( m_rois.empty() )
       throw runtime_error( "PeakFitDiffCostFunction: no ROIs to fit" );
 
-    const std::vector<float> &counts = *m_data->gamma_counts();
-    const std::shared_ptr<const vector<float>> &energies = m_data->channel_energies();
-
     for( const RoiInfo &roi : m_rois )
     {
+      // The data was checked valid in `make_rois(...)`
+      const std::vector<float> &counts = *roi.data->gamma_counts();
+      const std::shared_ptr<const vector<float>> &energies = roi.data->channel_energies();
+      const string where = (m_num_spectra > 1) ? (" (spectrum " + std::to_string(roi.spectrum_index) + ")") : string();
+
       if( roi.lower_energy >= roi.upper_energy )
-        throw runtime_error( "PeakFitDiffCostFunction: ROI lower_energy >= upper_energy" );
+        throw runtime_error( "PeakFitDiffCostFunction: ROI lower_energy >= upper_energy" + where );
       if( roi.upper_channel < roi.lower_channel )
-        throw runtime_error( "PeakFitDiffCostFunction: ROI upper_channel < lower_channel" );
+        throw runtime_error( "PeakFitDiffCostFunction: ROI upper_channel < lower_channel" + where );
       if( roi.upper_channel >= counts.size() )
-        throw runtime_error( "PeakFitDiffCostFunction: ROI upper_channel >= counts.size()" );
+        throw runtime_error( "PeakFitDiffCostFunction: ROI upper_channel >= counts.size()" + where );
       if( !energies || (roi.upper_channel >= energies->size()) )
-        throw runtime_error( "PeakFitDiffCostFunction: ROI upper_channel >= energies.size()" );
+        throw runtime_error( "PeakFitDiffCostFunction: ROI upper_channel >= energies.size()" + where );
       if( roi.peaks.empty() )
-        throw runtime_error( "PeakFitDiffCostFunction: ROI has no peaks" );
+        throw runtime_error( "PeakFitDiffCostFunction: ROI has no peaks" + where );
       if( roi.peaks.size() >= (roi.upper_channel - roi.lower_channel) )
-        throw runtime_error( "PeakFitDiffCostFunction: too many peaks for ROI channel range" );
+        throw runtime_error( "PeakFitDiffCostFunction: too many peaks for ROI channel range" + where );
 
       if( (roi.offset_type == PeakContinuum::OffsetType::External)
-          && (!m_external_continuum
-              || (m_external_continuum->num_gamma_channels() < 7)
-              || !m_external_continuum->energy_calibration()
-              || !m_external_continuum->energy_calibration()->valid()) )
-        throw runtime_error( "PeakFitDiffCostFunction: external continuum wanted but not valid" );
+          && (!roi.external_continuum
+              || (roi.external_continuum->num_gamma_channels() < 7)
+              || !roi.external_continuum->energy_calibration()
+              || !roi.external_continuum->energy_calibration()->valid()) )
+        throw runtime_error( "PeakFitDiffCostFunction: external continuum wanted but not valid" + where );
     }//for( const RoiInfo &roi : m_rois )
 
     // Check all ROIs have positive DOF
     for( size_t i = 0; i < m_rois.size(); ++i )
     {
       if( dof_for_roi( i ) <= 0.0 )
-        throw runtime_error( "PeakFitDiffCostFunction: not enough data channels to fit parameters in ROI" );
+        throw runtime_error( "PeakFitDiffCostFunction: not enough data channels to fit parameters in ROI"
+                     + ((m_num_spectra > 1) ? (" (spectrum " + std::to_string(m_rois[i].spectrum_index) + ")") : string()) );
     }
   }//PeakFitDiffCostFunction constructor
 
@@ -993,6 +1074,26 @@ struct PeakFitDiffCostFunction
         all.push_back( p );
     return all;
   }
+
+  /** Splits peaks from `parametersToPeaks(...)` - each ROI's peaks, in `m_rois` order - by the
+   spectrum their ROI is from; the result has `m_num_spectra` entries.
+   */
+  std::vector<std::vector<PeakDef>> peaks_by_spectrum( std::vector<PeakDef> &&peaks ) const
+  {
+    if( peaks.size() != m_total_num_peaks )
+      throw std::logic_error( "PeakFitDiffCostFunction::peaks_by_spectrum: wrong number of peaks" );
+
+    std::vector<std::vector<PeakDef>> answer( m_num_spectra );
+    size_t peak_index = 0;
+    for( const RoiInfo &roi : m_rois )
+    {
+      assert( roi.spectrum_index < m_num_spectra );
+      for( size_t i = 0; i < roi.peaks.size(); ++i, ++peak_index )
+        answer[roi.spectrum_index].push_back( std::move( peaks[peak_index] ) );
+    }
+
+    return answer;
+  }//peaks_by_spectrum(...)
 
   // Computes total parameter count from scratch (called from initializer list)
   size_t number_parameters() const
@@ -1328,8 +1429,8 @@ struct PeakFitDiffCostFunction
         // Protect against sigma smaller than one channel width (only when fitting sigma)
         if( (sigma < 0.2) && src_peak->fitFor( PeakDef::Sigma ) && (num_sigmas_fit != 0) )
         {
-          const float left_val  = m_data->gamma_channel_lower( roi.lower_channel );
-          const float upper_val = m_data->gamma_channel_upper( roi.upper_channel );
+          const float left_val  = roi.data->gamma_channel_lower( roi.lower_channel );
+          const float upper_val = roi.data->gamma_channel_upper( roi.upper_channel );
           const double avrg_chnl_width = (upper_val - left_val) / static_cast<double>( nchannel );
           const double min_reasonable = (0.42*0.99) * avrg_chnl_width;
 
@@ -1402,8 +1503,8 @@ struct PeakFitDiffCostFunction
       apply_skew_to_peaks<PeakType, T>( fixed_amp_peaks, roi_skew_ptr, skew_frac );
 
       // --- Compute predicted channel counts for this ROI ---
-      const shared_ptr<const vector<float>> &energies_ptr = m_data->channel_energies();
-      const vector<float> &counts_vec = *m_data->gamma_counts();
+      const shared_ptr<const vector<float>> &energies_ptr = roi.data->channel_energies();
+      const vector<float> &counts_vec = *roi.data->gamma_counts();
       const float * const energies       = energies_ptr->data() + roi.lower_channel;
       const float * const channel_counts = counts_vec.data()    + roi.lower_channel;
 
@@ -1427,15 +1528,16 @@ struct PeakFitDiffCostFunction
 
       if( roi.offset_type == PeakContinuum::OffsetType::External )
       {
-        assert( m_external_continuum );
-        continuum->setExternalContinuum( m_external_continuum );
+        const shared_ptr<const SpecUtils::Measurement> &external_continuum = roi.external_continuum;
+        assert( external_continuum );
+        continuum->setExternalContinuum( external_continuum );
 
         if( !peaks.empty() && irls_variances )
         {
           // The external continuum is a fixed part of the model; nothing is subtracted or clipped.
           vector<double> external_counts( nchannel );
           for( size_t i = 0; i < nchannel; ++i )
-            external_counts[i] = m_external_continuum->gamma_integral( energies[i], energies[i+1] );
+            external_counts[i] = external_continuum->gamma_integral( energies[i], energies[i+1] );
 
           vector<T> means, sigmas;
           for( const auto &p : peaks )
@@ -1465,7 +1567,7 @@ struct PeakFitDiffCostFunction
           vector<float> data_variances( channel_counts, channel_counts + nchannel );
           for( size_t i = 0; i < nchannel; ++i )
           {
-            data_copy[i] -= m_external_continuum->gamma_integral( energies[i], energies[i+1] );
+            data_copy[i] -= external_continuum->gamma_integral( energies[i], energies[i+1] );
             data_copy[i] = std::max( 0.0f, data_copy[i] );
             if( data_variances[i] < PEAK_FIT_MIN_CHANNEL_UNCERT )
               data_variances[i] = PEAK_FIT_MIN_CHANNEL_UNCERT;
@@ -1506,7 +1608,7 @@ struct PeakFitDiffCostFunction
         if( peaks.empty() || !irls_variances )  //else the model already includes it
         {
           for( size_t i = 0; i < nchannel; ++i )
-            peak_counts[i] += T( m_external_continuum->gamma_integral( energies[i], energies[i+1] ) );
+            peak_counts[i] += T( external_continuum->gamma_integral( energies[i], energies[i+1] ) );
         }
       }
       else if( !roi.use_lls_for_cont )
@@ -1536,11 +1638,11 @@ struct PeakFitDiffCostFunction
           for( const PeakType &fp : fixed_amp_peaks )
             all_peaks.push_back( &fp );
 
-          PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, m_data,
+          PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, roi.data,
                                       all_peaks.data(), all_peaks.size() );
         }else
         {
-          PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, m_data );
+          PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, roi.data );
         }
       }
       else
@@ -1761,8 +1863,8 @@ struct PeakFitDiffCostFunction
 
           const float lower_energy = static_cast<float>( pk_mean - 1.75*pk_sigma );
           const float upper_energy = static_cast<float>( pk_mean + 1.75*pk_sigma );
-          const size_t lower_ch = std::max( roi.lower_channel, m_data->find_gamma_channel(lower_energy) );
-          const size_t upper_ch = std::min( roi.upper_channel, m_data->find_gamma_channel(upper_energy) );
+          const size_t lower_ch = std::max( roi.lower_channel, roi.data->find_gamma_channel(lower_energy) );
+          const size_t upper_ch = std::min( roi.upper_channel, roi.data->find_gamma_channel(upper_energy) );
 
           double dataarea = 0.0;
           for( size_t bin = lower_ch; (bin < counts_vec.size()) && (bin <= upper_ch); ++bin )
@@ -2012,11 +2114,11 @@ struct PeakFitDiffCostFunction
   double irls_merit( const std::vector<std::vector<double>> &models, const std::vector<bool> &reweight ) const
   {
     assert( (models.size() == m_rois.size()) && (reweight.size() == m_rois.size()) );
-    const vector<float> &counts = *m_data->gamma_counts();
     double merit = 0.0;
     for( size_t r = 0; r < m_rois.size(); ++r )
     {
       const RoiInfo &roi = m_rois[r];
+      const vector<float> &counts = *roi.data->gamma_counts();
       for( size_t i = 0; i < models[r].size(); ++i )
       {
         const double n = static_cast<double>( counts[roi.lower_channel + i] );
@@ -2084,11 +2186,11 @@ struct PeakFitDiffCostFunction
     if( (models.size() != m_rois.size()) || (peaks.size() != m_total_num_peaks) )
       return answer;
 
-    const float * const energies = m_data->channel_energies()->data();
     size_t peak_index = 0;
     for( size_t r = 0; r < m_rois.size(); ++r )
     {
       const RoiInfo &roi = m_rois[r];
+      const float * const energies = roi.data->channel_energies()->data();
       std::vector<std::pair<double,double>> mean_fwhms;
       for( size_t i = 0; i < roi.peaks.size(); ++i, ++peak_index )
         mean_fwhms.emplace_back( peaks[peak_index].mean(), peaks[peak_index].fwhm() );
@@ -2498,13 +2600,13 @@ struct PeakFitDiffCostFunction
    */
   void warm_start_cdf_step( const RoiInfo &roi, vector<double> &seeds ) const
   {
-    if( !m_data || !m_data->num_gamma_channels() || (roi.upper_channel <= roi.lower_channel) )
+    if( !roi.data || !roi.data->num_gamma_channels() || (roi.upper_channel <= roi.lower_channel) )
       return;
 
     try
     {
-      const shared_ptr<const vector<float>> channel_energies = m_data->channel_energies();
-      const shared_ptr<const vector<float>> gamma_counts = m_data->gamma_counts();
+      const shared_ptr<const vector<float>> channel_energies = roi.data->channel_energies();
+      const shared_ptr<const vector<float>> gamma_counts = roi.data->gamma_counts();
       if( !channel_energies || !gamma_counts
          || ((roi.upper_channel + 1) >= channel_energies->size())
          || (roi.upper_channel >= gamma_counts->size()) )
@@ -2653,11 +2755,11 @@ struct PeakFitDiffCostFunction
     }
 
     // Compute mean range bin width for sigma constraints
-    const size_t midbin = m_data->find_gamma_channel( static_cast<float>(0.5*(roi.lower_energy + roi.upper_energy)) );
-    const float binwidth = m_data->gamma_channel_width( midbin );
+    const size_t midbin = roi.data->find_gamma_channel( static_cast<float>(0.5*(roi.lower_energy + roi.upper_energy)) );
+    const float binwidth = roi.data->gamma_channel_width( midbin );
     const double avrg_bin_width = [&](){
-      const double left_energy  = m_data->gamma_channel_lower( roi.lower_channel );
-      const double right_energy = m_data->gamma_channel_upper( roi.upper_channel );
+      const double left_energy  = roi.data->gamma_channel_lower( roi.lower_channel );
+      const double right_energy = roi.data->gamma_channel_upper( roi.upper_channel );
       return (right_energy - left_energy) / static_cast<double>( 1 + roi.upper_channel - roi.lower_channel );
     }();
 
@@ -2729,7 +2831,7 @@ struct PeakFitDiffCostFunction
       else
       {
         float lowersigma, uppersigma;
-        expected_peak_width_limits( mean, m_det_type, m_data, lowersigma, uppersigma );
+        expected_peak_width_limits( mean, m_det_type, roi.data, lowersigma, uppersigma );
         if( i == 0 )
           minsigma = lowersigma;
         if( i == (roi.peaks.size() - 1) )
@@ -3067,10 +3169,10 @@ struct PeakFitDiffCostFunction
 
 public:
   // NOTE: declaration order must match initialization dependency order.
-  //  m_rois depends on m_data, m_objective; m_external_continuum depends on m_rois;
-  //  m_fit_skew_energy_dependence depends on m_rois; m_num_parameters depends on
-  //  m_fit_skew_energy_dependence; m_thread_pool depends on m_rois.
-  const std::shared_ptr<const SpecUtils::Measurement> m_data;
+  //  m_rois depends on m_objective; m_fit_skew_energy_dependence depends on m_options and m_rois;
+  //  m_num_parameters depends on m_fit_skew_energy_dependence; m_thread_pool depends on m_rois.
+  /** The number of spectra the ROIs are from; each ROI's own spectrum is `RoiInfo::data`. */
+  const size_t m_num_spectra;
   const PeakDef::SkewType m_skew_type;
   const PeakFitUtils::CoarseResolutionType m_det_type;
   const Wt::WFlags<PeakFitLMOptions> m_options;
@@ -3104,7 +3206,6 @@ public:
   const bool m_fit_skew_energy_dependence;
   const double m_skew_anchor_lower_energy;
   const double m_skew_anchor_upper_energy;
-  const std::shared_ptr<const SpecUtils::Measurement> m_external_continuum;
   const size_t m_num_parameters;
   const size_t m_num_residuals;
 
@@ -4602,7 +4703,8 @@ static vector<PeakDef> polish_rois_at_joint_skew( const vector<PeakDef> &joint_p
                                                   const shared_ptr<const SpecUtils::Measurement> &data,
                                                   const PeakFitUtils::CoarseResolutionType res_type,
                                                   const Wt::WFlags<PeakFitLMOptions> fit_options,
-                                                  const PeakDef::SkewType skew_type )
+                                                  const PeakDef::SkewType skew_type,
+                                                  const std::shared_ptr<const std::atomic<bool>> &cancel_flag )
 {
   const size_t num_skew_pars = PeakDef::num_skew_parameters( skew_type );
 
@@ -4635,7 +4737,7 @@ static vector<PeakDef> polish_rois_at_joint_skew( const vector<PeakDef> &joint_p
     {
       bool by_likelihood = false;
       if( all_skew_type )
-        refit = fit_peaks_in_roi_imp( held, data, res_type, fit_options, nullptr, by_likelihood );
+        refit = fit_peaks_in_roi_imp( held, data, res_type, fit_options, cancel_flag, by_likelihood );
 
       const shared_ptr<const PeakContinuum> &cont = cont_peaks.first;
       const int lower_channel = static_cast<int>( data->find_gamma_channel( cont->lowerEnergy() ) );
@@ -4682,6 +4784,412 @@ static vector<PeakDef> polish_rois_at_joint_skew( const vector<PeakDef> &joint_p
 }//polish_rois_at_joint_skew(...)
 
 
+/** The significance tests and cleanup of a fit's peaks, for one spectrum: removes peaks that are not
+ significant (per `stat_threshold` and `hypothesis_threshold`), and the worse of any two peaks within one
+ sigma of each other, then adds back the data-defined peaks.  `joint_skew_fit` is if the peaks are from a
+ fit with shared skew (Mode B of `fit_peaks_in_spectrum_LM(...)`), whose ROIs fit by likelihood are not
+ reported, so are taken to be the sparse ones; otherwise `likelihood_rois` are the ROIs fit by likelihood.
+
+ Sets `results.status` Success, `results.fit_peaks`, and adds to `results.lost_peaks`.
+ */
+static void finalize_spectrum_fit( vector<shared_ptr<const PeakDef>> all_fit_peaks,
+                                   const vector<shared_ptr<const PeakDef>> &datadefined_peaks,
+                                   const shared_ptr<const SpecUtils::Measurement> &data,
+                                   const double stat_threshold,
+                                   const double hypothesis_threshold,
+                                   const bool joint_skew_fit,
+                                   const set<const PeakContinuum *> &likelihood_rois,
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options,
+                                   const std::function<bool(const PeakDef &,const PeakDef &)> &may_remove_close_pair,
+                                   FitPeaksResults &results )
+{
+  // Apply significance testing - mirroring fit_peaks_LM
+  vector<double> num_sigmas = (stat_threshold > 0.0)
+       ? detection_significances( all_fit_peaks, data, fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
+       : vector<double>( all_fit_peaks.size(), 999.0 );
+  for( size_t i = 0; i < all_fit_peaks.size(); )
+  {
+    const shared_ptr<const PeakDef> &peak = all_fit_peaks[i];
+
+    // Dont remove peaks whose amplitudes we arent fitting
+    if( !peak->fitFor( PeakDef::GaussAmplitude ) )
+    {
+      ++i;
+      continue;
+    }
+
+    const double num_sigma = num_sigmas[i];
+    const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
+
+    // A joint (Mode B) fit does not report which ROIs its IRLS refit; they are the sparse ones.
+    bool by_likelihood = likelihood_rois.count( peak->continuum().get() ) > 0;
+    if( joint_skew_fit && (hypothesis_threshold > 0.0)
+       && !fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
+    {
+      vector<shared_ptr<const PeakDef>> roi_peaks;
+      for( const shared_ptr<const PeakDef> &p : all_fit_peaks )
+      {
+        if( p->continuum() == peak->continuum() )
+          roi_peaks.push_back( p );
+      }
+      by_likelihood = is_sparse_roi( roi_peaks, data );
+    }//if( Mode B )
+
+    const double dummy_stat_thresh = 0.0;
+    const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data, by_likelihood );
+
+    if( !is_sig || !significant )
+    {
+      results.lost_peaks.push_back( peak );
+      all_fit_peaks.erase( all_fit_peaks.begin() + i );
+      num_sigmas.erase( num_sigmas.begin() + i );
+    }
+    else
+    {
+      ++i;
+    }
+  }//for( significance testing )
+
+  // Remove peaks whose means are within 1 sigma of each other
+  std::sort( begin(all_fit_peaks), end(all_fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+  for( size_t i = 1; i < all_fit_peaks.size(); ++i )
+  {
+    const shared_ptr<const PeakDef> &this_peak = all_fit_peaks[i - 1];
+    const shared_ptr<const PeakDef> &next_peak = all_fit_peaks[i];
+
+    if( !this_peak->fitFor( PeakDef::GaussAmplitude ) )
+      continue;
+
+    const double min_sigma = std::min( this_peak->sigma(), next_peak->sigma() );
+    const double mean_diff = next_peak->mean() - this_peak->mean();
+
+    if( ((mean_diff / min_sigma) < 1.0)
+        && (!may_remove_close_pair || may_remove_close_pair(*this_peak, *next_peak)) )
+    {
+      // Remove the peak with the worse chi2
+      if( this_peak->chi2dof() > next_peak->chi2dof() )
+      {
+        results.lost_peaks.push_back( this_peak );
+        all_fit_peaks.erase( all_fit_peaks.begin() + static_cast<ptrdiff_t>(i - 1) );
+      }
+      else
+      {
+        results.lost_peaks.push_back( next_peak );
+        all_fit_peaks.erase( all_fit_peaks.begin() + static_cast<ptrdiff_t>(i) );
+      }
+      i = (i > 1) ? (i - 1) : 0;
+    }
+  }//for( removing duplicate peaks )
+
+  // Add back data-defined peaks
+  if( !datadefined_peaks.empty() )
+  {
+    all_fit_peaks.insert( end(all_fit_peaks), begin(datadefined_peaks), end(datadefined_peaks) );
+    std::sort( begin(all_fit_peaks), end(all_fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+  }
+
+  results.status = FitPeaksResults::FitPeaksResultsStatus::Success;
+  results.fit_peaks = std::move( all_fit_peaks );
+}//finalize_spectrum_fit(...)
+
+
+std::optional<double> FitPeaksResults::SkewRelation::value_at( const size_t index, const double energy ) const
+{
+  if( index >= sm_max_num_skew_pars )
+    return std::nullopt;
+
+  if( energy_dependent_skew_pars[index].has_value() )
+  {
+    const pair<double,double> &lower_upper = energy_dependent_skew_pars[index].value();
+    if( !energy_range.has_value() || !(energy_range->second > energy_range->first) )
+      return lower_upper.first;
+
+    // Written so the anchors give back exactly the fit values
+    const double frac = (energy - energy_range->first) / (energy_range->second - energy_range->first);
+    return (1.0 - frac)*lower_upper.first + frac*lower_upper.second;
+  }//if( energy dependent )
+
+  if( non_energy_dependent_skew_pars[index].has_value() )
+    return non_energy_dependent_skew_pars[index]->first;
+
+  return std::nullopt;
+}//FitPeaksResults::SkewRelation::value_at(...)
+
+
+MultiSpectrumFitResults fit_peaks_in_spectra_LM( const vector<SpectrumPeaks> &spectra,
+                                                 const double stat_threshold,
+                                                 const double hypothesis_threshold,
+                                                 const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
+                                                 const PeakDef::SkewType target_skew,
+                                                 const Wt::WFlags<PeakFitLMOptions> fit_options,
+                                                 const std::function<bool(const PeakDef &,const PeakDef &)>
+                                                   &may_remove_close_pair,
+                                                 const std::shared_ptr<const std::atomic<bool>> &cancel_flag ) noexcept
+{
+  MultiSpectrumFitResults results;
+
+  try
+  {
+    const size_t num_spectra = spectra.size();
+    if( !num_spectra )
+      throw runtime_error( "no spectra." );
+
+    // Separate each spectrum's data-defined (non-Gaussian) peaks from its Gaussian peaks, which are
+    //  deep copied (with new continua) so we dont modify the inputs, and no two spectra share a ROI.
+    vector<vector<shared_ptr<const PeakDef>>> gauss_peaks( num_spectra ), datadefined_peaks( num_spectra );
+    size_t num_gauss_peaks = 0;
+    for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+    {
+      const shared_ptr<const SpecUtils::Measurement> &data = spectra[spec_index].data;
+      if( !data || !data->gamma_counts() || data->gamma_counts()->empty() )
+        throw runtime_error( "invalid data for spectrum " + std::to_string(spec_index) + "." );
+
+      for( const shared_ptr<const PeakDef> &p : spectra[spec_index].peaks )
+      {
+        if( p->gausPeak() )
+          gauss_peaks[spec_index].push_back( p );
+        else
+          datadefined_peaks[spec_index].push_back( p );
+      }
+
+      local_unique_copy_continuum( gauss_peaks[spec_index] );
+      num_gauss_peaks += gauss_peaks[spec_index].size();
+    }//for( loop over spectra )
+
+    results.spectra.resize( num_spectra );
+
+    if( !num_gauss_peaks )
+    {
+      // No Gaussian peaks to fit - just return data-defined peaks as-is
+      for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+      {
+        results.spectra[spec_index].status = FitPeaksResults::FitPeaksResultsStatus::Success;
+        results.spectra[spec_index].fit_peaks = datadefined_peaks[spec_index];
+      }
+      results.status = FitPeaksResults::FitPeaksResultsStatus::Success;
+      return results;
+    }//if( !num_gauss_peaks )
+
+    // Determine detector resolution type, from the first spectrum with peaks to fit
+    PeakFitUtils::CoarseResolutionType res_type = PeakFitUtils::CoarseResolutionType::Unknown;
+    if( resolution_type.has_value() )
+    {
+      res_type = *resolution_type;
+    }else
+    {
+      for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+      {
+        if( !gauss_peaks[spec_index].empty() )
+        {
+          res_type = PeakFitUtils::coarse_resolution_from_peaks( gauss_peaks[spec_index], spectra[spec_index].data );
+          break;
+        }
+      }
+    }//if( resolution_type.has_value() ) / else
+
+    // Set skew type on all peaks (with VoigtPlusBortel exception)
+    vector<SpectrumPeaks> to_fit( num_spectra );
+    for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+    {
+      to_fit[spec_index].data = spectra[spec_index].data;
+
+      for( const shared_ptr<const PeakDef> &p : gauss_peaks[spec_index] )
+      {
+        shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *p );
+
+        const bool keep_voigt = (newpeak->skewType() == PeakDef::SkewType::VoigtPlusBortel)
+          && ((target_skew == PeakDef::SkewType::Bortel) || (target_skew == PeakDef::SkewType::GaussPlusBortel));
+
+        if( !keep_voigt && (newpeak->skewType() != target_skew) )
+        {
+          newpeak->setSkewType( target_skew );
+
+          // Set default starting values, and fit the skew parameters that are fit by default
+          const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
+          for( size_t i = 0; i < num_skew_pars; ++i )
+          {
+            const PeakDef::CoefficientType ct
+              = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+            double lower, upper, start, dx;
+            PeakDef::skew_parameter_range( target_skew, ct, lower, upper, start, dx );
+            newpeak->set_coefficient( start, ct );
+            newpeak->setFitFor( ct, PeakDef::skew_parameter_fit_by_default( target_skew, ct ) );
+          }
+        }
+        // else if peak already had the target skew type, preserve its fitFor settings
+
+        to_fit[spec_index].peaks.push_back( newpeak );
+      }//for( each gauss peak )
+    }//for( loop over spectra )
+
+    // The options actually fit with, for all the spectra - so the per-ROI polish below fits each ROI
+    //  the same way the joint fit did.
+    const Wt::WFlags<PeakFitLMOptions> options = effective_options( fit_options, to_fit );
+
+    const auto was_cancelled = [&cancel_flag]() -> bool {
+      return cancel_flag && cancel_flag->load( std::memory_order_relaxed );
+    };
+
+    vector<vector<PeakDef>> joint_peaks;
+    FitPeaksResults::SkewRelation skew_rel;
+    bool have_skew_relation = false;
+
+    {// Begin joint fit
+      // PeakFitDiffCostFunction handles VoigtPlusBortel exception and multi-ROI grouping internally
+      PeakFitDiffCostFunction cost_functor( to_fit, target_skew, res_type, options );
+
+      CeresFitResult ceres_result = run_ceres_fit( cost_functor, num_gauss_peaks, cancel_flag );
+      if( ceres_result.cancelled )
+        throw runtime_error( "fit cancelled." );
+
+      joint_peaks = cost_functor.peaks_by_spectrum( std::move(ceres_result.final_peaks) );
+
+      // The joint fit can leave a ROI stuck in a poor state - e.g., one peak of a close doublet slid
+      //  toward its neighbor while the shared skew was far from its final value (AEGIS Eu-152 45/46 keV
+      //  doublet: chi2 41, against 18.7 at the same skew).  So refit each ROI with the joint skew held,
+      //  and if any improved, run the joint fit again from there, keeping whichever is better.
+      if( (cost_functor.m_rois.size() > 1) && (PeakDef::num_skew_parameters( target_skew ) > 0)
+         && !options.test( PeakFitLMOptions::IndependentSkewValues ) )
+      {
+        try
+        {
+          bool any_polished = false;
+          vector<vector<PeakDef>> polished( num_spectra );
+          for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+          {
+            if( !joint_peaks[spec_index].empty() )
+              polished[spec_index] = polish_rois_at_joint_skew( joint_peaks[spec_index], spectra[spec_index].data,
+                                                               res_type, options, target_skew, cancel_flag );
+            if( polished[spec_index].empty() )
+              polished[spec_index] = joint_peaks[spec_index];
+            else
+              any_polished = true;
+          }//for( loop over spectra )
+
+          if( any_polished && !was_cancelled() )
+          {
+            vector<SpectrumPeaks> polished_ptrs( num_spectra );
+            for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+            {
+              polished_ptrs[spec_index].data = spectra[spec_index].data;
+              for( const PeakDef &p : polished[spec_index] )
+                polished_ptrs[spec_index].peaks.push_back( make_shared<PeakDef>( p ) );
+            }
+
+            PeakFitDiffCostFunction refit_functor( polished_ptrs, target_skew, res_type, options );
+            const size_t num_skew_block = cost_functor.skew_parameter_count();
+            assert( refit_functor.skew_parameter_count() == num_skew_block );
+            refit_functor.m_skew_block_start.assign( begin(ceres_result.parameters),
+                                                     begin(ceres_result.parameters) + num_skew_block );
+
+            CeresFitResult refit_result = run_ceres_fit( refit_functor, num_gauss_peaks, cancel_flag );
+            if( refit_result.cancelled )
+              throw runtime_error( "fit cancelled." );
+
+            const size_t num_refit_peaks = refit_result.final_peaks.size();
+            vector<vector<PeakDef>> refit_peaks = refit_functor.peaks_by_spectrum( std::move(refit_result.final_peaks) );
+
+            double refit_chi2 = 0.0, polished_chi2 = 0.0;
+            for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+            {
+              vector<shared_ptr<const PeakDef>> refit_spec_ptrs;
+              for( const PeakDef &p : refit_peaks[spec_index] )
+                refit_spec_ptrs.push_back( make_shared<PeakDef>( p ) );
+
+              if( !refit_spec_ptrs.empty() )
+                refit_chi2 += chi2_for_region( refit_spec_ptrs, spectra[spec_index].data, 0, 0 );
+              if( !polished_ptrs[spec_index].peaks.empty() )
+                polished_chi2 += chi2_for_region( polished_ptrs[spec_index].peaks, spectra[spec_index].data, 0, 0 );
+            }//for( loop over spectra )
+
+            if( (num_refit_peaks == num_gauss_peaks) && (refit_chi2 <= polished_chi2) )
+            {
+              joint_peaks = std::move( refit_peaks );
+              ceres_result = std::move( refit_result );
+            }else
+            {
+              // The skew relation (ceres_result.parameters) is unchanged by the polish
+              joint_peaks = std::move( polished );
+            }
+          }//if( any_polished )
+        }catch( std::exception &e )
+        {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+          cerr << "fit_peaks_in_spectra_LM: per-ROI polish failed: " << e.what() << endl;
+#endif
+        }
+      }//if( a shared skew over multiple ROIs )
+
+      if( was_cancelled() )
+        throw runtime_error( "fit cancelled." );
+
+      // Extract SkewRelation if applicable
+      const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
+      have_skew_relation = (cost_functor.m_rois.size() > 1)
+        && !options.test( PeakFitLMOptions::IndependentSkewValues )
+        && (num_skew_pars > 0);
+
+      if( have_skew_relation )
+      {
+        skew_rel.skew_type = target_skew;
+        skew_rel.energy_range = std::make_pair( cost_functor.m_skew_anchor_lower_energy,
+                                                cost_functor.m_skew_anchor_upper_energy );
+
+        size_t upper_offset = num_skew_pars;
+        for( size_t i = 0; i < num_skew_pars; ++i )
+        {
+          const PeakDef::CoefficientType ct
+            = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+
+          if( PeakDef::is_energy_dependent( target_skew, ct ) && cost_functor.m_fit_skew_energy_dependence )
+          {
+            skew_rel.energy_dependent_skew_pars[i]
+              = std::make_pair( ceres_result.parameters[i], ceres_result.parameters[upper_offset] );
+            upper_offset += 1;
+          }
+          else
+          {
+            skew_rel.non_energy_dependent_skew_pars[i]
+              = std::make_pair( ceres_result.parameters[i], ceres_result.uncertainties[i] );
+          }
+        }//for( each skew parameter )
+      }//if( have_skew_relation )
+    }// End joint fit
+
+    // Significance tests, and cleanup, for each spectrum on its own
+    const set<const PeakContinuum *> likelihood_rois;  // Not reported by a joint fit
+    for( size_t spec_index = 0; spec_index < num_spectra; ++spec_index )
+    {
+      vector<shared_ptr<const PeakDef>> all_fit_peaks;
+      all_fit_peaks.reserve( joint_peaks[spec_index].size() );
+      for( PeakDef &peak : joint_peaks[spec_index] )
+        all_fit_peaks.push_back( make_shared<PeakDef>( std::move(peak) ) );
+
+      finalize_spectrum_fit( std::move(all_fit_peaks), datadefined_peaks[spec_index], spectra[spec_index].data,
+                             stat_threshold, hypothesis_threshold, true, likelihood_rois, fit_options,
+                             may_remove_close_pair, results.spectra[spec_index] );
+    }//for( loop over spectra )
+
+    if( have_skew_relation )
+      results.skew_relation = skew_rel;
+    results.status = FitPeaksResults::FitPeaksResultsStatus::Success;
+  }catch( std::exception &e )
+  {
+    results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+    results.error_message = string( "fit_peaks_in_spectra_LM: " ) + e.what();
+    results.spectra.clear();
+    results.skew_relation.reset();
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO || !defined(NDEBUG) )
+    cerr << results.error_message << endl;
+#endif
+  }//try / catch
+
+  return results;
+}//fit_peaks_in_spectra_LM(...)
+
+
 FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>> input_peaks,
                                           shared_ptr<const SpecUtils::Measurement> data,
                                           const double stat_threshold,
@@ -4709,6 +5217,28 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
       results.error_message = "fit_peaks_in_spectrum_LM: no input peaks.";
       return results;
     }
+
+    if( skew_type.has_value() )
+    {
+      // Mode B: skew_type is specified - fit all ROIs simultaneously with shared/related skew; this is
+      //  the joint fit over spectra, for a single spectrum.
+      const MultiSpectrumFitResults joint = fit_peaks_in_spectra_LM( { SpectrumPeaks{ data, input_peaks } },
+                                  stat_threshold, hypothesis_threshold, resolution_type, *skew_type,
+                                  fit_options, may_remove_close_pair );
+      if( joint.status != FitPeaksResults::FitPeaksResultsStatus::Success )
+      {
+        results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+        results.error_message = joint.error_message;
+        return results;
+      }
+
+      assert( joint.spectra.size() == 1 );
+      results = joint.spectra.at( 0 );
+      results.skew_relation = joint.skew_relation;
+      return results;
+    }//if( skew_type.has_value() )
+
+    // Mode A: skew_type is nullopt - fit each ROI independently
 
     // Separate data-defined (non-Gaussian) peaks from Gaussian peaks
     vector<shared_ptr<const PeakDef>> gauss_peaks;
@@ -4744,268 +5274,35 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
     // The ROIs fit by Poisson likelihood, whose peaks' significance tests use deviances.
     set<const PeakContinuum *> likelihood_rois;
 
-    if( !skew_type.has_value() )
+    //  Group peaks by shared continuum
+    map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> cont_to_peaks;
+    for( const shared_ptr<const PeakDef> &p : gauss_peaks )
+      cont_to_peaks[p->continuum()].push_back( p );
+
+    for( const auto &kv : cont_to_peaks )
     {
-      // Mode A: skew_type is nullopt - fit each ROI independently
-      //  Group peaks by shared continuum
-      map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> cont_to_peaks;
-      for( const shared_ptr<const PeakDef> &p : gauss_peaks )
-        cont_to_peaks[p->continuum()].push_back( p );
-
-      for( const auto &kv : cont_to_peaks )
-      {
-        try
-        {
-          bool by_likelihood = false;
-          const vector<shared_ptr<const PeakDef>> roi_result
-            = fit_peaks_in_roi_imp( kv.second, data, res_type, fit_options, nullptr, by_likelihood );
-          if( by_likelihood && !roi_result.empty() )
-            likelihood_rois.insert( roi_result.front()->continuum().get() );
-          all_fit_peaks.insert( end(all_fit_peaks), begin(roi_result), end(roi_result) );
-        }
-        catch( std::exception &e )
-        {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-          cerr << "fit_peaks_in_spectrum_LM: ROI fit failed: " << e.what() << endl;
-#endif
-          // If a ROI fails, keep the original peaks for that ROI
-          all_fit_peaks.insert( end(all_fit_peaks), begin(kv.second), end(kv.second) );
-        }
-      }//for( each ROI group )
-    }
-    else
-    {
-      // Mode B: skew_type is specified - fit all ROIs simultaneously with shared/related skew
-      const PeakDef::SkewType target_skew = *skew_type;
-
-      // Set skew type on all peaks (with VoigtPlusBortel exception)
-      vector<shared_ptr<const PeakDef>> peaks_to_fit;
-      peaks_to_fit.reserve( gauss_peaks.size() );
-
-      for( const shared_ptr<const PeakDef> &p : gauss_peaks )
-      {
-        shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *p );
-
-        const bool keep_voigt = (newpeak->skewType() == PeakDef::SkewType::VoigtPlusBortel)
-          && ((target_skew == PeakDef::SkewType::Bortel) || (target_skew == PeakDef::SkewType::GaussPlusBortel));
-
-        if( !keep_voigt && (newpeak->skewType() != target_skew) )
-        {
-          newpeak->setSkewType( target_skew );
-
-          // Set default starting values, and fit the skew parameters that are fit by default
-          const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
-          for( size_t i = 0; i < num_skew_pars; ++i )
-          {
-            const PeakDef::CoefficientType ct
-              = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
-            double lower, upper, start, dx;
-            PeakDef::skew_parameter_range( target_skew, ct, lower, upper, start, dx );
-            newpeak->set_coefficient( start, ct );
-            newpeak->setFitFor( ct, PeakDef::skew_parameter_fit_by_default( target_skew, ct ) );
-          }
-        }
-        // else if peak already had the target skew type, preserve its fitFor settings
-
-        peaks_to_fit.push_back( newpeak );
-      }//for( each gauss peak )
-
       try
       {
-        // PeakFitDiffCostFunction handles VoigtPlusBortel exception and multi-ROI grouping internally
-        PeakFitDiffCostFunction cost_functor( data, peaks_to_fit, 0, 0, 0,
-                                              target_skew, res_type, fit_options );
-
-        CeresFitResult ceres_result = run_ceres_fit( cost_functor, peaks_to_fit.size() );
-
-        // The joint fit can leave a ROI stuck in a poor state - e.g., one peak of a close doublet slid
-        //  toward its neighbor while the shared skew was far from its final value (AEGIS Eu-152 45/46 keV
-        //  doublet: chi2 41, against 18.7 at the same skew).  So refit each ROI with the joint skew held,
-        //  and if any improved, run the joint fit again from there, keeping whichever is better.
-        if( (cost_functor.m_rois.size() > 1) && (PeakDef::num_skew_parameters( target_skew ) > 0)
-           && !fit_options.test( PeakFitLMOptions::IndependentSkewValues ) )
-        {
-          try
-          {
-            vector<PeakDef> polished = polish_rois_at_joint_skew( ceres_result.final_peaks, data,
-                                                                  res_type, fit_options, target_skew );
-            if( !polished.empty() )
-            {
-              vector<shared_ptr<const PeakDef>> polished_ptrs;
-              for( const PeakDef &p : polished )
-                polished_ptrs.push_back( make_shared<PeakDef>( p ) );
-
-              PeakFitDiffCostFunction refit_functor( data, polished_ptrs, 0, 0, 0,
-                                                     target_skew, res_type, fit_options );
-              const size_t num_skew_block = cost_functor.skew_parameter_count();
-              assert( refit_functor.skew_parameter_count() == num_skew_block );
-              refit_functor.m_skew_block_start.assign( begin(ceres_result.parameters),
-                                                       begin(ceres_result.parameters) + num_skew_block );
-
-              CeresFitResult refit_result = run_ceres_fit( refit_functor, polished_ptrs.size() );
-
-              vector<shared_ptr<const PeakDef>> refit_ptrs;
-              for( const PeakDef &p : refit_result.final_peaks )
-                refit_ptrs.push_back( make_shared<PeakDef>( p ) );
-
-              if( (refit_result.final_peaks.size() == polished.size())
-                 && (chi2_for_region( refit_ptrs, data, 0, 0 ) <= chi2_for_region( polished_ptrs, data, 0, 0 )) )
-              {
-                ceres_result = std::move( refit_result );
-              }else
-              {
-                // The skew relation (ceres_result.parameters) is unchanged by the polish
-                ceres_result.final_peaks = std::move( polished );
-              }
-            }//if( !polished.empty() )
-          }catch( std::exception &e )
-          {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-            cerr << "fit_peaks_in_spectrum_LM: per-ROI polish failed: " << e.what() << endl;
-#endif
-          }
-        }//if( a shared skew over multiple ROIs )
-
-        // Convert to shared_ptr
-        all_fit_peaks.reserve( ceres_result.final_peaks.size() );
-        for( PeakDef &peak : ceres_result.final_peaks )
-          all_fit_peaks.push_back( make_shared<PeakDef>( std::move(peak) ) );
-
-        // Extract SkewRelation if applicable
-        const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
-        const bool should_have_skew_relation = (cost_functor.m_rois.size() > 1)
-          && !fit_options.test( PeakFitLMOptions::IndependentSkewValues )
-          && (num_skew_pars > 0);
-
-        if( should_have_skew_relation )
-        {
-          FitPeaksResults::SkewRelation skew_rel;
-          skew_rel.skew_type = target_skew;
-          skew_rel.energy_range = std::make_pair( cost_functor.m_skew_anchor_lower_energy,
-                                                   cost_functor.m_skew_anchor_upper_energy );
-
-          size_t upper_offset = num_skew_pars;
-          for( size_t i = 0; i < num_skew_pars; ++i )
-          {
-            const PeakDef::CoefficientType ct
-              = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
-
-            if( PeakDef::is_energy_dependent( target_skew, ct ) && cost_functor.m_fit_skew_energy_dependence )
-            {
-              skew_rel.energy_dependent_skew_pars[i]
-                = std::make_pair( ceres_result.parameters[i], ceres_result.parameters[upper_offset] );
-              upper_offset += 1;
-            }
-            else
-            {
-              skew_rel.non_energy_dependent_skew_pars[i]
-                = std::make_pair( ceres_result.parameters[i], ceres_result.uncertainties[i] );
-            }
-          }//for( each skew parameter )
-
-          results.skew_relation = skew_rel;
-        }//if( should_have_skew_relation )
+        bool by_likelihood = false;
+        const vector<shared_ptr<const PeakDef>> roi_result
+          = fit_peaks_in_roi_imp( kv.second, data, res_type, fit_options, nullptr, by_likelihood );
+        if( by_likelihood && !roi_result.empty() )
+          likelihood_rois.insert( roi_result.front()->continuum().get() );
+        all_fit_peaks.insert( end(all_fit_peaks), begin(roi_result), end(roi_result) );
       }
       catch( std::exception &e )
       {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-        cerr << "fit_peaks_in_spectrum_LM: multi-ROI fit failed: " << e.what() << endl;
+        cerr << "fit_peaks_in_spectrum_LM: ROI fit failed: " << e.what() << endl;
 #endif
-        results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
-        results.error_message = string( "fit_peaks_in_spectrum_LM: " ) + e.what();
-        return results;
+        // If a ROI fails, keep the original peaks for that ROI
+        all_fit_peaks.insert( end(all_fit_peaks), begin(kv.second), end(kv.second) );
       }
-    }//if( !skew_type.has_value() ) / else
+    }//for( each ROI group )
 
-
-    // Apply significance testing - mirroring fit_peaks_LM
-    vector<double> num_sigmas = (stat_threshold > 0.0)
-         ? detection_significances( all_fit_peaks, data, fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
-         : vector<double>( all_fit_peaks.size(), 999.0 );
-    for( size_t i = 0; i < all_fit_peaks.size(); )
-    {
-      const shared_ptr<const PeakDef> &peak = all_fit_peaks[i];
-
-      // Dont remove peaks whose amplitudes we arent fitting
-      if( !peak->fitFor( PeakDef::GaussAmplitude ) )
-      {
-        ++i;
-        continue;
-      }
-
-      const double num_sigma = num_sigmas[i];
-      const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
-
-      // A joint (Mode B) fit does not report which ROIs its IRLS refit; they are the sparse ones.
-      bool by_likelihood = likelihood_rois.count( peak->continuum().get() ) > 0;
-      if( skew_type.has_value() && (hypothesis_threshold > 0.0)
-         && !fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
-      {
-        vector<shared_ptr<const PeakDef>> roi_peaks;
-        for( const shared_ptr<const PeakDef> &p : all_fit_peaks )
-        {
-          if( p->continuum() == peak->continuum() )
-            roi_peaks.push_back( p );
-        }
-        by_likelihood = is_sparse_roi( roi_peaks, data );
-      }//if( Mode B )
-
-      const double dummy_stat_thresh = 0.0;
-      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data, by_likelihood );
-
-      if( !is_sig || !significant )
-      {
-        results.lost_peaks.push_back( peak );
-        all_fit_peaks.erase( all_fit_peaks.begin() + i );
-        num_sigmas.erase( num_sigmas.begin() + i );
-      }
-      else
-      {
-        ++i;
-      }
-    }//for( significance testing )
-
-    // Remove peaks whose means are within 1 sigma of each other
-    std::sort( begin(all_fit_peaks), end(all_fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
-
-    for( size_t i = 1; i < all_fit_peaks.size(); ++i )
-    {
-      const shared_ptr<const PeakDef> &this_peak = all_fit_peaks[i - 1];
-      const shared_ptr<const PeakDef> &next_peak = all_fit_peaks[i];
-
-      if( !this_peak->fitFor( PeakDef::GaussAmplitude ) )
-        continue;
-
-      const double min_sigma = std::min( this_peak->sigma(), next_peak->sigma() );
-      const double mean_diff = next_peak->mean() - this_peak->mean();
-
-      if( ((mean_diff / min_sigma) < 1.0)
-          && (!may_remove_close_pair || may_remove_close_pair(*this_peak, *next_peak)) )
-      {
-        // Remove the peak with the worse chi2
-        if( this_peak->chi2dof() > next_peak->chi2dof() )
-        {
-          results.lost_peaks.push_back( this_peak );
-          all_fit_peaks.erase( all_fit_peaks.begin() + static_cast<ptrdiff_t>(i - 1) );
-        }
-        else
-        {
-          results.lost_peaks.push_back( next_peak );
-          all_fit_peaks.erase( all_fit_peaks.begin() + static_cast<ptrdiff_t>(i) );
-        }
-        i = (i > 1) ? (i - 1) : 0;
-      }
-    }//for( removing duplicate peaks )
-
-    // Add back data-defined peaks
-    if( !datadefined_peaks.empty() )
-    {
-      all_fit_peaks.insert( end(all_fit_peaks), begin(datadefined_peaks), end(datadefined_peaks) );
-      std::sort( begin(all_fit_peaks), end(all_fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
-    }
-
-    results.status = FitPeaksResults::FitPeaksResultsStatus::Success;
-    results.fit_peaks = std::move( all_fit_peaks );
+    finalize_spectrum_fit( std::move(all_fit_peaks), datadefined_peaks, data, stat_threshold,
+                           hypothesis_threshold, false, likelihood_rois, fit_options,
+                           may_remove_close_pair, results );
   }
   catch( std::exception &e )
   {

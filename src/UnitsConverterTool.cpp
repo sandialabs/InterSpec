@@ -486,7 +486,6 @@ UnitsConverterTool::UnitsConverterTool()
   m_input = layout->addWidget( std::make_unique<WLineEdit>(), 1, 1 );
 
   m_input->setAutoComplete( false );
-  m_input->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_input->setAttributeValue( "autocorrect", "off" );
   m_input->setAttributeValue( "spellcheck", "off" );
@@ -539,7 +538,6 @@ UnitsConverterTool::UnitsConverterTool()
 
   m_output = layout->addWidget( std::make_unique<WLineEdit>(), 2, 1 );
 
-  m_output->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_output->setAttributeValue( "autocorrect", "off" );
   m_output->setAttributeValue( "spellcheck", "off" );

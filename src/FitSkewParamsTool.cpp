@@ -23,9 +23,12 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
+#include <cmath>
 #include <memory>
 #include <cassert>
+#include <algorithm>
 #include <functional>
 
 #include <boost/asio/io_service.hpp>
@@ -57,6 +60,7 @@
 #include "InterSpec/SkewParamsGrid.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/FitSkewParamsTool.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
@@ -64,16 +68,76 @@ using namespace std;
 using namespace Wt;
 
 
-FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer )
+namespace
+{
+  /** Refits each ROI of `peaks` with the skew held at its current values; returns, for each input peak
+   (in the same order), its refit peak - or nullptr where its ROI could not be refit.
+   */
+  vector<shared_ptr<const PeakDef>> refit_peaks_with_fixed_skew( const shared_ptr<const SpecUtils::Measurement> &data,
+                                                                 const shared_ptr<const DetectorPeakResponse> &drf,
+                                                                 const vector<shared_ptr<const PeakDef>> &peaks,
+                                                                 const PeakFitUtils::CoarseResolutionType det_type )
+  {
+    // Copies of the peaks, with the skew not fit, grouped by ROI (as indices into `peaks`)
+    vector<shared_ptr<const PeakDef>> fixed_skew( peaks.size() );
+    map<shared_ptr<const PeakContinuum>, vector<size_t>> roi_indices;
+    for( size_t i = 0; i < peaks.size(); ++i )
+    {
+      const shared_ptr<PeakDef> peak = make_shared<PeakDef>( *peaks[i] );
+      for( size_t k = 0; k < PeakDef::num_skew_parameters( peak->skewType() ); ++k )
+        peak->setFitFor( PeakDef::CoefficientType( PeakDef::SkewPar0 + k ), false );
+      fixed_skew[i] = peak;
+      roi_indices[peak->continuum()].push_back( i );
+    }//for( size_t i = 0; i < peaks.size(); ++i )
+
+    vector<shared_ptr<const PeakDef>> answer( peaks.size() );
+    if( !data )
+      return answer;
+
+    for( pair<const shared_ptr<const PeakContinuum>, vector<size_t>> &roi : roi_indices )
+    {
+      vector<size_t> &indices = roi.second;
+      std::sort( begin(indices), end(indices), [&fixed_skew]( const size_t lhs, const size_t rhs ){
+        return fixed_skew[lhs]->mean() < fixed_skew[rhs]->mean();
+      } );
+
+      vector<shared_ptr<const PeakDef>> roi_peaks;
+      for( const size_t index : indices )
+        roi_peaks.push_back( fixed_skew[index] );
+
+      vector<shared_ptr<const PeakDef>> refit
+        = refitPeaksThatShareROI( data, drf, roi_peaks, det_type, PeakFitLM::SmallRefinementOnly );
+      if( refit.size() != roi_peaks.size() )
+        continue;
+
+      std::sort( begin(refit), end(refit), &PeakDef::lessThanByMeanShrdPtr );
+      for( size_t i = 0; i < indices.size(); ++i )
+        answer[indices[i]] = refit[i];
+    }//for( loop over ROIs )
+
+    return answer;
+  }//refit_peaks_with_fixed_skew(...)
+}//namespace
+
+
+FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer, std::vector<FitSkewSpectrumInput> drfSpectra )
   : WContainerWidget(),
     m_viewer( viewer ),
+    m_drfInputs( std::move(drfSpectra) ),
+    m_currentSpectrum( 0 ),
+    m_anchorLowerEnergy( 0.0 ),
+    m_anchorUpperEnergy( 0.0 ),
     m_chart( nullptr ),
     m_peakModel( nullptr ),
+    m_spectrumCombo( nullptr ),
+    m_onlyCharPeaksCb( nullptr ),
+    m_onlyDisplayedCb( nullptr ),
     m_skewTypeCombo( nullptr ),
     m_paramsGrid( nullptr ),
     m_updatePeaksCb( nullptr ),
     m_fitBtn( nullptr ),
     m_statusText( nullptr ),
+    m_descText( nullptr ),
     m_isCalculating( false )
 {
   assert( m_viewer );
@@ -104,6 +168,18 @@ bool FitSkewParamsTool::canAccept() const
 }
 
 
+bool FitSkewParamsTool::isDrfMode() const
+{
+  return !m_drfInputs.empty();
+}
+
+
+const std::map<std::shared_ptr<const PeakDef>,std::shared_ptr<const PeakDef>> &FitSkewParamsTool::drfPeakReplacements() const
+{
+  return m_drfPeakReplacements;
+}
+
+
 Wt::WCheckBox *FitSkewParamsTool::updatePeaksCb()
 {
   return m_updatePeaksCb;
@@ -123,18 +199,150 @@ void FitSkewParamsTool::initWidgets()
 
   wApp->useStyleSheet( "InterSpec_resources/FitSkewParamsTool.css");
 
+  // The spectra to fit across: the DRF tool's non-background spectra, or else the foreground with the
+  //  peaks detected in it.
+  // If the DRF tool has any (non-background) peaks selected to use; if not, all peaks are used.
+  bool drfAnySelected = false;
+  if( isDrfMode() )
+  {
+    for( const FitSkewSpectrumInput &input : m_drfInputs )
+      drfAnySelected = (drfAnySelected || (!input.isBackground && !input.selectedPeaks.empty()));
+    const bool anySelected = drfAnySelected;
+
+    for( size_t i = 0; i < m_drfInputs.size(); ++i )
+    {
+      const FitSkewSpectrumInput &input = m_drfInputs[i];
+      if( input.isBackground || !input.spectrum )
+        continue;
+
+      if( input.isDisplayedForeground )
+        m_currentSpectrum = m_spectra.size();
+
+      SpectrumState state;
+      state.spectrum = input.spectrum;
+      state.title = input.title;
+      state.drfInputIndex = i;
+      state.peaks = anySelected ? input.selectedPeaks : input.allPeaks;
+      m_spectra.push_back( std::move(state) );
+    }//for( loop over DRF tool spectra )
+
+    // With only background spectra there is nothing to fit across, so just use the foreground
+    if( m_spectra.empty() )
+      m_drfInputs.clear();
+  }//if( isDrfMode() )
+
+  // Get a copy of the foreground measurement
+  const shared_ptr<const SpecUtils::Measurement> foreground
+    = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground);
+  if( !isDrfMode() && foreground )
+  {
+    SpectrumState state;
+    state.spectrum = make_shared<SpecUtils::Measurement>( *foreground);
+
+    // Detect peaks
+    try
+    {
+      AnalystChecks::DetectedPeaksOptions peakOpts;
+      peakOpts.specType = SpecUtils::SpectrumType::Foreground;
+      peakOpts.nonBackgroundPeaksOnly = false;
+      const AnalystChecks::DetectedPeakStatus detected
+        = AnalystChecks::detected_peaks( peakOpts, m_viewer);
+      state.peaks = detected.peaks;
+    }catch( std::exception & )
+    {
+      // Peak detection failed; continue with empty list
+    }
+
+    m_spectra.push_back( std::move(state) );
+  }//if( !isDrfMode() && foreground )
+
+  // The skew values in the GUI (and PeakFitDetPrefs) are at the foreground's lowest and highest
+  //  energies; without a foreground, use the range of the spectra.
+  if( foreground && foreground->num_gamma_channels() )
+  {
+    m_anchorLowerEnergy = foreground->gamma_channel_lower( 0 );
+    m_anchorUpperEnergy = foreground->gamma_channel_upper( foreground->num_gamma_channels() - 1 );
+  }else
+  {
+    bool first = true;
+    for( const SpectrumState &state : m_spectra )
+    {
+      const size_t nchannel = state.spectrum ? state.spectrum->num_gamma_channels() : size_t(0);
+      if( !nchannel )
+        continue;
+      const double lower = state.spectrum->gamma_channel_lower( 0 );
+      const double upper = state.spectrum->gamma_channel_upper( nchannel - 1 );
+      m_anchorLowerEnergy = first ? lower : (std::min)( m_anchorLowerEnergy, lower );
+      m_anchorUpperEnergy = first ? upper : (std::max)( m_anchorUpperEnergy, upper );
+      first = false;
+    }
+  }//if( foreground ) / else
+  assert( m_currentSpectrum < std::max( m_spectra.size(), size_t(1) ) );
+
   // Spectrum display on top — flex: 1 fills available space
   m_chart = addNew<D3SpectrumDisplayDiv>();
   m_chart->addStyleClass( "FswChart");
   m_chart->setMinimumSize( 300, 150);
   m_chart->setCompactAxis( true);
 
-  // Controls area below the chart — flex column, centered
+  // Controls below the chart: the spectra options on the left, the skew options in the middle, and
+  //  the fit status and button on the right - stacked on narrow screens (see FitSkewParamsTool.css).
   WContainerWidget *controlsDiv = addNew<WContainerWidget>();
   controlsDiv->addStyleClass( "FswControls");
 
+  WContainerWidget *spectraOpts = controlsDiv->addNew<WContainerWidget>();
+  spectraOpts->addStyleClass( "FswSpectraOpts");
+  WContainerWidget *skewOpts = controlsDiv->addNew<WContainerWidget>();
+  skewOpts->addStyleClass( "FswSkewOpts");
+  WContainerWidget *fitOpts = controlsDiv->addNew<WContainerWidget>();
+  fitOpts->addStyleClass( "FswFitOpts");
+
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
+
+  if( isDrfMode() )
+  {
+    // Spectrum selector, and the choice of peaks and spectra to fit
+    if( m_spectra.size() > 1 )
+    {
+      WLabel *spectrumLabel = spectraOpts->addNew<WLabel>( WString::tr( "fsw-spectrum-label" ));
+      spectrumLabel->addStyleClass( "FswLabel");
+
+      m_spectrumCombo = spectraOpts->addNew<WComboBox>();
+      m_spectrumCombo->addStyleClass( "FswCombo FswSpectrumCombo");
+      spectrumLabel->setBuddy( m_spectrumCombo );
+      for( size_t i = 0; i < m_spectra.size(); ++i )
+        m_spectrumCombo->addItem( "" );
+      updateSpectrumComboText();
+      m_spectrumCombo->setCurrentIndex( static_cast<int>( m_currentSpectrum ) );
+      m_spectrumCombo->activated().connect( this, [this]( const int index ){
+        if( (index >= 0) && (static_cast<size_t>(index) < m_spectra.size()) )
+          showSpectrum( static_cast<size_t>(index) );
+        updateDescription();
+        updateFitButton();
+      } );
+    }//if( m_spectra.size() > 1 )
+
+    m_onlyCharPeaksCb = spectraOpts->addNew<WCheckBox>( WString::tr( "fsw-only-char-peaks-cb" ));
+    m_onlyCharPeaksCb->addStyleClass( "FswOptCb");
+    HelpSystem::attachToolTipOn( m_onlyCharPeaksCb, WString::tr( "fsw-only-char-peaks-tt" ), showToolTips );
+    m_onlyCharPeaksCb->setChecked( drfAnySelected );
+    m_onlyCharPeaksCb->changed().connect( this, &FitSkewParamsTool::handleOnlyCharPeaksToggled );
+
+    if( m_spectra.size() > 1 )
+    {
+      m_onlyDisplayedCb = spectraOpts->addNew<WCheckBox>( WString::tr( "fsw-only-displayed-cb" ));
+      m_onlyDisplayedCb->addStyleClass( "FswOptCb");
+      HelpSystem::attachToolTipOn( m_onlyDisplayedCb, WString::tr( "fsw-only-displayed-tt" ), showToolTips );
+      m_onlyDisplayedCb->setChecked( false );
+      m_onlyDisplayedCb->changed().connect( this, [this](){
+        updateDescription();
+        updateFitButton();
+      } );
+    }//if( m_spectra.size() > 1 )
+  }//if( isDrfMode() )
+
   // Skew type row: label + combo side by side
-  WContainerWidget *skewRow = controlsDiv->addNew<WContainerWidget>();
+  WContainerWidget *skewRow = skewOpts->addNew<WContainerWidget>();
   skewRow->addStyleClass( "FswSkewRow");
 
   WLabel *skewLabel = skewRow->addNew<WLabel>( WString::tr( "fsw-skew-type-label" ));
@@ -154,48 +362,42 @@ void FitSkewParamsTool::initWidgets()
   } );
 
   // Skew parameter rows container
-  m_paramsGrid = controlsDiv->addNew<SkewParamsGrid>( true, false );
+  m_paramsGrid = skewOpts->addNew<SkewParamsGrid>( true, false );
   m_paramsGrid->addStyleClass( "FswSkewParams");
   m_paramsGrid->userChanged().connect( this, &FitSkewParamsTool::userEditedSkewValue );
 
-  // Fit button and status on one line
-  WContainerWidget *fitRow = controlsDiv->addNew<WContainerWidget>();
-  fitRow->addStyleClass( "FswFitRow");
+  // What will be fit, and the fit status, to the left of the "Fit" button (which then stays put)
+  WContainerWidget *statusDiv = fitOpts->addNew<WContainerWidget>();
+  statusDiv->addStyleClass( "FswStatusDiv");
 
-  m_fitBtn = fitRow->addNew<WPushButton>( WString::tr( "fsw-fit-btn" ));
+  m_descText = statusDiv->addNew<WText>();
+  m_descText->addStyleClass( "FswDesc");
+
+  m_statusText = statusDiv->addNew<WText>();
+  m_statusText->addStyleClass( "FswStatus");
+
+  m_fitBtn = fitOpts->addNew<WPushButton>( WString::tr( "fsw-fit-btn" ));
   m_fitBtn->addStyleClass( "FswFitBtn");
   m_fitBtn->clicked().connect( this, &FitSkewParamsTool::doFit);
 
-  m_statusText = fitRow->addNew<WText>();
-  m_statusText->addStyleClass( "FswStatus");
-
   // "Update analysis peaks on accept" checkbox - created here but may be reparented by the window
-  m_updatePeaksCb = controlsDiv->addNew<WCheckBox>( WString::tr( "fsw-update-peaks-cb" ));
+  m_updatePeaksCb = controlsDiv->addNew<WCheckBox>( WString::tr( isDrfMode() ? "fsw-refit-drf-peaks-cb"
+                                                                             : "fsw-update-peaks-cb" ));
   m_updatePeaksCb->addStyleClass( "FswUpdatePeaksCb");
   m_updatePeaksCb->setChecked( false);
-
-  // Get a copy of the foreground measurement
-  shared_ptr<const SpecUtils::Measurement> foreground
-    = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground);
-  if( foreground )
-  {
-    m_spectrum = make_shared<SpecUtils::Measurement>( *foreground);
-    m_chart->setData( m_spectrum, false);
-  }
+  m_updatePeaksCb->changed().connect( this, &FitSkewParamsTool::updateDescription );
 
   // PeakModel for the chart: owned by this tool's `m_peakModel` (shared_ptr) and co-owned by the chart
   //  via setPeakModel().
   m_peakModel = PeakModel::create();
   m_peakModel->setNoSpecMeasBacking();
-  if( m_spectrum )
-    m_peakModel->setForeground( m_spectrum);
   m_chart->setPeakModel( m_peakModel);
 
   // Initialize from current PeakFitDetPrefs
   shared_ptr<const SpecMeas> meas
     = m_viewer->measurment( SpecUtils::SpectrumType::Foreground);
   shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-  assert( prefs);
+  assert( prefs || isDrfMode() );
 
   if( prefs )
   {
@@ -204,38 +406,17 @@ void FitSkewParamsTool::initWidgets()
       m_skewTypeCombo->setCurrentIndex( skewIdx);
   }
 
-  // Detect peaks (before building the skew rows, whose defaults depend on the peaks)
-  if( m_spectrum )
-  {
-    try
-    {
-      AnalystChecks::DetectedPeaksOptions peakOpts;
-      peakOpts.specType = SpecUtils::SpectrumType::Foreground;
-      peakOpts.nonBackgroundPeaksOnly = false;
-      const AnalystChecks::DetectedPeakStatus detected
-        = AnalystChecks::detected_peaks( peakOpts, m_viewer);
-      m_detectedPeaks = detected.peaks;
-    }catch( std::exception & )
-    {
-      // Peak detection failed; continue with empty list
-    }
-  }//if( m_spectrum )
-
-  // Build skew param rows (their values come from the prefs, where they are for this skew type)
+  // Build skew param rows (their values come from the prefs, where they are for this skew type; and
+  //  their defaults depend on the peaks)
   updateSkewParamRows();
 
-  // Apply current skew values to peaks and display
-  if( !m_detectedPeaks.empty() )
-  {
-    const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( m_detectedPeaks);
-    m_peakModel->setPeaks( displayPeaks);
-  }
+  // Show the spectrum, with the current skew values applied to its peaks
+  if( !m_spectra.empty() )
+    showSpectrum( m_currentSpectrum );
 
-  // Disable fit button if no peaks or NoSkew
-  const int skewIdx = m_skewTypeCombo->currentIndex();
-  const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( skewIdx);
-  const bool canFit = (PeakDef::num_skew_parameters( st ) > 0) && !m_detectedPeaks.empty();
-  m_fitBtn->setEnabled( canFit);
+  // Disable fit button if no peaks
+  updateDescription();
+  updateFitButton();
 
   // Connect ROI edge drag signal for user adjustment of ROI bounds
   m_chart->existingRoiEdgeDragUpdate().connect( this, &FitSkewParamsTool::handleRoiDrag);
@@ -248,6 +429,144 @@ void FitSkewParamsTool::initWidgets()
 }//void initWidgets()
 
 
+vector<size_t> FitSkewParamsTool::spectraToFit() const
+{
+  if( m_onlyDisplayedCb && m_onlyDisplayedCb->isChecked() && (m_currentSpectrum < m_spectra.size()) )
+    return { m_currentSpectrum };
+
+  vector<size_t> answer( m_spectra.size() );
+  for( size_t i = 0; i < m_spectra.size(); ++i )
+    answer[i] = i;
+  return answer;
+}//vector<size_t> spectraToFit() const
+
+
+size_t FitSkewParamsTool::numPeaksToFit() const
+{
+  size_t npeaks = 0;
+  for( const size_t index : spectraToFit() )
+    npeaks += m_spectra[index].peaks.size();
+  return npeaks;
+}//size_t numPeaksToFit() const
+
+
+void FitSkewParamsTool::updateFitButton()
+{
+  // NoSkew is allowed, so the user can compare chi2 and visuals to a skewed fit
+  m_fitBtn->setEnabled( (numPeaksToFit() > 0) && !m_isCalculating );
+}//void updateFitButton()
+
+
+void FitSkewParamsTool::updateDescription()
+{
+  if( !m_descText )
+    return;
+
+  const size_t npeaks = numPeaksToFit();
+
+  string desc;
+  if( isDrfMode() )
+  {
+    const bool onlyChar = m_onlyCharPeaksCb && m_onlyCharPeaksCb->isChecked();
+    const bool onlyDisplayed = (spectraToFit().size() == 1);
+    const char *key = onlyChar ? (onlyDisplayed ? "fsw-desc-char-peaks-displayed" : "fsw-desc-char-peaks")
+                               : (onlyDisplayed ? "fsw-desc-all-peaks-displayed" : "fsw-desc-all-peaks");
+    desc = WString::tr( key ).arg( static_cast<int>(npeaks) ).arg( static_cast<int>(m_spectra.size()) ).toUTF8();
+
+    const bool anyBackground = std::any_of( begin(m_drfInputs), end(m_drfInputs),
+                                            []( const FitSkewSpectrumInput &input ){ return input.isBackground; } );
+    if( anyBackground && !onlyDisplayed )
+      desc += " " + WString::tr( "fsw-desc-bkg-excluded" ).toUTF8();
+
+    if( onlyChar && !npeaks )
+      desc += " " + WString::tr( "fsw-no-selected-peaks" ).toUTF8();
+
+    if( m_updatePeaksCb && m_updatePeaksCb->isChecked() )
+      desc += " " + WString::tr( "fsw-desc-refit-drf" ).arg( static_cast<int>(m_drfInputs.size()) ).toUTF8();
+  }else
+  {
+    desc = WString::tr( "fsw-desc-foreground" ).arg( static_cast<int>(npeaks) ).toUTF8();
+    if( m_updatePeaksCb && m_updatePeaksCb->isChecked() )
+      desc += " " + WString::tr( "fsw-desc-refit-foreground" ).toUTF8();
+  }//if( isDrfMode() ) / else
+
+  m_descText->setText( WString::fromUTF8( desc ) );
+}//void updateDescription()
+
+
+void FitSkewParamsTool::peaksChanged()
+{
+  refreshDisplayedPeaks();
+  updateSpectrumComboText();
+  updateDescription();
+  updateFitButton();
+}//void peaksChanged()
+
+
+void FitSkewParamsTool::setSpectraOptionsEnabled( const bool enabled )
+{
+  // The peaks, and spectra, to fit cant change while a fit is running
+  if( m_onlyCharPeaksCb )
+    m_onlyCharPeaksCb->setEnabled( enabled );
+  if( m_onlyDisplayedCb )
+    m_onlyDisplayedCb->setEnabled( enabled );
+}//void setSpectraOptionsEnabled( const bool enabled )
+
+
+void FitSkewParamsTool::showSpectrum( const size_t index )
+{
+  assert( index < m_spectra.size() );
+  if( index >= m_spectra.size() )
+    return;
+
+  m_currentSpectrum = index;
+  m_chart->setData( m_spectra[index].spectrum, false );
+  m_peakModel->setForeground( m_spectra[index].spectrum );
+  refreshDisplayedPeaks();
+}//void showSpectrum( const size_t index )
+
+
+void FitSkewParamsTool::refreshDisplayedPeaks()
+{
+  if( m_currentSpectrum >= m_spectra.size() )
+    return;
+
+  m_peakModel->setPeaks( applySkewToPeaks( m_spectra[m_currentSpectrum].peaks ) );
+}//void refreshDisplayedPeaks()
+
+
+void FitSkewParamsTool::updateSpectrumComboText()
+{
+  if( !m_spectrumCombo )
+    return;
+
+  for( size_t i = 0; i < m_spectra.size(); ++i )
+  {
+    const int npeaks = static_cast<int>( m_spectra[i].peaks.size() );
+    m_spectrumCombo->setItemText( static_cast<int>(i),
+                                  WString::tr( "fsw-spectrum-item" ).arg( m_spectra[i].title ).arg( npeaks ) );
+  }
+}//void updateSpectrumComboText()
+
+
+void FitSkewParamsTool::handleOnlyCharPeaksToggled()
+{
+  if( !isDrfMode() || !m_onlyCharPeaksCb || m_isCalculating )
+    return;
+
+  // Starts over from the DRF tool's peaks, dropping any edits, and fit results (but not the skew values)
+  const bool onlyChar = m_onlyCharPeaksCb->isChecked();
+  for( SpectrumState &state : m_spectra )
+  {
+    const FitSkewSpectrumInput &input = m_drfInputs[state.drfInputIndex];
+    state.peaks = onlyChar ? input.selectedPeaks : input.allPeaks;
+  }
+
+  m_statusText->setText( WString() );
+  peaksChanged();
+}//void handleOnlyCharPeaksToggled()
+
+
 void FitSkewParamsTool::updateSkewParamRows()
 {
   const int skewIdx = m_skewTypeCombo->currentIndex();
@@ -256,7 +575,7 @@ void FitSkewParamsTool::updateSkewParamRows()
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
   m_paramsGrid->setSkewType( skewType );
-  m_fitBtn->setEnabled( (nparams > 0) && !m_detectedPeaks.empty() );
+  updateFitButton();
   if( nparams == 0 )
     return;
 
@@ -270,21 +589,30 @@ void FitSkewParamsTool::updateSkewParamRows()
   const bool isGadras = (skewType == PeakDef::SkewType::GadrasGeneric)
                         || (skewType == PeakDef::SkewType::GadrasCZT);
 
-  // The GADRAS powers (their energy dependence) are fit by default only when the peaks can pin them
-  //  down: more than one ROI, spanning at least the 100 keV PeakFitLM requires for energy dependence.
+  // The GADRAS powers (their energy dependence) are fit by default only when the peaks, of all the
+  //  spectra, can pin them down: more than one ROI, spanning at least the 100 keV PeakFitLM requires
+  //  for energy dependence.
   bool peaksSpanEnergy = false;
-  if( isGadras && !m_detectedPeaks.empty() )
+  if( isGadras )
   {
-    set<shared_ptr<const PeakContinuum>> rois;
-    double minEnergy = m_detectedPeaks.front()->mean(), maxEnergy = minEnergy;
-    for( const shared_ptr<const PeakDef> &peak : m_detectedPeaks )
+    size_t nrois = 0;
+    bool havePeak = false;
+    double minEnergy = 0.0, maxEnergy = 0.0;
+    for( const size_t index : spectraToFit() )
     {
-      rois.insert( peak->continuum() );
-      minEnergy = (std::min)( minEnergy, peak->mean() );
-      maxEnergy = (std::max)( maxEnergy, peak->mean() );
-    }
-    peaksSpanEnergy = (rois.size() > 1) && ((maxEnergy - minEnergy) >= 100.0);
-  }//if( isGadras && !m_detectedPeaks.empty() )
+      set<shared_ptr<const PeakContinuum>> rois;
+      for( const shared_ptr<const PeakDef> &peak : m_spectra[index].peaks )
+      {
+        rois.insert( peak->continuum() );
+        minEnergy = havePeak ? (std::min)( minEnergy, peak->mean() ) : peak->mean();
+        maxEnergy = havePeak ? (std::max)( maxEnergy, peak->mean() ) : peak->mean();
+        havePeak = true;
+      }
+      nrois += rois.size();
+    }//for( const size_t index : spectraToFit() )
+
+    peaksSpanEnergy = (nrois > 1) && ((maxEnergy - minEnergy) >= 100.0);
+  }//if( isGadras )
 
   for( size_t p = 0; p < nparams; ++p )
   {
@@ -324,15 +652,25 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
   const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
+  // For NoSkew, strip any skew the input peaks (e.g., from the DRF tool) already have
   if( nparams == 0 )
-    return peaks;
+  {
+    vector<shared_ptr<const PeakDef>> result = peaks;
+    for( shared_ptr<const PeakDef> &peak : result )
+    {
+      if( peak->skewType() != PeakDef::NoSkew )
+      {
+        shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *peak );
+        newPeak->setSkewType( PeakDef::NoSkew );
+        peak = newPeak;
+      }
+    }
+    return result;
+  }//if( nparams == 0 )
 
-  // Energy-dependent values are linear between the spectrum's lowest and highest energies (the same
-  //  anchors PeakFitDetPrefs and PeakFitLM use), evaluated at each ROI's center (as PeakFitLM does).
-  const size_t nchannel = m_spectrum ? m_spectrum->num_gamma_channels() : size_t(0);
-  const double lowerEnergy = nchannel ? m_spectrum->gamma_channel_lower( 0 ) : 0.0;
-  const double upperEnergy = nchannel ? m_spectrum->gamma_channel_upper( nchannel - 1 ) : 0.0;
-  const double energySpan = upperEnergy - lowerEnergy;
+  // Energy-dependent values are linear between the anchor energies (the foreground's lowest and
+  //  highest energies, as PeakFitDetPrefs uses), evaluated at each ROI's center (as PeakFitLM does).
+  const double energySpan = m_anchorUpperEnergy - m_anchorLowerEnergy;
 
   vector<shared_ptr<const PeakDef>> result;
   result.reserve( peaks.size());
@@ -359,8 +697,13 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
         const double energy = cont->energyRangeDefined()
                               ? 0.5*(cont->lowerEnergy() + cont->upperEnergy())
                               : newPeak->mean();
-        const double frac = (energy - lowerEnergy) / energySpan;
+        const double frac = (energy - m_anchorLowerEnergy) / energySpan;
         value = lowerVal + frac * (upperVal.value() - lowerVal);
+
+        // A ROI outside the anchors (e.g., of a DRF spectrum with a wider energy range) extrapolates
+        double range_lower = 0.0, range_upper = 0.0, start_val = 0.0, step_size = 0.0;
+        if( PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size ) )
+          value = std::clamp( value, range_lower, range_upper );
       }
 
       newPeak->set_coefficient( value, coefType);
@@ -375,20 +718,8 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
 
 void FitSkewParamsTool::userEditedSkewValue()
 {
-  if( m_detectedPeaks.empty() )
-    return;
-
-  // Use fit peaks if available, otherwise detected peaks
-  const vector<shared_ptr<const PeakDef>> &basePeaks
-    = m_fitPeaks.empty() ? m_detectedPeaks : m_fitPeaks;
-
-  const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( basePeaks);
-  m_peakModel->setPeaks( displayPeaks);
-
-  // Update fit button state
-  const int skewIdx = m_skewTypeCombo->currentIndex();
-  const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( skewIdx);
-  m_fitBtn->setEnabled( PeakDef::num_skew_parameters( st ) > 0 && !m_isCalculating);
+  refreshDisplayedPeaks();
+  updateFitButton();
 }//void userEditedSkewValue()
 
 
@@ -403,84 +734,82 @@ void FitSkewParamsTool::doFit()
 
   const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
-  if( nparams == 0 )
-    return;
 
-  // Use current peaks from the model — reflects user's ROI bound, continuum, and deletion changes
-  const shared_ptr<const deque<shared_ptr<const PeakDef>>> modelPeaks = m_peakModel->peaks();
-  if( !modelPeaks || modelPeaks->empty() )
+  // The peaks of the spectra to fit - they reflect the user's ROI bound, continuum, and deletion changes
+  if( !numPeaksToFit() )
     return;
 
   m_isCalculating = true;
   m_fitBtn->setEnabled( false);
+  setSpectraOptionsEnabled( false );
   m_statusText->setText( WString::tr( "fsw-fitting" ));
+  m_resultUpdated.emit(); // So the dialog disables "Accept" until the fit finishes
 
   // Cancel any previous calculation
   if( m_cancelCalc )
     m_cancelCalc->store( true);
   m_cancelCalc = make_shared<atomic_bool>( false);
 
-  // Apply current GUI skew values to the model's peaks
-  const vector<shared_ptr<const PeakDef>> basePeaks( modelPeaks->begin(), modelPeaks->end());
-  vector<shared_ptr<const PeakDef>> inputPeaks = applySkewToPeaks( basePeaks);
-
-  // Set fitFor flags based on the "fit" checkboxes
-  for( shared_ptr<const PeakDef> &constPeak : inputPeaks )
+  // Apply current GUI skew values to the peaks, and set fitFor flags based on the "fit" checkboxes
+  //  (applySkewToPeaks makes copies, so we can modify them).
+  m_fitSpectrumIndices = spectraToFit();
+  vector<PeakFitLM::SpectrumPeaks> spectra;
+  vector<shared_ptr<PeakDef>> allPeaks;
+  for( const size_t index : m_fitSpectrumIndices )
   {
-    // We need mutable access - applySkewToPeaks already made copies
-    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
-    for( size_t p = 0; p < nparams; ++p )
-    {
-      const PeakDef::CoefficientType coefType
-        = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
+    const SpectrumState &state = m_spectra[index];
+    PeakFitLM::SpectrumPeaks spectrum;
+    spectrum.data = state.spectrum;
+    spectrum.peaks = applySkewToPeaks( state.peaks );
 
-      peak->setFitFor( coefType, m_paramsGrid->isFit( p ));
+    for( const shared_ptr<const PeakDef> &constPeak : spectrum.peaks )
+    {
+      shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
+      for( size_t p = 0; p < nparams; ++p )
+        peak->setFitFor( PeakDef::CoefficientType( PeakDef::SkewPar0 + p ), m_paramsGrid->isFit( p ));
+      allPeaks.push_back( peak );
     }
-  }
+
+    spectra.push_back( std::move(spectrum) );
+  }//for( const size_t index : m_fitSpectrumIndices )
 
   // The refinement fit below keeps the starting skew as given, but a fit could never leave both
   //  GADRAS tail amplitudes at zero (e.g., the shipped generic GADRAS detectors) - so start from the
   //  defaults instead.  GADRAS skew has no energy dependence, so all peaks have the same values.
-  if( !inputPeaks.empty() )
+  if( !allPeaks.empty() && (nparams > 0) )
   {
     vector<double> startValues( nparams, 0.0 );
     vector<bool> isFit( nparams, false );
     for( size_t p = 0; p < nparams; ++p )
     {
-      const PeakDef::CoefficientType coefType
-        = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
-      startValues[p] = inputPeaks.front()->coefficient( coefType );
-      isFit[p] = inputPeaks.front()->fitFor( coefType );
+      const PeakDef::CoefficientType coefType = PeakDef::CoefficientType( PeakDef::SkewPar0 + p );
+      startValues[p] = allPeaks.front()->coefficient( coefType );
+      isFit[p] = allPeaks.front()->fitFor( coefType );
     }
 
     const vector<double> origValues = startValues;
     PeakDef::avoid_stationary_skew_start( skewType, startValues, isFit );
     if( startValues != origValues )
     {
-      for( shared_ptr<const PeakDef> &constPeak : inputPeaks )
+      for( const shared_ptr<PeakDef> &peak : allPeaks )
       {
-        shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
         for( size_t p = 0; p < nparams; ++p )
-          peak->set_coefficient( startValues[p], static_cast<PeakDef::CoefficientType>(
-                                   static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p )) );
+          peak->set_coefficient( startValues[p], PeakDef::CoefficientType( PeakDef::SkewPar0 + p ) );
       }
     }//if( moved off the stationary point )
-  }//if( !inputPeaks.empty() )
+  }//if( !allPeaks.empty() )
 
   // Get detector type
   shared_ptr<const SpecMeas> meas
     = m_viewer->measurment( SpecUtils::SpectrumType::Foreground);
   shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-  assert( prefs);
+  assert( prefs || isDrfMode() );
 
   optional<PeakFitUtils::CoarseResolutionType> resType = PeakFitUtils::CoarseResolutionType::Unknown;
   if( prefs )
     resType = prefs->m_det_type;
 
   // Capture data for background thread
-  shared_ptr<const SpecUtils::Measurement> specCopy = m_spectrum;
   shared_ptr<atomic_bool> cancelFlag = m_cancelCalc;
   const string sessionId = wApp->sessionId();
 
@@ -488,15 +817,17 @@ void FitSkewParamsTool::doFit()
   if( !server )
   {
     m_isCalculating = false;
-    m_fitBtn->setEnabled( true);
+    updateFitButton();
+    setSpectraOptionsEnabled( true );
     m_statusText->setText( "");
+    m_resultUpdated.emit();
     return;
   }
 
   // Pre-allocate results; WServer::post() safely no-ops if session is gone by the time
   //  the background thread finishes.
-  shared_ptr<PeakFitLM::FitPeaksResults> results
-    = make_shared<PeakFitLM::FitPeaksResults>();
+  shared_ptr<PeakFitLM::MultiSpectrumFitResults> results
+    = make_shared<PeakFitLM::MultiSpectrumFitResults>();
 
   // Wt4: capture this widget's id (not a raw `this`) so the GUI post-back can re-resolve it via
   //  findById() - this tool can be closed mid-fit, and WServer::post only guards the session.
@@ -507,26 +838,17 @@ void FitSkewParamsTool::doFit()
     if( cancelFlag->load() )
       return;
 
-    try
-    {
-      *results = PeakFitLM::fit_peaks_in_spectrum_LM(
-        inputPeaks,
-        specCopy,
+    // fit_peaks_in_spectra_LM catches all exceptions, and reports them in the results
+    *results = PeakFitLM::fit_peaks_in_spectra_LM(
+        spectra,
         0.0,  // stat_threshold - keep all peaks
         0.0,  // hypothesis_threshold - keep all peaks
         resType,
         skewType,
-        PeakFitLM::SmallRefinementOnly
+        PeakFitLM::SmallRefinementOnly,
+        {},
+        cancelFlag
      );
-    }catch( std::exception &e )
-    {
-      results->status = PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Failure;
-      results->error_message = std::string( "Fit failed: " ) + e.what();
-    }catch( ... )
-    {
-      results->status = PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Failure;
-      results->error_message = "Fit failed with unknown error";
-    }
 
     // Post results back to GUI thread; re-resolve the tool via findById() (it may have been closed
     //  mid-fit - WServer::post only guards the session, not this widget) -> avoids use-after-free.
@@ -539,7 +861,7 @@ void FitSkewParamsTool::doFit()
 }//void doFit()
 
 
-void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksResults> &results,
+void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::MultiSpectrumFitResults> &results,
                                            const shared_ptr<atomic_bool> &cancelFlag )
 {
   // If this calculation was cancelled, ignore results
@@ -547,47 +869,54 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
     return;
 
   m_isCalculating = false;
-  m_fitBtn->setEnabled( true);
+  updateFitButton();
+  setSpectraOptionsEnabled( true );
+  m_resultUpdated.emit(); // Re-enables "Accept", whether or not the fit succeeded
 
   if( !results
-     || results->status != PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success )
+     || (results->status != PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success)
+     || (results->spectra.size() != m_fitSpectrumIndices.size()) )
   {
     const string errMsg = results ? results->error_message : "Unknown error";
     m_statusText->setText( WString::tr( "fsw-fit-failed" ).arg( errMsg ));
+    wApp->triggerUpdate();
     return;
   }
 
-  m_fitPeaks = results->fit_peaks;
+  for( size_t i = 0; i < m_fitSpectrumIndices.size(); ++i )
+  {
+    assert( m_fitSpectrumIndices[i] < m_spectra.size() );
+    m_spectra.at( m_fitSpectrumIndices[i] ).peaks = results->spectra[i].fit_peaks;
+  }
   m_fitSkewRelation = results->skew_relation;
 
-  // Update the spin boxes from the fit.  The skew relation gives energy-dependent values at the
-  //  spectrum's lowest and highest energies (what the spin boxes, and PeakFitDetPrefs, hold); a
-  //  single ROI has no relation, so then all its peaks have the same values.
+  // Update the spin boxes from the fit.  The skew relation gives energy-dependent values linear in
+  //  energy; the spin boxes (and PeakFitDetPrefs) hold the values at the anchor energies.  A single ROI
+  //  has no relation, so then all its peaks have the same values.
   const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( m_skewTypeCombo->currentIndex());
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
   shared_ptr<const PeakDef> skewPeak;
-  for( size_t i = 0; !skewPeak && (i < m_fitPeaks.size()); ++i )
+  for( size_t i = 0; !skewPeak && (i < results->spectra.size()); ++i )
   {
-    if( m_fitPeaks[i]->skewType() == skewType )
-      skewPeak = m_fitPeaks[i];
+    for( const shared_ptr<const PeakDef> &peak : results->spectra[i].fit_peaks )
+    {
+      if( !skewPeak && (peak->skewType() == skewType) )
+        skewPeak = peak;
+    }
   }
 
   for( size_t p = 0; p < nparams; ++p )
   {
-    const PeakDef::CoefficientType coefType
-      = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
+    const PeakDef::CoefficientType coefType = PeakDef::CoefficientType( PeakDef::SkewPar0 + p );
 
     optional<pair<double,double>> lowerUpper;
     if( m_fitSkewRelation.has_value() && (m_fitSkewRelation->skew_type == skewType) )
     {
-      const PeakFitLM::FitPeaksResults::SkewRelation &sr = m_fitSkewRelation.value();
-      if( sr.energy_dependent_skew_pars[p].has_value() )
-        lowerUpper = sr.energy_dependent_skew_pars[p];  // {lower energy value, upper energy value}
-      else if( sr.non_energy_dependent_skew_pars[p].has_value() )  // {value, uncertainty}
-        lowerUpper = make_pair( sr.non_energy_dependent_skew_pars[p]->first,
-                                sr.non_energy_dependent_skew_pars[p]->first );
+      const optional<double> lower = m_fitSkewRelation->value_at( p, m_anchorLowerEnergy );
+      const optional<double> upper = m_fitSkewRelation->value_at( p, m_anchorUpperEnergy );
+      if( lower.has_value() && upper.has_value() )
+        lowerUpper = make_pair( lower.value(), upper.value() );
     }else if( skewPeak )
     {
       lowerUpper = make_pair( skewPeak->coefficient( coefType ), skewPeak->coefficient( coefType ) );
@@ -596,26 +925,41 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
     if( !lowerUpper.has_value() )
       continue;
 
+    // Re-expressing the fit at the foreground's energies can extrapolate, if the spectra fit span less
+    double range_lower = 0.0, range_upper = 0.0, start_val = 0.0, step_size = 0.0;
+    if( PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size ) )
+    {
+      lowerUpper->first = std::clamp( lowerUpper->first, range_lower, range_upper );
+      lowerUpper->second = std::clamp( lowerUpper->second, range_lower, range_upper );
+    }
+
     m_paramsGrid->setValue( p, lowerUpper->first, lowerUpper->second );
   }//for( each param )
 
   // Update spectrum display with fit peaks
-  m_peakModel->setPeaks( m_fitPeaks);
+  peaksChanged();
 
-  // Compute average chi2/dof across unique ROIs
+  // Compute average chi2/dof across unique ROIs, of all the spectra fit
   double chi2dofSum = 0.0;
-  int nRois = 0;
-  set<shared_ptr<const PeakContinuum>> seenContinua;
-  for( const shared_ptr<const PeakDef> &pk : m_fitPeaks )
+  int nRois = 0, nPeaks = 0;
+  for( const PeakFitLM::FitPeaksResults &spectrumResult : results->spectra )
   {
-    if( pk->chi2Defined() && seenContinua.insert( pk->continuum() ).second )
+    set<shared_ptr<const PeakContinuum>> seenContinua;
+    for( const shared_ptr<const PeakDef> &pk : spectrumResult.fit_peaks )
     {
-      chi2dofSum += pk->chi2dof();
-      nRois += 1;
+      nPeaks += 1;
+      if( pk->chi2Defined() && seenContinua.insert( pk->continuum() ).second )
+      {
+        chi2dofSum += pk->chi2dof();
+        nRois += 1;
+      }
     }
-  }
+  }//for( loop over spectra fit )
 
-  WString statusMsg = WString::tr( "fsw-fit-success" ).arg( static_cast<int>( m_fitPeaks.size() ));
+  const int nSpectraFit = static_cast<int>( results->spectra.size() );
+  WString statusMsg = (nSpectraFit > 1)
+                       ? WString::tr( "fsw-fit-success-multi" ).arg( nPeaks ).arg( nSpectraFit )
+                       : WString::tr( "fsw-fit-success" ).arg( nPeaks );
   if( nRois > 0 )
   {
     char chi2Buf[32];
@@ -625,14 +969,14 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
 
   m_statusText->setText( statusMsg);
 
-  m_resultUpdated.emit();
-
   wApp->triggerUpdate();
 }//void handleFitResults(...)
 
 
 void FitSkewParamsTool::acceptResults()
 {
+  m_drfPeakReplacements.clear();
+
   shared_ptr<SpecMeas> meas = m_viewer
     ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
     : nullptr;
@@ -666,67 +1010,68 @@ void FitSkewParamsTool::acceptResults()
   meas->setPeakFitDetPrefs( newPrefs);
   m_viewer->peakFitDetPrefsChanged().emit();
 
-  // Optionally refit analysis peaks with the new skew parameters
-  if( m_updatePeaksCb->isChecked() )
+  if( !m_updatePeaksCb->isChecked() )
+    return;
+
+  // Refit peaks with the new skew parameters (held fixed), so only amplitude, mean, sigma, and
+  //  continuum adjust.
+  const shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+  shared_ptr<const PeakFitDetPrefs> skewPrefs = meas->peakFitDetPrefs();
+  if( !skewPrefs && drf )
+    skewPrefs = drf->peakFitDetPrefs();
+  assert( skewPrefs );
+
+  if( isDrfMode() )
   {
-    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
-    const shared_ptr<const deque<PeakModel::PeakShrdPtr>> currentPeaks
-      = peakModel ? peakModel->peaks() : nullptr;
-    const shared_ptr<const SpecUtils::Measurement> data
-      = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground);
-
-    if( peakModel && currentPeaks && !currentPeaks->empty() && data )
+    // The peaks of all the DRF tool spectra - background ones too, so background subtraction uses
+    //  the same peak shape.  A peak whose ROI could not be refit is left as it was.
+    for( const FitSkewSpectrumInput &input : m_drfInputs )
     {
-      UndoRedoManager::PeakModelChange peak_undo_creator;
+      const PeakFitUtils::CoarseResolutionType detType
+        = skewPrefs ? skewPrefs->m_det_type : PeakFitUtils::coarse_det_type( input.spectrum, meas );
+      const vector<shared_ptr<const PeakDef>> withSkew = applySkewToPeaks( input.allPeaks );
+      const vector<shared_ptr<const PeakDef>> refit
+        = refit_peaks_with_fixed_skew( input.spectrum, drf, withSkew, detType );
+      assert( refit.size() == input.allPeaks.size() );
 
-      // Apply fitted skew parameters to copies of the existing analysis peaks
-      const vector<shared_ptr<const PeakDef>> existing( currentPeaks->begin(), currentPeaks->end());
-      const vector<shared_ptr<const PeakDef>> withSkew = applySkewToPeaks( existing);
-
-      // Lock skew params so refitting only adjusts amplitude, mean, sigma, continuum
-      for( const shared_ptr<const PeakDef> &constPeak : withSkew )
+      for( size_t i = 0; (i < refit.size()) && (i < input.allPeaks.size()); ++i )
       {
-        shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
-        const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType());
-        for( size_t i = 0; i < nSkew; ++i )
-        {
-          const PeakDef::CoefficientType ct = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ));
-          peak->setFitFor( ct, false);
-        }
+        if( refit[i] )
+          m_drfPeakReplacements[input.allPeaks[i]] = refit[i];
       }
+    }//for( const FitSkewSpectrumInput &input : m_drfInputs )
 
-      // Group by continuum (ROI) and refit each ROI
-      shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+    return;
+  }//if( isDrfMode() )
 
-      map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> roiGroups;
-      for( const shared_ptr<const PeakDef> &pk : withSkew )
-        roiGroups[pk->continuum()].push_back( pk);
+  // Refit the analysis peaks of the foreground
+  const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
+  const shared_ptr<const deque<PeakModel::PeakShrdPtr>> currentPeaks
+    = peakModel ? peakModel->peaks() : nullptr;
+  const shared_ptr<const SpecUtils::Measurement> data
+    = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground);
 
-      shared_ptr<const PeakFitDetPrefs> skewPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
-      if( !skewPrefs && drf )
-        skewPrefs = drf->peakFitDetPrefs();
-      assert( skewPrefs);
-      const PeakFitUtils::CoarseResolutionType skewDetType
-        = skewPrefs ? skewPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, meas);
+  if( peakModel && currentPeaks && !currentPeaks->empty() && data )
+  {
+    UndoRedoManager::PeakModelChange peak_undo_creator;
 
-      vector<shared_ptr<const PeakDef>> allRefit;
-      for( const auto &entry : roiGroups )
-      {
-        const vector<shared_ptr<const PeakDef>> refit
-          = refitPeaksThatShareROI( data, drf, entry.second,
-                                    skewDetType, PeakFitLM::SmallRefinementOnly);
+    const PeakFitUtils::CoarseResolutionType skewDetType
+      = skewPrefs ? skewPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, meas);
 
-        if( refit.size() == entry.second.size() )
-          allRefit.insert( allRefit.end(), refit.begin(), refit.end());
-        else
-          allRefit.insert( allRefit.end(), entry.second.begin(), entry.second.end());
-      }//for( each ROI group )
+    // Apply fitted skew parameters to copies of the existing analysis peaks, and refit each ROI; a
+    //  ROI that could not be refit keeps the new skew, as is.
+    const vector<shared_ptr<const PeakDef>> existing( currentPeaks->begin(), currentPeaks->end());
+    const vector<shared_ptr<const PeakDef>> withSkew = applySkewToPeaks( existing);
+    const vector<shared_ptr<const PeakDef>> refit = refit_peaks_with_fixed_skew( data, drf, withSkew, skewDetType );
+    assert( refit.size() == withSkew.size() );
 
-      std::sort( allRefit.begin(), allRefit.end(), &PeakDef::lessThanByMeanShrdPtr);
-      peakModel->setPeaks( allRefit);
-    }//if( have peaks and data )
-  }//if( update peaks )
+    vector<shared_ptr<const PeakDef>> allRefit;
+    for( size_t i = 0; i < withSkew.size(); ++i )
+      allRefit.push_back( ((i < refit.size()) && refit[i]) ? refit[i] : withSkew[i] );
+
+    std::sort( allRefit.begin(), allRefit.end(), &PeakDef::lessThanByMeanShrdPtr);
+    peakModel->setPeaks( allRefit);
+  }//if( have peaks and data )
 }//void acceptResults()
 
 
@@ -804,7 +1149,10 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
     }
   }//for( set skew fitFor to false )
 
-  if( is_final && m_spectrum && (roi_px > 10.0) )
+  const shared_ptr<const SpecUtils::Measurement> spectrum
+    = (m_currentSpectrum < m_spectra.size()) ? m_spectra[m_currentSpectrum].spectrum : nullptr;
+
+  if( is_final && spectrum && (roi_px > 10.0) )
   {
     // Refit the peaks in this ROI (skew locked, mean/sigma/amplitude free)
     shared_ptr<const DetectorPeakResponse> detector;
@@ -815,10 +1163,10 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
       dragFitPrefs = dragMeas->detector() ? dragMeas->detector()->peakFitDetPrefs() : nullptr;
     assert( dragFitPrefs);
     const PeakFitUtils::CoarseResolutionType dragDetType
-      = dragFitPrefs ? dragFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, dragMeas);
+      = dragFitPrefs ? dragFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( spectrum, dragMeas);
 
     const vector<shared_ptr<const PeakDef>> refitPeaks
-      = refitPeaksThatShareROI_LM( m_spectrum, detector, roiPeaks,
+      = refitPeaksThatShareROI_LM( spectrum, detector, roiPeaks,
                                    dragDetType, PeakFitLM::SmallRefinementOnly);
     if( !refitPeaks.empty() )
       roiPeaks = refitPeaks;
@@ -826,28 +1174,8 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
 
   if( is_final )
   {
-    // Combine refit ROI peaks with other peaks and update model
-    vector<shared_ptr<const PeakDef>> combined;
-    combined.reserve( otherPeaks.size() + roiPeaks.size());
-    combined.insert( combined.end(), otherPeaks.begin(), otherPeaks.end());
-    combined.insert( combined.end(), roiPeaks.begin(), roiPeaks.end());
-    std::sort( combined.begin(), combined.end(), &PeakDef::lessThanByMeanShrdPtr);
-    m_peakModel->setPeaks( combined);
-
-    // Also update m_detectedPeaks to match (remove old ROI peaks, add new ones)
-    vector<shared_ptr<const PeakDef>> updatedDetected;
-    for( const shared_ptr<const PeakDef> &p : m_detectedPeaks )
-    {
-      if( p->continuum() != continuum )
-        updatedDetected.push_back( p);
-    }
-    // Add back the refit peaks (without skew, matching the source peaks)
-    for( const shared_ptr<const PeakDef> &p : roiPeaks )
-      updatedDetected.push_back( p);
-    std::sort( updatedDetected.begin(), updatedDetected.end(), &PeakDef::lessThanByMeanShrdPtr);
-    m_detectedPeaks = updatedDetected;
-
-    m_fitPeaks.clear();
+    // Replace the ROI's peaks with the refit ones (the displayed peaks share continua with ours)
+    replaceRoiPeaks( continuum, roiPeaks );
   }
   else
   {
@@ -919,50 +1247,29 @@ void FitSkewParamsTool::handleRightClick( double energy, double /*counts*/,
 
 void FitSkewParamsTool::deletePeakNearEnergy( double energy )
 {
-  const shared_ptr<const deque<shared_ptr<const PeakDef>>> allPeaks = m_peakModel->peaks();
-  if( !allPeaks || allPeaks->empty() )
+  if( m_currentSpectrum >= m_spectra.size() )
     return;
 
-  // Find nearest peak
-  shared_ptr<const PeakDef> target;
+  // Find nearest peak (the displayed peaks are copies, with the same means and continua, of ours)
+  vector<shared_ptr<const PeakDef>> &peaks = m_spectra[m_currentSpectrum].peaks;
+  vector<shared_ptr<const PeakDef>>::iterator target = end(peaks);
   double minDist = numeric_limits<double>::max();
-  for( const shared_ptr<const PeakDef> &p : *allPeaks )
+  for( auto it = begin(peaks); it != end(peaks); ++it )
   {
-    const double dist = fabs( p->mean() - energy);
+    const double dist = fabs( (*it)->mean() - energy);
     if( dist < minDist )
     {
       minDist = dist;
-      target = p;
+      target = it;
     }
   }
 
-  if( !target )
+  if( target == end(peaks) )
     return;
 
-  const double targetMean = target->mean();
+  peaks.erase( target );
 
-  // Remove from display model
-  m_peakModel->removePeak( target);
-
-  // Remove corresponding peak from m_detectedPeaks (match by mean energy)
-  for( auto it = m_detectedPeaks.begin(); it != m_detectedPeaks.end(); ++it )
-  {
-    if( fabs( (*it)->mean() - targetMean ) < 0.1 )
-    {
-      m_detectedPeaks.erase( it);
-      break;
-    }
-  }
-
-  // Also remove from m_fitPeaks if present
-  for( auto it = m_fitPeaks.begin(); it != m_fitPeaks.end(); ++it )
-  {
-    if( fabs( (*it)->mean() - targetMean ) < 0.1 )
-    {
-      m_fitPeaks.erase( it);
-      break;
-    }
-  }
+  peaksChanged();
 }//void deletePeakNearEnergy(...)
 
 
@@ -971,48 +1278,20 @@ void FitSkewParamsTool::handleShiftKeyDrag( double x0, double x1 )
   if( x0 > x1 )
     std::swap( x0, x1);
 
-  const shared_ptr<const deque<shared_ptr<const PeakDef>>> allPeaks = m_peakModel->peaks();
-  if( !allPeaks || allPeaks->empty() )
+  if( m_currentSpectrum >= m_spectra.size() )
     return;
 
-  // Find peaks whose mean is within the dragged range
-  vector<shared_ptr<const PeakDef>> toRemove;
-  for( const shared_ptr<const PeakDef> &p : *allPeaks )
-  {
-    if( p->mean() >= x0 && p->mean() <= x1 )
-      toRemove.push_back( p);
-  }
+  // Remove peaks whose mean is within the dragged range
+  vector<shared_ptr<const PeakDef>> &peaks = m_spectra[m_currentSpectrum].peaks;
+  const size_t nbefore = peaks.size();
+  peaks.erase( std::remove_if( begin(peaks), end(peaks), [x0,x1]( const shared_ptr<const PeakDef> &p ){
+    return (p->mean() >= x0) && (p->mean() <= x1);
+  } ), end(peaks) );
 
-  if( toRemove.empty() )
+  if( peaks.size() == nbefore )
     return;
 
-  // Remove from display model
-  for( const shared_ptr<const PeakDef> &p : toRemove )
-    m_peakModel->removePeak( p);
-
-  // Remove from m_detectedPeaks and m_fitPeaks by matching mean energy
-  for( const shared_ptr<const PeakDef> &removed : toRemove )
-  {
-    const double mean = removed->mean();
-
-    for( auto it = m_detectedPeaks.begin(); it != m_detectedPeaks.end(); ++it )
-    {
-      if( fabs( (*it)->mean() - mean ) < 0.1 )
-      {
-        m_detectedPeaks.erase( it);
-        break;
-      }
-    }
-
-    for( auto it = m_fitPeaks.begin(); it != m_fitPeaks.end(); ++it )
-    {
-      if( fabs( (*it)->mean() - mean ) < 0.1 )
-      {
-        m_fitPeaks.erase( it);
-        break;
-      }
-    }
-  }//for( each removed peak )
+  peaksChanged();
 }//void handleShiftKeyDrag(...)
 
 
@@ -1085,7 +1364,9 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   }//for( set skew fitFor to false )
 
   // Refit the ROI with the new continuum type (skew locked)
-  if( m_spectrum )
+  const shared_ptr<const SpecUtils::Measurement> spectrum
+    = (m_currentSpectrum < m_spectra.size()) ? m_spectra[m_currentSpectrum].spectrum : nullptr;
+  if( spectrum )
   {
     shared_ptr<const DetectorPeakResponse> detector;
     const shared_ptr<const SpecMeas> contMeas = m_viewer
@@ -1095,44 +1376,45 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
       contFitPrefs = contMeas->detector() ? contMeas->detector()->peakFitDetPrefs() : nullptr;
     assert( contFitPrefs);
     const PeakFitUtils::CoarseResolutionType contDetType
-      = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, contMeas);
+      = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( spectrum, contMeas);
 
     const vector<shared_ptr<const PeakDef>> refitPeaks
-      = refitPeaksThatShareROI_LM( m_spectrum, detector, roiPeaks,
+      = refitPeaksThatShareROI_LM( spectrum, detector, roiPeaks,
                                    contDetType, PeakFitLM::SmallRefinementOnly);
     if( !refitPeaks.empty() )
       roiPeaks = refitPeaks;
   }
 
-  // Combine and update model
-  vector<shared_ptr<const PeakDef>> combined;
-  combined.reserve( otherPeaks.size() + roiPeaks.size());
-  combined.insert( combined.end(), otherPeaks.begin(), otherPeaks.end());
-  combined.insert( combined.end(), roiPeaks.begin(), roiPeaks.end());
-  std::sort( combined.begin(), combined.end(), &PeakDef::lessThanByMeanShrdPtr);
-  m_peakModel->setPeaks( combined);
-
-  // Also update m_detectedPeaks to reflect the continuum change
-  vector<shared_ptr<const PeakDef>> updatedDetected;
-  for( const shared_ptr<const PeakDef> &p : m_detectedPeaks )
-  {
-    if( p->continuum() != oldContinuum )
-      updatedDetected.push_back( p);
-  }
-  for( const shared_ptr<const PeakDef> &p : roiPeaks )
-    updatedDetected.push_back( p);
-  std::sort( updatedDetected.begin(), updatedDetected.end(), &PeakDef::lessThanByMeanShrdPtr);
-  m_detectedPeaks = updatedDetected;
-
-  m_fitPeaks.clear();
+  replaceRoiPeaks( oldContinuum, roiPeaks );
 }//void changeContinuumTypeNearEnergy(...)
+
+
+void FitSkewParamsTool::replaceRoiPeaks( const shared_ptr<const PeakContinuum> &continuum,
+                                         const vector<shared_ptr<const PeakDef>> &roiPeaks )
+{
+  if( m_currentSpectrum >= m_spectra.size() )
+    return;
+
+  vector<shared_ptr<const PeakDef>> &peaks = m_spectra[m_currentSpectrum].peaks;
+  vector<shared_ptr<const PeakDef>> updated;
+  for( const shared_ptr<const PeakDef> &p : peaks )
+  {
+    if( p->continuum() != continuum )
+      updated.push_back( p );
+  }
+  updated.insert( end(updated), begin(roiPeaks), end(roiPeaks) );
+  std::sort( begin(updated), end(updated), &PeakDef::lessThanByMeanShrdPtr );
+  peaks = std::move( updated );
+
+  peaksChanged();
+}//void replaceRoiPeaks(...)
 
 
 // ============================================================================
 // FitSkewParamsWindow
 // ============================================================================
 
-FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
+FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer, std::vector<FitSkewSpectrumInput> drfSpectra )
   : AuxWindow( WString::tr( "fsw-title" ),
                Wt::WFlags<AuxWindowProperties>( AuxWindowProperties::EnableResize )
                | AuxWindowProperties::DisableCollapse ),
@@ -1141,7 +1423,7 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
 {
   rejectWhenEscapePressed();
 
-  m_tool = contents()->addNew<FitSkewParamsTool>( viewer);
+  m_tool = contents()->addNew<FitSkewParamsTool>( viewer, std::move(drfSpectra) );
 
   // Move the "update peaks" checkbox to the footer
   WCheckBox *updateCb = m_tool->updatePeaksCb();
@@ -1171,6 +1453,7 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
   m_tool->resultUpdated().connect( this, [this](){
     m_acceptBtn->setEnabled( m_tool->canAccept());
   } );
+  m_acceptBtn->setEnabled( m_tool->canAccept() );
 
   resizeScaledWindow( 0.7, 0.7);
   centerWindow();

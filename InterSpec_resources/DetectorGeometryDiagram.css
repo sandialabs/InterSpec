@@ -14,6 +14,15 @@
 }
 .DetectorGeometryInput .DgiForm { flex: 0 0 auto; }
 
+/* Below the form instead, when the form is in a column too narrow to have anything beside it
+   (DetectorGeometryInput::setDiagramBelow); the drawing then needs a height of its own. */
+.DetectorGeometryInput .DgiBody.DgiDiagramBelow { flex-direction: column; }
+.DetectorGeometryInput .DgiBody.DgiDiagramBelow > .DetectorGeometryDiagram
+{
+  flex: 0 0 auto;
+  height: 170px;
+}
+
 /* Takes the height the form sets and no more: `align-items: stretch` on the row spans it from the
    form's top to the form's bottom, and the SVG inside is absolutely positioned so it contributes no
    height of its own.  Anything that gives this element an intrinsic height (a min-height, or an

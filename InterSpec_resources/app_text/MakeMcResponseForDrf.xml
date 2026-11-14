@@ -147,15 +147,16 @@
     </ul></message>
   <message id="mmr-ref-distance">Curve reference distance:</message>
   <message id="mmr-tt-ref-distance"><p>The source-to-detector distance the efficiency
-    curve is valid at - the anchor the transfer holds fixed. Pre-filled from where
-    the curve is pinned to data: its stated measurement distance when it has one,
-    otherwise a comfortably far-field distance. When the DRF carries raw measured
-    points at a single distance, the points pin it and it cannot be edited.</p>
+    curve is valid at - the anchor the transfer holds fixed. Left blank, the distance shown
+    greyed is used: the curve's stated measurement distance when it has one, otherwise a
+    far-field distance.  Type a distance to use that instead.</p>
     <p>Distances are measured from the detector face (the front of the endcap).</p></message>
   <message id="mmr-anchor-src-points">Anchoring on the {1} measured efficiency points at {2}.</message>
   <message id="mmr-anchor-src-curve">Anchoring on the DRF efficiency curve, sampled at {1} energies, at {2}.</message>
+  <message id="mmr-anchor-src-curve-cov">Anchoring on the DRF efficiency curve and its uncertainties.</message>
   <message id="mmr-anchor-src-grid">Anchoring on the imported efficiency grid, sampled at {1} energies, at {2}.</message>
   <message id="mmr-anchor-unusable">This DRF cannot anchor a transfer: {1}</message>
+  <message id="mmr-anchor-no-curve">Anchors on the efficiency curve, once there is one.</message>
   <!-- The pre-run estimate: "About 814 Monte-Carlo nodes (40 on-axis energies + 14 angles x 9
        energies + 72 near-field positions x 9 energies); roughly 7 minutes."  {2} of the estimate keys is the per-stage breakdown, {3} the duration phrase. -->
   <message id="mmr-estimate-v2">About {1} Monte-Carlo nodes ({2}); {3}.</message>
@@ -224,6 +225,7 @@
     geometry: an InterSpec detector (.drf.xml) with a geometry, an ANGLE .outx or .detx file, or a
     GADRAS Detector.dat.  Only the geometry is imported.</message>
   <message id="mmr-import-geom-none">&quot;{1}&quot; does not describe a detector geometry.</message>
+  <message id="mmr-import-geom-none-why">&quot;{1}&quot; does not describe a detector geometry: {2}</message>
   <message id="mmr-import-geom-error">Could not read a detector geometry from &quot;{1}&quot;: {2}</message>
   <message id="mmr-import-geom-too-large">The selected file is too large to upload.</message>
   <message id="mmr-grid-replaced-note">Building or generating another response replaces the
@@ -281,6 +283,23 @@
   <message id="dgi-more-geometry">More geometry (dead layer, bore, fillet)...</message>
   <message id="dgi-fewer-geometry">Fewer geometry options</message>
   <message id="dgi-err-missing">Please enter the {1}.</message>
+  <message id="dgi-err-crystal">Please select a crystal material.</message>
+  <message id="dgi-tt-dist-format">A distance, e.g. 7.62 cm or 3 in</message>
+  <!-- Names of the geometry inputs, for "Please enter the {1}." and "The {1} is not a valid distance." -->
+  <message id="dgi-fld-width">width</message>
+  <message id="dgi-fld-height">height</message>
+  <message id="dgi-fld-length">length</message>
+  <message id="dgi-fld-diameter">diameter</message>
+  <message id="dgi-fld-fillet">front edge fillet radius</message>
+  <message id="dgi-fld-bore-diam">bore diameter</message>
+  <message id="dgi-fld-bore-depth">bore depth</message>
+  <message id="dgi-fld-dead-front">front dead layer</message>
+  <message id="dgi-fld-dead-side">side dead layer</message>
+  <message id="dgi-fld-layer-front">layer front thickness</message>
+  <message id="dgi-fld-layer-side">layer side thickness</message>
+  <message id="dgi-fld-layer-back">layer back thickness</message>
+  <message id="dgi-fld-coll-thick">collimator thickness</message>
+  <message id="dgi-fld-coll-ext">collimator extension</message>
   <message id="dgi-err-invalid">The {1} is not a valid distance.</message>
   <message id="dgi-err-bore">Please give both a bore diameter and depth (or neither).</message>
   <message id="dgi-err-bore-size">The bore must be smaller than the crystal.</message>

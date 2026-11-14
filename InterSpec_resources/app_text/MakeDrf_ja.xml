@@ -16,7 +16,6 @@
   
   <message id="md-det-diam">検出器直径</message>
   <message id="md-det-setback">Det. セットバック</message>
-  <message id="md-eff-type">効率タイプ</message>
   <message id="md-eqn-in-kev">方程式(keV)</message>
   <message id="md-eqn-in-mev">方程式(MeV)</message>
   <message id="md-geom-intrinsic-eff">内在効率</message>
@@ -40,7 +39,6 @@
     <br />
     固定 per gram: per cm2と似ていますが、線源のグラムあたりの場合。
   </message>
-  <message id="md-fwhm-eqn-form-label">半値幅方程式</message>
   <message id="md-fwhm-gadras">Gadras方程式</message>
   <message id="md-sqrt-series">平方根べき級数</message>
   <message id="md-atten-for-air-cb">空気の減衰</message>
@@ -51,7 +49,6 @@
     これは低エネルギーまたは大きな校正距離で影響が大きくなります。
   </message>
   <message id="md-show-fwhm-markers">半値幅点表示</message>
-  <message id="md-mi-chart-phone">チャート/オプション</message>
   <message id="md-mi-peaks-phone">使用ピーク</message>
   <message id="md-export-btn">保存/エクスポート...</message>
   <message id="md-export-window-title">DRF保存/エクスポート</message>
@@ -94,7 +91,6 @@
   <message id="md-peak-counts">{1} {2} keV、ピーク{3}カウント</message>
   <message id="md-peak-no-nuc">関連核種なし、{1} keV、ピーク{2}カウント</message>
   
-  <message id="md-err-some-src">一部の線源でエラーが発生。</message>
   <message id="md-n-fit-pars">{1}フィットパラメータ</message>
   <message id="md-html-eff-table-caption">全エネルギー検出効率（全ガンマの%）</message>
   <message id="md-html-Intrinsic">内在</message>

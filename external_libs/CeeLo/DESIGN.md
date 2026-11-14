@@ -709,6 +709,28 @@ on-axis ≤0.6%; the HPGe total still drifts off axis (use the few-anchor mode).
 for a host: a viable "quick DRF" and measured-curve → other-geometry estimator, ≤1%
 on-axis far, a few % near/off-axis with honest inflated σ, full MC as the upgrade.
 
+### Efficiency scale (`DetectorResponse::efficiency_scale`, `CEELO_BUILD_RESPONSE`)
+
+One constant multiplying every efficiency a response gives - FEP and total in every tier, and
+`fep_prefactor` / `total_prefactor`, so hosts assembling their own kernel sums (volumetric
+sources) get it too - over the one crystal the descriptor describes: the number of identical
+detector elements whose events go into one spectrum with one live time (a 2×2 CZT array modeled
+as one of its crystals; GADRAS's Detector.dat parameter 18) or an empirical factor - not elements
+recorded as separate spectra and summed afterward with their live times, whose sum has one element's
+efficiency. Fractional quantities (sigmas relative to the value,
+`frac_covariance`, flags) do not change. Producers are given it -
+`GenerationOptions::efficiency_scale` (stamped on the finished response, so node MC,
+closed-loop refinement and the certificate all run on the one element; `certify` scores the
+probes' MC × scale) and `TransferResponseOptions::efficiency_scale` (eta and b(E) are the
+anchors ÷ scale) - and `ground_to_points` evaluates the model with it, so measured points are
+the whole detector's efficiency and k(E) stays the physics correction to the element. It must
+be finite and > 0 (`finalize()` throws otherwise). Written as `<EfficiencyScale>` and hashed
+only when ≠ 1, and such a response is stamped version 5: a pre-v5 reader would skip the element
+and report one element's efficiency for the whole detector. Modeling the array as one larger
+crystal (scale 1) is the better choice near the detector, where the elements' positions matter.
+Tests: `test_detector_response_io` (`efficiency_scale_*`), `test_efficiency_transfer`
+(`transfer_with_efficiency_scale`), `test_response_generator_smoke`.
+
 ## Cone Biasing Policy
 
 **Pure cone biasing is used only for point sources with no source shielding or source

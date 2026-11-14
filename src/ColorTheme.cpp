@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <vector>
 #include <string>
+#include <iostream>
 #include <typeinfo>
 
 #include <Wt/WColor.h>
@@ -490,6 +491,34 @@ std::string ColorTheme::toJson( const ColorTheme &info )
 }//string toJson( const ColorThemeInfo &info )
 
 
+Wt::WColor ColorTheme::colorFromText( const std::string &str )
+{
+  if( str.empty() )
+    return Wt::WColor();
+
+  for( const char c : str )
+  {
+    const bool ok = ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) || ((c >= '0') && (c <= '9'))
+                    || (std::string( "#(),.% -" ).find( c ) != std::string::npos);
+    if( !ok )
+    {
+      std::cerr << "ColorTheme: ignoring invalid colour '" << str << "'" << std::endl;
+      return Wt::WColor();
+    }
+  }//for( loop over characters )
+  return Wt::WColor( Wt::WString::fromUTF8( str ) );
+}//colorFromText(...)
+
+
+namespace
+{
+  Wt::WColor color_from_text( const Wt::WString &text )
+  {
+    return ColorTheme::colorFromText( text.toUTF8() );
+  }
+}//namespace
+
+
 void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
 {
   info = ColorTheme();
@@ -572,7 +601,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
 
       const string colorStr = static_cast<const WString &>(nonChartAreaObj.get(key)).toUTF8();
       if( !colorStr.empty() )
-        info.appColors[token.name] = WColor( colorStr );
+        info.appColors[token.name] = color_from_text( WString::fromUTF8( colorStr ) );
     }//for( const AppColorToken &token : appColorTokens() )
   }//if( nonChartArea object with a cssTheme )
   
@@ -580,19 +609,19 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   {
     Json::Object &spectrum = base["spectrum"];
     if( spectrum.contains("foregroundColor") )
-      info.foregroundLine = WColor( static_cast<const WString &>(spectrum["foregroundColor"]) );
+      info.foregroundLine = color_from_text( spectrum["foregroundColor"] );
     if( spectrum.contains("backgroundColor") )
-      info.backgroundLine = WColor( static_cast<const WString &>(spectrum["backgroundColor"]) );
+      info.backgroundLine = color_from_text( spectrum["backgroundColor"] );
     if( spectrum.contains("secondaryColor") )
-      info.secondaryLine = WColor( static_cast<const WString &>(spectrum["secondaryColor"]) );
+      info.secondaryLine = color_from_text( spectrum["secondaryColor"] );
     if( spectrum.contains("axisLines") )
-      info.spectrumAxisLines = WColor( static_cast<const WString &>(spectrum["axisLines"]) );
+      info.spectrumAxisLines = color_from_text( spectrum["axisLines"] );
     if( spectrum.contains("chartBackground") )
-      info.spectrumChartBackground = WColor( static_cast<const WString &>(spectrum["chartBackground"]) );
+      info.spectrumChartBackground = color_from_text( spectrum["chartBackground"] );
     if( spectrum.contains("chartMargins") )
-      info.spectrumChartMargins = WColor( static_cast<const WString &>(spectrum["chartMargins"]) );
+      info.spectrumChartMargins = color_from_text( spectrum["chartMargins"] );
     if( spectrum.contains("chartText") )
-      info.spectrumChartText = WColor( static_cast<const WString &>(spectrum["chartText"]) );
+      info.spectrumChartText = color_from_text( spectrum["chartText"] );
     if( spectrum.contains("peakLabelSize") )
       info.spectrumPeakLabelSize = spectrum["peakLabelSize"];
     if( spectrum.contains("peakLabelRotation") )
@@ -609,25 +638,25 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   {
     Json::Object &timechart = base["timeChart"];
     if( timechart.contains("foregroundHighlightColor") )
-      info.timeHistoryForegroundHighlight = WColor( static_cast<const WString &>(timechart["foregroundHighlightColor"]) );
+      info.timeHistoryForegroundHighlight = color_from_text( timechart["foregroundHighlightColor"] );
     if( timechart.contains("backgroundHighlightColor") )
-      info.timeHistoryBackgroundHighlight = WColor( static_cast<const WString &>(timechart["backgroundHighlightColor"]) );
+      info.timeHistoryBackgroundHighlight = color_from_text( timechart["backgroundHighlightColor"] );
     if( timechart.contains("secondaryHighlightColor") )
-      info.timeHistorySecondaryHighlight = WColor( static_cast<const WString &>(timechart["secondaryHighlightColor"]) );
+      info.timeHistorySecondaryHighlight = color_from_text( timechart["secondaryHighlightColor"] );
     if( timechart.contains("gammaLine") )
-      info.timeChartGammaLine = WColor( static_cast<const WString &>(timechart["gammaLine"]) );
+      info.timeChartGammaLine = color_from_text( timechart["gammaLine"] );
     if( timechart.contains("neutronLine") )
-      info.timeChartNeutronLine = WColor( static_cast<const WString &>(timechart["neutronLine"]) );
+      info.timeChartNeutronLine = color_from_text( timechart["neutronLine"] );
     if( timechart.contains("axisLines") )
-      info.timeAxisLines = WColor( static_cast<const WString &>(timechart["axisLines"]) );
+      info.timeAxisLines = color_from_text( timechart["axisLines"] );
     if( timechart.contains("chartBackground") )
-      info.timeChartBackground = WColor( static_cast<const WString &>(timechart["chartBackground"]) );
+      info.timeChartBackground = color_from_text( timechart["chartBackground"] );
     if( timechart.contains("chartMargins") )
-      info.timeChartMargins = WColor( static_cast<const WString &>(timechart["chartMargins"]) );
+      info.timeChartMargins = color_from_text( timechart["chartMargins"] );
     if( timechart.contains("chartText") )
-      info.timeChartText = WColor( static_cast<const WString &>(timechart["chartText"]) );
+      info.timeChartText = color_from_text( timechart["chartText"] );
     if( timechart.contains("occIndicatorLines") )
-      info.occupancyIndicatorLines = WColor( static_cast<const WString &>(timechart["occIndicatorLines"]) );
+      info.occupancyIndicatorLines = color_from_text( timechart["occIndicatorLines"] );
   }//if( timeChart node )
   
   
@@ -635,7 +664,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     info.peaksTakeOnReferenceLineColor = base["peaksTakeOnReferenceLineColor"];
   
   if( base.contains("defaultPeakLineColor") )
-    info.defaultPeakLine = WColor( static_cast<const WString &>(base["defaultPeakLineColor"]) );
+    info.defaultPeakLine = color_from_text( base["defaultPeakLineColor"] );
   
   // Set default values for dynamic reference line colors
   info.dynamicRefLineMedicalColor = WColor( sm_dynamic_ref_line_medical_color );
@@ -651,17 +680,17 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     
     // Check for dynamic reference line colors
     if( refLines.contains("dynamicRefLineMedicalColor") )
-      info.dynamicRefLineMedicalColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineMedicalColor"]) );
+      info.dynamicRefLineMedicalColor = color_from_text( refLines["dynamicRefLineMedicalColor"] );
     if( refLines.contains("dynamicRefLineIndustrialColor") )
-      info.dynamicRefLineIndustrialColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineIndustrialColor"]) );
+      info.dynamicRefLineIndustrialColor = color_from_text( refLines["dynamicRefLineIndustrialColor"] );
     if( refLines.contains("dynamicRefLineNormColor") )
-      info.dynamicRefLineNormColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineNormColor"]) );
+      info.dynamicRefLineNormColor = color_from_text( refLines["dynamicRefLineNormColor"] );
     if( refLines.contains("dynamicRefLineSnmColor") )
-      info.dynamicRefLineSnmColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineSnmColor"]) );
+      info.dynamicRefLineSnmColor = color_from_text( refLines["dynamicRefLineSnmColor"] );
     if( refLines.contains("dynamicRefLineCommonColor") )
-      info.dynamicRefLineCommonColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineCommonColor"]) );
+      info.dynamicRefLineCommonColor = color_from_text( refLines["dynamicRefLineCommonColor"] );
     if( refLines.contains("dynamicRefLineOtherColor") )
-      info.dynamicRefLineOtherColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineOtherColor"]) );
+      info.dynamicRefLineOtherColor = color_from_text( refLines["dynamicRefLineOtherColor"] );
     
     if( refLines.contains("lineColors") )
     {
@@ -669,7 +698,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
       const Json::Array &lineColors = refLines["lineColors"];
       
       for( const auto &c : lineColors )
-        info.referenceLineColor.push_back( WColor(static_cast<const WString &>(c)) );
+        info.referenceLineColor.push_back( color_from_text( c ) );
     }
     
     if( refLines.contains("specificSources") )
@@ -677,7 +706,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
       info.referenceLineColorForSources.clear();
       const Json::Object &srcs = refLines["specificSources"];
       for( const auto &p : srcs )
-        info.referenceLineColorForSources[p.first] = WColor(static_cast<const WString &>(p.second));
+        info.referenceLineColorForSources[p.first] = color_from_text( p.second );
     }
   }//if( referenceLines node )
 }//void fromJson( const std::string &json, ColorThemeInfo &info )

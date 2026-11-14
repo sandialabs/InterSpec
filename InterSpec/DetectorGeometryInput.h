@@ -28,8 +28,10 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 class InterSpec;
 class DetectorPeakResponse;
@@ -45,6 +47,7 @@ namespace Wt
   class WCheckBox;
   class WComboBox;
   class WLineEdit;
+  class WFormWidget;
   class WPushButton;
 }//namespace Wt
 
@@ -66,11 +69,34 @@ public:
   DetectorGeometryInput( InterSpec *viewer );
   virtual ~DetectorGeometryInput() override;
 
+  /** A validation error that knows which input it is about, so the form can mark that input.
+   Still a std::runtime_error, so callers that only want the message need not know about it. */
+  class FieldError : public std::runtime_error
+  {
+  public:
+    FieldError( const std::string &msg, Wt::WFormWidget *field )
+      : std::runtime_error( msg ), m_field( field ) {}
+    Wt::WFormWidget *field() const { return m_field; }
+  private:
+    Wt::WFormWidget *m_field;
+  };//class FieldError
+
   /** Builds the geometry descriptor from the current inputs.
    Throws std::runtime_error with a user-displayable message when input is
-   missing or invalid.
+   missing or invalid - a FieldError when it is about one input.
    */
   ceelo::GeometryDescriptor toDescriptor() const;
+
+  /** The input the current problem (see #problemDescription) is about - marked in the form - or
+   nullptr when the form is valid or no single input is at fault. */
+  Wt::WFormWidget *problemField() const;
+
+  /** Puts the drawing of the geometry below the form, rather than beside it - for when the form is
+   in a column too narrow to have anything beside it. */
+  void setDiagramBelow( const bool below );
+
+  /** The name of the selected crystal material, e.g. "HPGe" or "NaI". */
+  std::string crystalMaterialName() const;
 
   /** Sets the GUI state from a descriptor (e.g., an existing MC responses
    geometry).  Layer materials are matched back to their stored
@@ -171,6 +197,9 @@ public:
 protected:
   void init();
   void handleShapeChange();
+
+  /** Shows the rows that apply to the current shape (and, in compact mode, details setting). */
+  void updateRowVisibility();
   /** A crystal dimension edit: retires #m_seededFromDiameterGuess, then #handleUserInput.
       Only these fields clear that flag - a layer thickness or a material choice says nothing
       about how long the crystal is. */
@@ -249,6 +278,12 @@ protected:
   Wt::WLineEdit *m_collimatorMaterial, *m_collimatorThickness, *m_collimatorExtension;
 
   Wt::WText *m_note;
+
+  /** The input the current problem is about; marked as an error.  See #problemField. */
+  Wt::Core::observing_ptr<Wt::WFormWidget> m_problemField;
+
+  /** Holds the form and, beside or below it, the diagram; see #setDiagramBelow. */
+  Wt::WContainerWidget *m_body;
 
   /** See #setCompact; `m_showDetails` toggles the advanced rows back on. */
   bool m_compact, m_showDetails;

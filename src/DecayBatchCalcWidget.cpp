@@ -280,7 +280,6 @@ DecayBatchCalcNuclide::DecayBatchCalcNuclide( WSuggestionPopup *nuclideSuggest )
 
   m_nuclideEdit = addNew<WLineEdit>();
   m_nuclideEdit->setAutoComplete( false );
-  m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
@@ -304,7 +303,6 @@ DecayBatchCalcNuclide::DecayBatchCalcNuclide( WSuggestionPopup *nuclideSuggest )
   ageValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_ageEdit->setValidator( ageValidator );
   m_ageEdit->setAutoComplete( false );
-  m_ageEdit->setAttributeValue( "ondragstart", "return false" );
   m_ageEdit->changed().connect( this, &DecayBatchCalcNuclide::handleAgeChange );
   m_ageEdit->enterPressed().connect( this, &DecayBatchCalcNuclide::handleAgeChange );
 
@@ -316,7 +314,6 @@ DecayBatchCalcNuclide::DecayBatchCalcNuclide( WSuggestionPopup *nuclideSuggest )
   actLabel->setBuddy( m_activityEdit );
   m_activityEdit->setWidth( WLength(80.0, WLength::Unit::Pixel) );
   m_activityEdit->setAutoComplete( false );
-  m_activityEdit->setAttributeValue( "ondragstart", "return false" );
   m_activityEdit->changed().connect( this, &DecayBatchCalcNuclide::handleActivityChange );
   m_activityEdit->enterPressed().connect( this, &DecayBatchCalcNuclide::handleActivityChange );
 
@@ -854,6 +851,7 @@ DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
   // --- Results area -------------------------------------------------------------------------
   m_resultContainer = addNew<WContainerWidget>();
   m_resultContainer->addStyleClass( "DbcResultArea" );
+  m_resultContainer->addStyleClass( "SelectableTxt" );
   m_resultContainer->setOverflow( Wt::Overflow::Auto );
 
   // --- Export row (children of this widget, NOT the window footer) --------------------------

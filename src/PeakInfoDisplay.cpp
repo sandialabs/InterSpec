@@ -1252,7 +1252,8 @@ void PeakInfoDisplay::init()
 //  m_infoView->setHeaderHeight(28);
   m_infoView->setSortingEnabled( true );
   m_infoView->setAlternatingRowColors( true );
-  m_infoView->setSelectable( true );
+  // Left text-unselectable (the WTreeView default): a drag would highlight text across cells and
+  //  rows; values are copied with the copy/CSV buttons below the table instead.
   m_infoView->setSelectionMode( SelectionMode::Single );
   
   m_infoView->setColumnHidden( PeakModel::kCandidateIsotopes, true );

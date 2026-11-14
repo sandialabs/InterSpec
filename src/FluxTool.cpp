@@ -74,7 +74,6 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
-#include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -1522,7 +1521,6 @@ void FluxToolWidget::init()
   m_distance->addStyleClass( "FluxDistanceEnter" );
   label->setBuddy(m_distance);
 
-  m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );
@@ -1535,15 +1533,14 @@ void FluxToolWidget::init()
   m_distance->changed().connect( this, &FluxToolWidget::distanceUpdated );
   m_distance->enterPressed().connect( this, &FluxToolWidget::distanceUpdated );
 
-  SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
   if( m_narrowLayout )
   {
     auto detCell = distDetRow->elementAt(0,0);
     detCell->setColumnSpan( 2 );
-    m_detector = detCell->addNew<DetectorDisplay>( m_interspec, specFileModel );
+    m_detector = detCell->addNew<DetectorDisplay>( m_interspec );
   }else
   {
-    m_detector = distDetRow->elementAt(0,1)->addNew<DetectorDisplay>( m_interspec, specFileModel );
+    m_detector = distDetRow->elementAt(0,1)->addNew<DetectorDisplay>( m_interspec );
   }
   m_detector->addStyleClass( "FluxDet" );
   m_interspec->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
@@ -1611,6 +1608,7 @@ void FluxToolWidget::init()
 
   WContainerWidget *notesDiv = optsAndNotesDiv->addNew<WContainerWidget>();
   notesDiv->addStyleClass( "FluxNotes" );
+  notesDiv->addStyleClass( "SelectableTxt" );
   m_rangeWarning = notesDiv->addNew<WText>( WString::fromUTF8("") );
   m_rangeWarning->addStyleClass( "FluxRangeWarn" );
   m_rangeWarning->setInline( false );

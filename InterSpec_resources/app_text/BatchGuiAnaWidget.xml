@@ -167,4 +167,6 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
 
   <message id="bgw-mda-side-channels-label">Side channels:</message>
   <message id="bgw-mda-side-channels-tt">The number of channels on each side of the peak region used to estimate how many continuum counts are underneath the peak, for the Currie-style limit.  Valid range is 1 to 64; 4 is typical.  Using more channels reduces the uncertainty of the continuum estimate, and so tightens the limit, but risks biasing it if the continuum is not straight, or if a neighboring peak falls into the side regions.</message>
+  <message id="bgw-saved-template-choose">Add a saved template...</message>
+  <message id="bgw-saved-template-package">{1} ({2})</message>
 </messages> 

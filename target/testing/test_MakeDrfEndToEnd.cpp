@@ -1216,7 +1216,7 @@ BOOST_AUTO_TEST_CASE( assemble_drf_preserves_mc_grounding )
     seed->setMeasuredPoints( nullptr );
     const CeeLoUtils::TransferAnchor anchor
           = CeeLoUtils::transferAnchorForDrf( seed, *geom.geometry, 50.0 );
-    return CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, ceelo::AnchorCurve{}, "stand-in" );
+    return CeeLoUtils::makeTransferResponse( *geom.geometry, anchor, ceelo::AnchorCurve{}, "stand-in" , 1.0);
   };
 
   // A response that arrives GROUNDED must stay grounded, with the same k(E) after repeated saves.
@@ -1290,5 +1290,54 @@ BOOST_AUTO_TEST_CASE( assemble_drf_preserves_mc_grounding )
           = MakeDrfCalc::assembleDrf( "d", "", points, flat_disk(), fit_results(fit), resp );
     BOOST_CHECK_MESSAGE( !drf->ceeloResponse(),
                          "assembleDrf attached a response to a diameter-only (flat-disk) detector" );
+  }
+
+  // An efficiency multiple entered after the Monte Carlo ran: the DRF's response carries it, and,
+  //  grounded with it in the model, still reproduces the (whole detector's) measurements - while the
+  //  response handed in, which DRFs already in use may share, is left as it was.
+  {
+    MakeDrfCalc::GeometryChoice geom4 = geom;
+    geom4.efficiencyMultiple = 4.0;
+    const MakeDrfFit::EffFitResult fit4 = fit_points( points, geom4 );  //per element
+
+    shared_ptr<ceelo::DetectorResponse> grounded = make_response();
+    bool curve_derived = false;
+    const vector<ceelo::GroundingPoint> pts
+          = MakeMcResponseForDrf::groundingPointsForDrf(
+                MakeDrfCalc::assembleDrf( "seed", "", points, flat_disk(), fit_results(fit), nullptr ),
+                *geom.geometry, curve_derived );
+    BOOST_REQUIRE( !pts.empty() );
+    ceelo::ResponseGenerator::ground_to_points( *grounded, pts, curve_derived );
+    BOOST_REQUIRE( !grounded->grounding.empty() );
+
+    shared_ptr<ceelo::DetectorResponse> ungrounded = make_response();
+    BOOST_REQUIRE( ungrounded->grounding.empty() );
+
+    for( const shared_ptr<ceelo::DetectorResponse> &resp : { grounded, ungrounded } )
+    {
+      const bool was_grounded = !resp->grounding.empty();
+      const string before = resp->to_xml_string();
+
+      const shared_ptr<DetectorPeakResponse> drf
+            = MakeDrfCalc::assembleDrf( "e", "", points, geom4, fit_results(fit4), resp );
+      BOOST_REQUIRE( drf->ceeloResponse() );
+      BOOST_CHECK_EQUAL( drf->ceeloResponse()->efficiency_scale, 4.0 );
+      BOOST_CHECK_EQUAL( drf->efficiencyMultiple(), 4.0 );
+      BOOST_CHECK_EQUAL( drf->ceeloResponse()->grounding.empty(), !was_grounded );
+      BOOST_CHECK_MESSAGE( resp->to_xml_string() == before,
+                           "assembleDrf changed the response it was handed" );
+      BOOST_CHECK_EQUAL( resp->efficiency_scale, 1.0 );
+
+      if( !was_grounded )
+        continue;
+
+      for( const MeasuredEffPoint &p : points.points() )
+      {
+        const DetectorPeakResponse::EffEval ev = drf->fepEfficiencyEval( p.energy, 0.0, 0.0, p.distance );
+        BOOST_CHECK_MESSAGE( fabs( ev.value/p.efficiency - 1.0 ) < 0.05,
+          "multiple 4: " << p.energy << " keV at " << p.distance/PhysicalUnits::cm
+          << " cm: grounded response gives " << ev.value << " vs measured " << p.efficiency );
+      }
+    }//for( a grounded, then an ungrounded response )
   }
 }//assemble_drf_preserves_mc_grounding

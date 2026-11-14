@@ -21,6 +21,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFitDetPrefs.h"
@@ -930,37 +931,17 @@ nlohmann::json executeListIsotopicsPresets(
   }
 
 
-  // Scan both writable and static data/rel_act directories for preset files
-  // Collect preset files from both directories
-  vector<string> preset_files;
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-  // Scan writable directory first (user-created presets)
-  const string writable_data_dir = InterSpec::writableDataDirectory();
-  const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
-  if( SpecUtils::is_directory(writable_rel_act_dir) )
+  // The presets a lookup by name would load: the user's own, from user library packages, and
+  //  InterSpec's own - one per name (a same-named preset that is not used is left out), without
+  //  disabled ones or package presets that need a newer InterSpec.
+  vector<UserLibrary::Item> preset_items;
+  for( const UserLibrary::Item &item : UserLibrary::items( "rel_act_preset" ) )
   {
-    vector<string> writable_files = SpecUtils::recursive_ls( writable_rel_act_dir, ".xml" );
-    preset_files.insert( preset_files.end(), writable_files.begin(), writable_files.end() );
-  }
-#endif
-
-  // Scan static directory (built-in presets) - unless it is also the writable one (e.g., the stdio
-  //  MCP server, with no user data directory), already scanned above.
-  const string static_data_dir = InterSpec::staticDataDirectory();
-  const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
-  bool static_is_writable = false;
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-  static_is_writable = (SpecUtils::lexically_normalize_path( static_rel_act_dir )
-                        == SpecUtils::lexically_normalize_path( writable_rel_act_dir ));
-#endif
-  if( !static_is_writable && SpecUtils::is_directory(static_rel_act_dir) )
-  {
-    vector<string> static_files = SpecUtils::recursive_ls( static_rel_act_dir, ".xml" );
-    preset_files.insert( preset_files.end(), static_files.begin(), static_files.end() );
+    if( item.inUse )
+      preset_items.push_back( item );
   }
 
-  if( preset_files.empty() )
+  if( preset_items.empty() )
   {
     result["warning"] = "No isotopics preset files found in data directories";
     return result;
@@ -969,8 +950,9 @@ nlohmann::json executeListIsotopicsPresets(
   // Filter out unwanted presets
   const vector<string> exclude_keywords = { "U inside U", "multiple U" };
 
-  for( const string &filepath : preset_files )
+  for( const UserLibrary::Item &item : preset_items )
   {
+    const string filepath = item.found.path;
     const string filename = SpecUtils::filename(filepath);
 
     // Check if filename contains any exclude keywords (case-insensitive)
@@ -989,7 +971,7 @@ nlohmann::json executeListIsotopicsPresets(
 
     json preset;
     // Remove .xml extension from name for cleaner display
-    string preset_name = filename;
+    string preset_name = item.names.empty() ? filename : item.names.front();
     if( SpecUtils::iends_with(preset_name, ".xml") )
       preset_name = preset_name.substr(0, preset_name.size() - 4);
     preset["name"] = preset_name;
@@ -997,15 +979,8 @@ nlohmann::json executeListIsotopicsPresets(
     // We wont include the full path to the XML file, as the LLM doesnt need to know that
     //preset["path"] = filepath;
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    // Indicate whether this is a user preset or built-in preset
-    if( !static_is_writable && SpecUtils::istarts_with(filepath, writable_rel_act_dir) )
-      preset["location"] = "user";
-    else
-      preset["location"] = "built-in";
-#else
-    preset["location"] = "built-in";
-#endif
+    // Built-in, or added by the user (themselves, or from a package - which is not named here).
+    preset["location"] = (item.source.kind == UserLibrary::SourceKind::BuiltIn) ? "built-in" : "user";
 
     // Try to extract basic info from filename
     if( SpecUtils::icontains(filename, "Pu") )
@@ -1146,30 +1121,15 @@ nlohmann::json executeLoadIsotopicsPreset(
     preset_name += ".xml";
 
 
-  // Search for the preset file in writable directory first, then static directory
+  // The preset a lookup by this name gets (the user's own, a package's, or InterSpec's own - per the
+  //  user library's precedence and the user's choices).
   string preset_path;
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-  {// Begin check writable directory first
-    const string writable_data_dir = InterSpec::writableDataDirectory();
-    const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
-
-    const string candidate = SpecUtils::append_path( writable_rel_act_dir, preset_name );
-    if( SpecUtils::is_file(candidate) )
-      preset_path = candidate;
-  }// End check writable directory first
-#endif
-
-  if( preset_path.empty() )
   {
-    // Check static directory
-    const string static_data_dir = InterSpec::staticDataDirectory();
-    const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
-
-    const string candidate = SpecUtils::append_path( static_rel_act_dir, preset_name );
-    if( SpecUtils::is_file(candidate) )
-      preset_path = candidate;
-  }//if( preset_path.empty() )
+    const string stem = preset_name.substr( 0, preset_name.size() - 4 );
+    const optional<UserLibrary::Item> item = UserLibrary::resolve( "rel_act_preset", stem );
+    if( item )
+      preset_path = item->found.path;
+  }
 
   if( preset_path.empty() )
     throw runtime_error( "Could not find preset: " + preset_name );

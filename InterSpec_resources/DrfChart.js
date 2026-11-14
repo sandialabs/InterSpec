@@ -6,8 +6,9 @@
 function drfChartFormatSigFigs(d, sigFigs) {
   if (d === 0) return "0";
   const absD = Math.abs(d);
-  if (absD > 1.0) {
-    // For values above 1, plain fixed notation is always compact enough.
+  if ((absD > 1.0) && (absD < 1.0e5)) {
+    // For moderate values above 1, plain fixed notation is compact enough; past that toFixed()
+    // gives long strings of digits (and, from 1e21, every digit of an exponent form).
     const decimalPlaces = Math.max(0, sigFigs - Math.floor(Math.log10(absD)) - 1);
     return d.toFixed(decimalPlaces);
   }
@@ -203,6 +204,14 @@ DrfChart = function (elem, options) {
     .attr("class", "drf-eff-uncert-band")
     .style("display", "none");
 
+  // A second detector to compare against (e.g., the one in use), drawn dashed under the main curves.
+  this.refEffPath = this.plotGroup.append("path")
+    .attr("class", "efficiency-line drf-ref-line")
+    .style("display", "none");
+  this.refFwhmPath = this.plotGroup.append("path")
+    .attr("class", "fwhm-line drf-ref-line")
+    .style("display", "none");
+
   // Add paths for lines
   this.efficiencyPath = this.plotGroup.append("path")
     .attr("class", "efficiency-line")
@@ -235,6 +244,9 @@ DrfChart = function (elem, options) {
   // Whether the DRFs FWHM curve (and its right-hand axis) is drawn at all; the response-preview
   // chart in the MC tool turns it off, since FWHM says nothing about the geometry being previewed.
   this.showFwhm = true;
+  // Whether the efficiency is drawn; when it is not, the FWHM takes the left-hand axis.
+  this.showEff = true;
+  this.refDetector = null;        // DetectorPeakResponseJS drawn dashed, or null
   // Colors for 0, 22.5, 45, 62.5, 90 degrees.
   this.angleColors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd", "#d62728"];
 
@@ -254,8 +266,20 @@ DrfChart = function (elem, options) {
 DrfChart.prototype.updateDimensions = function() {
   const parentWidth = this.chart.clientWidth;
   const parentHeight = this.chart.clientHeight;
-  this.chartAreaWidth = Math.max(0, parentWidth - this.options.margins.computedLeft - this.options.margins.right);
+  // Only the right-hand FWHM axis needs the right margin; showing one quantity, there is none.
+  const oneQuantity = (this.showFwhm === false) || (this.showEff === false);
+  const right = oneQuantity ? Math.min(12, this.options.margins.right) : this.options.margins.right;
+  this.chartAreaWidth = Math.max(0, parentWidth - this.options.margins.computedLeft - right);
   this.chartAreaHeight = Math.max(0, parentHeight - this.options.margins.top - this.options.margins.bottom);
+
+  // Fewer ticks when the chart is small, so their labels dont run into each other.  (The axes do
+  // not exist yet on the first call, from the constructor.)
+  if (this.xAxis)
+    this.xAxis.ticks(Math.max(2, Math.floor(this.chartAreaWidth / 70)));
+  if (this.leftYAxis)
+    this.leftYAxis.ticks(Math.max(2, Math.floor(this.chartAreaHeight / 35)));
+  if (this.rightYAxis)
+    this.rightYAxis.ticks(Math.max(2, Math.floor(this.chartAreaHeight / 35)));
   
   // Update chart area background dimensions if it exists
   if (this.chartAreaBg) {
@@ -509,12 +533,54 @@ DrfChart.prototype.setDetectorData = function(detectorData) {
 };
 
 
+// Samples `det[fn](energy)` across the visible energy range, skipping invalid values (and any at or
+//  above `maxValue`, if given).  With `ownRange`, only within the detector's own valid range - for a
+//  compared-against curve, which would otherwise be extrapolated across the main detector's range.
+DrfChart.prototype.sampleCurve = function(det, fn, maxValue, ownRange) {
+  const pts = [];
+  if (!det) return pts;
+  const xDomain = this.xScale.domain().slice();
+  if (ownRange) {
+    const r = det.getInitialEnergyRange();
+    xDomain[0] = Math.max(xDomain[0], r[0]);
+    xDomain[1] = Math.min(xDomain[1], r[1]);
+    if (!(xDomain[1] > xDomain[0])) return pts;
+  }
+  const n = Math.max(100, Math.min(600, Math.floor(this.chartAreaWidth / 2)));
+  for (let i = 0; i < n; i++) {
+    const energy = xDomain[0] + (i / (n - 1)) * (xDomain[1] - xDomain[0]);
+    const v = det[fn](energy);
+    if (v !== null && isFinite(v) && v >= 0 && !(maxValue && v >= maxValue))
+      pts.push({ energy: energy, value: v });
+  }
+  return pts;
+};
+
+
 DrfChart.prototype.updateEfficiencyLine = function() {
+  // The compared-against detector's curve, in the plain efficiency view only.  Its values join the
+  //  axis range, so it is drawn after the main curve has set that.
+  const angleMode = !!this.responseSeries;
+  const showRef = (this.showEff !== false) && !angleMode && this.refDetector && this.refDetector.hasEfficiency();
+  const refPoints = showRef
+    ? this.sampleCurve(this.refDetector, "efficiency", null, true).map(d => ({ energy: d.energy, efficiency: d.value }))
+    : [];
+
+  this.updateMainEfficiencyLine(refPoints);
+
+  if (refPoints.length)
+    this.refEffPath.datum(refPoints).attr("d", this.efficiencyLine).style("display", null);
+  else
+    this.refEffPath.style("display", "none");
+};
+
+
+DrfChart.prototype.updateMainEfficiencyLine = function(refPoints) {
   // In angle mode the flat curve is the angle-flat (far-field / infinite-plane)
   // intrinsic reference; it is only meaningful in the intrinsic view, and the
   // efficiency axis is owned by updateAngleSeries (do not reset it here).
   const angleMode = !!this.responseSeries;
-  if (angleMode && this.effMode === "absolute") {
+  if ((angleMode && this.effMode === "absolute") || (this.showEff === false)) {
     this.efficiencyPath.style("display", "none");
     this.effUncertBandPath.style("display", "none");
     this.effUncertModelBandPath.style("display", "none");
@@ -525,13 +591,14 @@ DrfChart.prototype.updateEfficiencyLine = function() {
     this.efficiencyPath.style("display", "none");
     this.effUncertBandPath.style("display", "none");
     this.effUncertModelBandPath.style("display", "none");
-    // No curve: the measured points alone set the efficiency axis
-    const ptExt = this.pointValueExtent("eff");
-    if (ptExt) {
-      this.efficiencyScale.domain( drfChartEfficiencyDomain(ptExt) );
-      this.leftYAxisGroup.call(this.leftYAxis);
-      this.adjustLeftMargin();
-    }
+    // No curve: the measured points, and any compared-against curve, set the efficiency axis
+    let ptExt = this.pointValueExtent("eff");
+    if (refPoints.length)
+      ptExt = d3.extent((ptExt || []).concat(refPoints.map(d => d.efficiency)));
+    // With nothing at all to show, go back to a plain default rather than keep a stale range
+    this.efficiencyScale.domain( ptExt ? drfChartEfficiencyDomain(ptExt) : [0, 1] );
+    this.leftYAxisGroup.call(this.leftYAxis);
+    this.adjustLeftMargin();
     return;
   }
 
@@ -587,14 +654,25 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   // updateAngleSeries owns the efficiency domain).  Include the upper band so
   // the envelope is not clipped off the top of the plot.
   if (!angleMode) {
-    let effValues = efficiencyPoints.map(d => d.efficiency);
-    if (modelBandPoints.length)
-      effValues = effValues.concat(modelBandPoints.map(d => d.upper));
-    else if (bandPoints.length)
-      effValues = effValues.concat(bandPoints.map(d => d.upper));
+    // The axis follows what was measured: the curve over the measured energies, the points, and
+    // any compared-against curve.  Past the measured energies the curve is an extrapolation, and the
+    // band can be enormous for a poor fit; neither may stretch the axis more than a few times past
+    // the rest, or everything that was measured is squashed flat against the x-axis.
+    const range = this.dataRange;
+    const inRange = d => !range || ((d.energy >= range[0]) && (d.energy <= range[1]));
+    let core = efficiencyPoints.filter(inRange).map(d => d.efficiency);
     const ptExt = this.pointValueExtent("eff");
     if (ptExt)
-      effValues = effValues.concat(ptExt);
+      core = core.concat(ptExt);
+    core = core.concat(refPoints.map(d => d.efficiency));
+    if (!core.length)
+      core = efficiencyPoints.map(d => d.efficiency);
+    const coreMax = d3.max(core);
+    const capped = v => (coreMax > 0) ? Math.min(v, 2.5 * coreMax) : v;
+
+    let effValues = core.concat(efficiencyPoints.map(d => capped(d.efficiency)));
+    const band = modelBandPoints.length ? modelBandPoints : bandPoints;
+    effValues = effValues.concat(band.map(d => capped(d.upper)));
     const efficiencyExtent = d3.extent(effValues);
     if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
       this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
@@ -671,7 +749,7 @@ DrfChart.prototype.updateAngleSeries = function() {
   if (!this.responseSeries) {
     g.selectAll("*").remove();
     this.angleLegend.selectAll("*").remove();
-    this.leftYAxisLabel.text("Efficiency");
+    this.leftYAxisLabel.text(this.showEff === false ? "FWHM (keV)" : "Efficiency");
     return;
   }
 
@@ -786,73 +864,63 @@ DrfChart.prototype.drawAngleLegend = function(series) {
 };
 
 
-DrfChart.prototype.updateFwhmLine = function() {
-  if (this.showFwhm === false || !this.detector || !this.detector.hasFwhm()) {
-    this.fwhmPath.style("display", "none");
-    // FWHM markers alone can still carry the right axis
-    const ptExt = (this.showFwhm !== false) ? this.pointValueExtent("fwhm") : null;
-    if (ptExt) {
-      const pad = 0.1 * Math.max(ptExt[1] - ptExt[0], 0.1 * ptExt[1]);
-      this.fwhmScale.domain([Math.max(0, ptExt[0] - pad), ptExt[1] + pad]);
-      this.rightYAxisGroup.call(this.rightYAxis).style("display", null);
-      this.rightYAxisLabel.style("display", null);
-    } else {
-      this.rightYAxisGroup.style("display", "none");
-      this.rightYAxisLabel.style("display", "none");
-    }
-    return;
-  }
-  
-  // Generate FWHM data points using the detector class
-  let fwhmPoints = [];
-  
-  // Get current visible energy range (zoomed range)
-  const xDomain = this.xScale.domain();
-  const minEnergy = xDomain[0];
-  const maxEnergy = xDomain[1];
-  
-  // Calculate number of points based on chart width
-  const numPoints = Math.max(100, Math.min(600, Math.floor(this.chartAreaWidth / 2)));
-  
-  // Generate FWHM points using the detector class
-  for (let i = 0; i < numPoints; i++) {
-    const energy = minEnergy + (i / (numPoints - 1)) * (maxEnergy - minEnergy);
-    const fwhm = this.detector.fwhm(energy);
-    
-    // Skip invalid FWHM values
-    if (fwhm !== null && isFinite(fwhm) && fwhm >= 0 && fwhm < 9999.9) {
-      fwhmPoints.push({ energy: energy, fwhm: fwhm });
-    }
-  }
-  
-  if (fwhmPoints.length === 0) {
-    this.fwhmPath.style("display", "none");
+// Shows or hides the FWHM axis: the right-hand one, or the left-hand one when the efficiency is not
+//  drawn (see setShowEfficiency).
+DrfChart.prototype.setFwhmAxisVisible = function(visible) {
+  if (this.showEff === false) {
     this.rightYAxisGroup.style("display", "none");
     this.rightYAxisLabel.style("display", "none");
+    if (visible) {
+      this.leftYAxisGroup.call(this.leftYAxis);
+      this.adjustLeftMargin();
+    }
     return;
   }
-  
-  // Update FWHM line
-  this.fwhmPath.datum(fwhmPoints)
-    .attr("d", this.fwhmLine)
-    .style("display", null);
-  
-  // Update FWHM scale (including any measured FWHM markers)
-  let fwhmValues = fwhmPoints.map(d => d.fwhm);
-  const ptExt = this.pointValueExtent("fwhm");
+
+  if (visible)
+    this.rightYAxisGroup.call(this.rightYAxis);
+  this.rightYAxisGroup.style("display", visible ? null : "none");
+  this.rightYAxisLabel.style("display", visible ? null : "none");
+};
+
+
+DrfChart.prototype.updateFwhmLine = function() {
+  const showRef = (this.showFwhm !== false) && this.refDetector && this.refDetector.hasFwhm();
+  const refPoints = showRef
+    ? this.sampleCurve(this.refDetector, "fwhm", 9999.9, true).map(d => ({ energy: d.energy, fwhm: d.value }))
+    : [];
+
+  // Main curve values, measured FWHM markers and the compared-against curve all set the axis.
+  const mainPoints = (this.showFwhm !== false && this.detector && this.detector.hasFwhm())
+    ? this.sampleCurve(this.detector, "fwhm", 9999.9).map(d => ({ energy: d.energy, fwhm: d.value }))
+    : [];
+
+  let fwhmValues = mainPoints.concat(refPoints).map(d => d.fwhm);
+  const ptExt = (this.showFwhm !== false) ? this.pointValueExtent("fwhm") : null;
   if (ptExt)
     fwhmValues = fwhmValues.concat(ptExt);
+
   const fwhmExtent = d3.extent(fwhmValues);
   if (fwhmExtent[0] !== undefined && fwhmExtent[1] !== undefined) {
-    const fwhmRange = fwhmExtent[1] - fwhmExtent[0];
-    const fwhmPadding = fwhmRange * 0.1;
-    this.fwhmScale.domain([
-      Math.max(0, fwhmExtent[0] - fwhmPadding),
-      fwhmExtent[1] + fwhmPadding
-    ]);
-    this.rightYAxisGroup.call(this.rightYAxis).style("display", null);
-    this.rightYAxisLabel.style("display", null);
+    // A little padding; with markers only, at least a fraction of the value (one marker has no range).
+    const range = fwhmExtent[1] - fwhmExtent[0];
+    const curves = mainPoints.length + refPoints.length;
+    const pad = 0.1 * (curves ? range : Math.max(range, 0.1 * fwhmExtent[1]));
+    this.fwhmScale.domain([Math.max(0, fwhmExtent[0] - pad), fwhmExtent[1] + pad]);
+    this.setFwhmAxisVisible(true);
+  } else {
+    this.setFwhmAxisVisible(false);
   }
+
+  if (mainPoints.length)
+    this.fwhmPath.datum(mainPoints).attr("d", this.fwhmLine).style("display", null);
+  else
+    this.fwhmPath.style("display", "none");
+
+  if (refPoints.length)
+    this.refFwhmPath.datum(refPoints).attr("d", this.fwhmLine).style("display", null);
+  else
+    this.refFwhmPath.style("display", "none");
 };
 
 DrfChart.prototype.updateTooltip = function(mouse) {
@@ -884,7 +952,7 @@ DrfChart.prototype.updateTooltip = function(mouse) {
   
   // Calculate efficiency using the detector class
   let efficiency = null;
-  if (this.detector.hasEfficiency()) {
+  if (this.showEff !== false && this.detector.hasEfficiency()) {
     efficiency = this.detector.efficiency(energy);
     
     // Validate efficiency value
@@ -1129,8 +1197,27 @@ DrfChart.prototype.setXRange = function(minEnergy, maxEnergy) {
 
 // Enables/disables drawing the FWHM curve and its right-hand axis.
 DrfChart.prototype.setShowFwhm = function(show) {
+  if (this.showFwhm === !!show) return;
   this.showFwhm = !!show;
-  this.updateYAxisRanges();
+  this.handleResize();  // the right margin depends on it; redraws everything
+};
+
+// Enables/disables drawing the efficiency; without it, the FWHM is drawn on the left-hand axis.
+DrfChart.prototype.setShowEfficiency = function(show) {
+  if (this.showEff === !!show) return;
+  this.showEff = !!show;
+  this.leftYAxis
+    .scale(this.showEff ? this.efficiencyScale : this.fwhmScale)
+    .tickFormat(this.showEff ? (d => drfChartFormatSigFigs(d, 2)) : this.rightYAxis.tickFormat());
+  this.leftYAxisLabel.text(this.showEff ? "Efficiency" : "FWHM (keV)");
+  this.handleResize();
+};
+
+// Sets (or, with null, clears) a second detector to draw dashed for comparison: its efficiency,
+//  and its FWHM, but no uncertainty band, angle curves or tooltip values.
+DrfChart.prototype.setReferenceData = function(detectorData) {
+  this.refDetector = detectorData ? new DetectorPeakResponseJS(detectorData) : null;
+  this.updateEfficiencyLine();
   this.updateFwhmLine();
 };
 
@@ -1225,7 +1312,7 @@ DrfChart.prototype.pointValueExtent = function(which) {
     const v = p[which], s = p[sigKey] > 0 ? p[sigKey] : 0;
     if (!(v > 0)) continue;
     lo = Math.min(lo, v - s);
-    hi = Math.max(hi, v + s);
+    hi = Math.max(hi, v + Math.min(s, 2 * v));  // a huge error bar shouldnt set the scale
   }
   return (lo <= hi) ? [Math.max(0, lo), hi] : null;
 };
@@ -1255,7 +1342,7 @@ DrfChart.prototype.updateDataPoints = function() {
   const inRange = p => (p.e >= xDomain[0] && p.e <= xDomain[1]);
 
   // Efficiency markers + error bars
-  const effPts = this.showEffPoints ? pts.filter(p => inRange(p) && p.eff > 0) : [];
+  const effPts = (this.showEffPoints && this.showEff !== false) ? pts.filter(p => inRange(p) && p.eff > 0) : [];
   const effSel = this.effPointsGroup.selectAll("g.drf-eff-point").data(effPts, (p, i) => i);
   const effEnter = effSel.enter().append("g").attr("class", "drf-eff-point");
   effEnter.append("line").attr("class", "drf-eff-errbar");

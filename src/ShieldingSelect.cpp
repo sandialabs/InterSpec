@@ -193,7 +193,6 @@ public:
     m_activityInput->addStyleClass( "GridSecondCol GridStretchCol GridThirdRow" );
     
     m_activityInput->setAutoComplete( false );
-    m_activityInput->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_activityInput->setAttributeValue( "autocorrect", "off" );
     m_activityInput->setAttributeValue( "spellcheck", "off" );
@@ -228,7 +227,6 @@ public:
     label->addStyleClass( "GridFirstCol GridFirstRow" );
     
     m_relaxationDistance = m_relaxationDiv->addNew<WLineEdit>();
-    m_relaxationDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_relaxationDistance->setAttributeValue( "autocorrect", "off" );
     m_relaxationDistance->setAttributeValue( "spellcheck", "off" );
@@ -2280,7 +2278,6 @@ void ShieldingSelect::init()
     auto materialEditUniq = std::make_unique<WLineEdit>( "" );
     m_materialEdit = materialEditUniq.get();
     m_materialEdit->setAutoComplete( false );
-    m_materialEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_materialEdit->setAttributeValue( "autocorrect", "off" );
     m_materialEdit->setAttributeValue( "spellcheck", "off" );
@@ -2339,6 +2336,7 @@ void ShieldingSelect::init()
     m_materialSummary = summaryUniq.get();
     m_materialSummary->setInline( true );
     m_materialSummary->addStyleClass( "MaterialSummary" );
+    m_materialSummary->addStyleClass( "SelectableTxt" );
     if( m_forFitting )
       m_materialSummary->addStyleClass( "MaterialSummaryFit" );
 
@@ -2501,7 +2499,6 @@ void ShieldingSelect::init()
     edit->setValidator( distValidator );
 
     edit->setAutoComplete( false );
-    edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "off" );

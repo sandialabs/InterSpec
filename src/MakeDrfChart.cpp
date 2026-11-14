@@ -27,6 +27,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include <Wt/WPainter.h>
 #include <Wt/Chart/WAxis.h>
@@ -98,6 +99,7 @@ MakeDrfChart::MakeDrfChart()
   m_efficiencyEnergyUnits( EqnEnergyUnits::keV ),
   m_efficiencyCoefs{},
   m_efficiencyCoefUncerts{},
+  m_efficiencyCoefCov{},
   m_fwhmEqnType( FwhmCoefType::Gadras ),
   m_xRangeChanged(),
   m_chartMarginBrush(),
@@ -434,36 +436,16 @@ void MakeDrfChart::updateEffEquationToModel()
       
       Wt::cpp17::any lowerval, upperval;
       
-      if( m_efficiencyCoefUncerts.size() == m_efficiencyCoefs.size() )
+      // A 2-sigma band from the coefficient covariance (linear propagation, d(eff)/d(c_i) =
+      //  eff*ln(x)^i).  The individual coefficient uncertainties alone are not usable - the
+      //  coefficients are strongly correlated, so combining them overstates the band hugely.
+      const double sigma = DetectorPeakResponse::expOfLogPowerSeriesEfficiencyUncert( energy*units,
+                                                         m_efficiencyCoefs, m_efficiencyCoefCov );
+      if( sigma >= 0.0 )
       {
-        double neguncert = 0.0, posuncert = 0.0;
-        
-        for( size_t i = 0; i < m_efficiencyCoefUncerts.size(); ++i )
-        {
-          const float orig = m_efficiencyCoefs[i];
-          m_efficiencyCoefs[i] = orig + 2.0f*m_efficiencyCoefUncerts[i];
-          const double plus = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs ) - eff;
-          m_efficiencyCoefs[i] = orig - 2.0f*m_efficiencyCoefUncerts[i];
-          const double minus = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy*units, m_efficiencyCoefs ) - eff;
-          m_efficiencyCoefs[i] = orig;
-          if( plus > 0.0 )
-            posuncert += plus*plus;
-          else
-            neguncert += plus*plus;
-          if( minus > 0.0 )
-            posuncert += minus*minus;
-          else
-            neguncert += minus*minus;
-        }//for( size_t i = 0; i < m_efficiencyCoefUncerts.size(); ++i )
-        
-        posuncert = sqrt(posuncert);
-        neguncert = sqrt(neguncert);
-        
-        if( IsNan(posuncert) || IsInf(posuncert) )
-          upperval = Wt::cpp17::any( eff + posuncert );
-        if( IsNan(neguncert) || IsInf(neguncert) )
-          lowerval = Wt::cpp17::any( eff - neguncert );
-      }//if( we have uncertainties )
+        upperval = Wt::cpp17::any( eff + 2.0*sigma );
+        lowerval = Wt::cpp17::any( std::max( 0.0, eff - 2.0*sigma ) );
+      }
       
       m->setData( row, sm_equation_eff_pos_uncert_col, upperval );
       m->setData( row, sm_equation_eff_neg_uncert_col, lowerval );
@@ -604,6 +586,12 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   
   /// Start color theme support - this code is largely a copy of DecayActivityChart - so if you improve here, improve there
   /// TODO: should refactor into a common base class to support color theme
+  /// TODO: this has the problems fixed in DecayActivityChart::paint (2026-11): the fills below are
+  ///       painted *after* the base paint, so a theme with a chart background (or margin) color
+  ///       paints over the curves (the base paint already fills the plot area with `background()`);
+  ///       and with a null `rectangle` (the usual case) the margin strips are sized from it, so are
+  ///       zero/negative.  Fix as there: fill the margins first, sized from `painter.window()`
+  ///       when `rectangle` is null, then call the base paint, and drop the post-paint fills.
   const double height = painter.window().height();
   const double width = painter.window().width();
   
@@ -744,10 +732,12 @@ void MakeDrfChart::setFwhmCoefficients( const std::vector<float> &coeffs,
 
 void MakeDrfChart::setEfficiencyCoefficients( const std::vector<float> &coeffs,
                                               const std::vector<float> &uncerts,
+                                              const std::vector<float> &covariance,
                                               const EqnEnergyUnits units )
 {
   m_efficiencyCoefs = coeffs;
   m_efficiencyCoefUncerts = uncerts;
+  m_efficiencyCoefCov = covariance;
   m_efficiencyEnergyUnits = units;
   updateEffEquationToModel();
   updateYAxisRange();

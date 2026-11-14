@@ -776,7 +776,7 @@ namespace
     if( anchor.curve.energies_keV.size() < 2 )
       return nullptr;
     anchor.ref_distance_cm = -ref_z - gd.endcap_front_offset_cm();   // crystal frame -> face
-    return CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, name );
+    return CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, name , 1.0);
   }
 }//namespace
 

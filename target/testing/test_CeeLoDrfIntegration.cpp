@@ -1224,7 +1224,7 @@ BOOST_AUTO_TEST_CASE( transfer_anchor_identity )
   BOOST_CHECK_GT( anchor.ref_distance_cm, 0.0 );
 
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" , 1.0);
   BOOST_REQUIRE( resp );
   BOOST_CHECK( resp->model_transfer.has_value() );
 
@@ -1252,7 +1252,7 @@ BOOST_AUTO_TEST_CASE( transfer_far_field_inverse_square )
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" , 1.0);
   auto det2 = make_shared<DetectorPeakResponse>( *det );
   det2->setCeeloResponse( resp );
 
@@ -1286,7 +1286,7 @@ BOOST_AUTO_TEST_CASE( transfer_flags_and_sigma )
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" , 1.0);
   auto det2 = make_shared<DetectorPeakResponse>( *det );
   det2->setCeeloResponse( resp );
 
@@ -1337,7 +1337,7 @@ BOOST_AUTO_TEST_CASE( response_covariance_diagonal_matches_eval )
     shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*geom.transverse_half_extent() );
     const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
     auto det2 = make_shared<DetectorPeakResponse>( *det );
-    det2->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" ) );
+    det2->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" , 1.0) );
     drfs.emplace_back( "curve transfer", det2 );
   }
 
@@ -1596,7 +1596,7 @@ BOOST_AUTO_TEST_CASE( transfer_drf_round_trip )
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
-                                              ceelo::AnchorCurve{}, "test" ) );
+                                              ceelo::AnchorCurve{}, "test" , 1.0) );
 
   const string extra = det->drfExtraToXmlString();
   BOOST_REQUIRE( !extra.empty() );
@@ -1646,7 +1646,7 @@ BOOST_AUTO_TEST_CASE( transfer_changes_absolute_not_intrinsic )
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
-                                              ceelo::AnchorCurve{}, "test" ) );
+                                              ceelo::AnchorCurve{}, "test" , 1.0) );
 
   for( size_t i = 0; i < energies.size(); ++i )
   {
@@ -1775,7 +1775,7 @@ BOOST_AUTO_TEST_CASE( transfer_k_edge_handling )
   }
 
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" , 1.0);
   auto det2 = make_shared<DetectorPeakResponse>( *det );
   det2->setCeeloResponse( resp );
 
@@ -1807,7 +1807,7 @@ BOOST_AUTO_TEST_CASE( transfer_fit_flags_surface )
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
-                                              ceelo::AnchorCurve{}, "test" ) );
+                                              ceelo::AnchorCurve{}, "test" , 1.0) );
 
   const double distance = 3.0 * PhysicalUnits::cm;
   BOOST_REQUIRE_LT( distance/PhysicalUnits::cm,
@@ -1917,7 +1917,7 @@ BOOST_AUTO_TEST_CASE( response_angle_series_json )
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
-                                              ceelo::AnchorCurve{}, "test" ) );
+                                              ceelo::AnchorCurve{}, "test" , 1.0) );
 
   const double dist = 100.0 * a_cm * PhysicalUnits::cm;  //deep far field
   const string json = det->responseAngleSeriesJSON( dist );
@@ -2075,7 +2075,7 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
   BOOST_REQUIRE_GE( anchor.curve.energies_keV.size(), 2u );
 
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" );
+        = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" , 1.0);
   BOOST_REQUIRE( resp );
 
   // ANGLE's own sample-geometry answer.  Sample = ~point source (r=1.5mm)
@@ -3280,7 +3280,7 @@ BOOST_AUTO_TEST_CASE( angle_extended_source_cross_validation )
     anchor.curve.eff.push_back( ref_eff[k] );
   }
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" );
+        = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" , 1.0);
   BOOST_REQUIRE( resp );
 
   // Sample disk: r=1.725 cm, half-length 1.0 cm, bottom 0.113 cm off the
@@ -3709,7 +3709,7 @@ BOOST_AUTO_TEST_CASE( transfer_anchor_mixed_distance_consistency )
   shared_ptr<DetectorPeakResponse> truth = synthetic_curve_drf( diam_cm );
   const CeeLoUtils::TransferAnchor truth_anchor = CeeLoUtils::transferAnchorForDrf( truth, geom, 50.0 );
   const shared_ptr<ceelo::DetectorResponse> truth_resp
-        = CeeLoUtils::makeTransferResponse( geom, truth_anchor, ceelo::AnchorCurve{}, "truth" );
+        = CeeLoUtils::makeTransferResponse( geom, truth_anchor, ceelo::AnchorCurve{}, "truth" , 1.0);
   BOOST_REQUIRE( truth_resp );
 
   vector<MeasuredEffPoint> pts;
@@ -3847,7 +3847,7 @@ BOOST_AUTO_TEST_CASE( curve_anchor_covariance_flows_to_drf )
     BOOST_CHECK_CLOSE( anchor.curve.frac_cov[i], legacy_cov[i], 1.0e-6 );
 
   const shared_ptr<ceelo::DetectorResponse> resp
-        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "cov" );
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "cov" , 1.0);
   BOOST_REQUIRE( resp );
   BOOST_CHECK( !resp->grounding.empty() );
   BOOST_CHECK_EQUAL( resp->grounding.points.size(), 3u );
@@ -4007,7 +4007,7 @@ BOOST_AUTO_TEST_CASE( curve_anchor_quoted_on_drf_diameter )
 
     const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::curveAnchorWithCovarianceForDrf( det, geom, -1.0 );
     const shared_ptr<ceelo::DetectorResponse> resp
-                     = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, preset );
+                     = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, preset , 1.0);
     BOOST_REQUIRE( resp );
     auto det2 = make_shared<DetectorPeakResponse>( *det );
     det2->setCeeloResponse( resp );
@@ -4039,7 +4039,7 @@ BOOST_AUTO_TEST_CASE( curve_anchor_quoted_on_drf_diameter )
     BOOST_CHECK_CLOSE( anchor.ref_distance_cm, 25.0, 1.0e-9 );
 
     const shared_ptr<ceelo::DetectorResponse> resp
-                     = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "absolute" );
+                     = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "absolute" , 1.0);
     auto det2 = make_shared<DetectorPeakResponse>( *det );
     det2->setCeeloResponse( resp );
     for( size_t i = 0; i < anchor.curve.energies_keV.size(); i += 3 )

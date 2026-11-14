@@ -70,7 +70,6 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   assert( nuclideAgeEdit );
     
   m_nuclideEdit->setAutoComplete( false );
-  m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
@@ -78,7 +77,6 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   m_nuclideEdit->setAttributeValue( "spellcheck", "false" );
     
   m_nuclideAgeEdit->setAutoComplete( false );
-  m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_nuclideAgeEdit->setAttributeValue( "autocorrect", "off" );
   m_nuclideAgeEdit->setAttributeValue( "spellcheck", "off" );

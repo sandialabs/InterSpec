@@ -1027,7 +1027,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     "} );" );
 
     m_nuclideEdit->setAutoComplete( false );
-    m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
   #if( BUILD_AS_OSX_APP || IOS )
     m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
     m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
@@ -1100,7 +1099,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_ageEdit->setValidator( ageValidator );
 
     m_ageEdit->setAutoComplete( false );
-    m_ageEdit->setAttributeValue( "ondragstart", "return false" );
   #if( BUILD_AS_OSX_APP || IOS )
     m_ageEdit->setAttributeValue( "autocorrect", "off" );
     m_ageEdit->setAttributeValue( "spellcheck", "off" );
@@ -1156,6 +1154,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
     m_halflife = hlRow->addNew<WText>();
     m_halflife->addStyleClass("Hl");
+    m_halflife->addStyleClass( "SelectableTxt" );
 
     m_moreInfoBtn = hlRow->addNew<WPushButton>( WString::tr("rpd-more-info") );
     m_moreInfoBtn->addStyleClass( "LinkBtn MoreInfoBtn" );
@@ -1173,10 +1172,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     //m_layout->addWidget( minAmpLabel, 3, 0, AlignmentFlag::Middle );
     //m_layout->addWidget( m_lowerBrCuttoff, 3, 1 );
 
-    SpectraFileModel *specFileModel = specViewer->fileManager()->model();
-
     {
-      auto detDispOwner = std::make_unique<DetectorDisplay>( specViewer, specFileModel );
+      auto detDispOwner = std::make_unique<DetectorDisplay>( specViewer );
       m_detectorDisplay = detDispOwner.get();
       specViewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
       specViewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );

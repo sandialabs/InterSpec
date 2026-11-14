@@ -40,6 +40,8 @@
 
 
 #include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WAnchor.h>
 #include <Wt/WTable.h>
 #include <Wt/WTimer.h>
 #include <Wt/WLabel.h>
@@ -60,6 +62,7 @@
 #include <Wt/Http/Response.h>
 #include <Wt/WSplitButton.h>
 #include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
 #include <Wt/WSelectionBox.h>
 #include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemDelegate.h>
@@ -87,11 +90,13 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InjaLogDialog.h"
@@ -211,7 +216,13 @@ rapidxml::xml_node<char> *ShieldingSourceDisplay::ShieldingSourceDisplayState::s
   rapidxml::xml_node<char> *base_node = doc->allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
   parent_node->append_node( base_node );
   
-  const std::string version_str = std::to_string( versionMajor ) + "." + std::to_string( versionMinor );
+  // For backward compatibility, only claim the version that added back-decay when it is actually in
+  //  the XML; otherwise the XML is identical to what the previous version wrote.
+  const bool uses_back_decay = config && !config->options.back_decay.is_default();
+  const int minor_version = uses_back_decay
+                ? std::max( versionMinor, ShieldingSourceDisplay::sm_xmlSerializationMinorVersion )
+                : std::min( versionMinor, ShieldingSourceDisplay::sm_preBackDecayMinorVersion );
+  const std::string version_str = std::to_string( versionMajor ) + "." + std::to_string( minor_version );
   char *version_value = doc->allocate_string( version_str.c_str() );
   rapidxml::xml_attribute<char> *version_attr = doc->allocate_attribute( "version", version_value );
   base_node->append_attribute( version_attr );
@@ -337,6 +348,8 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
     throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
   }
   
+  if( versionMajor > ShieldingSourceDisplay::sm_xmlSerializationMajorVersion )
+    throw XmlUtils::FormatTooNew( "This Activity/Shielding Fit setup was written by a newer InterSpec." );
   if( versionMajor != ShieldingSourceDisplay::sm_xmlSerializationMajorVersion )
     throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
   
@@ -574,14 +587,33 @@ const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;
  - 20211031, Version 1: added "SourceType" node under the <Nuclide> to say whether its a point, intrinsic, or trace source.
                   added "Geometry" node under the "ShieldingSourceFit" node
  - 20230712, no version change: split out to SourceFitDef::sm_xmlSerializationMinorVersion.
+ - 20261107, Version 2: added the optional "BackDecay" node (see ShieldingSourceFitCalc::BackDecaySpec);
+                  version 1 is still written when that node is not present.
  */
-const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 1;
+const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 2;
+const int ShieldingSourceDisplay::sm_preBackDecayMinorVersion = 1;
 
 
 using GammaInteractionCalc::GeometryType;
 
 namespace
 {
+  /** Recomputes `results.back_decay` for back-decay setting `spec` (which is only applied if
+   `enabled`, i.e., checked with a valid value entered), so the calc log reflects the current
+   setting rather than the one the fit started with.  The caller must hold `results.m_mutex`. */
+  void sync_back_decay_results( ShieldingSourceFitCalc::ModelFitResults &results,
+                                const ShieldingSourceFitCalc::BackDecaySpec &spec,
+                                const bool enabled )
+  {
+    results.options.back_decay = spec;
+    results.options.back_decay.enabled = enabled;
+    results.back_decay.reset();
+    if( enabled && (results.successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
+      results.back_decay = ShieldingSourceFitCalc::compute_back_decay( results.fit_src_info, spec,
+                                      results.foreground_start_time,
+                                      results.options.multiple_nucs_contribute_to_peaks );
+  }//void sync_back_decay_results(...)
+
   /** If a distance WLineEdit has a number, but no distance units, will add a " cm" to the text value. */
   void make_sure_distance_units_present( Wt::WLineEdit *edit )
   {
@@ -670,7 +702,23 @@ namespace
         return;
       }//if( !lock )
       
-      suggestFileName( "shielding_source_fit_model.xml", ContentDisposition::Attachment );
+      // "<foreground file name>.act.shield.xml" - like ".drf.xml" for detector efficiencies.
+      string filename;
+      InterSpec * const viewer = InterSpec::instance();
+      const shared_ptr<SpecMeas> foreground = viewer ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+      if( foreground )
+        filename = SpecUtils::filename( foreground->filename() );
+      const string extension = SpecUtils::file_extension( filename );
+      if( !extension.empty() && (extension.size() < filename.size()) )
+        filename = filename.substr( 0, filename.size() - extension.size() );
+      for( char &c : filename )
+      {
+        if( string( "\\/:?\"<>|*" ).find( c ) != string::npos )
+          c = '_';
+      }
+      if( filename.empty() )
+        filename = "activity_shielding_fit";
+      suggestFileName( filename + ".act.shield.xml", ContentDisposition::Attachment );
       response.setMimeType( "application/xml" );
       if( !m_display )
         return;
@@ -2798,12 +2846,21 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       if( !viewer->isPhone() )
         footer->addStyleClass( "SsdModelFooterDesktop" );
 
-      disp->m_exportModelBtn = footer->addNew<WPushButton>();
-      disp->m_exportModelBtn->setStyleClass( "SsdFooterIcon" );
-      disp->m_exportModelBtn->setIcon( WLink("InterSpec_resources/images/download_small.svg") );
       WLink exportLink( disp->m_xmlDownloadResource->url() );
       exportLink.setTarget( Wt::LinkTarget::NewWindow );
-      disp->m_exportModelBtn->setLink( exportLink );
+#if( BUILD_AS_OSX_APP || IOS )
+      // The macOS and iOS web views only download from an anchor, not a button with a link.
+      WAnchor *exportAnchor = footer->addNew<WAnchor>( exportLink );
+      exportAnchor->setImage( std::make_unique<WImage>( WLink("InterSpec_resources/images/download_small.svg") ) );
+      exportAnchor->setStyleClass( "SsdFooterIcon" );
+      disp->m_exportModelBtn = exportAnchor;
+#else
+      WPushButton *exportBtn = footer->addNew<WPushButton>();
+      exportBtn->setStyleClass( "SsdFooterIcon" );
+      exportBtn->setIcon( WLink("InterSpec_resources/images/download_small.svg") );
+      exportBtn->setLink( exportLink );
+      disp->m_exportModelBtn = exportBtn;
+#endif
       HelpSystem::attachToolTipOn( disp->m_exportModelBtn, WString::tr("ssd-tt-export-model"), showToolTips );
 
       disp->m_importModelBtn = footer->addNew<WPushButton>();
@@ -2812,21 +2869,55 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       disp->m_importModelBtn->clicked().connect( disp, &ShieldingSourceDisplay::startModelUpload );
       HelpSystem::attachToolTipOn( disp->m_importModelBtn, WString::tr("ssd-tt-import-model"), showToolTips );
 
-#if( USE_DB_TO_STORE_SPECTRA )
-      disp->m_dbButton = footer->addNew<WPushButton>();
-      disp->m_dbButton->setStyleClass( "SsdFooterIcon" );
-      disp->m_dbButton->setIcon( WLink("InterSpec_resources/images/db_small.png") );
-      HelpSystem::attachToolTipOn( disp->m_dbButton, WString::tr("ssd-tt-database"), showToolTips );
+      // Presets, in place of the old database menu: setups saved as "<name>.act.shield.xml" files (the
+      //  user's own, and from installed packages), plus - until a database upgrade writes them out as
+      //  files - those saved in the database.  Nothing is saved to the database any more.
+      bool use_presets = false;
+#if( USE_USER_LIBRARY )
+      use_presets = UserLibrary::available();
+      if( use_presets )
+      {
+        disp->m_savePresetBtn = footer->addNew<WPushButton>();
+        disp->m_savePresetBtn->setStyleClass( "SsdFooterIcon" );
+        disp->m_savePresetBtn->setIcon( WLink("InterSpec_resources/images/disk.svg") );
+        disp->m_savePresetBtn->clicked().connect( disp, &ShieldingSourceDisplay::startSavePreset );
+        HelpSystem::attachToolTipOn( disp->m_savePresetBtn, WString::tr("ssd-tt-save-preset"), showToolTips );
+      }
+#endif
 
-      disp->m_dbMenu = makePopupMenu( disp->m_dbButton );
-      PopupDivMenuItem *dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
-      dbItem->triggered().connect( disp, &ShieldingSourceDisplay::startBrowseDatabaseModels );
-      dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
-      dbItem->triggered().connect( disp, [disp](){ disp->startSaveModelToDatabase( false ); } );
-      disp->m_saveAsNewModelInDb = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
-      disp->m_saveAsNewModelInDb->triggered().connect( disp, &ShieldingSourceDisplay::saveCloneModelToDatabase );
-      disp->m_saveAsNewModelInDb->disable();
+#if( USE_DB_TO_STORE_SPECTRA )
+      // Without a user data folder (e.g., a web deployment) there are no preset files: setups are
+      //  opened from, and saved to, the database as before.
+      if( !use_presets )
+      {
+        disp->m_dbButton = footer->addNew<WPushButton>();
+        disp->m_dbButton->setStyleClass( "SsdFooterIcon" );
+        disp->m_dbButton->setIcon( WLink("InterSpec_resources/images/db_small.png") );
+        HelpSystem::attachToolTipOn( disp->m_dbButton, WString::tr("ssd-tt-database"), showToolTips );
+
+        disp->m_dbMenu = makePopupMenu( disp->m_dbButton );
+        PopupDivMenuItem *dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
+        dbItem->triggered().connect( disp, &ShieldingSourceDisplay::startBrowseDatabaseModels );
+        dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
+        dbItem->triggered().connect( disp, [disp](){ disp->startSaveModelToDatabase( false ); } );
+        disp->m_saveAsNewModelInDb = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
+        disp->m_saveAsNewModelInDb->triggered().connect( disp, &ShieldingSourceDisplay::saveCloneModelToDatabase );
+        disp->m_saveAsNewModelInDb->disable();
+      }//if( !use_presets )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+
+      if( use_presets )
+      {
+        disp->m_presetRow = footer->addNew<WContainerWidget>();
+        disp->m_presetRow->addStyleClass( "SsdPresetRow" );
+        WLabel *presetLabel = disp->m_presetRow->addNew<WLabel>( WString::tr("ssd-preset") );
+        disp->m_presetSelect = disp->m_presetRow->addNew<WComboBox>();
+        presetLabel->setBuddy( disp->m_presetSelect );
+        HelpSystem::attachToolTipOn( disp->m_presetSelect, WString::tr("ssd-tt-preset"), showToolTips );
+        disp->m_presetSelect->activated().connect( disp, [disp]( int ){ disp->presetSelected(); } );
+        disp->refreshPresets();
+        viewer->userLibraryChanged().connect( disp, &ShieldingSourceDisplay::refreshPresets );
+      }//if( use_presets )
     }
 
     window->rejectWhenEscapePressed();
@@ -2924,6 +3015,13 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     window->WDialog::setHidden(false);
     window->show();
     window->centerWindow();
+
+    // In live mode, fit right away rather than waiting for the first edit (construction and
+    //  deserialization are deliberately ignored by markModelChanged()).  Skipped when there are no
+    //  source nuclides, to not greet the user with a "No peaks" error.  The button shows
+    //  "Updating…" until the results arrive.
+    if( disp->autoFitEnabled() && (disp->m_sourceModel->numNuclides() > 0) )
+      disp->startAutoFit();
   }catch( std::exception &e )
   {
     passMessage( WString::tr("ssd-error-create-tool").tr(e.what()), WarningWidget::WarningMsgHigh );
@@ -2978,6 +3076,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_dbMenu( nullptr ),
     m_saveAsNewModelInDb( nullptr ),
 #endif
+    m_savePresetBtn( nullptr ),
+    m_presetRow( nullptr ),
+    m_presetSelect( nullptr ),
+    m_presetChoices(),
     m_shieldingSelects( nullptr ),
     m_geometryLabel( nullptr ),
     m_prevGeometry( GammaInteractionCalc::GeometryType::Spherical ),
@@ -3088,7 +3190,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
                                                   m_specViewer->isPhone() );
 
   
-  m_detectorDisplay = new DetectorDisplay( m_specViewer, m_specViewer->fileManager()->model() );
+  m_detectorDisplay = new DetectorDisplay( m_specViewer );
   m_detectorDisplay->setInline( true );
 
   //this validates floating point numbers followed by a distance unit
@@ -3098,7 +3200,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_distanceEdit = new WLineEdit( "100 cm" );
   
-  m_distanceEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distanceEdit->setAttributeValue( "autocorrect", "off" );
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
@@ -3129,7 +3230,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   for( WLineEdit *edit : { m_offsetEdit1, m_offsetEdit2 } )
   {
-    edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "off" );
@@ -3267,6 +3367,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_fitMessage = new WText();
   m_fitMessage->setInline( false );
   m_fitMessage->addStyleClass( "FitMessage" );
+  m_fitMessage->addStyleClass( "SelectableTxt" );
   m_fitMessage->hide();
 
   // The XML export resource the footer "Export Model" link points to (footer built in
@@ -3288,6 +3389,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_trendTxt = trendTxtOwned.get();
   m_trendTxt->setInline( false );
   m_trendTxt->addStyleClass( "ShieldSourceTrendMsg" );
+  m_trendTxt->addStyleClass( "SelectableTxt" );
   m_trendTxt->setTextFormat( TextFormat::XHTML );
   m_trendTxt->hide();
       
@@ -3481,6 +3583,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_drfUncertStatus = m_drfUncertMethodRow->addNew<WText>();
   m_drfUncertStatus->addStyleClass( "DrfUncertStatus" );
+  m_drfUncertStatus->addStyleClass( "SelectableTxt" );
   updateDrfUncertMethodAvailability();  //the detector display and distance already exist
 
   lineDiv = m_optionsDiv->addNew<WContainerWidget>();
@@ -3508,6 +3611,49 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_volEffMethodCombo->changed().connect( this, &ShieldingSourceDisplay::volEffMethodChanged );
   m_volEffMethodStatus = lineDiv->addNew<WText>();
   m_volEffMethodStatus->addStyleClass( "VolEffMethodStatus" );
+  m_volEffMethodStatus->addStyleClass( "SelectableTxt" );
+
+  // "Back decay": also quote the activities at another time (end of irradiation, a release, another
+  //  measurement, ...), entered as a duration before the measurement or as a date/time.  Does not
+  //  affect the fit - see ShieldingSourceFitCalc::BackDecaySpec.
+  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
+  lineDiv->addStyleClass( "FitOptionsRow BackDecayRow" );
+  m_backDecayCb = lineDiv->addNew<WCheckBox>( WString::tr("ssd-cb-back-decay") );
+  m_backDecayCb->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-back-decay"), showToolTips );
+  m_backDecayCb->checked().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+  m_backDecayCb->unChecked().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+
+  m_backDecayMode = lineDiv->addNew<WComboBox>();
+  m_backDecayMode->addStyleClass( "BackDecayMode" );
+  // Items must match the BackDecaySpec::Mode enum order (DurationBeforeMeas, DateTime).
+  m_backDecayMode->addItem( WString::tr("ssd-back-decay-mode-duration") );
+  m_backDecayMode->addItem( WString::tr("ssd-back-decay-mode-date") );
+  m_backDecayMode->setCurrentIndex( 0 );
+  m_backDecayMode->changed().connect( this, &ShieldingSourceDisplay::backDecayModeChanged );
+
+  m_backDecayEdit = lineDiv->addNew<WLineEdit>();
+  m_backDecayEdit->addStyleClass( "BackDecayEdit" );
+  m_backDecayEdit->setAutoComplete( false );
+  m_backDecayEdit->changed().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+  m_backDecayEdit->enterPressed().connect( this, &ShieldingSourceDisplay::backDecayInputChanged );
+
+  // Plain text, as it may quote what the user typed.
+  m_backDecayStatus = lineDiv->addNew<WText>( WString(), TextFormat::Plain );
+  m_backDecayStatus->addStyleClass( "BackDecayStatus" );
+  m_backDecayStatus->addStyleClass( "SelectableTxt" );
+
+  // The nuclide cards show each activity at the reference time, computed from the model as it is.
+  m_nuclideDisplay->setBackDecayProvider( [this](){ return currentBackDecayResults(); } );
+
+  // A different foreground can have a different start time, which a reference date/time is relative to.
+  m_specViewer->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType type,
+                                std::shared_ptr<SpecMeas>, std::set<int>, std::vector<std::string> ){
+    if( (type == SpecUtils::SpectrumType::Foreground) && m_backDecaySpec.enabled )
+      updateBackDecayDisplay();
+  } );
+
+  updateBackDecayDisplay();
 
 
   WContainerWidget *detectorDiv = new WContainerWidget();
@@ -3530,6 +3676,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_fixedGeomLockedNote = new WText( WString::tr("ssd-fixed-geom-locked-note") );
   m_fixedGeomLockedNote->addStyleClass( "FixedGeomLockedNote" );
+  m_fixedGeomLockedNote->addStyleClass( "SelectableTxt" );
   m_fixedGeomLockedNote->setInline( false );  //holds block content (the embedded-scene summary)
   m_fixedGeomLockedNote->hide();
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomLockedNote),  5, 0, 1, 3, AlignmentFlag::Center );
@@ -3916,6 +4063,11 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>(
                                     std::max( 0, m_volEffMethodCombo->currentIndex() ) );
 
+  // The last valid values entered; only enabled if what is entered now is valid, so a fit, save, or
+  //  batch run never uses a value the user is being told is invalid.
+  options.back_decay = m_backDecaySpec;
+  options.back_decay.enabled = (m_backDecaySpec.enabled && m_backDecayInputError.empty());
+
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
 
@@ -3923,6 +4075,11 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
 
 ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 {
+  // The nuclide cards ask us for back-decay values as they refresh (see currentBackDecayResults);
+  //  make sure they no longer can, as our members are destroyed before our child widgets are.
+  if( m_nuclideDisplay )
+    m_nuclideDisplay->setBackDecayProvider( nullptr );
+
   std::shared_future<void> fit_future;
   {//begin make sure calculation is cancelled
     std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
@@ -4223,7 +4380,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         label->setBuddy( value );
         
         value->setAutoComplete( false );
-        value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
         value->setAttributeValue( "spellcheck", "off" );
@@ -4241,7 +4397,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
         tolerance->setAutoComplete( false );
-        tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         tolerance->setAttributeValue( "autocorrect", "off" );
         tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4263,7 +4418,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
         
         value->setAutoComplete( false );
-        value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         value->setAttributeValue( "autocorrect", "off" );
         value->setAttributeValue( "spellcheck", "off" );
@@ -4281,7 +4435,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
         tolerance->setAutoComplete( false );
-        tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
         tolerance->setAttributeValue( "autocorrect", "off" );
         tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4312,7 +4465,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
 
           value->setAutoComplete( false );
-          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -4341,7 +4493,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
-          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4374,7 +4525,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
 
           value->setAutoComplete( false );
-          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -4404,7 +4554,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
-          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -4535,7 +4684,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *value = table->elementAt(row, 1)->addNew<WLineEdit>();
 
           value->setAutoComplete( false );
-          value->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
@@ -4576,7 +4724,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
-          tolerance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
           tolerance->setAttributeValue( "autocorrect", "off" );
           tolerance->setAttributeValue( "spellcheck", "off" );
@@ -5395,7 +5542,11 @@ void ShieldingSourceDisplay::multiNucsPerPeakChanged()
   m_clusterWidth->setDisabled( !m_multiIsoPerPeak->isChecked() );
   if( m_clusterWidth->label() )
     m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
-  
+
+  // Whether a fitted nuclide's activity includes in-growth from other fitted sources changes.
+  if( m_backDecaySpec.enabled )
+    updateBackDecayDisplay();
+
   updateChi2Chart();
 }//void multiNucsPerPeakChanged()
 
@@ -5865,6 +6016,235 @@ void ShieldingSourceDisplay::volEffMethodChanged()
   updateVolEffMethodAvailability();
   updateChi2Chart();
 }//void volEffMethodChanged()
+
+
+void ShieldingSourceDisplay::backDecayInputChanged()
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  const BackDecaySpec before = m_backDecaySpec;
+  BackDecaySpec spec = m_backDecaySpec;
+  spec.enabled = m_backDecayCb->isChecked();
+  spec.mode = (m_backDecayMode->currentIndex() == 1) ? BackDecaySpec::Mode::DateTime
+                                                     : BackDecaySpec::Mode::DurationBeforeMeas;
+
+  // Read the entered value; one that can not be interpreted leaves the previous (valid) value.
+  m_backDecayInputError = WString();
+  const string txt = SpecUtils::trim_copy( m_backDecayEdit->text().toUTF8() );
+  if( txt.empty() )
+  {
+    if( spec.mode == BackDecaySpec::Mode::DateTime )
+      spec.date = SpecUtils::time_point_t{};
+    else
+      spec.duration = 0.0;
+    m_backDecayInputError = WString::tr( "ssd-back-decay-enter-value" );
+  }else if( spec.mode == BackDecaySpec::Mode::DurationBeforeMeas )
+  {
+    try
+    {
+      spec.duration = PhysicalUnitsLocalized::stringToTimeDuration( txt );
+    }catch( std::exception & )
+    {
+      m_backDecayInputError = WString::tr( "ssd-back-decay-err-duration" ).arg( txt );
+    }
+  }else
+  {
+    const SpecUtils::time_point_t date = SpecUtils::time_from_string( txt );
+    if( SpecUtils::is_special(date) )
+      m_backDecayInputError = WString::tr( "ssd-back-decay-err-date" ).arg( txt );
+    else
+      spec.date = date;
+  }//if( txt.empty() ) / else duration / else date
+
+  if( spec != before )
+  {
+    m_backDecaySpec = spec;
+    m_modifiedThisForeground = true;
+
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      auto set_to = []( const BackDecaySpec &value ){
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display )
+          display->setBackDecaySpec( value );
+      };
+      undoRedo->addUndoRedoStep( std::bind(set_to, before), std::bind(set_to, spec),
+                                 "Back-decay changed." );
+    }//if( undoRedo )
+  }//if( spec != before )
+
+  // Back-decay does not affect the fit, so no re-fit; just update what is shown.
+  updateBackDecayDisplay();
+}//void backDecayInputChanged()
+
+
+void ShieldingSourceDisplay::backDecayModeChanged()
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  // Show the value previously entered for the new mode, or else the equivalent of the value in the
+  //  other mode (e.g., the date/time a duration before the measurement corresponds to).
+  const shared_ptr<const SpecUtils::Measurement> fore
+                      = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const SpecUtils::time_point_t meas_start = fore ? fore->start_time() : SpecUtils::time_point_t{};
+
+  if( m_backDecayMode->currentIndex() == 1 )
+  {
+    SpecUtils::time_point_t date = m_backDecaySpec.date;
+    if( SpecUtils::is_special(date) )
+    {
+      BackDecaySpec from_duration = m_backDecaySpec;
+      from_duration.mode = BackDecaySpec::Mode::DurationBeforeMeas;
+      date = from_duration.reference_time( meas_start );
+    }//if( no date entered yet )
+
+    m_backDecayEdit->setText( WString::fromUTF8( ShieldingSourceFitCalc::back_decay_time_str(date) ) );
+  }else
+  {
+    double duration = m_backDecaySpec.duration;
+    if( (duration == 0.0) && !SpecUtils::is_special(m_backDecaySpec.date) && !SpecUtils::is_special(meas_start) )
+    {
+      BackDecaySpec from_date = m_backDecaySpec;
+      from_date.mode = BackDecaySpec::Mode::DateTime;
+      duration = from_date.time_before_meas( meas_start );
+    }//if( no duration entered yet )
+
+    m_backDecayEdit->setText( (duration == 0.0) ? WString()
+                                                : WString::fromUTF8( backDecayDurationText(duration) ) );
+  }//if( to date/time mode ) / else
+
+  backDecayInputChanged();
+}//void backDecayModeChanged()
+
+
+void ShieldingSourceDisplay::setBackDecaySpec( const ShieldingSourceFitCalc::BackDecaySpec &spec )
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  m_backDecaySpec = spec;
+  m_backDecayCb->setChecked( spec.enabled );
+
+  const bool is_date = (spec.mode == BackDecaySpec::Mode::DateTime);
+  m_backDecayMode->setCurrentIndex( is_date ? 1 : 0 );
+  if( is_date )
+    m_backDecayEdit->setText( WString::fromUTF8( ShieldingSourceFitCalc::back_decay_time_str(spec.date) ) );
+  else
+    m_backDecayEdit->setText( (spec.duration == 0.0) ? WString()
+                                                     : WString::fromUTF8( backDecayDurationText(spec.duration) ) );
+
+  m_backDecayInputError = WString();
+  if( m_backDecayEdit->text().empty() )
+    m_backDecayInputError = WString::tr( "ssd-back-decay-enter-value" );
+
+  updateBackDecayDisplay();
+}//void setBackDecaySpec( const ShieldingSourceFitCalc::BackDecaySpec &spec )
+
+
+std::string ShieldingSourceDisplay::backDecayDurationText( const double duration )
+{
+  const string txt = PhysicalUnitsLocalized::printToBestTimeUnits( fabs(duration), 6 );
+  const string::size_type sp = txt.find( ' ' );
+  string value = txt.substr( 0, sp );
+  const string unit = (sp == string::npos) ? string() : txt.substr( sp );
+  // (Very long times are printed with an exponent, whose zeros must be kept.)
+  if( (value.find( '.' ) != string::npos) && (value.find_first_of( "eE" ) == string::npos) )
+  {
+    value.erase( value.find_last_not_of( '0' ) + 1 );
+    if( !value.empty() && (value.back() == '.') )
+      value.pop_back();
+  }//if( value has a decimal point, and no exponent )
+
+  return string( (duration < 0.0) ? "-" : "" ) + value + unit;
+}//std::string backDecayDurationText( const double duration )
+
+
+std::shared_ptr<const ShieldingSourceFitCalc::BackDecayResults> ShieldingSourceDisplay::currentBackDecayResults() const
+{
+  if( !m_backDecaySpec.enabled || !m_backDecayInputError.empty() || !m_sourceModel )
+    return nullptr;
+
+  // (The model holds total activities, also for trace sources - see deSerializeShieldings.)
+  const vector<ShieldingSourceFitCalc::SourceFitDef> &sources = m_sourceModel->underlyingData();
+
+  const shared_ptr<const SpecUtils::Measurement> fore
+                      = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const SpecUtils::time_point_t meas_start = fore ? fore->start_time() : SpecUtils::time_point_t{};
+  const bool interference = m_multiIsoPerPeak ? m_multiIsoPerPeak->isChecked() : true;
+
+  return make_shared<const ShieldingSourceFitCalc::BackDecayResults>(
+           ShieldingSourceFitCalc::compute_back_decay( sources, m_backDecaySpec, meas_start, interference ) );
+}//currentBackDecayResults()
+
+
+void ShieldingSourceDisplay::updateBackDecayDisplay()
+{
+  using ShieldingSourceFitCalc::BackDecaySpec;
+
+  if( !m_backDecayCb || !m_backDecayMode || !m_backDecayEdit || !m_backDecayStatus )
+    return;  //Still being constructed
+
+  const bool enabled = m_backDecayCb->isChecked();
+  const bool is_date = (m_backDecayMode->currentIndex() == 1);
+  m_backDecayMode->setHidden( !enabled );
+  m_backDecayEdit->setHidden( !enabled );
+  m_backDecayEdit->setPlaceholderText( WString::tr( is_date ? "ssd-back-decay-ph-date"
+                                                            : "ssd-back-decay-ph-duration" ) );
+
+  // The status says what the entered value means - or what is wrong with it.
+  WString status;
+  bool is_error = false;
+  if( enabled && !m_backDecayInputError.empty() )
+  {
+    status = m_backDecayInputError;
+    is_error = true;
+  }else if( enabled )
+  {
+    const shared_ptr<const SpecUtils::Measurement> fore
+                        = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    const SpecUtils::time_point_t meas_start = fore ? fore->start_time() : SpecUtils::time_point_t{};
+
+    try
+    {
+      const double before_meas = m_backDecaySpec.time_before_meas( meas_start );
+      const WString span = WString::tr( (before_meas >= 0.0) ? "ssd-back-decay-before" : "ssd-back-decay-after" )
+                              .arg( backDecayDurationText( fabs(before_meas) ) );
+      // (In date/time mode this shows how the entered text was read.)
+      const string ref_str = ShieldingSourceFitCalc::back_decay_time_str( m_backDecaySpec.reference_time(meas_start) );
+      if( ref_str.empty() )
+        status = WString::tr( "ssd-back-decay-status-undated" ).arg( span );
+      else
+        status = WString::tr( "ssd-back-decay-status-dated" ).arg( ref_str ).arg( span );
+    }catch( std::exception & )
+    {
+      status = WString::tr( "ssd-back-decay-err-no-start" );
+      is_error = true;
+    }//try / catch
+  }//if( enabled && error ) / else if( enabled )
+
+  // The nuclides' footer shows the reference time, so on desktop the status is only needed for an
+  //  error (the footer is hidden then); on phones the options are on a tab of their own, away from it.
+  const bool is_phone = m_specViewer && m_specViewer->isPhone();
+  m_backDecayStatus->setHidden( !enabled || (!is_error && !is_phone) );
+  m_backDecayStatus->setText( status );
+  m_backDecayStatus->toggleStyleClass( "ErrorTxt", is_error );
+
+  // The nuclide cards' act(T_ref) - they ask currentBackDecayResults() as they refresh.
+  if( m_nuclideDisplay )
+    m_nuclideDisplay->reconcileCards();
+
+  // Keep the last fit's back-decay results (used by the calc log) in line with the setting.
+  //  (Never called while the results mutex is held: updateGuiWithModelFitResults, which holds it,
+  //  calls sync_back_decay_results directly.)
+  if( m_lastFitResults )
+  {
+    std::lock_guard<std::mutex> lock( m_lastFitResults->m_mutex );
+    sync_back_decay_results( *m_lastFitResults, m_backDecaySpec,
+                             (m_backDecaySpec.enabled && m_backDecayInputError.empty()) );
+  }//if( m_lastFitResults )
+
+  updatePhoneFitBar();
+}//void updateBackDecayDisplay()
 
 
 void ShieldingSourceDisplay::setVolEffMethodIndex( const int index )
@@ -7406,71 +7786,70 @@ void ShieldingSourceDisplay::showCalcLog()
       }
     ) );
 
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    const string tmplts_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_fit_templates" );
-
-    if( !tmplts_dir.empty() && SpecUtils::is_directory(tmplts_dir) )
+    // The user's own templates, and those from user library packages (each rendered with its own
+    //  folder as the Inja include folder, so its includes resolve beside it).
+    for( const UserLibrary::Item &item : UserLibrary::items( "act_shield_template" ) )
     {
+      if( item.source.kind == UserLibrary::SourceKind::BuiltIn )
+        continue;
+
+      const string filename = SpecUtils::filename( item.found.path );
+
       // Inja assumes trailing path seperator.
 #if( defined(_WIN32) )
       const char path_sep = '\\';
 #else
       const char path_sep = '/';
 #endif
-      const string tmplts_dir_inja = (tmplts_dir[tmplts_dir.size()-1] == path_sep) ? tmplts_dir : (tmplts_dir + path_sep);
+      const string tmplts_dir = SpecUtils::parent_path( item.found.path );
+      const string tmplts_dir_inja = (!tmplts_dir.empty() && (tmplts_dir.back() == path_sep)) ? tmplts_dir : (tmplts_dir + path_sep);
 
-      const vector<string> potential_tmplts = SpecUtils::ls_files_in_directory( tmplts_dir );
-      for( const string tmplt_path : potential_tmplts )
+      string outname = filename;
+      string tmplt_ext = SpecUtils::file_extension(filename);
+
+      size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
+      if( pos == string::npos )
+        pos = SpecUtils::ifind_substr_ascii(outname, "template");
+      if( pos != string::npos )
+        outname = outname.substr(0, pos);
+
+      while( !outname.empty()
+            && (SpecUtils::iends_with(outname, "_")
+                || SpecUtils::iends_with(outname, ".")
+                || SpecUtils::iends_with(outname, "-")) )
       {
-        const string filename = SpecUtils::filename(tmplt_path);
+        outname = outname.substr(0, outname.size() - 1);
+      }
 
-        if( !SpecUtils::icontains(filename, "tmplt.")
-           && !SpecUtils::icontains(filename, "template.")
-           && !SpecUtils::icontains(filename, "inja.") )
-        {
-          continue;
-        }
+      if( tmplt_ext.empty()
+         || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+         || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+        tmplt_ext = SpecUtils::file_extension(outname);
 
-        string outname = filename;
-        string tmplt_ext = SpecUtils::file_extension(filename);
+      if( tmplt_ext.empty() )
+        tmplt_ext = ".txt";
 
-        size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
-        if( pos == string::npos )
-          pos = SpecUtils::ifind_substr_ascii(outname, "template");
-        if( pos != string::npos )
-          outname = outname.substr(0, pos);
+      outname += tmplt_ext;
 
-        while( !outname.empty()
-              && (SpecUtils::iends_with(outname, "_")
-                  || SpecUtils::iends_with(outname, ".")
-                  || SpecUtils::iends_with(outname, "-")) )
-        {
-          outname = outname.substr(0, outname.size() - 1);
-        }
+      InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
+      if( SpecUtils::icontains(tmplt_ext, "html") )
+        rpt_type = InjaLogDialog::LogType::Html;
 
-        if( tmplt_ext.empty()
-           || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
-           || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
-          tmplt_ext = SpecUtils::file_extension(outname);
+      WString label = WString::fromUTF8( outname );
+      if( item.source.kind == UserLibrary::SourceKind::Package )
+        label = WString::tr( "ssd-template-from-package" ).arg( label ).arg( WString::fromUTF8( item.source.label ) );
 
-        if( tmplt_ext.empty() )
-          tmplt_ext = ".txt";
-
-        outname += tmplt_ext;
-
-        InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
-        if( SpecUtils::icontains(tmplt_ext, "html") )
-          rpt_type = InjaLogDialog::LogType::Html;
-
-        templates.push_back( make_tuple( WString::fromUTF8(outname), "_" + outname, rpt_type,
-                                        [filename,tmplts_dir_inja]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
-          inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
-          return env.render_file( filename, data );
-        }
-                                        ) );
-      }//for( const string tmplt_path : potential_tmplts )
-    }//if( SpecUtils::is_directory(tmplts_dir) )
-#endif
+      const bool from_package = (item.source.kind == UserLibrary::SourceKind::Package);
+      const string tmplt_path = item.found.path;
+      templates.push_back( make_tuple( label, "_" + outname, rpt_type,
+                                      [filename,tmplts_dir_inja,from_package,tmplt_path]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
+        inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
+        if( from_package )
+          UserLibrary::confineTemplateIncludes( env, tmplt_path );  //includes only from its own folder
+        return env.render_file( filename, data );
+      }
+                                      ) );
+    }//for( loop over user and package templates )
 
     // Create and show the dialog, store in m_logDiv
     m_logDiv = SimpleDialog::make<InjaLogDialog>( WString::tr( "ssd-calc-log-html-title" ), data, templates );
@@ -7569,7 +7948,23 @@ void ShieldingSourceDisplay::closeModelUploadWindow()
 
 void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
 {
-  ShieldSourceChange change( this, "Upload Activity/Shielding fit model." );
+  const std::string filename = upload->spoolFileName();
+  if( SpecUtils::file_size( filename ) > 50 * 1024 * 1024 )
+  {
+    passMessage( WString::tr("ssd-err-opening-import-model").arg( "Uploaded file is too large (max 50 MB)." ),
+                 WarningWidget::WarningMsgHigh );
+  }else
+  {
+    loadModelFromFile( filename, "Upload Activity/Shielding fit model." );
+  }
+
+  closeModelUploadWindow();
+}//void finishModelUpload(...)
+
+
+bool ShieldingSourceDisplay::loadModelFromFile( const std::string &path, const std::string &undo_label )
+{
+  ShieldSourceChange change( this, undo_label );
   
   shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> pre_state;
   if( change.m_pre_state )
@@ -7584,21 +7979,16 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
       change.m_pre_state = pre_state;
     }catch( std::exception &e )
     {
-      passMessage( "Error adding undo step for 'Upload Activity/Shielding fit model': "
-                  + string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( "Error adding undo step for '" + undo_label + "': " + string(e.what()), WarningWidget::WarningMsgHigh );
     }
   }//if( change.m_pre_state ) / else
   
   try
   {
-    const std::string filename = upload->spoolFileName();
-
-    const size_t filesize = SpecUtils::file_size( filename );
-    if( filesize > 50 * 1024 * 1024 )
-      throw runtime_error( "Uploaded file is too large (max 50 MB)." );
-
     std::vector<char> data;
-    SpecUtils::load_file_data( filename.c_str(), data );
+    SpecUtils::load_file_data( path.c_str(), data );
+    if( data.empty() )
+      throw runtime_error( "Could not read the file." );
     
     rapidxml::xml_document<char> new_doc;
     const int flags = rapidxml::parse_normalize_whitespace
@@ -7609,7 +7999,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     m_modifiedThisForeground = true;
   }catch( std::exception &e )
   {
-    passMessage( WString::tr("ssd-err-opening-import-model").arg(e.what()), 
+    passMessage( WString::tr("ssd-err-opening-import-model").arg( Wt::Utils::htmlEncode( string( e.what() ) ) ),
                 WarningWidget::WarningMsgHigh );
     
     try
@@ -7621,15 +8011,224 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
                    WarningWidget::WarningMsgHigh );
     }//try / catch
     
-    // We wont insert an undo/redo step here, but this means if the user does an undo, then
-    //  there will be a blank step (i.e., will try to close the upload window when there is
-    //  none to close)
-    // lets keep the ShieldSourceChange from inserting a undo/redo step.
+    // Keep the ShieldSourceChange from inserting an undo/redo step for a change that did not happen.
     change.m_pre_state.reset();
+    return false;
   }//try / catch
-  
-  closeModelUploadWindow();
-}//void finishModelUpload(...)
+
+  return true;
+}//bool loadModelFromFile(...)
+
+
+void ShieldingSourceDisplay::refreshPresets()
+{
+  if( !m_presetSelect || !m_presetRow )
+    return;
+
+  m_presetSelect->clear();
+  m_presetChoices.clear();
+  m_presetSelect->addItem( WString::tr("ssd-preset-choose") );
+  m_presetChoices.push_back( PresetChoice() );
+
+  // The user's own preset files, then those from installed packages (labelled with the package).
+  const vector<UserLibrary::Item> items = UserLibrary::items( "act_shield_setup" );
+  for( const UserLibrary::SourceKind kind : { UserLibrary::SourceKind::User, UserLibrary::SourceKind::Package } )
+  {
+    for( const UserLibrary::Item &item : items )
+    {
+      if( item.source.kind != kind )
+        continue;
+      const WString name = WString::fromUTF8( item.names.empty() ? SpecUtils::filename( item.found.path ) : item.names.front() );
+      m_presetSelect->addItem( (kind == UserLibrary::SourceKind::Package)
+                                ? WString::tr("ssd-preset-from-package").arg( name ).arg( WString::fromUTF8( item.source.label ) )
+                                : name );
+      PresetChoice choice;
+      choice.path = item.found.path;
+      m_presetChoices.push_back( choice );
+    }//for( loop over items )
+  }//for( user's, then packages' )
+
+#if( USE_DB_TO_STORE_SPECTRA )
+  // Setups saved in the database (before presets were files): still offered, but never saved to.
+  try
+  {
+    std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer ? m_specViewer->sql() : nullptr;
+    if( sql && m_specViewer->user() )
+    {
+      DataBaseUtils::DbTransaction transaction( *sql );
+      const Wt::Dbo::collection<Wt::Dbo::ptr<ShieldingSourceModel>> models
+                    = sql->session()->find<ShieldingSourceModel>()
+                                     .where( "InterSpecUser_id = ?" ).bind( m_specViewer->user().id() )
+                                     .orderBy( "name" );
+      for( const Wt::Dbo::ptr<ShieldingSourceModel> &model : models )
+      {
+        m_presetSelect->addItem( WString::tr("ssd-preset-from-db").arg( model->name ) );
+        PresetChoice choice;
+        choice.dbId = model.id();
+        m_presetChoices.push_back( choice );
+      }
+      transaction.commit();
+    }//if( sql && user )
+  }catch( std::exception &e )
+  {
+    cerr << "ShieldingSourceDisplay::refreshPresets(): reading the database: " << e.what() << endl;
+  }
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
+
+  m_presetSelect->setCurrentIndex( 0 );
+  m_presetRow->setHidden( m_presetChoices.size() <= 1 );
+}//void refreshPresets()
+
+
+void ShieldingSourceDisplay::presetSelected()
+{
+  const int index = m_presetSelect ? m_presetSelect->currentIndex() : -1;
+  if( (index <= 0) || (index >= static_cast<int>( m_presetChoices.size() )) )
+    return;
+
+  const PresetChoice choice = m_presetChoices[index];
+  if( !choice.path.empty() )
+  {
+    loadModelFromFile( choice.path, "Load Activity/Shielding preset." );
+    return;
+  }
+
+#if( USE_DB_TO_STORE_SPECTRA )
+  if( choice.dbId >= 0 )
+  {
+    Wt::Dbo::ptr<ShieldingSourceModel> model;
+    try
+    {
+      std::shared_ptr<DataBaseUtils::DbSession> sql = m_specViewer->sql();
+      DataBaseUtils::DbTransaction transaction( *sql );
+      model = sql->session()->load<ShieldingSourceModel>( choice.dbId );
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr("ssd-err-opening-db-model").arg( e.what() ), WarningWidget::WarningMsgHigh );
+      return;
+    }
+
+    ShieldSourceChange change( this, "Load Activity/Shielding preset." );
+    if( loadModelFromDb( model ) )
+      m_modifiedThisForeground = true;
+    else
+      change.m_pre_state.reset();
+  }//if( choice.dbId >= 0 )
+#endif
+}//void presetSelected()
+
+
+void ShieldingSourceDisplay::startSavePreset()
+{
+#if( USE_USER_LIBRARY )
+  SimpleDialog * const dialog = SimpleDialog::make( WString::tr("ssd-save-preset-title"), WString::tr("ssd-save-preset-msg") );
+  WLineEdit *edit = dialog->contents()->addNew<WLineEdit>();
+  edit->addStyleClass( "SsdPresetName" );
+  edit->setInline( false );
+  edit->setWidth( WLength( 100, WLength::Unit::Percentage ) );
+  edit->setPlaceholderText( WString::tr("ssd-save-preset-placeholder") );
+
+  // The name of the preset last loaded, as a starting point.
+  const int index = m_presetSelect ? m_presetSelect->currentIndex() : -1;
+  if( (index > 0) && (index < static_cast<int>( m_presetChoices.size() )) && !m_presetChoices[index].path.empty() )
+  {
+    string name = SpecUtils::filename( m_presetChoices[index].path );
+    if( SpecUtils::iends_with( name, ".act.shield.xml" ) )
+      name = name.substr( 0, name.size() - 15 );
+    edit->setText( WString::fromUTF8( name ) );
+  }
+  edit->setFocus();
+
+  WPushButton *save = dialog->addButton( WString::tr("Save"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  // The dialog can outlive this tool, so find the tool again when clicked.
+  auto do_save = [edit](){
+    InterSpec * const viewer = InterSpec::instance();
+    ShieldingSourceDisplay * const display = viewer ? viewer->shieldingSourceFit( false ) : nullptr;
+    const string name = SpecUtils::trim_copy( edit->text().toUTF8() );
+    if( display && !name.empty() )
+      display->savePreset( name, false );
+  };
+  save->clicked().connect( std::bind( do_save ) );
+  edit->enterPressed().connect( std::bind( [save](){ save->clicked().emit( Wt::WMouseEvent() ); } ) );
+#endif
+}//void startSavePreset()
+
+
+void ShieldingSourceDisplay::savePreset( const std::string &name, const bool overwrite )
+{
+#if( USE_USER_LIBRARY )
+  try
+  {
+    const string dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_setups" );
+    const string filename = UserLibrary::sanitizeFileName( name, "preset" ) + ".act.shield.xml";
+    const string path = SpecUtils::append_path( dir, filename );
+
+    if( !overwrite && SpecUtils::is_file( path ) )
+    {
+      SimpleDialog * const dialog = SimpleDialog::make( WString::tr("ssd-save-preset-title"),
+                        WString::tr("ssd-save-preset-replace").arg( WString::fromUTF8( Wt::Utils::htmlEncode( filename ) ) ) );
+      WPushButton *replace = dialog->addButton( WString::tr("ssd-save-preset-replace-btn"), WidgetUtils::ButtonRole::Destructive );
+      dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+      replace->clicked().connect( std::bind( [name](){
+        InterSpec * const viewer = InterSpec::instance();
+        ShieldingSourceDisplay * const display = viewer ? viewer->shieldingSourceFit( false ) : nullptr;
+        if( display )
+          display->savePreset( name, true );
+      } ) );
+      return;
+    }//if( a preset of that name exists )
+
+    rapidxml::xml_document<char> doc;
+    serialize( &doc );
+    string xml;
+    rapidxml::print( std::back_inserter( xml ), doc, 0 );
+
+    if( SpecUtils::create_directory( dir ) == 0 )
+      throw runtime_error( "Could not create the folder '" + dir + "'" );
+
+    // Written to a temporary file, then renamed, so a failed write never leaves half a preset.
+    const string tmp_path = path + ".partial";
+    {
+#ifdef _WIN32
+      std::ofstream output( SpecUtils::convert_from_utf8_to_utf16( tmp_path ).c_str(), ios::out | ios::binary | ios::trunc );
+#else
+      std::ofstream output( tmp_path.c_str(), ios::out | ios::binary | ios::trunc );
+#endif
+      output << xml;
+      if( !output )
+        throw runtime_error( "Could not write '" + tmp_path + "'" );
+    }
+    SpecUtils::remove_file( path );
+    if( !SpecUtils::rename_file( tmp_path, path ) )
+    {
+      SpecUtils::remove_file( tmp_path );
+      throw runtime_error( "Could not write '" + path + "'" );
+    }
+
+    // Every tool listing presets re-reads (this one included, via the signal), then show the new one.
+    UserLibrary::notifyChanged();
+    if( m_specViewer )
+      m_specViewer->userLibraryChanged().emit();
+    else
+      refreshPresets();
+    for( size_t i = 0; i < m_presetChoices.size(); ++i )
+    {
+      if( SpecUtils::lexically_normalize_path( m_presetChoices[i].path ) == SpecUtils::lexically_normalize_path( path ) )
+        m_presetSelect->setCurrentIndex( static_cast<int>( i ) );
+    }
+
+    passMessage( WString::tr("ssd-save-preset-done").arg( WString::fromUTF8( Wt::Utils::htmlEncode( name ) ) ),
+                 WarningWidget::WarningMsgInfo );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("ssd-save-preset-error").arg( WString::fromUTF8( Wt::Utils::htmlEncode( string( e.what() ) ) ) ),
+                 WarningWidget::WarningMsgHigh );
+  }
+#endif
+}//void savePreset(...)
 
 
 void ShieldingSourceDisplay::modelUploadError( const ::int64_t size_tried )
@@ -8198,7 +8797,6 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   label->setInline( false );
 
   WLineEdit *nameEdit = contents->addNew<WLineEdit>();
-  nameEdit->setAttributeValue( "ondragstart", "return false" );
   nameEdit->setInline( false );
   if( m_modelInDb )
     nameEdit->setValueText( m_modelInDb->name );
@@ -8210,7 +8808,6 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   label->setInline( false );
 
   WLineEdit *descEdit = contents->addNew<WLineEdit>();
-  descEdit->setAttributeValue( "ondragstart", "return false" );
   descEdit->setInline( false );
   if( m_modelInDb )
     descEdit->setValueText( m_modelInDb->description );
@@ -8678,8 +9275,6 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
-  m_correctForCascade->setChecked( options.correct_for_cascade_summing );
-  updateCascadeAvailability();
 
   // Restore the detector-efficiency-uncertainty method (a restore is authoritative - mark the
   //  first-load default as already applied so it never clobbers the restored choice), then
@@ -8692,6 +9287,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   setVolEffMethodIndex( static_cast<int>( options.volumetric_eff_method ) );
   m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateVolEffMethodAvailability();
+  setBackDecaySpec( options.back_decay );
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"
@@ -8726,6 +9322,11 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   //  "restored" over it.  (If the DRF embeds a scene, handleDetectorChanged() drops the restored
   //  layers - states saved before 2026-09-29 serialized the scene's layers - and shows the scene.)
   m_embeddedSetupXml.clear();
+
+  // Restored only now that distance and shieldings are: the availability gate (evaluated in
+  //  handleDetectorChanged() below) depends on them, and against reset()'s default 100 cm with no
+  //  shielding it would uncheck the box.
+  m_correctForCascade->setChecked( options.correct_for_cascade_summing );
 
   // Make sure if DRF is fixed/not-fixed, that the GUI state will be consistent with this
   //  (it may not have been the same when serialized)
@@ -9830,10 +10431,18 @@ void ShieldingSourceDisplay::showPhoneFitResults()
   {
     WTable *table = contents->addNew<WTable>();
     table->addStyleClass( "SsdResultsTable" );
+    table->addStyleClass( "SelectableTxt" );
     table->setHeaderCount( 1 );
     table->elementAt(0,0)->addNew<WText>( WString::tr("ssd-phone-col-nuclide") );
     table->elementAt(0,1)->addNew<WText>( WString::tr("ssd-phone-col-activity") );
     table->elementAt(0,2)->addNew<WText>( WString::tr("ssd-phone-col-age") );
+
+    // Activity at the back-decay reference time, when that option is in use.
+    bool show_back_decay = false;
+    for( const SourceFitNuclideDisplay::NucActivitySummary &s : sums )
+      show_back_decay |= !s.backDecayActivity.empty();
+    if( show_back_decay )
+      table->elementAt(0,3)->addNew<WText>( WString::tr("ssd-phone-col-act-tref") );
 
     int r = 1;
     for( const SourceFitNuclideDisplay::NucActivitySummary &s : sums )
@@ -9853,6 +10462,13 @@ void ShieldingSourceDisplay::showPhoneFitResults()
 
       WText *age = table->elementAt(r,2)->addNew<WText>( WString::fromUTF8( s.age.empty() ? string("—") : s.age ) );
       age->addStyleClass( "SsdResultMono" );
+
+      if( show_back_decay )
+      {
+        const string bd = s.backDecayActivity.empty() ? string("—") : s.backDecayActivity;
+        WText *bdtxt = table->elementAt(r,3)->addNew<WText>( WString::fromUTF8(bd), TextFormat::Plain );
+        bdtxt->addStyleClass( "SsdResultMono" );
+      }//if( show_back_decay )
       ++r;
     }//for( const NucActivitySummary &s : sums )
   }//if( sums.empty() ) / else
@@ -9871,6 +10487,7 @@ void ShieldingSourceDisplay::showPhoneFitResults()
     {
       WContainerWidget *box = contents->addNew<WContainerWidget>();
       box->addStyleClass( "SsdResultsWarn" );
+      box->addStyleClass( "SelectableTxt" );
       string warn;
       for( const string &m : msgs )
         warn += (warn.empty() ? string() : string("<br />")) + Wt::Utils::htmlEncode(m);
@@ -9927,6 +10544,8 @@ void ShieldingSourceDisplay::setWidgetStateForFitStarting( const bool autoTrigge
   // Footer controls (created in createWindow()); may be null on code paths without a window.
   if( m_importModelBtn ) m_importModelBtn->disable();
   if( m_exportModelBtn ) m_exportModelBtn->disable();
+  if( m_savePresetBtn ) m_savePresetBtn->disable();
+  if( m_presetSelect ) m_presetSelect->disable();
 #if( USE_DB_TO_STORE_SPECTRA )
   if( m_dbButton ) m_dbButton->disable();
   if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->disable();
@@ -9959,6 +10578,8 @@ void ShieldingSourceDisplay::setWidgetStateForFitBeingDone()
   m_addShieldingBtn->enable();
   if( m_importModelBtn ) m_importModelBtn->enable();
   if( m_exportModelBtn ) m_exportModelBtn->enable();
+  if( m_savePresetBtn ) m_savePresetBtn->enable();
+  if( m_presetSelect ) m_presetSelect->enable();
 #if( USE_DB_TO_STORE_SPECTRA )
   if( m_dbButton ) m_dbButton->enable();
   if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->enable();
@@ -10693,6 +11314,11 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   {
     clearFitMessage();
   }
+
+  // The fit computed its back-decay values with the setting it started with; make them match the
+  //  current setting (we already hold results->m_mutex, so must not call updateBackDecayDisplay()).
+  sync_back_decay_results( *results, m_backDecaySpec,
+                           (m_backDecaySpec.enabled && m_backDecayInputError.empty()) );
 
   // A successful fit means the showing results now match the model: clear the manual-mode
   //  "needs update" hint and refresh the button/pill to its idle state.

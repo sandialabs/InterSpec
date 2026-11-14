@@ -25,27 +25,26 @@
 
 #include "InterSpec_config.h"
 
-#include <map>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
-#include <Wt/WEvent.h>
-#include <Wt/WConfig.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
-
+#include "InterSpec/DecayActivityCalc.h"
 
 namespace Wt
 {
   class WText;
+  class WLabel;
   class WLineEdit;
   class WCheckBox;
   class WComboBox;
   class WTabWidget;
   class WPushButton;
+  class WMouseEvent;
 }//namespace Wt
 
 namespace SandiaDecay
@@ -55,9 +54,10 @@ namespace SandiaDecay
 }//namespace SandiaDecay
 
 class InterSpec;
+struct ColorTheme;
 class CsvDownloadGui;
-class PeakCsvResource;
 class DecayChainChart;
+class DecayCsvResource;
 class DecayActivityChart;
 class DecayActivityModel;
 class DecaySelectNuclide;
@@ -66,241 +66,201 @@ class DateLengthCalculator;
 
 // TODO: need to implement undo/redo in DecayActivityDiv as the user changes things.
 
+/** The contents of the "Nuclide Decay Info" tool (see `DecayWindow`): the source nuclides the user
+ has entered, and tabs showing their activity over time, their decay chain, and a calculator.
+
+ The decay math and app-url handling live in `DecayActivityCalc`.
+ */
 class DecayActivityDiv : public Wt::WContainerWidget
 {
 public:
   DecayActivityDiv( InterSpec *viewer );
   virtual ~DecayActivityDiv();
-  
+
+  /** Adds a source nuclide, resets the time span shown, and redraws.
+
+   If `activityStr` is empty, or does not parse to `activity`, it is formatted from `activity`.
+   */
   void addNuclide( const int z, const int a, const int iso,
-                  const double activity, const bool useCurie,
-                  const double age, const std::string &activityStr );
-  
+                   const double activity, const bool useCurie,
+                   const double age, const std::string &activityStr );
+
   void clearAllNuclides();
 
-  
-  /** Asks first when more than one nuclide would be thrown away (nothing here is undoable). */
-  
-  void confirmClearAllNuclides();
-
-  
-  /** Shows the placeholder, and enables "remove all", according to whether any nuclide is added. */
-  
-  void updateNuclideAreaState();
-  
+  /** Sets the time span to show, and redraws. */
   void setDecayChartTimeRange( double dt );
-  
-  void colorThemeChanged();
-  
-  /** Handles receiving a "deep-link" url starting with "interspec://decay/...".
-   
-   Example URIs:
-   - "interspec://decay/chain?nuclide=U238&activity=3uCi&initialage=20y&timespan=22y&actunits=ci"
-   - "interspec://decay/chart?nuc=Ba133&act=3uCi&nuc=Cs137&act=2uci&actunits=ci&timespan=20y"
-   - "interspec://decay/chain?nuc=232-th"
-   
-   @param path The path specified in the URI; must be one of three values "chart", "chain", or
-          "calc".  So for example, in the URI "interspec://decay/chain?nuc...", the path is "chain".
-          This value determines which tab of the tool will be shown.
-   @param query_str The query portion of the URI.  So for example, if the URI has a value of
-          "interspec://decay/chain?nuclide=U238&...", then this string would be "nuclide=U238&...".
-          This string is is in standard URL format of "key1=value1&key2=value2&..." with the
-          ordering only mattering if there is more than one nuclide specified.  Possible key values
-          are listed below.
-          Capitalization is not important.
-          Assumes the string passed in has alaready been url-decoded.
-   
-   Possible url key-value values:
-   - "time", "timespan": The timespan fo display on the chart or calculator.  The value may be
-     specified using standard time units, or may be specified in half-lives (of the first nuclide).
-     Examples include: "timespan=20y", "timespan=5hl", "timespan=200seconds", "timespan=3half-lives"
-   - "actunits": Must have a value of "becquerel", "bq", "curie", or "ci". This is the style of
-     units that will be used to display things to the user.
-   - "charttype": Must be one of "act", "gamma", "alpha", "beta"; selects y-axis type on decay chart
-   - "grid" or "gridlines": If value is "1", "yes", or "true", then displays grid lines on decay
-     chart.
-   - "logy": If value is "1", "yes", or "true", then displays decay chart with log-y axis.
-   - "iso", "nuc", "isotope", "nuclide": these are all synonyms; the value must list an isotopes.
-      Examples include "nuc=Am241", "iso=Co60m", "iso=Co-60", "iso=60Co"
-   - "initialage", "age": The initial age of the nuclide, at the time of starting the age.
-   - "act", "activity": this is the activity of the nuclide.  If more than one nuclide is specified,
-     then this is the activity for the immediately preceding nuclide (e.g., you specify nuclide,
-     then its activity). The value provided must specify magnitude and units of activity.
-     Examples include "act=5uci", "activity=10kbq"
-   
-   TODO: currently does not support:
-    - If have multiple nuclides, showing decay chain/calc for specific nuclide not supported
-    - Initial data on calc tab.
-    - On decay chart, if user has de-selected some nuclides.
-    - On decay chain if the user has selected a specific nuclide in the chain to show info about.
+
+  /** Sets the tool state from an app-url ("interspec://decay/...") - see
+   `DecayActivityCalc::fromAppUrl` for the format.  Problems with the URL are shown to the user as
+   warnings.
+
+   @param path The path of the URI (e.g., "chart" for "interspec://decay/chart?nuc=...").
+   @param query_str The url-decoded query portion of the URI (e.g., "nuc=U238&...").
    */
   void handleAppUrl( std::string path, std::string query_str );
-  
-  /** Encodes current tool state to app-url format.  Returned string does not include the
-   "interspec://" protocol, or "decay" path; so will look something like "chart?nuc=Ba133&ac...".
-   
-   The returned value has not been url-encoded.
-   
-   Currently not a `const` method because it calls `timeToDisplayTill()`.
+
+  /** Encodes the current tool state to app-url format; see `DecayActivityCalc::toAppUrl`.  The
+   returned string does not include the "interspec://decay/" prefix, and has not been url-encoded.
    */
   std::string encodeStateToUrl();
-  
-public:
-  friend class PeakCsvResource;
+
+private:
+  friend class CsvDownloadGui;
+  friend class DecayCsvResource;
   friend class DateLengthCalculator;
 
-  InterSpec *m_viewer;
-  
-  /** \TODO: make this an actual widget and instead of storing in m_nuclides, and just store only in m_nuclidesAddedDiv */
-  struct Nuclide
+  /** A source nuclide, and the "pill" widget showing it. */
+  struct Nuclide : public DecayActivityCalc::SourceNuclide
   {
-    int a;
-    int z;
-    int iso;
-    double age;
-    double activity;
-    bool useCurie;
+    Wt::WContainerWidget *display = nullptr;
+    Wt::WText *txt = nullptr;
 
-    /* The user input activity string; used for round-tripping to put back into user inputs, and tracking number of 
-    significant figures.
-    
-    I think is currently kept consistent with `age`, but not 100% on this (their are some asserts that never seem 
-    to trip), and also may be empty.
-    
-    TODO: remove the `double age` variable, and just always use this `string activityStr` so its a little easier to ensure things are kept consistent; or make the variables private, and use setters/getters.
-    */
-    std::string activityStr;
-    
-    
-    Wt::WContainerWidget *display;
-    Wt::WText *txt;
-    
     void updateTxt();
   };//struct Nuclide
 
-  std::vector<Nuclide>         m_nuclides;
-  Wt::WLineEdit               *m_displayTimeLength;
-  Wt::WComboBox               *m_displayActivityUnitsCombo;
-  Wt::WLabel                  *m_displayActivityUnitsLabel;
-  Wt::WCheckBox               *m_logYScale;
-  Wt::WCheckBox               *m_photopeakLogYScale;
-  Wt::WCheckBox               *m_showGridLines;
+  void init();
+  void initCharts();
+  Wt::WContainerWidget *initDisplayOptionWidgets();
 
-  Wt::WComboBox               *m_yAxisType;
-  
-  //things for the adding of activity
-  Wt::WContainerWidget        *m_parentNuclidesDiv;
-  Wt::WContainerWidget        *m_addParentNuclideDiv;
-  Wt::WContainerWidget        *m_nuclidesAddedDiv;
+  /** Adds (or, if `replaceIndex` is a valid index, replaces) a source nuclide, without updating
+   anything else; callers must follow with #nuclidesChanged (or equivalent).
+   */
+  void addNuclideNoRefresh( DecayActivityCalc::SourceNuclide src, const int replaceIndex = -1 );
+  void clearNuclidesNoRefresh();
 
-  /** Placeholder shown inside m_nuclidesAddedDiv while no nuclide has been added. */
-  Wt::WText                   *m_noNuclidesTxt;
-  Wt::WPushButton             *m_createNewNuclideButton;
+  /** Call after the set of source nuclides changes: resets the time span shown, and redraws. */
+  void nuclidesChanged();
 
-  Wt::WPushButton             *m_clearNuclidesButton;
-
-  Wt::Core::observing_ptr<AuxWindow> m_nuclideSelectDialog;
-  DecaySelectNuclide          *m_nuclideSelect;
-
-  //Objects to actually display the chart of activities
-  Wt::WTabWidget              *m_chartTabWidget;
-  DecayActivityChart          *m_decayChart;
-  std::shared_ptr<DecayActivityModel> m_decayModel;
-  
-  DecayChainChart           *m_decayChainChart;
-    
-  Wt::Core::observing_ptr<AuxWindow> m_moreInfoDialog;
-
-  Wt::WContainerWidget        *m_decayLegend;
-
-  DateLengthCalculator *m_calc;
-  
-  // Wt4: observing_ptr auto-nulls if the dialog is destroyed (e.g. closed by the user), so the raw
-  //  pointer can't dangle (matches m_nuclideSelectDialog / m_moreInfoDialog above).
-  Wt::Core::observing_ptr<AuxWindow> m_csvDownloadDialog; //null if not displayed
-  
-  //Below are variable updated by refreshDecayDisplay() that reflect the current
-  // stuff being showed by m_decayChart.  They are only used in
-  // updateMouseOver(...) and can probably just be gotten rid of
-  double           m_currentTimeUnits;
-  double           m_currentTimeRange;
-  
-  int m_currentNumXPoints;
-  
-  std::unique_ptr<SandiaDecay::NuclideMixture> m_currentMixture;
-
-
-  //Functions for dealing with adding new nuclides
-  void addSelectedNuclide();
-  
+  /** Adds the nuclide from the nuclide-select dialog, replacing the one being edited, if any. */
   void addTheNuclide( const NuclideSelectedInfo &nuc );
-  
+
+  void removeNuclide( Wt::WContainerWidget *frame );
+
+  /** Asks first when more than one nuclide would be thrown away (nothing here is undoable). */
+  void confirmClearAllNuclides();
+
+  /** Shows the placeholder, and enables "remove all", according to whether any nuclide is added. */
+  void updateNuclideAreaState();
+
+  /** Shows the nuclide-select dialog to add a new nuclide. */
+  void showAddNuclideDialog();
+
+  /** Called when the nuclide-select dialog closes; stops editing any nuclide. */
+  void nuclideSelectDialogDone();
+
+  /** Shows the nuclide-select dialog to edit the nuclide the pill `w` displays; when the user
+   accepts, #addTheNuclide replaces that nuclide, in place.
+   */
+  void sourceNuclideDoubleClicked( Wt::WContainerWidget *w );
+
+  /** Stops editing a nuclide (if one is being edited). */
+  void clearEditingNuclide();
+
+  /** Half-life of the first source nuclide (which "half-lives" time spans refer to), or -1.0. */
+  double firstNuclideHalfLife() const;
+
+  /** Parses a time span, which may be in half-lives of the first nuclide; throws on error. */
+  double parseTimeSpan( const std::string &txt ) const;
+
+  /** Whether to show activities of `nuc` in curies: true if the first source nuclide it decays
+   from (or is) was entered in curies; the user preference if it is not from any source nuclide.
+   */
+  bool useCurieFor( const SandiaDecay::Nuclide *nuc ) const;
+
+  /** Returns the time span to show, setting a default into the time span field if it is invalid. */
+  double timeToDisplayTill();
   void checkTimeRangeValid();
-  
-  
+  void setTimeLimitToDisplay();
+  void updateInitialMixture() const;
+
+  /** Applies the log-y check box to the chart axis, without redrawing. */
+  void applyYScale();
   void updateYScale();
-  void refreshDecayDisplay( const bool update_calc );
+  void setGridLineStatus();
+
+  /** Redraws the activity chart from #m_nuclides; also updates the calculator results.
+
+   @param syncCalcTimeSpan If true, the calculators time span is set to the charts.
+   */
+  void refreshDecayDisplay( const bool syncCalcTimeSpan );
+  void refreshDecayChart();
   void addDecaySeries();
   void userSetShowSeries( int series, bool show );
   void updateYAxisRange();
-  
+
+  /** Updates the calculator now if its tab is showing, or else when it is next shown. */
+  void updateCalculator();
+  void chartTabChanged( int index );
+
+  void colorThemeChanged( std::shared_ptr<const ColorTheme> theme );
+
   void createCsvDownloadGui();
   void deleteCsvDownloadGui();
   void deleteCsvDownloadGuiTriggerUpdate();
 
   /** Opens the "Batch Decay" tool, seeded with the currently entered nuclides. */
   void openBatchDecayTool();
-    
-  void updateMouseOver( const Wt::WMouseEvent &event );
-  void removeNuclide( Wt::WContainerWidget *frame );
-
-  //nuclideSelectDialogDone(): makes sure none of the source Nuclides have the
-  //  "EditingNuclide" style class associated with them.
-  void nuclideSelectDialogDone();
-  
-  //sourceNuclideDoubleClicked(...): we are taking a double click by the user
-  //  on a source Nuclide to mean they want to edit it.  How we keep track of
-  //  this internally is by adding a "EditingNuclide" to the WContainerWidget
-  //  rendering the Nuclide.  When the Nuclide div is double clicked, we will
-  //  popup the nuclide select window, with the values set to those of the
-  //  Nuclide.  Then when the nuclide select widget indicates to add a Nuclide
-  //  by calling DecayActivityDiv::addNuclide(...) (through signal/slot), we will
-  //  see if any of the source Nuclide divs have the "EditingNuclide" style
-  //  class, and if so, place the new Nuclide in its place.
-  //  This is a bit hacky, or not as robust as I would like, but its the easiest
-  //  relatively okay way to add in this editing capability.
-  void sourceNuclideDoubleClicked( Wt::WContainerWidget *w );
-
-  double timeToDisplayTill();
 
   void displayMoreInfoPopup( const double time );
-  void decayChartClicked( const Wt::WMouseEvent& event );
-  
-  Wt::WContainerWidget *nuclideInformation(
-                                    const SandiaDecay::Nuclide *nuclide ) const;
-  Wt::WContainerWidget *isotopesSummary( const double time ) const;
-
-
-  void setTimeLimitToDisplay();
-  
-  void updateInitialMixture() const;
-  
-  static double findTimeForActivityFrac( const SandiaDecay::NuclideMixture *mixture,
-                                         const double fracT0ActivityWanted,
-                                         const double searchStartTime = -1.0,
-                                         const double searchEndTime = -1.0 );
+  void decayChartClicked( const Wt::WMouseEvent &event );
   void deleteMoreInfoDialog();
   void manageActiveDecayChainNucStyling();
 
-  void init();
-  void initCharts();
-  void setGridLineStatus();
-  
-  void globalKeyPressed( const Wt::WKeyEvent &e );
-  
-  Wt::WContainerWidget *initDisplayOptionWidgets();
+  Wt::WContainerWidget *nuclideInformation( const SandiaDecay::Nuclide *nuclide ) const;
+  Wt::WContainerWidget *isotopesSummary( const double time ) const;
 
-  
+
+  InterSpec *m_viewer;
+
+  std::vector<Nuclide>         m_nuclides;
+  Wt::WLineEdit               *m_displayTimeLength;
+  Wt::WComboBox               *m_displayActivityUnitsCombo;
+  Wt::WLabel                  *m_displayActivityUnitsLabel;
+  Wt::WCheckBox               *m_logYScale;
+  Wt::WCheckBox               *m_showGridLines;
+  Wt::WComboBox               *m_yAxisType;
+
+  //things for the adding of activity
+  Wt::WContainerWidget        *m_parentNuclidesDiv;
+  Wt::WContainerWidget        *m_nuclidesAddedDiv;
+
+  /** Placeholder shown inside m_nuclidesAddedDiv while no nuclide has been added. */
+  Wt::WText                   *m_noNuclidesTxt;
+  Wt::WPushButton             *m_createNewNuclideButton;
+  Wt::WPushButton             *m_clearNuclidesButton;
+
+  Wt::Core::observing_ptr<AuxWindow> m_nuclideSelectDialog;
+  DecaySelectNuclide          *m_nuclideSelect;
+
+  /** The pill of the nuclide being edited in #m_nuclideSelectDialog; null when adding a nuclide. */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_editingNuclide;
+
+  //Objects to actually display the chart of activities
+  Wt::WTabWidget              *m_chartTabWidget;
+  DecayActivityChart          *m_decayChart;
+  std::shared_ptr<DecayActivityModel> m_decayModel;
+
+  DecayChainChart             *m_decayChainChart;
+
+  Wt::Core::observing_ptr<AuxWindow> m_moreInfoDialog;
+
+  Wt::WContainerWidget        *m_decayLegend;
+
+  DateLengthCalculator        *m_calc;
+
+  /** If the calculator needs updating when it is next shown. */
+  bool                         m_calcNeedsUpdate;
+
+  // Wt4: observing_ptr auto-nulls if the dialog is destroyed (e.g. closed by the user), so the raw
+  //  pointer can't dangle (matches m_nuclideSelectDialog / m_moreInfoDialog above).
+  Wt::Core::observing_ptr<AuxWindow> m_csvDownloadDialog; //null if not displayed
+
+  /** The time unit of the charts x-axis, so clicks can be mapped to a time; negative if the chart
+   is empty.
+   */
+  double m_currentTimeUnits;
+
+  std::unique_ptr<SandiaDecay::NuclideMixture> m_currentMixture;
 };//DecayActivityDiv
 
 

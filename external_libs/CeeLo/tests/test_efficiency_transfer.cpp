@@ -528,3 +528,31 @@ BOOST_AUTO_TEST_CASE(anchor_covariance_xml_roundtrip) {
     BOOST_REQUIRE_EQUAL(c1.size(), c2.size());
     for (size_t i = 0; i < c1.size(); ++i) BOOST_CHECK_CLOSE(c1[i], c2[i], 1e-9);
 }
+
+
+// The anchors are the whole detector's; the response carries the scale, its eta (and total b) is the
+//  one element's, and every query reproduces the anchor as before.
+BOOST_AUTO_TEST_CASE(transfer_with_efficiency_scale) {
+    const GeometryDescriptor gd = nai3x3_descriptor();
+    const AnchorCurve fep = make_anchor();
+    const AnchorCurve tot = make_anchor(2.0);
+    const Eigen::Vector3d ref(0.0, 0.0, -40.0);
+
+    TransferResponseOptions unit_opts, opts;
+    opts.efficiency_scale = 4.0;
+    const auto unit = make_transfer_response(gd, fep, ref, &tot, unit_opts);
+    const auto scaled = make_transfer_response(gd, fep, ref, &tot, opts);
+    BOOST_CHECK_EQUAL(scaled->efficiency_scale, 4.0);
+
+    for (const double d : {15.0, 40.0, 80.0}) {
+        for (const double E : {100.0, 662.0, 1500.0}) {
+            BOOST_CHECK_CLOSE(scaled->eps_fep(E, 0.0, 0.0, d).value, unit->eps_fep(E, 0.0, 0.0, d).value, 1e-9);
+            BOOST_CHECK_CLOSE(scaled->eps_total(E, 0.0, 0.0, d).value, unit->eps_total(E, 0.0, 0.0, d).value, 1e-9);
+        }
+    }
+    for (size_t i = 0; i < unit->eta_fep.ln_eta.size(); ++i)
+        BOOST_CHECK_CLOSE(scaled->eta_fep.ln_eta[i], unit->eta_fep.ln_eta[i] - std::log(4.0), 1e-9);
+
+    opts.efficiency_scale = 0.0;
+    BOOST_CHECK_THROW(make_transfer_response(gd, fep, ref, &tot, opts), std::runtime_error);
+}

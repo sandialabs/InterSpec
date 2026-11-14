@@ -160,6 +160,14 @@ add_test( NAME TDecayBatchCalc
 )
 
 
+add_executable( test_DecayActivityCalc test_DecayActivityCalc.cpp )
+target_link_libraries( test_DecayActivityCalc PRIVATE InterSpecLib )
+add_test( NAME TDecayActivityCalc
+  COMMAND $<TARGET_FILE:test_DecayActivityCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_RelEffManual test_RelEffManual.cpp )
 target_link_libraries( test_RelEffManual PRIVATE InterSpecLib )
 add_test( NAME TestRelEffManual
@@ -474,6 +482,13 @@ add_test( NAME TShieldingSourceFitCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ShieldSourceBackDecay test_ShieldSourceBackDecay.cpp )
+target_link_libraries( test_ShieldSourceBackDecay PRIVATE InterSpecLib )
+add_test( NAME TShieldSourceBackDecay
+  COMMAND $<TARGET_FILE:test_ShieldSourceBackDecay> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_MaterialDB test_MaterialDB.cpp )
 target_link_libraries( test_MaterialDB PRIVATE InterSpecLib )
 add_test( NAME TMaterialDB
@@ -784,6 +799,15 @@ add_test( NAME TMakeDrfFit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Create-DRF: each source peak to an absolute-efficiency point (line clustering, decay during the
+#  measurement, shielding/air, background subtraction, unusable-source guard).
+add_executable( test_MakeDrfSamplePoints test_MakeDrfSamplePoints.cpp )
+target_link_libraries( test_MakeDrfSamplePoints PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfSamplePoints
+  COMMAND $<TARGET_FILE:test_MakeDrfSamplePoints> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # Create-DRF path validated end-to-end against a stored CeeLo Monte-Carlo truth table (fit,
 #  covariance calibration, mixed distances, and an activity fit through the made DRF).  The
 #  table regenerates with INTERSPEC_REGEN_MAKEDRF_MC_TRUTH=1 (minutes of MC).
@@ -981,6 +1005,23 @@ add_executable( test_DrfImport test_DrfImport.cpp )
 target_link_libraries( test_DrfImport PRIVATE InterSpecLib )
 add_test( NAME TDrfImport
   COMMAND $<TARGET_FILE:test_DrfImport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# The Detector Efficiency dialog's Library data (DrfLibrary): detector summaries, the cache that is
+#  reused until a file or database row changes, merging database rows into detectors found on disk,
+#  and the rows the list shows for a filter.
+add_executable( test_DrfLibrary test_DrfLibrary.cpp )
+target_link_libraries( test_DrfLibrary PRIVATE InterSpecLib )
+add_test( NAME TDrfLibrary
+  COMMAND $<TARGET_FILE:test_DrfLibrary> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_UserLibrary test_UserLibrary.cpp )
+target_link_libraries( test_UserLibrary PRIVATE InterSpecLib )
+add_test( NAME TUserLibrary
+  COMMAND $<TARGET_FILE:test_UserLibrary> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

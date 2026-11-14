@@ -778,6 +778,7 @@ void SimpleActivityCalc::init()
   // Nuclide info display (shows nuclide, energy, branching ratio, etc.)
   m_nuclideInfo = addNew<WText>();
   m_nuclideInfo->addStyleClass( "row nuclide-info" );
+  m_nuclideInfo->addStyleClass( "SelectableTxt" );
 
   // Age row (hidden if not appropriate for the nuclide)
   m_ageRow = addNew<WContainerWidget>();
@@ -793,7 +794,7 @@ void SimpleActivityCalc::init()
   // Detector row
   WContainerWidget *detectorRow = addNew<WContainerWidget>();
   detectorRow->addStyleClass( "row" );
-  m_detectorDisplay = detectorRow->addNew<DetectorDisplay>( m_viewer, m_viewer->fileManager()->model() );
+  m_detectorDisplay = detectorRow->addNew<DetectorDisplay>( m_viewer );
   m_detectorDisplay->addStyleClass( "input" );
 
   // Shielding row
@@ -843,6 +844,7 @@ void SimpleActivityCalc::init()
   // Result display
   m_resultText = addNew<WText>();
   m_resultText->addStyleClass( "row result" );
+  m_resultText->addStyleClass( "SelectableTxt" );
 
   // Error display
   m_errorText = addNew<WText>();

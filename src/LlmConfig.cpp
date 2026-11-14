@@ -20,6 +20,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/XmlUtils.hpp"
+#include "InterSpec/UserLibrary.h"
 #include "InterSpec/LlmModelPresets.h"
 
 
@@ -45,6 +46,22 @@ std::string agentTypeToString( AgentType type )
 
   throw std::invalid_argument( "Unknown AgentType" );
 }//agentTypeToString(...)
+
+
+const std::vector<AgentType> &definedAgentTypes()
+{
+  static const std::vector<AgentType> types{
+    AgentType::MainAgent,
+    AgentType::NuclideId,
+    AgentType::ActivityFit,
+    AgentType::Isotopics,
+    AgentType::KnowledgeBase,
+    AgentType::EnergyCalibration,
+    AgentType::SpectrumTimeHistory,
+    AgentType::InSitu
+  };
+  return types;
+}//definedAgentTypes()
 
 
 AgentType stringToAgentType( const std::string &name )
@@ -322,6 +339,49 @@ std::string LlmConfig::configFilePath( const std::string &filename )
 }//std::string LlmConfig::configFilePath( const std::string &filename )
 
 
+std::vector<std::string> LlmConfig::agentFiles( const AgentType type )
+{
+  const string filename = "llm_agent_" + agentTypeToString( type ) + ".xml";
+
+  // A deployment's config directory always wins.
+  const string config_dir = LlmConfig::configDirectory();
+  if( !config_dir.empty() && SpecUtils::is_file( SpecUtils::append_path(config_dir, filename) ) )
+    return { SpecUtils::append_path( config_dir, filename ) };
+
+#if( USE_USER_LIBRARY )
+  // The file the user library picks: the user's choice, else the user's own (`llm_agents/*.xml`, or
+  //  this older single file in the user data folder) over a package's over InterSpec's own.  A
+  //  package's file that can't be read falls back to InterSpec's, so a package can't disable the
+  //  assistant; the user's own file is used as-is, so they see what is wrong with it.
+  if( UserLibrary::available() )
+  {
+    // The user's own older-style file for this agent, if it can't be read: used anyway, so loading
+    //  fails with its error (as before), rather than quietly using another agent definition.
+    const string legacy = SpecUtils::append_path( InterSpec::writableDataDirectory(), filename );
+    if( SpecUtils::is_file( legacy )
+        && !UserLibrary::disabledPaths( "llm_agent" ).count( SpecUtils::lexically_normalize_path( legacy ) ) )
+    {
+      UserLibrary::FoundItem legacy_item;
+      legacy_item.path = legacy;
+      if( UserLibrary::validateItem( "llm_agent", legacy_item ).status == UserLibrary::Status::Unreadable )
+        return { legacy };
+    }
+
+    const optional<UserLibrary::Item> chosen = UserLibrary::resolve( "llm_agent", agentTypeToString( type ) );
+    if( chosen )
+    {
+      vector<string> answer{ chosen->found.path };
+      if( chosen->source.kind == UserLibrary::SourceKind::Package )
+        answer.push_back( SpecUtils::append_path( InterSpec::staticDataDirectory(), filename ) );
+      return answer;
+    }
+  }//if( UserLibrary::available() )
+#endif
+
+  return { configFilePath( filename ) };
+}//agentFiles(...)
+
+
 std::shared_ptr<LlmConfig> LlmConfig::load()
 {
 #if( BUILD_AS_MCP_HTTP_SERVER )
@@ -401,36 +461,30 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     return config;
   }
   
-  // Load each agent from its own file (e.g., "llm_agent_NuclideId.xml").
-  // For each agent, check user writable data dir first, then fall back to static data dir.
+  // Load each agent from its own file (e.g., "llm_agent_NuclideId.xml"); see `agentFiles()`.
   {
-    const vector<AgentType> agentTypes = {
-      AgentType::MainAgent,
-      AgentType::NuclideId,
-      AgentType::ActivityFit,
-      AgentType::Isotopics,
-      AgentType::KnowledgeBase,
-      AgentType::EnergyCalibration,
-      AgentType::SpectrumTimeHistory,
-      AgentType::InSitu
-    };
-
-    for( const AgentType agentType : agentTypes )
+    for( const AgentType agentType : definedAgentTypes() )
     {
-      const string filename = "llm_agent_" + agentTypeToString( agentType ) + ".xml";
-      const string agentPath = configFilePath( filename );
-
-      try
+      const vector<string> agentPaths = agentFiles( agentType );
+      for( size_t i = 0; i < agentPaths.size(); ++i )
       {
-        const vector<AgentConfig> agents = loadAgentsFromFile( agentPath );
-        for( AgentConfig agent : agents )
-          config->agents.push_back( std::move( agent ) );
-      }catch( const std::exception &e )
-      {
-        cerr << "Failed to load agent config from '" << agentPath << "': " << e.what() << endl;
-        throw;
-      }
-    }//for( const AgentType agentType : agentTypes )
+        const string &agentPath = agentPaths[i];
+        try
+        {
+          for( AgentConfig agent : loadAgentsFromFile( agentPath ) )
+          {
+            if( agent.type == agentType )
+              config->agents.push_back( std::move( agent ) );
+          }
+          break;
+        }catch( const std::exception &e )
+        {
+          cerr << "Failed to load agent config from '" << agentPath << "': " << e.what() << endl;
+          if( (i + 1) == agentPaths.size() )
+            throw;
+        }
+      }//for( loop over files to try )
+    }//for( const AgentType agentType : definedAgentTypes() )
 
     // Verify that all required agents have been loaded
     auto requireAgent = []( const AgentType type, const LlmConfig &config ) {
@@ -1836,6 +1890,9 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
 
     //cout << "Loaded " << agents.size() << " agent configurations from " + agentsConfigPath << endl;
     return agents;
+  }catch( const XmlUtils::FormatTooNew & )
+  {
+    throw;  //so it can be told apart, e.g. for a package made by a newer InterSpec
   }catch( const std::exception &e )
   {
     throw std::runtime_error("Failed to parse agent config XML from " + agentsConfigPath + ": " + string(e.what()));

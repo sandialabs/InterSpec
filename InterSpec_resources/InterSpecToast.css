@@ -76,6 +76,16 @@
   overflow-wrap: break-word;
 }
 
+/* The body text is selectable (it has .SelectableTxt), but the inline action buttons some messages
+   embed are not, so clicking one doesn't start a selection. */
+.ispec-toast-body .clearsession,
+.ispec-toast-body .RemoteRidToastButtons,
+.ispec-toast-body .GainMatchToastButtons {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
 
 /* Type-specific color schemes, matching the prior qTip2 notification colors */
 

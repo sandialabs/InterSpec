@@ -58,7 +58,56 @@
   <message id="dad-yaxis-title-total-betas">Betas/Second</message>
   <message id="dad-hdr-total-alphas">Total Alphas</message>
   <message id="dad-yaxis-title-total-alphas">Alphas/Second</message>
-  <message id="dad-chart-click-more-info">Click for more information - {1} {2} after T0 we have:</message>
+
+  <!-- Calculator tab -->
+  <message id="dad-calc-date-format">MM/dd/yyyy</message>
+  <message id="dad-calc-initial-date">Initial Date</message>
+  <message id="dad-calc-end-date">End Date</message>
+  <message id="dad-calc-time-span">Time Span</message>
+  <message id="dad-calc-err-begin-date">Begin date is invalid</message>
+  <message id="dad-calc-err-end-date">End date is invalid</message>
+  <message id="dad-calc-err-too-long">Duration of {1} is too long for {2} (half-life {3})</message>
+  <message id="dad-calc-for-nuc">For {1}:</message>
+  <message id="dad-calc-initial-act">Initial Activity</message>
+  <message id="dad-calc-final-act">Final Activity</message>
+  <message id="dad-calc-initial-age">Initial Age</message>
+  <message id="dad-calc-before">Before {1}:</message>
+  <message id="dad-calc-after">After {1}:</message>
+
+  <!-- CSV export dialog -->
+  <message id="dad-csv-window-title">CSV Export</message>
+  <message id="dad-csv-tt-time-span">Enter the time period you would like decay data for.  Ex. '5.2 y', '52.3 s', '00:01:2.1', or '3.2d 15h' would all be valid time periods.  You can also enter time periods such as '3.2hl' or '3.2 halflife' for multiples of the first nuclide's half-life.</message>
+  <message id="dad-csv-num-rows">Num Rows</message>
+  <message id="dad-csv-tt-num-rows">Number of time points (rows) to include data for.</message>
+  <message id="dad-csv-include">Include:</message>
+  <message id="dad-csv-cb-act">act.</message>
+  <message id="dad-csv-cb-xrays">xrays</message>
+  <message id="dad-csv-cb-gammas">gammas</message>
+  <message id="dad-csv-cb-alphas">alphas</message>
+  <message id="dad-csv-cb-betas">betas</message>
+  <message id="dad-csv-export">Export CSV</message>
+
+  <!-- Summary shown when the activity chart is clicked -->
+  <message id="dad-summary-starting-from">Starting from:</message>
+  <message id="dad-summary-nucs-present">The following nuclides are present at {1}:</message>
+  <message id="dad-summary-gammas">Gammas Present:</message>
+  <message id="dad-summary-alphas">Alphas Present:</message>
+  <message id="dad-summary-betas">Betas Present:</message>
+  <message id="dad-summary-beta-plus">Beta+'s Present:</message>
+  <message id="dad-summary-per-second">per second</message>
+  <message id="dad-summary-further-info">Further information about the nuclides:</message>
+
+  <!-- Problems with an "interspec://decay/..." URL -->
+  <message id="dad-url-err-path">Unrecognized component '{1}' to show on decay window.</message>
+  <message id="dad-url-err-act-units">Unrecognized activity units '{1}'; must be one of 'becquerel', 'bq', 'curie', or 'ci'.</message>
+  <message id="dad-url-err-disp-units">Unrecognized display units '{1}'.</message>
+  <message id="dad-url-err-chart-type">Unrecognized chart type '{1}'; must be Activity, Gamma, Beta, or Alpha.</message>
+  <message id="dad-url-err-unknown-key">Unrecognized query key '{1}'.</message>
+  <message id="dad-url-err-bad-nuc">'{1}' is not a valid nuclide.</message>
+  <message id="dad-url-err-stable-nuc">'{1}' is a stable nuclide.</message>
+  <message id="dad-url-err-bad-act">Invalid activity '{1}' for {2}; using {3}.</message>
+  <message id="dad-url-err-bad-age">Invalid age '{1}' for {2}; using zero.</message>
+  <message id="dad-url-err-bad-time-span">Invalid time span '{1}'; using the default.</message>
 
   <message id="dcc-window-title-decay-chain">{1} Decay Chain</message>
   <message id="dcc-window-title-decay-through">Decays through {1}</message>
@@ -76,6 +125,13 @@
   <message id="dcc-particle">Particle</message>
   <message id="dcc-intensity">Intensity</message>
   <message id="dcc-decay-through-window-title">Decays Through {1}</message>
+  <message id="dcc-particle-alpha">alpha</message>
+  <message id="dcc-particle-ec">electron capture</message>
+  <message id="dcc-particle-beta">beta</message>
+  <message id="dcc-particle-gamma">gamma</message>
+  <message id="dcc-particle-positron">positron</message>
+  <message id="dcc-particle-xray">xray</message>
+  <message id="dcc-particle-unknown">unknown</message>
 
   <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
   <message id="dcc-xAxisTitle">Decreasing Atomic Mass</message>

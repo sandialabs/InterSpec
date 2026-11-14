@@ -174,6 +174,14 @@ public:
   std::shared_ptr<DetectorPeakResponse> detector();
   std::shared_ptr<const DetectorPeakResponse> detector() const;
 
+  /** The detector response as it was read from the spectrum file - an InterSpec N42's own
+   `<DetectorPeakResponse>`, or a CNF file's efficiency - or null.
+
+   Unlike #detector, this does not change when the user picks another detector, and it is not
+   written back out: it lets the detector dialog offer the file's own detector again.
+   */
+  std::shared_ptr<const DetectorPeakResponse> detectorFromFile() const;
+
   std::shared_ptr<const PeakFitDetPrefs> peakFitDetPrefs() const;
   void setPeakFitDetPrefs( std::shared_ptr<const PeakFitDetPrefs> prefs );
 
@@ -502,6 +510,9 @@ protected:
   //  a PeakDeque to be relatively small in size, in general)
   std::shared_ptr< SampleNumsToPeakMap > m_peaks;
   std::shared_ptr<DetectorPeakResponse> m_detector;
+
+  /** See #detectorFromFile. */
+  std::shared_ptr<const DetectorPeakResponse> m_detectorFromFile;
 
   /** Peak fitting preferences (coarse detector type, default skew, skew params).
    If null, no preferences have been determined yet.

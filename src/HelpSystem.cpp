@@ -196,6 +196,7 @@ namespace HelpSystem
       m_helpWindowContent = contentOwner.get();
       m_helpWindowContent->setPadding( WLength(m_phoneLayout ? 8 : 10,WLength::Unit::Pixel) );
       m_helpWindowContent->addStyleClass( "helpTree HelpContent" );
+      m_helpWindowContent->addStyleClass( "SelectableTxt" );
 
       auto searchOwner = std::make_unique<Wt::WLineEdit>();
       m_searchText = searchOwner.get();

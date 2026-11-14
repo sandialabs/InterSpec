@@ -18,8 +18,9 @@
   <!-- Clone theme -->
   <message id="ctw-cloned-name">{1} (cloned)</message>
 
-  <!-- Note shown above the editor when a built-in theme is selected -->
+  <!-- Note shown above the editor when a built-in theme, or one from a package or file, is selected -->
   <message id="ctw-builtin-readonly">Built-in themes can't be edited.</message>
+  <message id="ctw-file-readonly">Themes from a package or file can't be edited here.</message>
   <message id="ctw-make-copy-btn">Make an editable copy</message>
   
   <!-- Delete confirmation dialog -->
@@ -43,4 +44,6 @@
   <message id="ctw-save-changes-title">Save Changes?</message>
   <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">Save changes to <em>{1}</em>?</span>]]></message>
   <message id="ctw-discard-btn">Discard</message>
+  <message id="ctw-theme-from-package">{1} ({2})</message>
+  <message id="ctw-theme-from-file">{1} (file)</message>
 </messages>
