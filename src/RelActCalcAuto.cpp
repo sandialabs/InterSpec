@@ -135,11 +135,6 @@ using namespace XmlUtils;
 #define DEFAULT_PEAK_HALF_WIDTH_SIGMA 5.0
 
 
-// 20250324 HACK to test fitting peak skew, or use a hard-coded preset value
-//#define PEAK_SKEW_HACK 0 //No hacking
-//#define PEAK_SKEW_HACK 1  //Fix the peak skew, and dont fit it
-#define PEAK_SKEW_HACK 2  //First fit without peak skew, then fit with peak skew, starting with hard-coded value for DSCB
-
 namespace
 {
 
@@ -3166,10 +3161,6 @@ struct RelActAutoCostFcn
   size_t m_add_br_uncert_start_index; //Will only be valid if `m_peak_ranges_with_uncert` is not empty
   
   bool m_skew_has_energy_dependance;
-  
-#if( PEAK_SKEW_HACK == 2 )
-  bool m_skip_skew; // 20250324 HACK to test fitting peak skew
-#endif
 
   /** When m_options.additional_br_uncert we will allow each peak range (see `cluster_photopeaks(...)`) to vary within this uncertainty;
   This variable defines the lower and upper energy of each peak range.
@@ -3428,9 +3419,6 @@ struct RelActAutoCostFcn
   m_skew_par_start_index( std::numeric_limits<size_t>::max() ),
   m_add_br_uncert_start_index( std::numeric_limits<size_t>::max() ),
   m_skew_has_energy_dependance( false ),
-#if( PEAK_SKEW_HACK == 2 )
-  m_skip_skew( false ), // 20250324 HACK to test fitting peak skew
-#endif
   m_peak_ranges_with_uncert{},
   m_phys_model_param_priors{},
   m_dev_pair_anchors{},
@@ -5391,11 +5379,6 @@ struct RelActAutoCostFcn
     vector<int> constant_parameters;
     vector<std::optional<double>> lower_bounds( num_pars_initial ), upper_bounds( num_pars_initial );
     
-            
-    // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 2 )
-    vector<int> initial_const_parameters;
-#endif
 
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
@@ -7916,15 +7899,6 @@ struct RelActAutoCostFcn
           }
         }//if( fit_skew_energy_dep )
 
-        // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
-        assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
-        if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
-        {
-          fit_skew_energy_dep = false;
-        }
-#endif
-        
         // If we will be fitting an energy dependence, make sure the cost functor knows this
         cost_functor->m_skew_has_energy_dependance |= fit_skew_energy_dep;
 
@@ -7958,31 +7932,6 @@ struct RelActAutoCostFcn
           upper_bounds[skew_start + i] = std::nullopt;
         }
 
-        // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
-#pragma message( "Doing peak skew hack - fixing peak skew to preset values!" )
-        assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
-        if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
-        {
-          cerr << "\n\n\nDoing peak skew hack! - fixing peak skew to preset values\n\n\n" << endl;
-
-          const double coefs[4] = { 2.7005, 16.0960, 2.1167, 4.1235 };
-          parameters[skew_start + i] = starting = coefs[i];
-          constant_parameters.push_back( static_cast<int>(skew_start + i) );
-          lower_bounds[skew_start + i] = std::nullopt;
-          upper_bounds[skew_start + i] = std::nullopt;
-        }
-#elif( PEAK_SKEW_HACK == 2 ) //First fit without peak skew, then fit with
-#pragma message( "Doing peak skew hack! - first fitting without skew, then fitting skew." )
-        if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
-        {
-          cerr << "\n\n\nDoing peak skew hack! - first fitting without skew, then fitting skew.\n\n\n" << endl;
-          const double coefs[4] = { 2.7005, 16.0960, 2.1167, 4.1235 };
-          parameters[skew_start + i] = starting = coefs[i];
-          constant_parameters.push_back( static_cast<int>(skew_start + i) );
-          initial_const_parameters.push_back( static_cast<int>(skew_start + i) );
-        }
-#endif
 
 
         // Specify ranges for second set of skew parameters (upper energy values)
@@ -8015,21 +7964,6 @@ struct RelActAutoCostFcn
             upper_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
           }
 
-          // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
-          if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
-          {
-            constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
-            lower_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
-            upper_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
-          }
-#elif( PEAK_SKEW_HACK == 2 ) //First fit without peak skew, then fit with
-          if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
-          {
-            constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
-            initial_const_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
-          }
-#endif
         }
       }//for( size_t i = 0; i < (num_skew_par/2); ++i )
 
@@ -8658,9 +8592,7 @@ struct RelActAutoCostFcn
         fresh->m_phys_model_param_priors = fcn->m_phys_model_param_priors;
         fresh->m_free_peak_area_multiples = fcn->m_free_peak_area_multiples;
         fresh->m_add_br_uncert_start_index = fcn->m_add_br_uncert_start_index;
-#if( PEAK_SKEW_HACK == 2 )
-        fresh->m_skip_skew = fcn->m_skip_skew;
-#endif
+        fresh->m_skew_has_energy_dependance = fcn->m_skew_has_energy_dependance;
         return fresh;
       };
 
@@ -8934,26 +8866,18 @@ struct RelActAutoCostFcn
     
     for( size_t i = 0; i < num_pars; ++i )
     {
-      // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 2 )
+      // A constant gets no Ceres bounds: Ceres projects every coordinate onto the box after each step,
+      //  held ones included, so a held value outside its range (e.g., a placeholder) would be moved.  Only
+      //  a replayed model-selection freeze keeps its bounds here (its value was checked against them above).
       const auto pos = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) );
       if( pos != end(constant_parameters) )
       {
-        // Test that if the paramater is totally const (e.g., not just `initial_const_parameters`), then we
-        //  shouldnt have put lower/upper bounds on the paramater - other than a replayed model-selection
-        //  freeze, which keeps its bounds (its value was checked against them above).
-        const auto init_pos = std::find( begin(initial_const_parameters), end(initial_const_parameters), static_cast<int>(i) );
-        const auto frozen_pos = std::find( begin(model_selection_fixed_parameters),
-                                           end(model_selection_fixed_parameters), static_cast<int>(i) );
-        assert( (init_pos != end(initial_const_parameters))
-               || (frozen_pos != end(model_selection_fixed_parameters))
+        assert( (std::find( begin(model_selection_fixed_parameters), end(model_selection_fixed_parameters),
+                            static_cast<int>(i) ) != end(model_selection_fixed_parameters))
                || (!lower_bounds[i].has_value() && !upper_bounds[i].has_value()) );
-        (void)frozen_pos;
-        
         continue;
       }
-#endif
-      
+
       if( lower_bounds[i].has_value() )
         problem.SetParameterLowerBound(pars, static_cast<int>(i), *lower_bounds[i] );
       if( upper_bounds[i].has_value() )
@@ -8967,12 +8891,6 @@ struct RelActAutoCostFcn
                            upper_bounds[i].value_or( std::numeric_limits<double>::max() ) };
 
 
-    // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 2 )
-    if( !initial_const_parameters.empty() )
-      cost_functor->m_skip_skew = true;
-#endif
-    
     // Okay - we've set our problem up
     ceres::Solver::Options ceres_options;
     ceres_options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
@@ -9216,6 +9134,19 @@ struct RelActAutoCostFcn
             fwhm_par_indexes.push_back( index );
         }
       }//if( we are fitting for FWHM )
+
+      // The peak skew is held at its starting values through every stage below, and first fit in the main
+      //  solve: while the FWHM (or energy calibration) is held at its starting estimate - which for a
+      //  strongly-skewed detector can be several times too wide - a free skew contorts itself to absorb
+      //  the mismatch, and runs onto its bounds, from where the main solve may not recover.
+      vector<size_t> skew_par_indexes;
+      for( size_t index = cost_functor->m_skew_par_start_index;
+          index < (cost_functor->m_skew_par_start_index + 2*PeakDef::num_skew_parameters(options.skew_type));
+          ++index )
+      {
+        if( !already_fixed(index) )
+          skew_par_indexes.push_back( index );
+      }
       
       /** lambda to evaluate the problems, holding a number of paramaters constant.
        Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
@@ -9310,10 +9241,10 @@ struct RelActAutoCostFcn
       };//eval_with_constants lambda
       
       
-      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
+      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars, skew_par_indexes} );
 
       if( !hoerl_par_indexes.empty() )
-        eval_with_constants( {hoerl_par_indexes} );
+        eval_with_constants( {hoerl_par_indexes, skew_par_indexes} );
 
       // Staged energy calibration optimization:
       // After the initial parameter estimates above (with all energy cal fixed), progressively
@@ -9323,13 +9254,18 @@ struct RelActAutoCostFcn
         // Stage: free linear cal (offset/gain), but keep deviation pairs fixed.
         // This lets the optimizer find the correct offset/gain before trying to fit
         // the non-linear deviation pair corrections.
-        eval_with_constants( {dev_pair_pars_indexes, hoerl_par_indexes} );
+        eval_with_constants( {dev_pair_pars_indexes, hoerl_par_indexes, skew_par_indexes} );
 
         // Stage: free deviation pairs too (with offset/gain already near correct values).
         // Only do this if we have deviation pair parameters to free.
         if( !dev_pair_pars_indexes.empty() )
-          eval_with_constants( {hoerl_par_indexes} );
+          eval_with_constants( {hoerl_par_indexes, skew_par_indexes} );
       }
+
+      // If no stage above freed the FWHM, fit it once with the skew still held.
+      if( !skew_par_indexes.empty() && !fwhm_par_indexes.empty()
+         && hoerl_par_indexes.empty() && linear_cal_pars_indexes.empty() )
+        eval_with_constants( {skew_par_indexes} );
 
 
       if( !constant_parameters.empty() )
@@ -9364,51 +9300,7 @@ struct RelActAutoCostFcn
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
-    
-    
-    // 20250324 HACK to test fitting peak skew
-#if( PEAK_SKEW_HACK == 2 )
-    if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
-    {
-      // 20250324 HACK to test fitting peak skew
-      if( !initial_const_parameters.empty() && cost_functor->m_skip_skew )
-      {
-        cout << "20250324 HACK to test fitting peak skew - replacing the manifold!" << endl;
-        cost_functor->m_skip_skew = false;
-        for( const int par : initial_const_parameters )
-        {
-          // A replayed model selection (auto-simplify removed this skew coefficient) keeps it fixed.
-          if( std::find( begin(model_selection_fixed_parameters), end(model_selection_fixed_parameters), par )
-              != end(model_selection_fixed_parameters) )
-            continue;
 
-          const auto pos = std::find( begin(constant_parameters), end(constant_parameters), par );
-          assert( pos != end(constant_parameters) );
-          if( pos != end(constant_parameters) )
-            constant_parameters.erase(pos);
-          
-          if( lower_bounds[par].has_value() )
-            problem.SetParameterLowerBound(pars, par, *lower_bounds[par] );
-          if( upper_bounds[par].has_value() )
-            problem.SetParameterUpperBound(pars, par, *upper_bounds[par] );
-        }
-        
-        ceres::Manifold *subset_manifold = nullptr;
-        if( !constant_parameters.empty() )
-          subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
-        
-        problem.SetManifold( pars, subset_manifold );
-        
-        cout << "20250324 HACK to test fitting peak skew - reset manifold - now refitting." << endl;
-        
-        run_ceres_solve( ceres_options, problem, summary );
-        
-        cout << "20250324 HACK to test fitting peak skew - Done refitting." << endl;
-        
-        std::cout << summary.FullReport() << "\n";
-      }//
-    }//if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
-#endif //#if( PEAK_SKEW_HACK == 2 )
 
     // Ceres clamps a step onto the box only AFTER predicting its cost reduction for the unclamped
     //  step, so a parameter sitting on a bound with its gradient pointing outward can make every step
@@ -13366,15 +13258,12 @@ struct RelActAutoCostFcn
                            + num_total_act_coefs()
                            + 2*m_options.floating_peaks.size()) );
     
-#if( PEAK_SKEW_HACK == 2 )
-    if( (m_options.skew_type == PeakDef::SkewType::NoSkew)
-       || m_skip_skew ) // 20250324 HACK to test fitting peak skew
+    if( m_options.skew_type == PeakDef::SkewType::NoSkew )
     {
       peak.setSkewType( PeakDef::SkewType::NoSkew );
       return;
     }
-#endif
-    
+
     peak.setSkewType( m_options.skew_type );
     
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
