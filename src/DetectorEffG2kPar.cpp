@@ -783,13 +783,46 @@ namespace
  if it is absent do we need a fallback, and then we use CeeLo's built-in for the
  handful of shielding elements it ships (also picking up their exact reference
  densities) and otherwise fail rather than invent a number.  Returns false for
- anything unresolvable - see the caller, which surfaces the skipped layer. */
+ anything unresolvable - see the caller, which surfaces the skipped layer.
+
+ The one exception to "tokens are elements" is stainless steel (e.g., "304SS"),
+ which GENIE accepts and some housings use; it is matched to a nominal 304 or
+ 316 alloy composition (mid-range of the ASTM A240 limits) before the element
+ lookup. */
 bool material_for_token( const std::string &token_in, double parsed_density,
                          ceelo::MaterialSpec &out )
 {
   const std::string t = SpecUtils::to_lower_ascii_copy( token_in );
   if( t.empty() )
     return false;
+
+  // Stainless steel: spelling varies ("304SS", "SS-304", "304L", "stainless"), so compare with
+  //  separators removed.  Plain "ss" / "stainless" is taken as 304, the common default.
+  {
+    std::string s;
+    for( const char c : t )
+    {
+      if( (c != '-') && (c != '_') && (c != ' ') )
+        s += c;
+    }
+
+    const bool is_316 = (s == "316") || (s == "316l") || (s == "316ss") || (s == "316lss")
+                        || (s == "ss316") || (s == "ss316l");
+    const bool is_304 = (s == "304") || (s == "304l") || (s == "304ss") || (s == "304lss")
+                        || (s == "ss304") || (s == "ss304l") || (s == "ss")
+                        || (s == "stainless") || (s == "stainlesssteel");
+    if( is_304 || is_316 )
+    {
+      out = ceelo::MaterialSpec();
+      out.name = is_316 ? "SS316" : "SS304";
+      out.density_g_per_cm3 = (parsed_density > 0.0) ? parsed_density : 8.0;
+      if( is_316 )   // Fe bal, Cr 17, Ni 12, Mo 2.5, Mn 2 (wt%)
+        out.composition = { {26, 0.665}, {24, 0.17}, {28, 0.12}, {42, 0.025}, {25, 0.02} };
+      else           // Fe bal, Cr 19, Ni 9, Mn 2 (wt%)
+        out.composition = { {26, 0.70}, {24, 0.19}, {28, 0.09}, {25, 0.02} };
+      return true;
+    }
+  }
 
   // The file's own density wins; these are the fallbacks when it has none.
   // `make_HPGe` is also how the crystal itself is specified, so a "ge" layer
@@ -1309,7 +1342,7 @@ ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
       //  near-field model, so say so rather than drop it silently.
       warnings.push_back( "layer material '" + le.material + "' ("
                           + SpecUtils::printCompact( le.thickness_mm, 4 )
-                          + " mm) is not a recognized element, so that layer is"
+                          + " mm) is not a recognized element or alloy, so that layer is"
                             " not modeled" );
       return;
     }

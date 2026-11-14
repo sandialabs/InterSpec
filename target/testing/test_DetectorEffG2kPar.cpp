@@ -652,6 +652,30 @@ BOOST_AUTO_TEST_CASE( LayerMaterialsResolveAnyElement )
   // No layer was skipped, so the description carries no omission note.
   BOOST_CHECK( drf->description().find( "not modeled" ) == string::npos );
 
+  // Stainless steel is the one alloy token accepted ("304SS" seen in the wild): it must reach
+  //  the descriptor as a Fe/Cr/Ni mix with the file's density, not be dropped.
+  {
+    DetEffG2kPar::DetectorDef ss = def;
+    ss.layers[5].material = "304SS";
+    ss.layers[5].thickness_mm = 8.0;
+    ss.layers[5].density = 7.92;
+    vector<string> warnings;
+    const ceelo::GeometryDescriptor ss_gd = DetEffG2kPar::geometryFromDetectorDef( ss, warnings );
+    BOOST_CHECK_MESSAGE( warnings.empty(), "unexpected warning for 304SS layer" );
+    const ceelo::MaterialSpec *ss_mat = nullptr;
+    for( const ceelo::MaterialSpec &m : ss_gd.materials )
+    {
+      if( m.name == "SS304" )
+        ss_mat = &m;
+    }
+    BOOST_REQUIRE_MESSAGE( ss_mat, "304SS layer never reached the descriptor" );
+    BOOST_CHECK_CLOSE( ss_mat->density_g_per_cm3, 7.92, 1.0e-9 );
+    double frac_sum = 0.0;
+    for( const ceelo::MaterialComponent &c : ss_mat->composition )
+      frac_sum += c.mass_fraction;
+    BOOST_CHECK_CLOSE( frac_sum, 1.0, 1.0e-9 );
+  }
+
   // A token that is NOT an element cannot be modeled: the layer is dropped, but
   //  the DRF still builds and says so, rather than losing it silently.
   {

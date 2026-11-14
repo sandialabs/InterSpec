@@ -1,0 +1,232 @@
+<RelActCalcAuto version="0">
+	<Description>Uranium enrichment (U-235, U-238, U-234) from high-resolution HPGe spectra (FWHM under about 1 keV near 100 keV) - planar, broad-energy, or fine-gain coaxial - using only the 63 to 205 keV region, so it also suits spectra that end near 300 keV.
+U-238 is measured from the Th-234 92.4/92.8 keV doublet, which sits among the uranium and thorium K x-rays, and from the Th-234 63.29 keV line; x-ray peaks are modelled with their natural (Lorentzian) widths, and uranium and lead fluorescence x-rays are fit as their own sources.  Each ROI lists the lines it must contain; its extent is computed from the detector's peak width.
+The 63.29 keV line is below every U-235 line used, so its efficiency is extrapolated: it improves results for most planar detectors, but if the detector efficiency used does not match the detector's below about 80 keV, it can bias low-enrichment results high by several percent - removing its ROI then helps.
+Uses the 'Physical' model for the relative efficiency curve, with uranium self-attenuation and an external (cadmium) absorber; a detector efficiency close to your detector's is best.
+Not for items behind steel or other shielding, which removes this energy region; peaks with strong low-energy tails (e.g., from very high count rates) also degrade the result.</Description>
+	<Options version="7">
+		<FitEnergyCal remark="For backwards compat">true</FitEnergyCal>
+		<EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NonLinearFit</EnergyCalFitType>
+		<FwhmForm remark="Possible values: Gadras, SqrtEnergyPlusInverse, ConstantPlusSqrtEnergy, Polynomial_2 ... Polynomial_6, Berstein_2 ... Berstein_6">SqrtEnergyPlusInverse</FwhmForm>
+		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+		<Title>Foreground</Title>
+		<SkewType remark="Lorentzian x-rays require NoSkew or GaussPlusExGauss">NoSkew</SkewType>
+		<LorentzianXrays remark="Model x-ray peaks as Voigt profiles, with the Lorentzian width fixed to the natural line width">true</LorentzianXrays>
+		<AddUncert>0.00000000e+00</AddUncert>
+		<RelEffCurveInputs>
+			<RelEffCurveInput version="1">
+				<Name>Curve 0</Name>
+				<NucInputInfoList>
+					<NucInputInfo version="0">
+						<Nuclide>U235</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#D13711</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>U238</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#00B9FF</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>U234</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#006600</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Element>U</Element>
+						<PeakColorCss>#9933FF</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Element>Pb</Element>
+						<PeakColorCss>#888888</PeakColorCss>
+					</NucInputInfo>
+				</NucInputInfoList>
+				<NucsOfElSameAge>true</NucsOfElSameAge>
+				<RelEffEqnType remark='Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>FRAM Physical</RelEffEqnType>
+				<PhysicalModelOptions>
+					<SelfAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Uranium trioxide</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2.">true</ArealDensityBias>
+						</PhysicalModelShield>
+					</SelfAtten>
+					<ExtAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Cd (cadmium)</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2.">true</ArealDensityBias>
+						</PhysicalModelShield>
+					</ExtAtten>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">Hoerl</CorrectionFcnType>
+				</PhysicalModelOptions>
+			</RelEffCurveInput>
+		</RelEffCurveInputs>
+		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
+		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta enabled="true" remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value.">1</AutoRemoveDegeneraciesChi2Delta>
+		<RoiRangeList>
+			<RoiRange version="1">
+				<LowerEnergy>63.29</LowerEnergy>
+				<UpperEnergy>63.29</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>81.227</LowerEnergy>
+				<UpperEnergy>84.216</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>89.957</LowerEnergy>
+				<UpperEnergy>89.957</UpperEnergy>
+				<ContinuumType>LinearStep</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>92.362</LowerEnergy>
+				<UpperEnergy>98.434</UpperEnergy>
+				<ContinuumType>BiLinearStep</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>104.817</LowerEnergy>
+				<UpperEnergy>105.602</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>120.9</LowerEnergy>
+				<UpperEnergy>120.9</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>140.76</LowerEnergy>
+				<UpperEnergy>145.912</UpperEnergy>
+				<ContinuumType>LinearStep</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>163.357</LowerEnergy>
+				<UpperEnergy>163.357</UpperEnergy>
+				<ContinuumType>LinearStep</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>182.504</LowerEnergy>
+				<UpperEnergy>185.71</UpperEnergy>
+				<ContinuumType>BiLinearStep</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>202.11</LowerEnergy>
+				<UpperEnergy>205.309</UpperEnergy>
+				<ContinuumType>LinearStep</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+		</RoiRangeList>
+		<BackgroundSubtract>true</BackgroundSubtract>
+		<ShowRefGammaLines>true</ShowRefGammaLines>
+		<LowerDisplayEnergy>55</LowerDisplayEnergy>
+		<UpperDisplayEnergy>230</UpperDisplayEnergy>
+	</Options>
+</RelActCalcAuto>
