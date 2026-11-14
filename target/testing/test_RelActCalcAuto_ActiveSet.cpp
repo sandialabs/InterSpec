@@ -142,7 +142,129 @@ BOOST_AUTO_TEST_CASE( blocked_parameter_classification )
     const std::vector<int> blocked = bound_blocked_parameters( x, g, tangent_free, box, 1.0, 1.0e-8 );
     BOOST_CHECK( blocked == std::vector<int>({3}) );
   }
+
+  // A parameter closing on its bound under a large gradient (as Ceres' projected line search leaves it)
+  //  is worth more than the cost tolerance, but is within the range fraction of its bound.
+  {
+    const std::vector<std::size_t> free = { 0, 1, 2 };
+    const std::vector<std::pair<double,double>> range_box = { {-0.3, 0.3}, {0.0, sm_max}, {-0.3, 0.3} };
+    const std::vector<double> x = { -0.3 + 2.3e-10, 2.3e-10, -0.3 + 1.0e-3 };
+    const std::vector<double> g = { 5.3e5, 5.3e5, 5.3e5 };
+    BOOST_CHECK( bound_blocked_parameters( x, g, free, range_box, 1578.0, 1.0e-8 ).empty() );
+    // Only the parameter with both bounds, and within the fraction of its range, counts.
+    const std::vector<int> blocked = bound_blocked_parameters( x, g, free, range_box, 1578.0, 1.0e-8, 1.0e-6 );
+    BOOST_CHECK( blocked == std::vector<int>({0}) );
+    // Pulled away from the bound, it is not blocked however close it is.
+    const std::vector<double> inward = { -5.3e5, 5.3e5, 5.3e5 };
+    BOOST_CHECK( bound_blocked_parameters( x, inward, free, range_box, 1578.0, 1.0e-8, 1.0e-6 ).empty() );
+  }
+
+  // A loose limit sets no scale: an activity-like parameter allowed up to 1E9 is pressed against its
+  //  lower bound of 1 only within 1E-6 of it - not anywhere within 1E-6 of its range - but against its
+  //  upper bound within 1E-6 of that bound's value.
+  {
+    const std::vector<std::size_t> free = { 0, 1, 2 };
+    const std::vector<std::pair<double,double>> loose_box = { {1.0, 1.0e9}, {1.0, 1.0e9}, {1.0, 1.0e9} };
+    const std::vector<double> x = { 100.0, 1.0 + 5.0e-7, 1.0e9 - 500.0 };
+    const std::vector<double> g = { 1.0, 1.0, -1.0 };
+    const std::vector<int> blocked = bound_blocked_parameters( x, g, free, loose_box, 1.0, 1.0e-8, 1.0e-6 );
+    BOOST_CHECK( blocked == std::vector<int>({1, 2}) );
+  }
 }//BOOST_AUTO_TEST_CASE( blocked_parameter_classification )
+
+
+BOOST_AUTO_TEST_CASE( pressed_parameters_snap_onto_their_bound )
+{
+  const std::vector<std::size_t> free = { 0, 1, 2, 3 };
+  const std::vector<std::pair<double,double>> box = { {-0.3, 0.3}, {1.0, 1.0e9}, {1.0, 1.0e9}, {0.0, sm_max} };
+  const std::vector<double> start = { -0.3 + 1.0e-8, 1.0 + 5.0e-7, 100.0, 1.0e-12 };
+
+  // Pressed two-sided parameters land exactly on their bound; one far off a loose bound, and one with
+  //  only one bound, do not move.
+  std::vector<double> x = start;
+  snap_pressed_to_bounds( x, { 1.0, 1.0, 1.0, 1.0 }, free, box, 1.0e-6 );
+  BOOST_CHECK_EQUAL( x[0], -0.3 );
+  BOOST_CHECK_EQUAL( x[1], 1.0 );
+  BOOST_CHECK_EQUAL( x[2], 100.0 );
+  BOOST_CHECK_EQUAL( x[3], 1.0e-12 );
+
+  // Pulled away from the bound, nothing moves.
+  x = start;
+  snap_pressed_to_bounds( x, { -1.0, -1.0, -1.0, -1.0 }, free, box, 1.0e-6 );
+  BOOST_CHECK( x == start );
+}//BOOST_AUTO_TEST_CASE( pressed_parameters_snap_onto_their_bound )
+
+
+BOOST_AUTO_TEST_CASE( bound_press_detector )
+{
+  // p0 two-sided, p1 one-sided (never watched), p2 two-sided but not free.
+  const std::vector<std::pair<double,double>> box = { {0.0, 1.0}, {0.0, sm_max}, {0.0, 1.0} };
+  const std::vector<std::size_t> free = { 0, 1 };
+
+  // What Ceres hands an iteration callback: `objective` is twice its cost.
+  const auto step = []( const int iteration, const double objective, const bool accepted ) {
+    ceres::IterationSummary summary;
+    summary.iteration = iteration;
+    summary.cost = 0.5*objective;
+    summary.step_is_successful = accepted;
+    return summary;
+  };
+
+  // Fires on the `window`-th consecutive pressed iteration, when the objective barely moved over it.
+  {
+    BoundPressDetector detector( free, box, 4, 1.0e-6, 1.0 );
+    BOOST_CHECK( detector.watching_anything() );
+    const double x[] = { 1.0 - 1.0e-7, 0.5, 0.5 };
+    BOOST_CHECK( !detector.iteration( x, step(0, 100.1, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(1, 100.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(2, 99.9, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(3, 99.8, true) ) );
+    BOOST_CHECK( detector.iteration( x, step(4, 99.7, true) ) );
+  }
+
+  // Real progress while pressed restarts the watch; it fires once that progress dies down.
+  {
+    BoundPressDetector detector( free, box, 3, 1.0e-6, 1.0 );
+    const double x[] = { 0.0, 0.5, 0.5 };
+    BOOST_CHECK( !detector.iteration( x, step(0, 110.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(1, 100.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(2, 90.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(3, 80.0, true) ) );   // dropped 20 over the window: keep going
+    BOOST_CHECK( !detector.iteration( x, step(4, 79.9, true) ) );
+    BOOST_CHECK( detector.iteration( x, step(5, 79.8, true) ) );    // 0.2 over the window since 80
+  }
+
+  // The objective is the best point's, which `x` is: a rejected trial (reported at its own cost, up to
+  //  Ceres' max-double sentinel) or a non-monotonic accepted step (above the best) ending a window does
+  //  not look like a stall - nor, at its start, like progress.
+  {
+    BoundPressDetector detector( free, box, 3, 1.0e-6, 1.0 );
+    const double x[] = { 0.0, 0.5, 0.5 };
+    BOOST_CHECK( !detector.iteration( x, step(0, 100.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(1, 90.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(2, 80.0, true) ) );
+    BOOST_CHECK( !detector.iteration( x, step(3, std::numeric_limits<double>::max(), false) ) ); // 90 -> 80
+    BOOST_CHECK( !detector.iteration( x, step(4, 85.0, true) ) );    // non-monotonic: the best stays 80
+    BOOST_CHECK( !detector.iteration( x, step(5, 70.0, true) ) );    // 80 -> 70 over this window
+    BOOST_CHECK( !detector.iteration( x, step(6, 1.0e6, false) ) );
+    BOOST_CHECK( detector.iteration( x, step(7, 75.0, true) ) );     // best still 70: stalled
+  }
+
+  // Leaving the bound resets the count; one-sided and held parameters are never watched.
+  {
+    BoundPressDetector detector( free, box, 2, 1.0e-6, 1.0 );
+    const double pressed[] = { 1.0, 0.5, 0.5 }, away[] = { 0.5, 0.0, 0.0 };
+    BOOST_CHECK( !detector.iteration( pressed, step(0, 10.0, true) ) );
+    BOOST_CHECK( !detector.iteration( pressed, step(1, 10.0, true) ) );
+    BOOST_CHECK( !detector.iteration( away, step(2, 10.0, true) ) );
+    BOOST_CHECK( !detector.iteration( pressed, step(3, 10.0, true) ) );
+    BOOST_CHECK( detector.iteration( pressed, step(4, 10.0, true) ) );
+
+    BoundPressDetector one_sided( {1}, box, 1, 1.0e-6, 1.0 );
+    BOOST_CHECK( !one_sided.watching_anything() );
+    BOOST_CHECK( !one_sided.iteration( away, step(1, 10.0, true) ) );
+  }
+}//BOOST_AUTO_TEST_CASE( bound_press_detector )
 
 
 BOOST_AUTO_TEST_CASE( polish_escapes_bound_dominated_stall )
@@ -231,6 +353,317 @@ BOOST_AUTO_TEST_CASE( polish_is_a_no_op_at_the_optimum )
     BOOST_CHECK( x == before );
   }
 }//BOOST_AUTO_TEST_CASE( polish_is_a_no_op_at_the_optimum )
+
+
+namespace
+{
+/** An efficiency-like fit, exp(a + b*t + c*t^2) to Poisson data made with c = -1, where c is limited to
+ [-0.3, 0.3]: c is pressed against its lower bound while a and b adjust to it; d is independent and wants
+ 10.  Ceres ends the plain solve with c on its bound and chi2 about 4% above the constrained optimum. */
+struct PressedEfficiencyResidual
+{
+  static constexpr int sm_num_points = 20;
+
+  template<typename T>
+  bool operator()( const T * const p, T *r ) const
+  {
+    for( int i = 0; i < sm_num_points; ++i )
+    {
+      const double t = -1.0 + 2.0*i/(sm_num_points - 1.0);
+      const double y = 1000.0*std::exp( 1.0 + 0.5*t - t*t );
+      const T model = T(1000.0) * exp( p[1] + p[2]*t + p[0]*t*t );
+      r[i] = (model - T(y)) / T(std::sqrt(y));
+    }
+    r[sm_num_points] = p[3] - T(10.0);
+    return true;
+  }
+};//struct PressedEfficiencyResidual
+
+
+const std::vector<std::pair<double,double>> sm_efficiency_box
+                     = { {-0.3, 0.3}, {sm_lowest, sm_max}, {sm_lowest, sm_max}, {sm_lowest, sm_max} };
+
+
+void setup_efficiency_problem( ceres::Problem &problem, std::vector<double> &x )
+{
+  const int nres = PressedEfficiencyResidual::sm_num_points + 1;
+  problem.AddResidualBlock( new ceres::AutoDiffCostFunction<PressedEfficiencyResidual,ceres::DYNAMIC,4>(
+                                                         new PressedEfficiencyResidual(), nres ),
+                            nullptr, x.data() );
+  problem.SetParameterLowerBound( x.data(), 0, -0.3 );
+  problem.SetParameterUpperBound( x.data(), 0, 0.3 );
+}
+
+
+/** The chi2 of `setup_efficiency_problem`'s problem at `p`. */
+double efficiency_chi2( const std::vector<double> &p )
+{
+  std::vector<double> r( PressedEfficiencyResidual::sm_num_points + 1 );
+  PressedEfficiencyResidual()( p.data(), r.data() );
+  double chi2 = 0.0;
+  for( const double v : r )
+    chi2 += v*v;
+  return chi2;
+}
+
+
+/** The constrained optimum of `setup_efficiency_problem`'s problem: c held on its bound, the rest solved. */
+double efficiency_constrained_optimum( const ceres::Solver::Options &options )
+{
+  std::vector<double> held = { -0.3, 0.0, 0.0, 0.0 };
+  ceres::Problem problem;
+  setup_efficiency_problem( problem, held );
+  problem.SetManifold( held.data(), new ceres::SubsetManifold(4, {0}) );
+  ceres::Solver::Summary summary;
+  ceres::Solve( options, &problem, &summary );
+  return efficiency_chi2( held );
+}
+
+
+/** p0 in [0,10] is tied to p1 (which wants 5); p2 is independent and wants 10. */
+struct PressedResidual
+{
+  template<typename T>
+  bool operator()( const T * const p, T *r ) const
+  {
+    r[0] = T(100.0) * (p[0] - p[1]);
+    r[1] = p[1] - T(5.0);
+    r[2] = p[2] - T(10.0);
+    return true;
+  }
+};//struct PressedResidual
+
+
+double pressed_sum_sq( const std::vector<double> &p )
+{
+  const double r0 = 100.0*(p[0] - p[1]), r1 = p[1] - 5.0, r2 = p[2] - 10.0;
+  return r0*r0 + r1*r1 + r2*r2;
+}
+
+
+/** What `solve_stopping_creep` does when it may stop at a pressed bound: a solve ended by a
+ `BoundPressDetector` over the parameters the manifold leaves free (bounds from `sm_efficiency_box`). */
+bool solve_stopping_at_pressed_bound( const ceres::Solver::Options &options, ceres::Problem &problem,
+                                      ceres::Solver::Summary &summary, const bool may_stop_early )
+{
+  std::vector<double *> blocks;
+  problem.GetParameterBlocks( &blocks );
+  BOOST_REQUIRE_EQUAL( blocks.size(), 1u );
+  double * const x = blocks[0];
+  const int npar = problem.ParameterBlockSize( x );
+
+  std::vector<std::size_t> free;
+  const ceres::Manifold * const manifold = problem.GetManifold( x );
+  const int ntan = manifold ? manifold->TangentSize() : npar;
+  std::vector<double> plus_jac( static_cast<size_t>(npar*ntan), 0.0 );
+  if( manifold )
+    manifold->PlusJacobian( x, plus_jac.data() );
+  for( int row = 0; row < npar; ++row )
+  {
+    bool is_free = !manifold;
+    for( int col = 0; !is_free && (col < ntan); ++col )
+      is_free = (plus_jac[static_cast<size_t>(row*ntan + col)] != 0.0);
+    if( is_free )
+      free.push_back( static_cast<size_t>(row) );
+  }
+
+  struct Callback : public ceres::IterationCallback
+  {
+    BoundPressDetector detector;
+    const double *x;
+    bool stopped = false;
+    Callback( BoundPressDetector d, const double *p ) : detector( std::move(d) ), x( p ) {}
+    ceres::CallbackReturnType operator()( const ceres::IterationSummary &it ) override
+    {
+      if( detector.iteration( x, it ) )
+      {
+        stopped = true;
+        return ceres::SOLVER_TERMINATE_SUCCESSFULLY;
+      }
+      return ceres::SOLVER_CONTINUE;
+    }
+  };//struct Callback
+
+  Callback callback( BoundPressDetector( free, sm_efficiency_box, 10, 1.0e-6, 1.0 ), x );
+  ceres::Solver::Options stop_options = options;
+  if( may_stop_early )
+  {
+    stop_options.update_state_every_iteration = true;
+    stop_options.callbacks.push_back( &callback );
+  }
+  ceres::Solve( stop_options, &problem, &summary );
+  return callback.stopped;
+}//solve_stopping_at_pressed_bound(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( pressed_bound_is_handed_to_the_polish )
+{
+  const ceres::Solver::Options options = relact_like_options();
+
+  const double optimum = efficiency_constrained_optimum( options );
+
+  // The precondition: plain Ceres stops well above it.  If a Ceres upgrade ever makes this fail, the
+  //  bound handling this works around may have changed - re-measure.
+  std::vector<double> plain = { 0.0, 0.0, 0.0, 0.0 };
+  size_t plain_iterations = 0;
+  {
+    ceres::Problem problem;
+    setup_efficiency_problem( problem, plain );
+    ceres::Solver::Summary summary;
+    ceres::Solve( options, &problem, &summary );
+    plain_iterations = summary.iterations.size();
+    BOOST_TEST_MESSAGE( "Plain solve: " << plain_iterations << " iterations, chi2 " << efficiency_chi2(plain)
+                        << " (constrained optimum " << optimum << ")" );
+    BOOST_REQUIRE_GT( efficiency_chi2(plain), optimum + 10.0 );
+  }
+
+  // Stopping once c is pressed against its bound, and polishing, reaches the optimum.
+  std::vector<double> x = { 0.0, 0.0, 0.0, 0.0 };
+  ceres::Problem problem;
+  setup_efficiency_problem( problem, x );
+  ceres::Solver::Summary summary;
+  const bool stopped = solve_stopping_at_pressed_bound( options, problem, summary, true );
+  BOOST_CHECK( stopped );
+  BOOST_CHECK_LT( summary.iterations.size(), plain_iterations );
+
+  const PolishResult result = polish_bound_blocked( problem, x, {}, sm_efficiency_box, options, efficiency_chi2,
+                                                    nullptr, PolishSettings(), &solve_stopping_at_pressed_bound,
+                                                    stopped );
+  BOOST_CHECK( result.first_blocked == std::vector<int>({0}) );
+  BOOST_CHECK_GE( result.rounds_adopted, 1u );
+  BOOST_CHECK_LT( efficiency_chi2(x) - optimum, 1.0e-6*optimum );
+  BOOST_CHECK_EQUAL( x[0], -0.3 );
+  BOOST_CHECK_CLOSE_FRACTION( x[3], 10.0, 1.0e-6 );
+  BOOST_CHECK_EQUAL( problem.ParameterBlockTangentSize(x.data()), 4 );
+}//BOOST_AUTO_TEST_CASE( pressed_bound_is_handed_to_the_polish )
+
+
+BOOST_AUTO_TEST_CASE( early_stop_with_nothing_to_hold_is_finished )
+{
+  // A solve that ended early, but whose parameter on the bound turns out not to be blocked (here p0 sits
+  //  on its bound with zero gradient, though its optimum, following p1, is 5), is finished by a plain solve.
+  const ceres::Solver::Options options = relact_like_options();
+  std::vector<double> x = { 0.0, 0.0, 0.0 };   // p1 = 0 and p0 = 0 on its bound, p2 far from 10
+  ceres::Problem problem;
+  problem.AddResidualBlock( new ceres::AutoDiffCostFunction<PressedResidual,3,3>( new PressedResidual() ),
+                            nullptr, x.data() );
+  problem.SetParameterLowerBound( x.data(), 0, 0.0 );
+  problem.SetParameterUpperBound( x.data(), 0, 10.0 );
+  const std::vector<std::pair<double,double>> box = { {0.0, 10.0}, {sm_lowest, sm_max}, {sm_lowest, sm_max} };
+
+  // With p0 == p1, p0's gradient is zero, so nothing is blocked.
+  const PolishResult result = polish_bound_blocked( problem, x, {}, box, options, pressed_sum_sq, nullptr,
+                                                    PolishSettings(), {}, true );
+  BOOST_CHECK( result.first_blocked.empty() );
+  BOOST_CHECK_GE( result.rounds_adopted, 1u );
+  BOOST_CHECK_LT( pressed_sum_sq(x), 1.0e-6 );
+  BOOST_CHECK_CLOSE_FRACTION( x[2], 10.0, 1.0e-6 );
+}//BOOST_AUTO_TEST_CASE( early_stop_with_nothing_to_hold_is_finished )
+
+
+BOOST_AUTO_TEST_CASE( early_stop_is_finished_when_the_next_round_fails )
+{
+  // An early stop whose next round is not kept (here: it too "stops early", but comes back worse, as
+  //  round-off between Ceres' cost and the objective can make it) must still be finished, not returned.
+  const ceres::Solver::Options options = relact_like_options();
+  const double optimum = efficiency_constrained_optimum( options );
+
+  std::vector<double> x = { 0.0, 0.0, 0.0, 0.0 };
+  ceres::Problem problem;
+  setup_efficiency_problem( problem, x );
+  ceres::Solver::Summary summary;
+  BOOST_REQUIRE( solve_stopping_at_pressed_bound( options, problem, summary, true ) );
+  const double early_chi2 = efficiency_chi2( x );
+  BOOST_REQUIRE_GT( early_chi2, optimum + 1.0 );
+
+  int calls = 0;
+  const auto solve = [&calls]( const ceres::Solver::Options &opts, ceres::Problem &prob,
+                               ceres::Solver::Summary &summ, const bool may_stop_early ) -> bool {
+    calls += 1;
+    if( calls == 1 )
+    {
+      BOOST_CHECK( may_stop_early );
+      std::vector<double *> blocks;
+      prob.GetParameterBlocks( &blocks );
+      // d away from its 10 by one more: chi2 up by at least 1, far more than holding c on its bound gains
+      //  (d need not be near 10 yet - the creep slows every parameter).
+      blocks[0][3] += (blocks[0][3] < 10.0) ? -1.0 : 1.0;
+      summ.termination_type = ceres::USER_SUCCESS;
+      return true;
+    }
+    BOOST_CHECK( !may_stop_early );   // The forced finish allows no early stop.
+    return solve_stopping_at_pressed_bound( opts, prob, summ, may_stop_early );
+  };
+
+  const PolishResult result = polish_bound_blocked( problem, x, {}, sm_efficiency_box, options, efficiency_chi2,
+                                                    nullptr, PolishSettings(), solve, true );
+  BOOST_CHECK_EQUAL( calls, 2 );
+  BOOST_CHECK_EQUAL( result.rounds_adopted, 1u );   // the forced finish only
+  BOOST_CHECK( !result.stopped_short );
+  BOOST_CHECK_LT( efficiency_chi2(x) - optimum, 1.0e-6*optimum );
+  BOOST_CHECK_EQUAL( x[0], -0.3 );
+}//BOOST_AUTO_TEST_CASE( early_stop_is_finished_when_the_next_round_fails )
+
+
+BOOST_AUTO_TEST_CASE( early_stopped_rounds_are_not_counted_against_max_rounds )
+{
+  const ceres::Solver::Options options = relact_like_options();
+  const double optimum = efficiency_constrained_optimum( options );
+
+  // A solve that ends "early" without moving whenever it may, and otherwise runs to convergence.
+  int calls = 0, early_allowed = 0;
+  const auto solve = [&]( const ceres::Solver::Options &opts, ceres::Problem &prob,
+                          ceres::Solver::Summary &summ, const bool may_stop_early ) -> bool {
+    calls += 1;
+    if( may_stop_early )
+    {
+      early_allowed += 1;
+      summ.termination_type = ceres::USER_SUCCESS;
+      return true;
+    }
+    return solve_stopping_at_pressed_bound( opts, prob, summ, false );
+  };
+
+  const auto early_point = [&options]( ceres::Problem &problem, std::vector<double> &x ) {
+    setup_efficiency_problem( problem, x );
+    ceres::Solver::Summary summary;
+    BOOST_REQUIRE( solve_stopping_at_pressed_bound( options, problem, summary, true ) );
+  };
+
+  // With room for a single full round, an early-stopped round still leaves that round to finish the fit.
+  {
+    std::vector<double> x = { 0.0, 0.0, 0.0, 0.0 };
+    ceres::Problem problem;
+    early_point( problem, x );
+
+    PolishSettings settings;
+    settings.max_rounds = 1;
+    const PolishResult result = polish_bound_blocked( problem, x, {}, sm_efficiency_box, options,
+                                                      efficiency_chi2, nullptr, settings, solve, true );
+    BOOST_CHECK_EQUAL( calls, 2 );
+    BOOST_CHECK_EQUAL( early_allowed, 1 );
+    BOOST_CHECK_EQUAL( result.rounds, 2u );
+    BOOST_CHECK( !result.stopped_short );
+    BOOST_CHECK_LT( efficiency_chi2(x) - optimum, 1.0e-6*optimum );
+  }
+
+  // With no early-stopped rounds allowed, none is offered.
+  {
+    calls = early_allowed = 0;
+    std::vector<double> x = { 0.0, 0.0, 0.0, 0.0 };
+    ceres::Problem problem;
+    early_point( problem, x );
+
+    PolishSettings settings;
+    settings.max_early_stopped_rounds = 0;
+    const PolishResult result = polish_bound_blocked( problem, x, {}, sm_efficiency_box, options,
+                                                      efficiency_chi2, nullptr, settings, solve, true );
+    BOOST_CHECK_GE( calls, 1 );
+    BOOST_CHECK_EQUAL( early_allowed, 0 );
+    BOOST_CHECK_LT( efficiency_chi2(x) - optimum, 1.0e-6*optimum );
+  }
+}//BOOST_AUTO_TEST_CASE( early_stopped_rounds_are_not_counted_against_max_rounds )
 
 
 

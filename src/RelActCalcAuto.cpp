@@ -649,6 +649,40 @@ private:
 };//class JacobianMemoCostFunction
 
 
+/** The parameters of `problem`'s one parameter block that a solve can move: those its manifold does
+ not hold constant (the rows of the manifold's plus-Jacobian that are not all zero).  Empty when the
+ block has no manifold (every parameter is free), is held constant, or is not the only block. */
+static std::vector<int> manifold_free_parameters( const ceres::Problem &problem )
+{
+  std::vector<int> free_parameters;
+  std::vector<double *> par_blocks;
+  problem.GetParameterBlocks( &par_blocks );
+  if( par_blocks.size() != 1 )
+    return free_parameters;
+
+  const int npar = problem.ParameterBlockSize( par_blocks[0] );
+  const ceres::Manifold * const manifold = problem.GetManifold( par_blocks[0] );
+  if( !manifold || problem.IsParameterBlockConstant( par_blocks[0] ) )
+    return free_parameters;
+
+  const int ntan = manifold->TangentSize();
+  std::vector<double> plus_jac( static_cast<size_t>(npar) * ntan, 0.0 );
+  if( manifold->PlusJacobian( par_blocks[0], plus_jac.data() ) )
+  {
+    for( int row = 0; row < npar; ++row )
+    {
+      bool is_const = true;
+      for( int col = 0; is_const && (col < ntan); ++col )
+        is_const = (plus_jac[static_cast<size_t>(row)*ntan + col] == 0.0);
+      if( !is_const )
+        free_parameters.push_back( row );
+    }
+  }//if( got plus-Jacobian )
+
+  return free_parameters;
+}//manifold_free_parameters(...)
+
+
 /** Runs `ceres::Solve` with the problem's `JacobianMemoCostFunction`s (if any) active for exactly its
  duration - see `JacobianMemoCostFunction`.  Every solve of a RelActAuto problem should go through this. */
 static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Problem &problem,
@@ -664,34 +698,7 @@ static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Probl
       memos.push_back( memo );
   }
 
-  // The parameters this solve can move: those the parameter block's manifold does not hold constant
-  //  (the rows of its plus-Jacobian that are not all zero).
-  std::vector<int> free_parameters;
-  {
-    std::vector<double *> par_blocks;
-    problem.GetParameterBlocks( &par_blocks );
-    if( par_blocks.size() == 1 )
-    {
-      const int npar = problem.ParameterBlockSize( par_blocks[0] );
-      const ceres::Manifold * const manifold = problem.GetManifold( par_blocks[0] );
-      if( manifold && !problem.IsParameterBlockConstant( par_blocks[0] ) )
-      {
-        const int ntan = manifold->TangentSize();
-        std::vector<double> plus_jac( static_cast<size_t>(npar) * ntan, 0.0 );
-        if( manifold->PlusJacobian( par_blocks[0], plus_jac.data() ) )
-        {
-          for( int row = 0; row < npar; ++row )
-          {
-            bool is_const = true;
-            for( int col = 0; is_const && (col < ntan); ++col )
-              is_const = (plus_jac[static_cast<size_t>(row)*ntan + col] == 0.0);
-            if( !is_const )
-              free_parameters.push_back( row );
-          }
-        }//if( got plus-Jacobian )
-      }//if( a manifold )
-    }//if( a single parameter block )
-  }
+  const std::vector<int> free_parameters = manifold_free_parameters( problem );
 
   struct MemoSpan
   {
@@ -781,7 +788,15 @@ static bool skew_component_coefficients( const PeakDef::SkewType type, const siz
 static constexpr size_t sm_stall_window_steps = 50;
 static constexpr double sm_stall_min_chi2_drop = 0.01;
 
-/** Runs `ceres::Solve`, ending it - as a success - once it only creeps (see `StallDetector`).
+/** A solve allowed to stop at a pressed bound does so once a parameter has been pressed against one for
+ `sm_pressed_bound_window_steps` iterations, over which chi2 dropped by less than
+ `sm_pressed_bound_max_chi2_drop` - see `RelActCalcAutoImp::ActiveSet::BoundPressDetector`. */
+static constexpr size_t sm_pressed_bound_window_steps = 10;
+static constexpr double sm_pressed_bound_max_chi2_drop = 1.0;
+
+/** Runs `ceres::Solve`, ending it - as a success - once it only creeps (see `StallDetector`), or, if
+ `stop_at_pressed_bound`, once it is held back by a parameter pressed against a bound (see
+ `BoundPressDetector`); returns whether it ended for that second reason.
 
  The tolerances the fits use (function 1E-9, parameter 1E-11) let a solve follow a nearly flat valley -
  e.g., between a physical-model attenuator and its correction curve - for thousands of iterations, each
@@ -791,18 +806,30 @@ static constexpr double sm_stall_min_chi2_drop = 0.01;
 
  Only solves with the full iteration budget use this: the pre-fit stages and backward-elimination trials
  are capped at a few hundred iterations, and a trial that does not converge within that is discarded -
- a decision a stall stop would change.
+ a decision a stall stop would change.  A solve stopped at a pressed bound has NOT converged, so only one
+ that `ActiveSet::polish_bound_blocked` then finishes may ask for that stop: the main solve, the
+ severe-misfit search's candidates, and the polish's own rounds.  On the uranium, plutonium, and CZT
+ benchmarks this cut the CPU time by about 4%, 18%, and 33%, with all but a few path-sensitive fits
+ unchanged.
  */
-static void solve_stopping_creep( const ceres::Solver::Options &options,
+static bool solve_stopping_creep( const ceres::Solver::Options &options,
                                   ceres::Problem &problem,
-                                  ceres::Solver::Summary &summary )
+                                  ceres::Solver::Summary &summary,
+                                  const bool stop_at_pressed_bound = false )
 {
   class StallCallback : public ceres::IterationCallback
   {
     StallDetector m_detector;
+    std::unique_ptr<RelActCalcAutoImp::ActiveSet::BoundPressDetector> m_bound_press;
+    const double *m_x;
   public:
-    StallCallback()
-     : m_detector( sm_stall_window_steps, 0.5*sm_stall_min_chi2_drop ) // Ceres' cost is chi2/2
+    bool m_stopped_at_pressed_bound = false;
+
+    StallCallback( std::unique_ptr<RelActCalcAutoImp::ActiveSet::BoundPressDetector> bound_press,
+                   const double *x )
+     : m_detector( sm_stall_window_steps, 0.5*sm_stall_min_chi2_drop ), // Ceres' cost is chi2/2
+       m_bound_press( std::move(bound_press) ),
+       m_x( x )
     {
     }
 
@@ -810,14 +837,65 @@ static void solve_stopping_creep( const ceres::Solver::Options &options,
     {
       if( iteration.step_is_successful && m_detector.successful_step( iteration.cost ) )
         return ceres::CallbackReturnType::SOLVER_TERMINATE_SUCCESSFULLY;
+
+      // `m_x` is the parameter block, into which Ceres copies its best point so far every iteration
+      //  when this is watching (see `BoundPressDetector::iteration`).
+      if( m_bound_press && m_bound_press->iteration( m_x, iteration ) )
+      {
+        m_stopped_at_pressed_bound = true;
+        return ceres::CallbackReturnType::SOLVER_TERMINATE_SUCCESSFULLY;
+      }
+
       return ceres::CallbackReturnType::SOLVER_CONTINUE;
     }
   };//class StallCallback
 
-  StallCallback stall_callback;
   ceres::Solver::Options stall_options = options;
+
+  std::unique_ptr<RelActCalcAutoImp::ActiveSet::BoundPressDetector> bound_press;
+  const double *x = nullptr;
+  if( stop_at_pressed_bound )
+  {
+    std::vector<double *> par_blocks;
+    problem.GetParameterBlocks( &par_blocks );
+    if( (par_blocks.size() == 1) && !problem.IsParameterBlockConstant( par_blocks[0] ) )
+    {
+      const int npar = problem.ParameterBlockSize( par_blocks[0] );
+      std::vector<int> free_parameters = manifold_free_parameters( problem );
+      if( free_parameters.empty() && !problem.GetManifold( par_blocks[0] ) )
+      {
+        for( int i = 0; i < npar; ++i )
+          free_parameters.push_back( i );
+      }
+
+      std::vector<std::size_t> free_indices;
+      std::vector<std::pair<double,double>> box( static_cast<size_t>(npar) );
+      for( const int i : free_parameters )
+      {
+        free_indices.push_back( static_cast<size_t>(i) );
+        box[static_cast<size_t>(i)] = { problem.GetParameterLowerBound( par_blocks[0], i ),
+                                        problem.GetParameterUpperBound( par_blocks[0], i ) };
+      }
+
+      const double range_fraction = RelActCalcAutoImp::ActiveSet::PolishSettings().max_range_fraction;
+      bound_press = std::make_unique<RelActCalcAutoImp::ActiveSet::BoundPressDetector>( free_indices, box,
+                                 sm_pressed_bound_window_steps, range_fraction, sm_pressed_bound_max_chi2_drop );
+      if( bound_press->watching_anything() )
+      {
+        x = par_blocks[0];
+        stall_options.update_state_every_iteration = true; //Does not change the minimization
+      }else
+      {
+        bound_press.reset();
+      }
+    }//if( a single, non-constant, parameter block )
+  }//if( stop_at_pressed_bound )
+
+  StallCallback stall_callback( std::move(bound_press), x );
   stall_options.callbacks.push_back( &stall_callback );
   run_ceres_solve( stall_options, problem, summary );
+
+  return stall_callback.m_stopped_at_pressed_bound;
 }//solve_stopping_creep(...)
 
 
@@ -9420,7 +9498,10 @@ struct RelActAutoCostFcn
     // that reported convergence without accepting anything: did the answer actually move?
     const vector<double> pre_solve_parameters = parameters;
 
-    solve_stopping_creep( ceres_options, problem, summary );
+    // Single-curve solves may hand a parameter pressed against a bound over to the bound polish below,
+    //  which finishes the solve (see `BoundPressDetector`); multi-curve solves are not polished.
+    const bool allow_bound_polish = (options.rel_eff_curves.size() <= 1);
+    const bool main_stopped_at_bound = solve_stopping_creep( ceres_options, problem, summary, allow_bound_polish );
     //std::cout << summary.BriefReport() << "\n";
 
     // The effort of the primary solve (with its polish); a severe-misfit rescue gives each of its
@@ -9450,18 +9531,21 @@ struct RelActAutoCostFcn
     //  0/0) - the attribution degeneracy that multi-curve fits handle with their own rescues (the EM
     //  attribution candidates, and the merged and tied comparisons).
     // The main solve's own answer, before any polish: whether it landed in a severely misfit basin is
-    //  what decides on the broad candidate search below, whatever the polish then makes of it.
+    //  what decides on the broad candidate search below, whatever the polish then makes of it.  (A solve
+    //  stopped at a pressed bound was by then gaining under 0.1 chi2 per iteration, and creeping on
+    //  would only have slowed, so this is where it would have ended, give or take that.)
     const vector<double> pre_polish_parameters = parameters;
 
     RelActCalcAutoImp::ActiveSet::PolishResult bound_polish;
     if( ((summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS))
         && (!cancel_calc || !cancel_calc->load())
-        && (options.rel_eff_curves.size() <= 1) )
+        && allow_bound_polish )
     {
       bound_polish = RelActCalcAutoImp::ActiveSet::polish_bound_blocked( problem, parameters,
                        constant_parameters, parameter_box, ceres_options,
                        [cost_functor]( const vector<double> &x ) -> double { return (*cost_functor)(x); },
-                       cancel_calc, RelActCalcAutoImp::ActiveSet::PolishSettings(), &solve_stopping_creep );
+                       cancel_calc, RelActCalcAutoImp::ActiveSet::PolishSettings(), &solve_stopping_creep,
+                       main_stopped_at_bound );
 
       primary_solve_iterations += bound_polish.iterations;
       if( bound_polish.cancelled )
@@ -9776,6 +9860,15 @@ struct RelActAutoCostFcn
           " than where the solver stopped, but is not shown to be the minimum." );
     }
 
+    // The main solve stopped early at a pressed bound, and no re-solve could finish it.
+    if( bound_polish.stopped_short
+       && (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+    {
+      solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings;
+      solution.m_warnings.push_back( "The fit was held back by a parameter pressed against its limit,"
+          " and re-solving from there failed, so the result is not shown to be the minimum." );
+    }
+
     bool success = RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status);
 
     // A few fits converge to a bad LOCAL minimum yet report "Success" - mostly high-statistics
@@ -10077,6 +10170,7 @@ struct RelActAutoCostFcn
         };
         vector<CandidateOutcome> results;
         results.reserve( search_seed_variants().size() );
+        const size_t ncalls_before_search = cost_functor->m_ncalls.load();
 
         const auto fresh_objective_at = [&cost_functor]( const vector<double> &point ) -> double {
           try
@@ -10186,12 +10280,29 @@ struct RelActAutoCostFcn
                 candidate_options.max_num_iterations = static_cast<int>( std::max( primary_solve_iterations, size_t(300) ) );
 
               ceres::Solver::Summary candidate_summary;
-              solve_stopping_creep( candidate_options, problem, candidate_summary );
+              const bool candidate_stopped_at_bound
+                    = solve_stopping_creep( candidate_options, problem, candidate_summary, allow_bound_polish );
 
               // A candidate that cannot converge within budget is not a trustworthy basin; the
               // budget-exhaustion audit is reserved for the primary solve.
-              const bool usable = ((candidate_summary.termination_type == ceres::CONVERGENCE)
-                                   || (candidate_summary.termination_type == ceres::USER_SUCCESS));
+              bool usable = ((candidate_summary.termination_type == ceres::CONVERGENCE)
+                             || (candidate_summary.termination_type == ceres::USER_SUCCESS));
+
+              // Finished the way the primary solve was (see `bound_polish`), so a candidate is neither
+              //  ranked from where a pressed bound held it back, nor dropped for creeping past a budget
+              //  set by a primary solve that did not have to creep.  (On the uranium, plutonium, and CZT
+              //  benchmarks this rescued three fits 7-46% off in enrichment, for about 6% more CPU.)
+              if( usable && allow_bound_polish && (!cancel_calc || !cancel_calc->load()) )
+              {
+                const RelActCalcAutoImp::ActiveSet::PolishResult candidate_polish
+                    = RelActCalcAutoImp::ActiveSet::polish_bound_blocked( problem, parameters,
+                         constant_parameters, parameter_box, candidate_options,
+                         [cost_functor]( const vector<double> &x ) -> double { return (*cost_functor)(x); },
+                         cancel_calc, RelActCalcAutoImp::ActiveSet::PolishSettings(), &solve_stopping_creep,
+                         candidate_stopped_at_bound );
+                usable = !candidate_polish.cancelled && !candidate_polish.budget_exhausted
+                         && !candidate_polish.stopped_short;
+              }//if( single-curve candidate converged )
               const double objective = usable ? fresh_objective_at(parameters)
                                               : std::numeric_limits<double>::infinity();
               results.push_back( { search_seed_variant_name(variant), parameters,
@@ -10217,6 +10328,13 @@ struct RelActAutoCostFcn
         string reasons;
         for( size_t i = 0; i < trigger_reasons.size(); ++i )
           reasons += (i ? ", " : "") + trigger_reasons[i];
+
+        if( RelActCalcAutoImp::profile_stats_enabled() )
+          cerr << "candidate-search reasons=[" << reasons << "] candidates=" << results.size()
+               << " usable=" << std::count_if( begin(results), end(results),
+                                               []( const CandidateOutcome &c ){ return c.usable; } )
+               << " selected=" << selected_name
+               << " evals=" << (cost_functor->m_ncalls.load() - ncalls_before_search) << endl;
 
         if( results[selected].external_solution )
         {
