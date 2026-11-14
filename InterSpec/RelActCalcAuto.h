@@ -964,7 +964,8 @@ struct Options
   
   /** Peak skew to apply to the entire spectrum.
    
-   If the peaks found in the ROIs span less than 100 keV, all peaks share the same skew.  Otherwise a linear energy
+   If the peaks found in the ROIs span less than 100 keV, all peaks share the same skew (except a parameter given
+   fixed values at both ends, which is always interpolated between them).  Otherwise a linear energy
    dependence is fit, whose parameters are the values at the lower and upper edges of the fitted energy range (so their
    allowed ranges apply where the peaks are); values given in, or reported from, the options are instead at the
    spectrum's first-channel lower and last-channel upper energies (see `RelActAutoSolution::SkewParResult`).  Not
@@ -1803,6 +1804,10 @@ struct RelActAutoSolution
 
     /** If the parameter was free, but auto-simplify held it (see `m_parameter_fixed_by_model_selection`). */
     bool simplified = false;
+
+    /** If auto-simplify kept the parameter but removed its energy dependence, so it has one value at all
+     energies. */
+    bool energy_dependence_simplified = false;
 
     /** If the fitted line left the parameter's allowed range before the spectrum's first or last channel,
      so `lower`/`upper` were limited to that range, and the line through them is not the fitted one. */

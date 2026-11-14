@@ -3954,7 +3954,12 @@ void RelActAutoGui::updateSkewFitResults()
         value = "(" + value + ")";
     }
     txt.push_back( WString::fromUTF8( value ) );
-    tooltips.push_back( result.simplified ? WString::tr("raag-tt-skew-simplified") : WString() );
+    if( result.simplified )
+      tooltips.push_back( WString::tr("raag-tt-skew-simplified") );
+    else if( result.energy_dependence_simplified )
+      tooltips.push_back( WString::tr("raag-tt-skew-energy-dep-simplified") );
+    else
+      tooltips.push_back( WString() );
   }//for( loop over results )
 
   if( !any_fit )

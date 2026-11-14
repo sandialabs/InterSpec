@@ -714,6 +714,19 @@ static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Probl
 }//run_ceres_solve(...)
 
 
+/** An energy-dependent skew coefficient fit without energy dependence holds its upper-energy parameter at
+ this placeholder, and has the lower-energy value at all energies; see `is_skew_placeholder`. */
+static constexpr double sm_skew_follows_lower = -999.9;
+
+/** Whether an upper-energy skew parameter value (a double, or a Jet) is the `sm_skew_follows_lower`
+ placeholder. */
+template<typename T>
+static bool is_skew_placeholder( const T &value )
+{
+  return value < -500.0;
+}
+
+
 /** For auto-simplify: whether holding skew coefficient `coef` (0 for SkewPar0, ...) of `type` at its no-skew
  value (`PeakDef::skew_no_skew_value`) removes a component of the peak shape - a tail, or a Lorentzian width -
  and if so, the coefficients that then no longer matter (`made_irrelevant`; held at their no-skew values too).
@@ -7992,13 +8005,13 @@ struct RelActAutoCostFcn
             hold( lower_index, start_lower );
           else
             fit( lower_index, start_lower );
-          hold( upper_index, -999.9 );
+          hold( upper_index, sm_skew_follows_lower );
         }else
         {
           // The options give the values at the spectrum's first and last channel energies, while the fit
           //  parameters are the values at the edges of the fitted energy range (see
-          //  `RelActAutoCostFcn::skew_coefficient_value`); both edges are inside the spectrum, so in-range
-          //  values stay in range.
+          //  `RelActAutoCostFcn::skew_coefficient_value`); both edges are normally inside the spectrum, so
+          //  in-range values stay in range (a start that is not is projected onto the box by Ceres).
           const pair<double,double> spectrum_ends = cost_functor->skew_spectrum_end_energies();
           const auto at_fit_edges = [&]( const double lower_end_value, const double upper_end_value ) -> pair<double,double> {
             const auto at = [&]( const double energy ) -> double {
@@ -8169,7 +8182,7 @@ struct RelActAutoCostFcn
 
         // A removed skew energy dependence holds the upper-energy value at the -999.9 placeholder,
         //  which is not a value within the parameter's bounds, and must not be bounded.
-        if( (value < -500.0) && (parameter_names[index].rfind("Skew_",0) == 0) )
+        if( is_skew_placeholder(value) && (parameter_names[index].rfind("Skew_",0) == 0) )
         {
           lower_bounds[index].reset();
           upper_bounds[index].reset();
@@ -8203,7 +8216,7 @@ struct RelActAutoCostFcn
            || (std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(upper_index) )
                  != end(constant_parameters)) )
           continue;
-        parameters[upper_index] = -999.9;
+        parameters[upper_index] = sm_skew_follows_lower;
         constant_parameters.push_back( static_cast<int>(upper_index) );
         lower_bounds[upper_index].reset();
         upper_bounds[upper_index].reset();
@@ -8251,18 +8264,16 @@ struct RelActAutoCostFcn
                                          semantic_warm_start->m_final_parameters[index] );
       }
 
-      // The weak-SVD candidate rebuilds the identical frozen problem and must start at the exact
-      // incumbent before taking its one directional step.  The more general ROI warm mapping below
-      // intentionally skips QR and constrained-distribution slots because those coordinates can
-      // change across layouts; an identical ordered semantic layout has no such ambiguity.
+      // The previous parameters are never copied wholesale, even onto an identical layout: slots
+      // whose coordinates depend on the layout (sources, QR/gauge, Bernstein FWHM, skew) are
+      // re-expressed below, and the rest are copied by name.
       //
-      // MEASURED (2026-08-31, Pu 4h fidelity diagnosis): the same caution applies to a
-      // baseline-reselection RESTART, where copying the full vector was tried and REVERTED - a
-      // numerically identical vector does NOT evaluate to the seed's objective under the fresh
-      // functor (the empirical QR/gauge frame shifts between solves; even a solution's own
-      // m_final_parameters re-evaluated thousands of chi2 off its own m_chi2).  Restarts
-      // therefore always use the semantic re-expression below; a restart that still fails to
-      // reach its seed escalates to the full candidate matrix in the caller instead.
+      // MEASURED (2026-08-31, Pu 4h fidelity diagnosis): copying the full vector was tried for a
+      // baseline-reselection RESTART and REVERTED - a numerically identical vector does NOT
+      // evaluate to the seed's objective under the fresh functor (the empirical QR/gauge frame
+      // shifts between solves; even a solution's own m_final_parameters re-evaluated thousands of
+      // chi2 off its own m_chi2).  A restart that still fails to reach its seed escalates to the
+      // full candidate matrix in the caller instead.
 
       // Bernstein FWHM coefficients are relative to the FWHM energy range, which can differ between
       //  ROI layouts, so rather than being copied, the previous FWHM curve is re-expressed below.
@@ -8331,7 +8342,7 @@ struct RelActAutoCostFcn
         for( size_t i = 0; i < num_skew; ++i )
         {
           const vector<double> &previous_pars = semantic_warm_start->m_final_parameters;
-          if( parameters[skew_start + i + num_skew] < -500.0 )
+          if( is_skew_placeholder( parameters[skew_start + i + num_skew] ) )
           {
             num_transferred += assign_if_feasible( skew_start + i,
                 previous_fcn->skew_coefficient_value( previous_pars, i, 0.5*(lower_edge + upper_edge) ) );
@@ -10374,7 +10385,7 @@ struct RelActAutoCostFcn
           candidate.semantic_key = "peak-skew:" + std::to_string(i) + ":energy-dependence";
           candidate.description = "the energy dependence of peak skew parameter " + std::to_string(i);
           candidate.index = upper_index;
-          candidate.identity = -999.9;
+          candidate.identity = sm_skew_follows_lower;
           candidate.seed_skew_midpoint_into = lower_index;
           candidates.push_back( std::move(candidate) );
         }//if( energy_dependent )
@@ -10398,7 +10409,7 @@ struct RelActAutoCostFcn
             if( PeakDef::skew_no_skew_value( options.skew_type, other_coef, other_value ) )
               candidate.also_fix.push_back( {skew_start + other, other_value} );
             if( PeakDef::is_energy_dependent( options.skew_type, other_coef ) )
-              candidate.also_fix.push_back( {skew_start + other + num_skew, -999.9} );
+              candidate.also_fix.push_back( {skew_start + other + num_skew, sm_skew_follows_lower} );
           }
           candidates.push_back( std::move(candidate) );
         }//if( holding this coefficient removes a component of the peak shape )
@@ -10479,7 +10490,7 @@ struct RelActAutoCostFcn
           {
             parameters[hold.first] = hold.second;
             trial_const.push_back( static_cast<int>(hold.first) );
-            if( hold.second < -500.0 )
+            if( is_skew_placeholder(hold.second) )
               set_ceres_bounds( hold.first, false );
           }
           assert( std::set<int>(begin(trial_const),end(trial_const)).size() == trial_const.size() );
@@ -10489,7 +10500,7 @@ struct RelActAutoCostFcn
           run_ceres_solve( elimination_trial_options, problem, trial_summary );
           for( const pair<size_t,double> &hold : held )
           {
-            if( hold.second < -500.0 )
+            if( is_skew_placeholder(hold.second) )
               set_ceres_bounds( hold.first, true );
           }
           double objective = std::numeric_limits<double>::infinity();
@@ -10535,7 +10546,7 @@ struct RelActAutoCostFcn
           model_selection_fixed_parameters.push_back( static_cast<int>(hold.first) );
           applied_frozen_model_policy.push_back( {
               cost_functor->parameter_name(hold.first), parameters[hold.first] } );
-          if( hold.second < -500.0 )
+          if( is_skew_placeholder(hold.second) )
           {
             lower_bounds[hold.first].reset();
             upper_bounds[hold.first].reset();
@@ -13481,11 +13492,11 @@ struct RelActAutoCostFcn
 
     if( !m_skew_has_energy_dependance )
     {
-      assert( upper_value < -500.0 ); //should have value -999.9
+      assert( is_skew_placeholder(upper_value) );
       return lower_value;
     }
 
-    if( !PeakDef::is_energy_dependent( m_options.skew_type, ct ) || (upper_value < -500.0) )
+    if( !PeakDef::is_energy_dependent( m_options.skew_type, ct ) || is_skew_placeholder(upper_value) )
       return lower_value;
 
     const T value = lower_value + ((energy - m_corr_lower_energy) / (m_corr_upper_energy - m_corr_lower_energy))
@@ -13550,7 +13561,7 @@ struct RelActAutoCostFcn
     const double lower_value = x[m_skew_par_start_index + coef];
     const double upper_value = x[m_skew_par_start_index + coef + num_skew];
     double min_value = 0.0, max_value = 0.0, starting = 0.0, step = 0.0;
-    if( m_skew_has_energy_dependance && (upper_value > -500.0)
+    if( m_skew_has_energy_dependance && !is_skew_placeholder(upper_value)
        && PeakDef::is_energy_dependent( m_options.skew_type, ct )
        && PeakDef::skew_parameter_range( m_options.skew_type, ct, min_value, max_value, starting, step ) )
     {
@@ -13896,8 +13907,9 @@ struct RelActAutoCostFcn
 
 
   /** A plain-language description of parameter `index` for messages to the user (e.g. "U232 activity",
-   "peak-skew parameter 1 (value at 1001 keV)"); falls back to `parameter_name(index)`. */
-  std::string describe_parameter( const size_t index ) const
+   "peak-skew parameter 1 (value at 1001 keV)"); falls back to `parameter_name(index)`.  Given the fit's
+   parameters `x`, a skew coefficient fit without its energy dependence is described without an energy. */
+  std::string describe_parameter( const size_t index, const std::vector<double> *x = nullptr ) const
   {
     const std::string name = parameter_name( index );
 
@@ -14018,7 +14030,10 @@ struct RelActAutoCostFcn
         const size_t coef = skew_index % num_skew;
         const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + coef );
         std::string answer = "peak-skew parameter " + std::to_string( coef );
-        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) && m_skew_has_energy_dependance )
+        const size_t upper_index = m_skew_par_start_index + num_skew + coef;
+        const bool follows_lower = x && (upper_index < x->size()) && is_skew_placeholder( (*x)[upper_index] );
+        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) && m_skew_has_energy_dependance
+            && !follows_lower )
           answer += " (value at " + SpecUtils::printCompact( (skew_index >= num_skew) ? m_corr_upper_energy
                                                                               : m_corr_lower_energy, 5 ) + " keV)";
         return answer;
@@ -26273,7 +26288,7 @@ void RelActAutoSolution::compute_bound_limit_messages()
        || (SpecUtils::istarts_with(short_name, "Age") && (side == 0)) )
       continue;
 
-    string description = m_cost_functor->describe_parameter( par );
+    string description = m_cost_functor->describe_parameter( par, &m_final_parameters );
     if( !description.empty() )
       description[0] = static_cast<char>( std::toupper( static_cast<unsigned char>(description[0]) ) );
 
@@ -29276,6 +29291,8 @@ vector<RelActAutoSolution::SkewParResult> RelActAutoSolution::skew_parameters() 
     result.upper = values.second;
     result.was_fit = flag( m_parameter_were_fit, skew_start + i ) || flag( m_parameter_were_fit, skew_start + i + num_skew );
     result.simplified = flag( m_parameter_fixed_by_model_selection, skew_start + i );
+    result.energy_dependence_simplified = !result.simplified
+                                  && flag( m_parameter_fixed_by_model_selection, skew_start + i + num_skew );
     answer.push_back( result );
   }
 

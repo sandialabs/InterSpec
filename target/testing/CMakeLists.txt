@@ -403,6 +403,13 @@ add_test( NAME TRelActCalcAuto_FwhmForm
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_Skew test_RelActCalcAuto_Skew.cpp )
+target_link_libraries( test_RelActCalcAuto_Skew PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_Skew
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_Skew> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_FloatingPeakFwhm test_RelActCalcAuto_FloatingPeakFwhm.cpp )
 target_link_libraries( test_RelActCalcAuto_FloatingPeakFwhm PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_FloatingPeakFwhm
