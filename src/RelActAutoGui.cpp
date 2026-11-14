@@ -4777,11 +4777,10 @@ PeakFitUtils::CoarseResolutionType RelActAutoGui::currentDetType() const
   const std::shared_ptr<const SpecMeas> meas = m_interspec ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground )
                                                            : nullptr;
   const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-  if( prefs )
-    return prefs->m_det_type;
 
-  return m_foreground ? PeakFitUtils::coarse_det_type( m_foreground, nullptr )
-                      : PeakFitUtils::CoarseResolutionType::Unknown;
+  // A spectrum's prefs default to an Unknown type, for it to be classified when used; solving with
+  //  Unknown would bound peak widths from the best HPGe to beyond the worst NaI.
+  return PeakFitUtils::effective_det_type( prefs, m_foreground, meas );
 }//PeakFitUtils::CoarseResolutionType currentDetType() const
 
 
@@ -5591,7 +5590,11 @@ void RelActAutoGui::setPeaksToForeground()
         fitPrefs = prefs;
       }
 
-      const PeakFitUtils::CoarseResolutionType resType = fitPrefs->m_det_type;
+      // Prefs default to an Unknown type, to be classified when used.
+      const PeakFitUtils::CoarseResolutionType resType
+                    = (fitPrefs->m_det_type != PeakFitUtils::CoarseResolutionType::Unknown)
+                      ? fitPrefs->m_det_type
+                      : PeakFitUtils::coarse_resolution_from_peaks( solution_peaks_ptrs );
 
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
 
@@ -5669,11 +5672,9 @@ void RelActAutoGui::setPeaksToForeground()
             Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
             fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
-            const PeakFitUtils::CoarseResolutionType retryDetType
-              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, nullptr );
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fit_options, retryDetType );
+                                                          foreground, fit_options, resType );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )

@@ -1383,9 +1383,9 @@ nlohmann::json executePerformIsotopics(
   try
   {
     const shared_ptr<const PeakFitDetPrefs> fitPrefs = spec->peakFitDetPrefs();
-    const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
-                          ? fitPrefs->m_det_type
-                          : PeakFitUtils::coarse_det_type( foreground, nullptr );
+    // A spectrum's prefs default to an Unknown type, for it to be classified when used.
+    const PeakFitUtils::CoarseResolutionType det_type
+                          = PeakFitUtils::effective_det_type( fitPrefs, foreground, spec );
 
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options,
