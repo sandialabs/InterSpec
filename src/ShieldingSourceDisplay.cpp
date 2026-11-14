@@ -3015,6 +3015,13 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     window->WDialog::setHidden(false);
     window->show();
     window->centerWindow();
+
+    // In live mode, fit right away rather than waiting for the first edit (construction and
+    //  deserialization are deliberately ignored by markModelChanged()).  Skipped when there are no
+    //  source nuclides, to not greet the user with a "No peaks" error.  The button shows
+    //  "Updating…" until the results arrive.
+    if( disp->autoFitEnabled() && (disp->m_sourceModel->numNuclides() > 0) )
+      disp->startAutoFit();
   }catch( std::exception &e )
   {
     passMessage( WString::tr("ssd-error-create-tool").tr(e.what()), WarningWidget::WarningMsgHigh );
@@ -9268,8 +9275,6 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
-  m_correctForCascade->setChecked( options.correct_for_cascade_summing );
-  updateCascadeAvailability();
 
   // Restore the detector-efficiency-uncertainty method (a restore is authoritative - mark the
   //  first-load default as already applied so it never clobbers the restored choice), then
@@ -9317,6 +9322,11 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   //  "restored" over it.  (If the DRF embeds a scene, handleDetectorChanged() drops the restored
   //  layers - states saved before 2026-09-29 serialized the scene's layers - and shows the scene.)
   m_embeddedSetupXml.clear();
+
+  // Restored only now that distance and shieldings are: the availability gate (evaluated in
+  //  handleDetectorChanged() below) depends on them, and against reset()'s default 100 cm with no
+  //  shielding it would uncheck the box.
+  m_correctForCascade->setChecked( options.correct_for_cascade_summing );
 
   // Make sure if DRF is fixed/not-fixed, that the GUI state will be consistent with this
   //  (it may not have been the same when serialized)
