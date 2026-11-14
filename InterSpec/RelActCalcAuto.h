@@ -964,10 +964,12 @@ struct Options
   
   /** Peak skew to apply to the entire spectrum.
    
-   Under development: currently, if total energy range being fit is less than 100 keV, then all peaks will share the same skew.
-   Otherwise a linear energy dependence will be assumed, where the fitting parameters will be for the spectrums lower
-   energy, and the spectrums upper energy; not all skew parameters are allowed to vary with energy; e.g., the Crystal Ball
-   power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
+   If the peaks found in the ROIs span less than 100 keV, all peaks share the same skew.  Otherwise a linear energy
+   dependence is fit, whose parameters are the values at the lower and upper edges of the fitted energy range (so their
+   allowed ranges apply where the peaks are); values given in, or reported from, the options are instead at the
+   spectrum's first-channel lower and last-channel upper energies (see `RelActAutoSolution::SkewParResult`).  Not
+   all skew parameters are allowed to vary with energy; e.g., the Crystal Ball power law is not (see
+   `PeakDef::is_energy_dependent(...)`).
    */
   PeakDef::SkewType skew_type;
 
@@ -984,7 +986,8 @@ struct Options
   /** Optional fixed skew parameter values for the upper energy end of the spectrum.
    Only meaningful for energy-dependent skew parameters (see `PeakDef::is_energy_dependent`).
    If nullopt for an energy-dependent parameter, the upper value will match the lower
-   (i.e., no energy dependence for that parameter).
+   (i.e., no energy dependence for that parameter).  Only held fixed if #fixed_lower_skew is also
+   given; on its own it is used as a starting value.
    */
   std::optional<double> fixed_upper_skew[6];
 
@@ -1784,8 +1787,13 @@ struct RelActAutoSolution
                                                             double *unfloored_uncert = nullptr ) const;
 
 
-  /** A skew parameter's value from the fit, at the lower and upper energy of the spectrum (the same
-   value, for a parameter without an energy dependence).
+  /** A skew parameter's value from the fit, at the spectrum's first-channel lower and last-channel upper
+   energies (the same value, for a parameter without an energy dependence) - the convention of
+   `Options::fixed_lower_skew` etc. and the peak-fit preferences.
+
+   The fit itself parameterizes an energy-dependent skew parameter by its values at the edges of the
+   fitted energy range; these are that line's values at the spectrum's ends, limited to the parameter's
+   allowed range (see `clamped`).
    */
   struct SkewParResult
   {
@@ -1795,6 +1803,10 @@ struct RelActAutoSolution
 
     /** If the parameter was free, but auto-simplify held it (see `m_parameter_fixed_by_model_selection`). */
     bool simplified = false;
+
+    /** If the fitted line left the parameter's allowed range before the spectrum's first or last channel,
+     so `lower`/`upper` were limited to that range, and the line through them is not the fitted one. */
+    bool clamped = false;
   };
 
   /** The skew parameters (of `m_options.skew_type`) the fit ended with; empty if there was no skew, or

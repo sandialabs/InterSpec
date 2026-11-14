@@ -3136,7 +3136,10 @@ struct RelActAutoCostFcn
   /** Energy reference frame for the Physical-Model empirical correction when in basis-correction mode
    (`corr_fcn == Chebyshev`): the fit energy range [lower, upper] and the pivot (log-midpoint),
    where `correction(pivot) == 1`.  Computed once from `m_energy_ranges` in the constructor.  Harmless and
-   unused in legacy Hoerl mode. */
+   unused in legacy Hoerl mode.
+
+   The fit energy range is also where the energy-dependent peak-skew parameters are anchored (see
+   `skew_coefficient_value(...)`). */
   double m_corr_lower_energy = 0.0;
   double m_corr_upper_energy = 0.0;
   double m_corr_pivot_energy = 0.0;
@@ -7910,61 +7913,77 @@ struct RelActAutoCostFcn
           return value.has_value() ? std::min( std::max( value.value(), lower ), upper ) : fallback;
         };
 
-        parameters[skew_start + i] = start_value( options.start_lower_skew[i], starting );
-        lower_bounds[skew_start + i] = lower;
-        upper_bounds[skew_start + i] = upper;
+        const size_t lower_index = skew_start + i, upper_index = skew_start + i + num_skew_coefs;
+        const auto hold = [&]( const size_t index, const double value ){
+          parameters[index] = value;
+          constant_parameters.push_back( static_cast<int>(index) );
+          lower_bounds[index] = std::nullopt;
+          upper_bounds[index] = std::nullopt;
+        };
+        const auto fit = [&]( const size_t index, const double value ){
+          parameters[index] = value;
+          lower_bounds[index] = lower;
+          upper_bounds[index] = upper;
+        };
 
-        // Apply fixed skew parameter values from options, if specified
+        const double start_lower = start_value( options.start_lower_skew[i], starting );
+        const double start_upper = start_value( options.start_upper_skew[i], start_lower );
         const bool lower_fixed = options.fixed_lower_skew[i].has_value();
-        if( lower_fixed )
-        {
-          parameters[skew_start + i] = options.fixed_lower_skew[i].value();
-          constant_parameters.push_back( static_cast<int>(skew_start + i) );
-          lower_bounds[skew_start + i] = std::nullopt;
-          upper_bounds[skew_start + i] = std::nullopt;
-        }else if( !options.start_lower_skew[i].has_value()
-                 && !PeakDef::skew_parameter_fit_by_default( options.skew_type, ct ) )
-        {
-          // Not given a value, and not fit by default either (e.g., a GADRAS power or extent):
-          //  hold it at its default value.
-          constant_parameters.push_back( static_cast<int>(skew_start + i) );
-          lower_bounds[skew_start + i] = std::nullopt;
-          upper_bounds[skew_start + i] = std::nullopt;
-        }
+        const bool upper_fixed = options.fixed_upper_skew[i].has_value();
+        // Not given a value, and not fit by default either (e.g., a GADRAS power or extent): held at its default.
+        const bool held_at_default = !lower_fixed && !options.start_lower_skew[i].has_value()
+                                     && !PeakDef::skew_parameter_fit_by_default( options.skew_type, ct );
 
-
-
-        // Specify ranges for second set of skew parameters (upper energy values)
         if( !fit_skew_energy_dep )
         {
-          parameters[skew_start + i + num_skew_coefs] = -999.9;
-          constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
+          // One value at all energies; the upper slot holds the -999.9 placeholder.
+          if( lower_fixed )
+            hold( lower_index, options.fixed_lower_skew[i].value() );
+          else if( held_at_default )
+            hold( lower_index, start_lower );
+          else
+            fit( lower_index, start_lower );
+          hold( upper_index, -999.9 );
         }else
         {
-          parameters[skew_start + i + num_skew_coefs]
-                  = start_value( options.start_upper_skew[i],
-                                 start_value( options.start_lower_skew[i], starting ) );
-          lower_bounds[skew_start + i + num_skew_coefs] = lower;
-          upper_bounds[skew_start + i + num_skew_coefs] = upper;
+          // The options give the values at the spectrum's first and last channel energies, while the fit
+          //  parameters are the values at the edges of the fitted energy range (see
+          //  `RelActAutoCostFcn::skew_coefficient_value`); both edges are inside the spectrum, so in-range
+          //  values stay in range.
+          const pair<double,double> spectrum_ends = cost_functor->skew_spectrum_end_energies();
+          const auto at_fit_edges = [&]( const double lower_end_value, const double upper_end_value ) -> pair<double,double> {
+            const auto at = [&]( const double energy ) -> double {
+              return lower_end_value + ((energy - spectrum_ends.first) / (spectrum_ends.second - spectrum_ends.first))
+                                       * (upper_end_value - lower_end_value);
+            };
+            return { at( cost_functor->m_corr_lower_energy ), at( cost_functor->m_corr_upper_energy ) };
+          };
 
-          // Apply fixed upper skew parameter values from options, if specified
-          if( options.fixed_upper_skew[i].has_value() )
+          if( lower_fixed )
           {
-            parameters[skew_start + i + num_skew_coefs] = options.fixed_upper_skew[i].value();
-            constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
-            lower_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
-            upper_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
-          }else if( lower_fixed )
+            const double fixed_lower = options.fixed_lower_skew[i].value();
+            const pair<double,double> values = at_fit_edges( fixed_lower,
+                                                   upper_fixed ? options.fixed_upper_skew[i].value() : fixed_lower );
+            hold( lower_index, values.first );
+            hold( upper_index, values.second );
+          }else if( held_at_default )
           {
-            // If lower is fixed but upper is not specified, fix upper to same value
-            //  (no energy dependence for this parameter)
-            parameters[skew_start + i + num_skew_coefs] = options.fixed_lower_skew[i].value();
-            constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
-            lower_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
-            upper_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
+            hold( lower_index, start_lower );
+            hold( upper_index, start_lower );
+          }else
+          {
+            // A fixed value at only the upper end can not be held while the lower end is fit (the fit
+            //  parameters are the values at the edges of the fitted range), so it is a starting value.
+            if( upper_fixed )
+              solution.m_warnings.push_back( "Peak-skew parameter " + std::to_string(i) + " was given a fixed"
+                                             " high-energy value, but no fixed low-energy value; it was used as a"
+                                             " starting value, and fit." );
+            const pair<double,double> values = at_fit_edges( start_lower,
+                         upper_fixed ? start_value( options.fixed_upper_skew[i], start_upper ) : start_upper );
+            fit( lower_index, values.first );
+            fit( upper_index, values.second );
           }
-
-        }
+        }//if( !fit_skew_energy_dep ) / else
       }//for( size_t i = 0; i < (num_skew_par/2); ++i )
 
       {// Move the skew start off a point the fit could never leave (both GADRAS amplitudes zero)
@@ -8192,14 +8211,13 @@ struct RelActAutoCostFcn
                                    || (name.rfind("REGauge",0) == 0);
         const bool berstein_fwhm_slot = berstein_fwhm && (index >= fwhm_start)
                                         && (index < (fwhm_start + num_fwhm_pars));
-        if( source_slot || empirical_q_slot || berstein_fwhm_slot || is_constant(index) )
+        // Skew values are at the edges of the fitted energy range, which can differ between layouts;
+        //  they are re-expressed below.
+        const bool skew_slot = (name.rfind("Skew_",0) == 0);
+        if( source_slot || empirical_q_slot || berstein_fwhm_slot || skew_slot || is_constant(index) )
           continue;
         const auto previous = previous_named_values.find(name);
-        // A layout without energy-dependent skew holds its upper-energy skew values at a -999.9
-        //  placeholder, which is not a starting value.
-        const bool skew_placeholder = (previous != end(previous_named_values))
-                                      && (name.rfind("Skew_",0) == 0) && (previous->second < -500.0);
-        if( (previous != end(previous_named_values)) && !skew_placeholder )
+        if( previous != end(previous_named_values) )
           num_transferred += assign_if_feasible(index, previous->second);
       }
 
@@ -8222,6 +8240,32 @@ struct RelActAutoCostFcn
           // Keep the starting FWHM of this layout.
         }
       }//if( Bernstein FWHM to transfer )
+
+      // The previous peak skew, at this layout's skew parameters: each coefficient's values at the edges of
+      //  this fitted energy range (or at its middle, without an energy dependence), from the previous fit.
+      const shared_ptr<const RelActAutoCostFcn> &previous_fcn = semantic_warm_start->m_cost_functor;
+      const size_t num_skew = PeakDef::num_skew_parameters( options.skew_type );
+      if( num_skew && previous_fcn && (semantic_warm_start->m_options.skew_type == options.skew_type)
+         && (semantic_warm_start->m_final_parameters.size() == previous_fcn->number_parameters()) )
+      {
+        const size_t skew_start = cost_functor->m_skew_par_start_index;
+        const double lower_edge = cost_functor->m_corr_lower_energy, upper_edge = cost_functor->m_corr_upper_energy;
+        for( size_t i = 0; i < num_skew; ++i )
+        {
+          const vector<double> &previous_pars = semantic_warm_start->m_final_parameters;
+          if( parameters[skew_start + i + num_skew] < -500.0 )
+          {
+            num_transferred += assign_if_feasible( skew_start + i,
+                previous_fcn->skew_coefficient_value( previous_pars, i, 0.5*(lower_edge + upper_edge) ) );
+          }else
+          {
+            num_transferred += assign_if_feasible( skew_start + i,
+                                         previous_fcn->skew_coefficient_value( previous_pars, i, lower_edge ) );
+            num_transferred += assign_if_feasible( skew_start + i + num_skew,
+                                         previous_fcn->skew_coefficient_value( previous_pars, i, upper_edge ) );
+          }
+        }//for( size_t i = 0; i < num_skew; ++i )
+      }//if( previous skew to transfer )
 
       // Re-express each previous empirical curve in this solve's fixed-pivot/QR frame.  The
       // normalization removed at the new pivot is applied to all activities below, preserving
@@ -13247,11 +13291,57 @@ struct RelActAutoCostFcn
   }//choose_auto_continua(...)
 
 
+  /** The value of skew coefficient `coef` (0 for SkewPar0, ...) at `energy` keV, for parameters `x`.
+
+   The skew parameters are each coefficient's value at the lower edge of the fitted energy range, then at
+   its upper edge (`m_corr_lower_energy`, `m_corr_upper_energy`) - so their bounds apply where the peaks
+   are.  An energy-dependent coefficient is the straight line through the two, clamped to the coefficient's
+   range past them (only lines outside every ROI get there); any other coefficient - or one whose upper
+   value is the -999.9 placeholder, for no energy dependence - is its lower value.
+
+   Note: the options, peak-fit preferences and reported skew values instead give an energy-dependent
+   coefficient at the spectrum's first and last channel energies; see `skew_values_at_spectrum_ends(...)`.
+   */
+  template<typename T, typename E>
+  T skew_coefficient_value( const std::vector<T> &x, const size_t coef, const E &energy ) const
+  {
+    const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+    assert( coef < num_skew );
+    assert( x.size() >= (m_skew_par_start_index + 2*num_skew) );
+
+    const T &lower_value = x[m_skew_par_start_index + coef];
+    const T &upper_value = x[m_skew_par_start_index + coef + num_skew];
+    const auto ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + coef );
+
+    if( !m_skew_has_energy_dependance )
+    {
+      assert( upper_value < -500.0 ); //should have value -999.9
+      return lower_value;
+    }
+
+    if( !PeakDef::is_energy_dependent( m_options.skew_type, ct ) || (upper_value < -500.0) )
+      return lower_value;
+
+    const T value = lower_value + ((energy - m_corr_lower_energy) / (m_corr_upper_energy - m_corr_lower_energy))
+                                  * (upper_value - lower_value);
+
+    double min_value = 0.0, max_value = 0.0, starting = 0.0, step = 0.0;
+    if( PeakDef::skew_parameter_range( m_options.skew_type, ct, min_value, max_value, starting, step ) )
+    {
+      if( value < min_value )
+        return T( min_value );
+      if( value > max_value )
+        return T( max_value );
+    }
+
+    return value;
+  }//skew_coefficient_value(...)
+
+
   template<typename P, typename T>
   void set_peak_skew( P &peak, const std::vector<T> &x ) const
   {
-    const size_t skew_start = m_skew_par_start_index;
-    assert( skew_start == (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
+    assert( m_skew_par_start_index == (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
                            + m_num_fitted_dev_pair_params
                            + num_parameters(m_options.fwhm_form)
                            + num_total_rel_eff_coefs()
@@ -13267,50 +13357,56 @@ struct RelActAutoCostFcn
     peak.setSkewType( m_options.skew_type );
     
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
-    assert( x.size() >= (skew_start + 2*num_skew) );
-    
-    if( m_skew_has_energy_dependance )
+    for( size_t i = 0; i < num_skew; ++i )
     {
-      const double lower_energy = m_spectrum->gamma_channel_lower(0);
-      const double upper_energy = m_spectrum->gamma_channel_upper( m_spectrum->num_gamma_channels() - 1 );
-      const T mean_frac = (peak.mean() - lower_energy) / (upper_energy - lower_energy);
-      
-      for( size_t i = 0; i < num_skew; ++i )
-      {
-        const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
-        // An energy-dependent parameter may still be given no energy dependence (its upper value is
-        //  then the -999.9 placeholder), when other parameters do have one.
-        if( PeakDef::is_energy_dependent( m_options.skew_type, ct )
-            && (x[skew_start + i + num_skew] > -500.0) )
-        {
-          const T lower_en_val = x[skew_start + i];
-          const T upper_en_val = x[skew_start + i + num_skew];
-          
-          const T val = lower_en_val + mean_frac*(upper_en_val - lower_en_val);
-          check_jet_for_NaN( val );
-          
-          peak.set_coefficient( val, ct );
-        }else
-        {
-          const T val = x[skew_start + i];
-          check_jet_for_NaN( val );
-          
-          peak.set_coefficient( val, ct );
-        }
-      }
-    }else
-    {
-      for( size_t i = 0; i < num_skew; ++i )
-      {
-        assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9
-        const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
-        const T val = x[skew_start + i];
-        check_jet_for_NaN( val );
-        
-        peak.set_coefficient( val, ct );
-      }
-    }//if( m_skew_has_energy_dependance )
+      const T val = skew_coefficient_value( x, i, peak.mean() );
+      check_jet_for_NaN( val );
+
+      peak.set_coefficient( val, PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i) );
+    }
   }//set_peak_skew(...)
+
+
+  /** The values of skew coefficient `coef` at the spectrum's first-channel lower and last-channel upper
+   energies - the convention of the options, peak-fit preferences and reported skew values - for parameters
+   `x` (see `skew_coefficient_value(...)`).  `clamped` is set if the fitted line had to be clamped to the
+   coefficient's range there, in which case the line through the returned values differs from the fit
+   inside the fitted energy range.
+   */
+  std::pair<double,double> skew_values_at_spectrum_ends( const std::vector<double> &x, const size_t coef,
+                                                         bool &clamped ) const
+  {
+    const std::pair<double,double> ends = skew_spectrum_end_energies();
+
+    clamped = false;
+    const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+    const auto ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + coef );
+    const double lower_value = x[m_skew_par_start_index + coef];
+    const double upper_value = x[m_skew_par_start_index + coef + num_skew];
+    double min_value = 0.0, max_value = 0.0, starting = 0.0, step = 0.0;
+    if( m_skew_has_energy_dependance && (upper_value > -500.0)
+       && PeakDef::is_energy_dependent( m_options.skew_type, ct )
+       && PeakDef::skew_parameter_range( m_options.skew_type, ct, min_value, max_value, starting, step ) )
+    {
+      for( const double energy : { ends.first, ends.second } )
+      {
+        const double line_value = lower_value + ((energy - m_corr_lower_energy) / (m_corr_upper_energy - m_corr_lower_energy))
+                                                * (upper_value - lower_value);
+        clamped = clamped || (line_value < min_value) || (line_value > max_value);
+      }
+    }//if( an energy-dependent line )
+
+    return { skew_coefficient_value( x, coef, ends.first ), skew_coefficient_value( x, coef, ends.second ) };
+  }//skew_values_at_spectrum_ends(...)
+
+
+  /** The energies the options, peak-fit preferences and reported skew values give energy-dependent skew
+   coefficients at: the spectrum's first-channel lower and last-channel upper energies. */
+  std::pair<double,double> skew_spectrum_end_energies() const
+  {
+    const size_t nchannel = m_spectrum->num_gamma_channels();
+    return { m_spectrum->gamma_channel_lower( 0 ), m_spectrum->gamma_channel_upper( nchannel - 1 ) };
+  }
   
   /// Returns the index for this nuclide within the relative efficiency curve
   size_t nuclide_index( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index ) const
@@ -13634,7 +13730,7 @@ struct RelActAutoCostFcn
 
 
   /** A plain-language description of parameter `index` for messages to the user (e.g. "U232 activity",
-   "peak-skew parameter 1 (high-energy value)"); falls back to `parameter_name(index)`. */
+   "peak-skew parameter 1 (value at 1001 keV)"); falls back to `parameter_name(index)`. */
   std::string describe_parameter( const size_t index ) const
   {
     const std::string name = parameter_name( index );
@@ -13756,8 +13852,9 @@ struct RelActAutoCostFcn
         const size_t coef = skew_index % num_skew;
         const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + coef );
         std::string answer = "peak-skew parameter " + std::to_string( coef );
-        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) )
-          answer += (skew_index >= num_skew) ? " (high-energy value)" : " (low-energy value)";
+        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) && m_skew_has_energy_dependance )
+          answer += " (value at " + SpecUtils::printCompact( (skew_index >= num_skew) ? m_corr_upper_energy
+                                                                              : m_corr_lower_energy, 5 ) + " keV)";
         return answer;
       }//if( a skew parameter )
 
@@ -26235,6 +26332,26 @@ void RelActAutoSolution::compute_bound_limit_messages()
     }//for( loop over curves )
   }//if( have_cov )
 
+  // The reported skew values are at the spectrum's first and last channel energies (the convention of the
+  //  options and peak-fit preferences); a fitted energy dependence too steep to reach them within the
+  //  parameter's range can not be reproduced from them.
+  string clamped_skew;
+  size_t num_clamped_skew = 0;
+  const vector<SkewParResult> skew = skew_parameters();
+  for( size_t i = 0; i < skew.size(); ++i )
+  {
+    if( !skew[i].clamped )
+      continue;
+    clamped_skew += (clamped_skew.empty() ? "" : ", ") + std::to_string(i);
+    num_clamped_skew += 1;
+  }
+  if( num_clamped_skew )
+    m_bound_limit_messages.push_back( "The fitted energy dependence of peak-skew parameter"
+        + string(num_clamped_skew > 1 ? "s " : " ") + clamped_skew
+        + " would leave the allowed range at the spectrum's lowest or highest energy, so the reported"
+          " low- and high-energy values are limited to that range; using them as fixed values would not"
+          " reproduce this fit." );
+
   m_warnings.insert( end(m_warnings), begin(m_bound_limit_messages), end(m_bound_limit_messages) );
 }//void compute_bound_limit_messages()
 
@@ -28973,20 +29090,26 @@ vector<RelActAutoSolution::SkewParResult> RelActAutoSolution::skew_parameters() 
   if( !num_skew || !m_cost_functor )
     return answer;
 
-  // The lower-energy values, then the upper-energy values (-999.9 when not energy dependent)
+  // The fit parameters are the values at the edges of the fitted energy range (the upper ones -999.9 when
+  //  not energy dependent); they are reported at the spectrum's first and last channel energies.
   const size_t skew_start = m_cost_functor->m_skew_par_start_index;
-  if( (skew_start + 2*num_skew) > m_final_parameters.size() )
+  if( ((skew_start + 2*num_skew) > m_final_parameters.size())
+      || (m_final_parameters.size() != m_cost_functor->number_parameters()) )
     return answer;
+
+  const auto flag = []( const auto &flags, const size_t index ) -> bool {
+    return (index < flags.size()) && flags[index];
+  };
 
   for( size_t i = 0; i < num_skew; ++i )
   {
     SkewParResult result;
-    result.lower = m_final_parameters[skew_start + i];
-    const double upper = m_final_parameters[skew_start + i + num_skew];
-    result.upper = (upper > -500.0) ? upper : result.lower;
-    result.was_fit = ((skew_start + i) < m_parameter_were_fit.size()) && m_parameter_were_fit[skew_start + i];
-    result.simplified = ((skew_start + i) < m_parameter_fixed_by_model_selection.size())
-                        && m_parameter_fixed_by_model_selection[skew_start + i];
+    const pair<double,double> values
+                    = m_cost_functor->skew_values_at_spectrum_ends( m_final_parameters, i, result.clamped );
+    result.lower = values.first;
+    result.upper = values.second;
+    result.was_fit = flag( m_parameter_were_fit, skew_start + i ) || flag( m_parameter_were_fit, skew_start + i + num_skew );
+    result.simplified = flag( m_parameter_fixed_by_model_selection, skew_start + i );
     answer.push_back( result );
   }
 
