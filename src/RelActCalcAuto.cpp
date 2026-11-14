@@ -714,6 +714,55 @@ static void run_ceres_solve( const ceres::Solver::Options &options, ceres::Probl
 }//run_ceres_solve(...)
 
 
+/** For auto-simplify: whether holding skew coefficient `coef` (0 for SkewPar0, ...) of `type` at its no-skew
+ value (`PeakDef::skew_no_skew_value`) removes a component of the peak shape - a tail, or a Lorentzian width -
+ and if so, the coefficients that then no longer matter (`made_irrelevant`; held at their no-skew values too).
+ Coefficients that only shape a component (e.g., a Crystal Ball power law) are not removals of their own.
+ */
+static bool skew_component_coefficients( const PeakDef::SkewType type, const size_t coef,
+                                         std::vector<size_t> &made_irrelevant )
+{
+  made_irrelevant.clear();
+
+  switch( type )
+  {
+    case PeakDef::SkewType::GaussExp:
+    case PeakDef::SkewType::Bortel:
+      return (coef == 0);
+
+    case PeakDef::SkewType::ExpGaussExp:       // The low- and high-side tails.
+      return (coef == 0) || (coef == 1);
+
+    case PeakDef::SkewType::CrystalBall:       // {alpha, n}
+    case PeakDef::SkewType::DoubleSidedCrystalBall: // {alpha_low, n_low, alpha_high, n_high}
+      if( (coef % 2) != 0 )
+        return false;
+      made_irrelevant.push_back( coef + 1 );
+      return true;
+
+    case PeakDef::SkewType::GaussPlusBortel:   // {R, tau}
+      if( coef != 0 )
+        return false;
+      made_irrelevant.push_back( 1 );
+      return true;
+
+    case PeakDef::SkewType::VoigtPlusBortel:   // {Lorentzian width, R, tau}
+      if( coef == 1 )
+        made_irrelevant.push_back( 2 );
+      return (coef == 0) || (coef == 1);
+
+    case PeakDef::SkewType::NoSkew:
+    case PeakDef::SkewType::DoubleBortel:
+    case PeakDef::SkewType::GadrasGeneric:
+    case PeakDef::SkewType::GadrasCZT:
+    case PeakDef::SkewType::NumSkewType:
+      break;
+  }//switch( type )
+
+  return false;
+}//skew_component_coefficients(...)
+
+
 /** A solve whose last `sm_stall_window_steps` successful steps together lowered chi2 by less than
  `sm_stall_min_chi2_drop` is stopped - see `solve_stopping_creep(...)`. */
 static constexpr size_t sm_stall_window_steps = 50;
@@ -8117,6 +8166,15 @@ struct RelActAutoCostFcn
       {
         const size_t index = frozen_indices[policy_index];
         const double value = applied_frozen_model_policy[policy_index].fixed_value;
+
+        // A removed skew energy dependence holds the upper-energy value at the -999.9 placeholder,
+        //  which is not a value within the parameter's bounds, and must not be bounded.
+        if( (value < -500.0) && (parameter_names[index].rfind("Skew_",0) == 0) )
+        {
+          lower_bounds[index].reset();
+          upper_bounds[index].reset();
+        }
+
         if( (lower_bounds[index] && (value < *lower_bounds[index]))
             || (upper_bounds[index] && (value > *upper_bounds[index])) )
           throw std::invalid_argument( "Frozen selected-model parameter '"
@@ -8130,6 +8188,26 @@ struct RelActAutoCostFcn
           constant_parameters.push_back(integer_index);
         model_selection_fixed_parameters.push_back(integer_index);
       }
+
+      // A removed skew component (held at its no-skew value) was removed after its energy dependence;
+      //  if this layout fits an energy dependence the earlier one did not, hold that too.
+      const size_t num_skew = PeakDef::num_skew_parameters( options.skew_type );
+      const size_t skew_start = cost_functor->m_skew_par_start_index;
+      for( const size_t index : frozen_indices )
+      {
+        if( (index < skew_start) || (index >= (skew_start + num_skew)) )
+          continue;
+        const size_t upper_index = index + num_skew;
+        const auto coef = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + (index - skew_start) );
+        if( !PeakDef::is_energy_dependent( options.skew_type, coef )
+           || (std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(upper_index) )
+                 != end(constant_parameters)) )
+          continue;
+        parameters[upper_index] = -999.9;
+        constant_parameters.push_back( static_cast<int>(upper_index) );
+        lower_bounds[upper_index].reset();
+        upper_bounds[upper_index].reset();
+      }//for( const size_t index : frozen_indices )
     }catch( const std::exception &e )
     {
       solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -10215,6 +10293,13 @@ struct RelActAutoCostFcn
         size_t index = std::numeric_limits<size_t>::max();
         double identity = 0.0;
         vector<size_t> requires_fixed;
+
+        /** Other parameters the removal makes irrelevant, held at these values along with `index`. */
+        vector<pair<size_t,double>> also_fix;
+
+        /** If set, the lower-energy skew value this removal of an energy dependence starts its trial
+         from: the line's value in the middle of the fitted energy range. */
+        std::optional<size_t> seed_skew_midpoint_into;
       };
       vector<AutoSimplifyCandidate> candidates;
 
@@ -10269,18 +10354,55 @@ struct RelActAutoCostFcn
         }
       }
 
-      // Peak-skew coefficients with a Gaussian limit are independent one-DOF nuisance removals.
+      // Peak skew is removed in nested steps.  An energy-dependent coefficient first loses its energy
+      //  dependence (its upper-energy parameter becomes the -999.9 placeholder, so it follows the lower).
+      //  Only then can a coefficient whose no-skew value removes a component of the peak shape - a tail,
+      //  or a Lorentzian width - be held there, along with the coefficients that then no longer matter
+      //  (see `skew_component_coefficients`); coefficients that only shape a component (e.g., a Crystal
+      //  Ball power law) are not removals of their own.
       const size_t num_skew = PeakDef::num_skew_parameters(options.skew_type);
-      for( size_t i = 0; i < 2*num_skew; ++i )
+      const size_t skew_start = cost_functor->m_skew_par_start_index;
+      for( size_t i = 0; i < num_skew; ++i )
       {
-        const PeakDef::CoefficientType coef = PeakDef::CoefficientType(
-                                          PeakDef::CoefficientType::SkewPar0 + (i % num_skew));
+        const PeakDef::CoefficientType coef = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+        const bool energy_dependent = PeakDef::is_energy_dependent( options.skew_type, coef );
+        const size_t lower_index = skew_start + i, upper_index = skew_start + i + num_skew;
+
+        if( energy_dependent )
+        {
+          AutoSimplifyCandidate candidate;
+          candidate.semantic_key = "peak-skew:" + std::to_string(i) + ":energy-dependence";
+          candidate.description = "the energy dependence of peak skew parameter " + std::to_string(i);
+          candidate.index = upper_index;
+          candidate.identity = -999.9;
+          candidate.seed_skew_midpoint_into = lower_index;
+          candidates.push_back( std::move(candidate) );
+        }//if( energy_dependent )
+
+        vector<size_t> made_irrelevant;
         double no_skew_value = 0.0;
-        if( PeakDef::skew_no_skew_value(options.skew_type,coef,no_skew_value) )
-          candidates.push_back( { "peak-skew:" + std::to_string(i),
-                                  "peak skew coefficient " + std::to_string(i),
-                                  cost_functor->m_skew_par_start_index+i, no_skew_value, {} } );
-      }
+        if( skew_component_coefficients( options.skew_type, i, made_irrelevant )
+            && PeakDef::skew_no_skew_value( options.skew_type, coef, no_skew_value ) )
+        {
+          AutoSimplifyCandidate candidate;
+          candidate.semantic_key = "peak-skew:" + std::to_string(i) + ":component";
+          candidate.description = "peak skew parameter " + std::to_string(i) + " (held at its no-skew value)";
+          candidate.index = lower_index;
+          candidate.identity = no_skew_value;
+          if( energy_dependent )
+            candidate.requires_fixed.push_back( upper_index );
+          for( const size_t other : made_irrelevant )
+          {
+            const auto other_coef = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + other );
+            double other_value = 0.0;
+            if( PeakDef::skew_no_skew_value( options.skew_type, other_coef, other_value ) )
+              candidate.also_fix.push_back( {skew_start + other, other_value} );
+            if( PeakDef::is_energy_dependent( options.skew_type, other_coef ) )
+              candidate.also_fix.push_back( {skew_start + other + num_skew, -999.9} );
+          }
+          candidates.push_back( std::move(candidate) );
+        }//if( holding this coefficient removes a component of the peak shape )
+      }//for( size_t i = 0; i < num_skew; ++i )
 
       std::sort( begin(candidates), end(candidates), []( const AutoSimplifyCandidate &lhs,
                                                         const AutoSimplifyCandidate &rhs ){
@@ -10306,12 +10428,22 @@ struct RelActAutoCostFcn
             || (std::find(begin(as_fixed), end(as_fixed), (int)idx) != end(as_fixed));
       };
 
+      // Ceres projects every parameter onto its bounds after each step - held ones included - so a held
+      //  skew placeholder (-999.9) must not have any there.
+      const auto set_ceres_bounds = [&]( const size_t index, const bool apply_bounds ){
+        problem.SetParameterLowerBound( pars, static_cast<int>(index), (apply_bounds && lower_bounds[index])
+                                          ? *lower_bounds[index] : std::numeric_limits<double>::lowest() );
+        problem.SetParameterUpperBound( pars, static_cast<int>(index), (apply_bounds && upper_bounds[index])
+                                          ? *upper_bounds[index] : std::numeric_limits<double>::max() );
+      };
+
       while( !candidates.empty() )
       {
         const vector<double> parent_parameters = parameters;
         vector<BackwardEliminationScore> trial_scores;
         vector<size_t> trial_candidates;
         vector<vector<double>> trial_parameters;
+        vector<vector<pair<size_t,double>>> trial_held;   // {index, value} each trial holds
 
         for( size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index )
         {
@@ -10327,15 +10459,39 @@ struct RelActAutoCostFcn
 
           // Every trial starts from precisely the same parent vector and parent manifold.
           parameters = parent_parameters;
-          parameters[candidate.index] = candidate.identity;
+
+          // The parameters this removal holds: the candidate's, and any it makes irrelevant.
+          vector<pair<size_t,double>> held{ {candidate.index, candidate.identity} };
+          for( const pair<size_t,double> &other : candidate.also_fix )
+          {
+            if( !is_const(other.first) )
+              held.push_back( other );
+          }
+
+          // A skew coefficient losing its energy dependence starts from its fitted line's middle value.
+          if( candidate.seed_skew_midpoint_into && !is_const(*candidate.seed_skew_midpoint_into) )
+            parameters[*candidate.seed_skew_midpoint_into]
+                 = 0.5*(parent_parameters[*candidate.seed_skew_midpoint_into] + parent_parameters[candidate.index]);
+
           vector<int> trial_const = constant_parameters;
           trial_const.insert(end(trial_const),begin(as_fixed),end(as_fixed));
-          trial_const.push_back(static_cast<int>(candidate.index));
+          for( const pair<size_t,double> &hold : held )
+          {
+            parameters[hold.first] = hold.second;
+            trial_const.push_back( static_cast<int>(hold.first) );
+            if( hold.second < -500.0 )
+              set_ceres_bounds( hold.first, false );
+          }
           assert( std::set<int>(begin(trial_const),end(trial_const)).size() == trial_const.size() );
           problem.SetManifold(pars,new ceres::SubsetManifold(static_cast<int>(num_pars),trial_const));
 
           ceres::Solver::Summary trial_summary;
           run_ceres_solve( elimination_trial_options, problem, trial_summary );
+          for( const pair<size_t,double> &hold : held )
+          {
+            if( hold.second < -500.0 )
+              set_ceres_bounds( hold.first, true );
+          }
           double objective = std::numeric_limits<double>::infinity();
           try { objective = (*cost_functor)(parameters); }
           catch( const std::exception & ) { objective = std::numeric_limits<double>::infinity(); }
@@ -10344,6 +10500,7 @@ struct RelActAutoCostFcn
           trial_scores.push_back( { candidate.semantic_key, objective, solved } );
           trial_candidates.push_back(candidate_index);
           trial_parameters.push_back(parameters);
+          trial_held.push_back( std::move(held) );
 
           if( cancel_calc && cancel_calc->load() )
             break;
@@ -10372,10 +10529,19 @@ struct RelActAutoCostFcn
         std::copy( begin(trial_parameters[selected_trial]), end(trial_parameters[selected_trial]),
                    begin(parameters) );
         assert( pars == parameters.data() );
-        as_fixed.push_back(static_cast<int>(winner.index));
-        model_selection_fixed_parameters.push_back(static_cast<int>(winner.index));
-        applied_frozen_model_policy.push_back( {
-            cost_functor->parameter_name(winner.index),parameters[winner.index] } );
+        for( const pair<size_t,double> &hold : trial_held[selected_trial] )
+        {
+          as_fixed.push_back( static_cast<int>(hold.first) );
+          model_selection_fixed_parameters.push_back( static_cast<int>(hold.first) );
+          applied_frozen_model_policy.push_back( {
+              cost_functor->parameter_name(hold.first), parameters[hold.first] } );
+          if( hold.second < -500.0 )
+          {
+            lower_bounds[hold.first].reset();
+            upper_bounds[hold.first].reset();
+            set_ceres_bounds( hold.first, false );
+          }
+        }//for( each parameter the removal holds )
         best_chi2 = selected_chi2;
         solution.m_warnings.push_back( "Auto-simplify backward elimination: removed "
                           + winner.description + " (full-objective change "
