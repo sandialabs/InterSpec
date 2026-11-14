@@ -3015,6 +3015,13 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     window->WDialog::setHidden(false);
     window->show();
     window->centerWindow();
+
+    // In live mode, fit right away rather than waiting for the first edit (construction and
+    //  deserialization are deliberately ignored by markModelChanged()).  Skipped when there are no
+    //  source nuclides, to not greet the user with a "No peaks" error.  The button shows
+    //  "Updating…" until the results arrive.
+    if( disp->autoFitEnabled() && (disp->m_sourceModel->numNuclides() > 0) )
+      disp->startAutoFit();
   }catch( std::exception &e )
   {
     passMessage( WString::tr("ssd-error-create-tool").tr(e.what()), WarningWidget::WarningMsgHigh );
