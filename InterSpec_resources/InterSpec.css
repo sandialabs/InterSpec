@@ -1375,7 +1375,19 @@ button.Wt-btn.with-label.LightButton,
      */
     overflow-x: hidden;
   }
-  
+
+  /* Where the browser supports CSS anchor positioning, Wt (>= 4.15) anchors a menu to its button (it
+     then sets position-anchor inline), and a percentage max-height is of the space on the side the
+     menu opens to - so the menu shrinks to fit there, never overflows, and so the browser never
+     flips it to the roomier side (e.g., the LLM assistants menu, when the assistant is a tool tab,
+     opened squashed below its button at the bottom of the window).  Not shrinking below ~15 lines
+     makes it overflow a cramped side, so the browser tries the other side.  (position-try-order:
+     most-height did this in Chrome, but Safari 26.5 still kept the menu on the cramped side.) */
+  .PopupDivMenu[style*="position-anchor"]
+  {
+    max-height: max(90%, min(15em, 90vh));
+  }
+
   /* Add a drop-shadow for the app-level menus. */
   .PopupDivMenu.AppMenu
   {
