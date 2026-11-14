@@ -6,7 +6,9 @@ set( WT_RESOURCES_PRUNE_LIST
   "expand-rtl.gif"
   "font-awesome"
   "jPlayer"
+  "line-last-dark-rtl.gif"
   "line-last-rtl.gif"
+  "line-middle-dark-rtl.gif"
   "line-middle-rtl.gif"
   "themes/bootstrap"
   "themes/default/nav-minus-rtl.gif"
@@ -14,5 +16,6 @@ set( WT_RESOURCES_PRUNE_LIST
   "themes/default/wt_ie.css"
   "themes/default/wt_ie6.css"
   "themes/polished"
+  "tv-line-last-dark-rtl.gif"
   "tv-line-last-rtl.gif"
 )

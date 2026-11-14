@@ -55,6 +55,7 @@
 #include <Wt/WIOService.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/WEnvironment.h>
 #include <Wt/WApplication.h>
 #include <Wt/WPopupWidget.h>
@@ -2196,21 +2197,25 @@ MakeDrf::MakeDrf( InterSpec *viewer )
     auto rightOwned = std::make_unique<WContainerWidget>();
     WContainerWidget *rightCol = rightOwned.get();
     rightCol->addStyleClass( "MakeDrfRight" );
-    WGridLayout *rightLayout = rightCol->setLayout( std::make_unique<WGridLayout>() );
+    // A CSS flex layout (resize handles in flex layouts need Wt >= 4.15), so the browser does the
+    //  sizing, rather than Wt's JavaScript layout.
+    WVBoxLayout *rightLayout = rightCol->setLayout( std::make_unique<WVBoxLayout>() );
+    rightLayout->setPreferredImplementation( LayoutImplementation::Flex );
     rightLayout->setContentsMargins( 0, 0, 0, 0 );
-    rightLayout->setVerticalSpacing( 8 );
-    rightLayout->addWidget( std::move(chartOwned), 0, 0 );
-    rightLayout->addWidget( std::move(statusOwned), 1, 0 );
-    rightLayout->addWidget( std::move(fileHolderOwned), 2, 0 );
-    rightLayout->setRowStretch( 2, 1 );
+    rightLayout->setSpacing( 8 );
+    rightLayout->addWidget( std::move(chartOwned) );
+    rightLayout->addWidget( std::move(statusOwned) );
+    rightLayout->addWidget( std::move(fileHolderOwned), 1 );
     fileHolder->setMinimumSize( WLength::Auto, WLength(120, WLength::Unit::Pixel) );
 
     // The divider between the chart and what is below it can be dragged.  Set once: setting it
     //  again would throw away the height the user dragged to.
     const int wh = m_interspec->renderedHeight();
     const double chart_height = (wh > 100) ? std::clamp( 0.45*(0.95*wh - 110.0), 200.0, 420.0 ) : 300.0;
-    rightLayout->setRowResizable( 0, true, WLength(chart_height, WLength::Unit::Pixel) );
-    WidgetUtils::compensateRowHandleLeak( rightCol );
+    rightLayout->setResizable( 0, true );
+    // Wt 4.15's flex layout JS replaces the `initialSize` setResizable() would give an item of a
+    //  vertical layout with the widgets own height, so set that instead.
+    m_chart->setHeight( WLength(chart_height, WLength::Unit::Pixel) );
 
     layout->addWidget( std::move(rightOwned), 0, 1 );
     layout->setColumnStretch( 1, 1 );

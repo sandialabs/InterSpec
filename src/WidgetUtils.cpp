@@ -219,21 +219,6 @@ void revealAndFocus( Wt::WFormWidget *w )
 }//void revealAndFocus( Wt::WFormWidget *w )
 
 
-void compensateRowHandleLeak( Wt::WContainerWidget *layoutOwner )
-{
-  if( !layoutOwner )
-    return;
-
-  // Counts the handles each time, so is correct (0) when no row is resizable.
-  layoutOwner->setJavaScriptMember( "wtGetPS",
-    "function(c,w,d,r){"
-      "if(d!==1)return 0;"
-      "var n=w.querySelectorAll(':scope > .Wt-hrh2').length;"
-      "return -n*5;"
-    "}" );
-}//void compensateRowHandleLeak( Wt::WContainerWidget *layoutOwner )
-
-
 namespace
 {
   /** The (1-based) month a word names, or 0.  English names and abbreviations of at least three

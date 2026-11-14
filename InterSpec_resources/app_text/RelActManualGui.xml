@@ -20,6 +20,8 @@
   <message id="mrend-X(a,a)">Inelastic alpha scattering off {1}</message>
   <message id="mrend-annih">Annihilation gammas</message>
   <message id="mrend-unknown-rxctn">Unknown reaction</message>
+  <message id="mrend-xrays-title">{1} x-rays</message>
+  <message id="mrend-fluor-xrays">Fluorescence x-rays of {1}, fit with their own relative activity.  With the Physical Model, if the self-attenuating material contains {1} and the x-ray peaks used span at least {2} keV (e.g., K-alpha and K-beta), they are corrected for being produced non-uniformly through the material.</message>
   <message id="mrend-X(,)"></message>
   <message id="mrend-cb-decay-during-meas">Decay during meas.</message>
   <message id="mrend-tt-decay-during-meas">When checked, the nuclides decay during the measurement will be accounted for, with the quoted relative activity being the activity at the start of measurement.</message>
@@ -113,6 +115,7 @@
   <message id="ramg-mi-chart">Graph</message>
   <message id="ramg-back-sub-neg">After background subtraction, peak at {1} keV had negative counts so was not used.</message>
   <message id="ramg-warn-reaction">Using reaction photopeaks is likely not valid, unless the gammas are emitted homogeneously from a single object.</message>
+  <message id="ramg-warn-ext-shield-fluor">{1} is in an external shielding, but fluorescence x-rays produced in a shielding are not modelled; the {1} x-rays are treated as if emitted by the source, which is only reasonable for thin shielding.</message>
   <message id="ramg-warn-no-bkg-sub-used">Subtraction of background peaks was selected, but no background peaks matched to the selected foreground peaks.</message>
   <message id="ramg-warn-rel-eff-u/pu-xray">The relative efficiency curve does not account for x-ray absorption edges - using peaks under 120 keV for U or Pu problems is not recommended.</message>
   <message id="ramg-warn-rel-eff-other-xray">The relative efficiency curve does not account for x-ray absorption edges of any potential shielding - please ensure the peaks used do not span across absorption edges of any shielding.</message>

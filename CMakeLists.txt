@@ -322,8 +322,8 @@ else( InterSpec_FETCH_DEPENDENCIES )
   find_package( Eigen3 REQUIRED NO_MODULE )
   find_package( Ceres REQUIRED )
 
-  # Find Wt 4 via its installed CMake config
-  find_package( wt CONFIG REQUIRED )
+  # Find Wt 4 via its installed CMake config (4.15 or newer; see the static_assert in InterSpecApp.cpp)
+  find_package( wt 4.15 CONFIG REQUIRED )
 
   # Set Wt_INCLUDE_DIR for backward compatibility with downstream references
   get_target_property( _wt_inc Wt::Wt INTERFACE_INCLUDE_DIRECTORIES )

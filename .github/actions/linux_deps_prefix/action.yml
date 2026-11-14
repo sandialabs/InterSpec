@@ -1,6 +1,6 @@
 name: Linux dependency prefix
 description: >
-  Builds (or restores from cache) the Linux dependency prefix - boost, zlib, Wt 4.13.2 (with libwttest),
+  Builds (or restores from cache) the Linux dependency prefix - boost, zlib, Wt 4.15.0 (with libwttest),
   Eigen, Abseil and Ceres, all static - inside the manylinux container, and verifies it is usable.
 
 # ------------------------------------------------------------------------------------------------

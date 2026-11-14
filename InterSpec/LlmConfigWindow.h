@@ -50,6 +50,7 @@ namespace Wt
   class WLineEdit;
   class WComboBox;
   class WPushButton;
+  class WPasswordEdit;
   class WContainerWidget;
   // Wt::JSignal (a 6-arg template with defaults) is pulled in via AuxWindow.h.
 }//namespace Wt
@@ -201,7 +202,7 @@ private:
   Wt::WCheckBox *m_mcpEnable;
   Wt::WContainerWidget *m_mcpDetail;
 #if( MCP_ENABLE_AUTH )
-  Wt::WLineEdit *m_mcpToken;
+  Wt::WPasswordEdit *m_mcpToken;
   Wt::WPushButton *m_mcpTokenShow;
   Wt::WText *m_mcpTokenWarn;
 #endif

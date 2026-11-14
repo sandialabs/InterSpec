@@ -1107,6 +1107,9 @@ public:
   //sourceGammaType():
   SourceGammaType sourceGammaType() const;
   
+  //setXray(): sets the peak as an x-ray of `el` (nullptr un-sets it).  Assigning a different element
+  //  also turns off useForManualRelEff (fluorescence x-rays are opt-in for "Isotopics from peaks"), so
+  //  set that flag after calling this.
   void setXray( const SandiaDecay::Element *el, const float energy );
   const SandiaDecay::Element *xrayElement() const;
   float xrayEnergy() const;
@@ -1659,7 +1662,7 @@ void PeakDef::useForShieldingSourceFit( const bool use )
 
 bool PeakDef::useForManualRelEff() const
 {
-  if( !m_useForManualRelEff || (!m_parentNuclide && !m_reaction) )
+  if( !m_useForManualRelEff || (!m_parentNuclide && !m_reaction && !m_xrayElement) )
     return false;
   
   switch( m_sourceGammaType )

@@ -1,6 +1,6 @@
 name: macOS dependency prefix
 description: >
-  Builds (or restores from cache) the macOS dependency prefix - boost, Wt 4.13.2, Eigen, Abseil
+  Builds (or restores from cache) the macOS dependency prefix - boost, Wt 4.15.0, Eigen, Abseil
   and Ceres, all as universal x86_64+arm64 static libraries - and verifies it is usable.
 
 # ------------------------------------------------------------------------------------------------

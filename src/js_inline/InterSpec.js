@@ -720,3 +720,80 @@ function(resizerid,elid) {
   }
 }
 );
+
+
+WT_DECLARE_WT_MEMBER
+(UnclipSuggestionPopups, Wt::JavaScriptFunction, "UnclipSuggestionPopups",
+function()
+{
+  /* In browsers without CSS anchor positioning (e.g., the macOS 12-15 WKWebView), Wt shows a
+   WSuggestionPopup via WT.positionAtWidget(), which re-parents the popup into the nearest scrolling
+   ancestor of the edit, and WT.fitToWindow() then (since Wt 4, WT-7974) fits it inside the visible
+   area of that ancestor.  So the list for an edit inside a scrolling panel (e.g., a shielding
+   material in "Isotopics from peaks") gets squeezed above or below the edit, and the panel clips it.
+   Instead, we keep suggestion popups in the Wt-domRoot, fitted to the window - which is what Wt
+   does itself when the edit has no scrolling ancestor - and, since the popup is then no longer
+   inside the panel, move it along with its edit when the panel scrolls.
+   Wt (>= 4.14) gets this right itself when it can anchor the popup to the edit, so we leave those.
+   */
+  const WT = Wt.WT;
+  if( WT.wtPositionAtWidget )
+    return; // Already installed; InterSpec is re-created on "Clear Session", but the page JS is not.
+
+  const wtPositionAtWidget = WT.positionAtWidget;
+  WT.wtPositionAtWidget = wtPositionAtWidget;
+
+  WT.positionAtWidget = function( id, atId, orientation, delta, adjustX = true, adjustY = true )
+  {
+    const w = WT.getElement( id ), atw = WT.getElement( atId );
+    const root = document.querySelector( '.Wt-domRoot' );
+    if( !w || !atw || !root || (orientation !== WT.Vertical) || !w.classList.contains('Wt-suggest')
+        || (WT.useAnchorPosition && WT.useAnchorPosition(w)) )
+      return wtPositionAtWidget.apply( WT, arguments );
+
+    // Same as the vertical case of the Wt function, minus the walk up to a scrolling ancestor.
+    w.style.position = 'absolute';
+    if( WT.css( w, 'display' ) === 'none' )
+      w.style.display = 'block';
+    root.appendChild( w );
+    w.classList.add( 'wt-reparented' ); // WT.insertAt() skips these when counting domRoot children
+
+    const xy = WT.widgetPageCoordinates( atw );
+    WT.fitToWindow( w, xy.x, xy.y + atw.offsetHeight, xy.x + atw.offsetWidth, xy.y, adjustX, adjustY );
+    w.style.visibility = '';
+
+    // Remembered so the scroll listener below can re-position the popup
+    w.isAnchorId = atId;
+    w.isAdjust = [adjustX, adjustY];
+  };
+
+  // When a panel holding the edit of a showing suggestion popup scrolls, move the popup with the
+  //  edit, or close it once the edit has scrolled out of view of the panel.
+  document.addEventListener( 'scroll', function( ev )
+  {
+    const scroller = ev.target;
+    if( !(scroller instanceof Element) )
+      return;
+
+    document.querySelectorAll( '.Wt-domRoot > .Wt-suggest' ).forEach( function( w )
+    {
+      const atw = w.isAnchorId ? WT.getElement( w.isAnchorId ) : null;
+      if( !atw || (w.style.display === 'none') || !scroller.contains( atw ) )
+        return;
+
+      const edit = atw.getBoundingClientRect(), view = scroller.getBoundingClientRect();
+      if( (edit.bottom <= view.top) || (edit.top >= view.bottom)
+          || (edit.right <= view.left) || (edit.left >= view.right) )
+      {
+        // Hide right away, but let the popup do its own hiding (it restores the edit key handler)
+        w.style.visibility = 'hidden';
+        if( w.wtObj )
+          w.wtObj.delayHide( null );
+      }else
+      {
+        WT.positionAtWidget( w.id, w.isAnchorId, WT.Vertical, 0, w.isAdjust[0], w.isAdjust[1] );
+      }
+    } );
+  }, { capture: true, passive: true } );
+}
+);

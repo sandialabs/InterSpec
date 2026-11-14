@@ -31,7 +31,7 @@ set( USE_LLM_INTERFACE ON CACHE INTERNAL "" )
 
 message( "ANDROID_NDK_SYSROOT=${ANDROID_NDK_SYSROOT}")
 
-# Wt 4.13.2's src/http/Android.C guards its body (including the
+# Wt's src/http/Android.C (4.13.2 through at least 4.15.0) guards its body (including the
 # preventRemoveOfSymbolsDuringLinking() definition that WServer.C
 # references under ANDROID) with `#ifdef WT_THREADED`, but never
 # includes WConfig.h before that check.  Defining WT_THREADED at the

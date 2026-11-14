@@ -212,12 +212,6 @@ namespace WidgetUtils
    */
   void revealAndFocus( Wt::WFormWidget *w );
 
-  /** For a container whose WGridLayout has a resizable row: Wt's layout reserves 10px for each
-   row-resize handle but positions with 5px, leaking 5px out of the bottom of the layout.  This
-   sets the `wtGetPS` JS member that lets the stretching row absorb it (see InterSpec::InterSpec).
-   */
-  void compensateRowHandleLeak( Wt::WContainerWidget *layoutOwner );
-
 
   /** How #parseLenientDate classified some text. */
   enum class DateParse

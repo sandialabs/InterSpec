@@ -4492,6 +4492,10 @@ void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,
 
 void PeakDef::setXray( const SandiaDecay::Element *el, const float energy )
 {
+  // Fluorescence x-rays are opt-in for "Isotopics from peaks", like decay x-rays are.
+  if( el && (el != m_xrayElement) )
+    m_useForManualRelEff = false;
+
   m_xrayElement = el;
   m_xrayEnergy = energy;
   

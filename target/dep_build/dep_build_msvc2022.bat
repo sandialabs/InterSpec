@@ -241,9 +241,9 @@ if not exist %ZLIB_BUILT_FILE% (
 )
     
     
-rem Build/install Wt 4.13.2
-set WT_DIR=wt-4.13.2
-set WT_GIT_HASH=e8dd034d21409847be135b048641a32e214d7ff1
+rem Build/install Wt 4.15.0
+set WT_DIR=wt-4.15.0
+set WT_GIT_HASH=43a1b94e827196ae47a0bdc3ecd3c19f0a89c919
 set WT_BUILT_FILE=built_%WT_DIR%
 
 if not exist %WT_BUILT_FILE% (
@@ -258,14 +258,14 @@ if not exist %WT_BUILT_FILE% (
         cd %WT_DIR%
 
         git fetch --depth 1 origin %WT_GIT_HASH% && (
-            echo Fetched Wt 4.13.2
+            echo Fetched Wt 4.15.0
         ) || (
             echo "Failed to fetch wanted Wt commit"
             GOTO :cmderr
         )
 
         git checkout %WT_GIT_HASH% && (
-            echo Checked out Wt 4.13.2
+            echo Checked out Wt 4.15.0
         ) || (
             echo "Failed to checkout wanted Wt commit"
             GOTO :cmderr

@@ -25,7 +25,7 @@ function(add_ceelo_test TEST_NAME TEST_SOURCE)
         Boost::unit_test_framework
     )
     # Define BOOST_TEST_DYN_LINK only when a shared unit_test_framework library is
-    # available. The wt-4.13.2 prefix ships a static-only build, for which dynamic
+    # available. The wt-4.15.0 prefix ships a static-only build, for which dynamic
     # linking would leave boost::unit_test::unit_test_main undefined at link time.
     get_target_property(_btf_type Boost::unit_test_framework TYPE)
     if(_btf_type STREQUAL "SHARED_LIBRARY")

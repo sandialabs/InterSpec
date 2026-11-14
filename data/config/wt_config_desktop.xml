@@ -13,7 +13,7 @@
     files), quieter logging, and no HTTP security headers (the server is
     bound to localhost - no reverse proxy in the picture).
 
-    Derived from the Wt 4.13.2 example config. Defaults that match the
+    Derived from the Wt 4.13.2 example config, and updated for 4.15.0. Defaults that match the
     reference are left explicit so intent is obvious at audit time.
   -->
 <server>
@@ -81,17 +81,22 @@
 
         <session-id-length>16</session-id-length>
 
+        <!-- Added in Wt 4.15: private resource URLs (downloads, uploads) identify the session by
+             a weak id, that can only reach that session's resources. -->
+        <use-weak-session-id>true</use-weak-session-id>
+
         <plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
         <sessions-threshold-for-dos-protection>100</sessions-threshold-for-dos-protection>
         <ajax-puzzle>false</ajax-puzzle>
 
         <strict-event-serialization>false</strict-event-serialization>
 
-        <!-- Added in Wt 4.13.  cache-form-data is OFF (on by default until 4.13.4) to dodge a Wt 4.13.2 race:
-             a focus event queued while a request is in flight carries the field's old value, the
-             server handles the batch's change events first, and with the cache on it then re-applies
-             that stale value on every later event - silently discarding the user's edit.  Off, every
-             request resends all form values (~3x larger), so a stale value cannot persist.
+        <!-- Added in Wt 4.13.  cache-form-data is OFF (Wt's default since 4.13.4) to dodge a Wt race,
+             worst in 4.13.2 and still there in 4.15.0: an event queued while a request is in flight
+             (e.g., a field's focus event) carries the field's old value, the server handles the
+             batch's change events first, and then applies that stale value - which, with the cache
+             on in 4.13.2, was re-applied on every later event, silently discarding the user's edit.
+             Off, every request resends all form values (~3x larger), so a stale value cannot persist.
              form-data-resend-ratio-limit only matters when the cache is on.  InterSpecApp.cpp warns
              when built against a newer Wt, as a reminder to re-check this. -->
         <cache-form-data>false</cache-form-data>
@@ -139,6 +144,13 @@
         <x-frame-same-origin>true</x-frame-same-origin>
 
         <use-script-nonce>false</use-script-nonce>
+
+        <!-- Added in Wt 4.14.  is-invalid-wtd-suspicious treats a request with an unknown session
+             id as a bot; fine since reload-is-new-session is true (Wt recommends turning it
+             off if that is ever set to false). -->
+        <debug-csp>false</debug-csp>
+        <csp-debug-endpoint>csp-report</csp-debug-endpoint>
+        <is-invalid-wtd-suspicious>true</is-invalid-wtd-suspicious>
 
         <serve-private-resources-to-bots>false</serve-private-resources-to-bots>
         <bot-resources-path>wt-temp</bot-resources-path>

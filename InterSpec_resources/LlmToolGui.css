@@ -1165,12 +1165,8 @@
   border-left: 1px solid var(--interspec-border-color);
 }
 
-/* Title, then the move-out-of-the-panel button, the conversation menu icon (desktop), and the close icon.
-   Wt's layout leaves a 5px gap right of the panel (it reserves 10px for the splitter, but uses 5px);
-   the gap shows the app background, same as the panel, so only the header bar needs extending -
-   with a shadow, as changing the panels size or position would upset Wt's measuring of it. */
+/* Title, then the move-out-of-the-panel button, the conversation menu icon (desktop), and the close icon. */
 .LlmSidePanelHeader {
-  box-shadow: 5px 0 0 0 var(--interspec-titlebar-background);
   display: flex;
   align-items: center;
   gap: 8px;

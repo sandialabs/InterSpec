@@ -28,20 +28,17 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <string>
 #include <cstdint>
 #include <istream>
 #include "ReactionGamma.h"
+
+#include "InterSpec/RelActCalc.h"
 
 // Forward declarations
 class PeakDef;
 
 class DetectorPeakResponse;
-
-namespace RelActCalc
-{
-  enum class RelEffEqnForm : int;
-  struct PhysicalModelShieldInput;
-}
 
 namespace SandiaDecay
 {
@@ -312,6 +309,26 @@ std::vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPea
                                                    );
 
 
+/** An x-ray element source whose fluorescence is induced in the Physical-model self-attenuating material, so its
+ lines get the fluorescence source-depth correction; see `RelEffInput::phys_model_fluorescence`.
+ */
+struct FluorescenceDepthSource
+{
+  /** The element's source name - i.e., the `GenericLineInfo::m_isotope` of its lines (e.g., "U"). */
+  std::string m_element;
+
+  /** The source name (`GenericLineInfo::m_isotope`) of each of `m_model.exciting_mu`. */
+  std::vector<std::string> m_exciting_sources;
+
+  /** The self-attenuating material `m_model` was made for; the calculation rejects the model if
+   `RelEffInput::phys_model_self_atten` has since changed material.
+   */
+  const Material *m_material = nullptr;
+
+  RelActCalc::FluorescenceDepthModel m_model;
+};//struct FluorescenceDepthSource
+
+
 /** Uses weighted least squares (i.e., matrix based solution) to determine relative efficiency
  equation parameters and uncertainties.
  
@@ -565,6 +582,14 @@ struct RelEffInput
     If specified for any other equation form, will throw an exception.
   */
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
+
+  /** X-ray element sources whose element is in the self-attenuating material (`phys_model_self_atten`): their
+   fluorescence is produced where the source's own photons are absorbed, not uniformly through the material, so
+   their lines' efficiency gets `RelActCalc::fluorescence_self_atten_correction(...)` - the same model
+   RelActCalcAuto uses.  Fill using `add_fluorescence_depth_models(...)`.
+   Must be empty unless `RelActCalc::RelEffEqnForm::FramPhysicalModel` with a material self-attenuator.
+   */
+  std::vector<FluorescenceDepthSource> phys_model_fluorescence;
 
   /** The activity ratio constraints. */
   std::vector<ManualActRatioConstraint> act_ratio_constraints;
@@ -1067,6 +1092,20 @@ struct RelEffSolution
    */
   double rel_eff_eqn_value( const double energy ) const;
 
+  /** The factor, beyond `rel_eff_eqn_value(energy)`, on the efficiency of a line of `source` at `energy`: the
+   fluorescence source-depth correction if `source` is in `m_input.phys_model_fluorescence`, and 1.0 otherwise.
+
+   I.e., a peak's predicted counts are
+   `rel_eff_eqn_value(E) x sum_lines( relative_activity(line) x yield(line) x fluorescence_correction(line,E) )`.
+   */
+  double fluorescence_correction( const std::string &source, const double energy ) const;
+
+  /** `m_input.peaks`, with each line's yield multiplied by its `fluorescence_correction(...)`, so a peak's counts
+   divided by the sum of its lines' relative activity x yield is directly comparable to the relative efficiency
+   curve; for plotting.  Identical to `m_input.peaks` when there are no fluorescence corrections.
+   */
+  std::vector<GenericPeakInfo> peaks_with_effective_yields() const;
+
   /** Returns the uncertainty of the relative efficiency equation at the specified energy.
     
      throws std::exception if covariances are not available, or there is another error.
@@ -1104,6 +1143,19 @@ struct RelEffSolution
           RelEffSolution::m_warnings, and RelEffSolution::m_error_message.
  */
 RelEffSolution solve_relative_efficiency( const RelEffInput &input );
+
+
+/** Fills `input.phys_model_fluorescence` (replacing what was there) for the x-ray element sources of `sources` whose
+ lines are in `input.peaks`, using `RelActCalc::fluorescence_depth_model(...)`; so a correction is only added for a
+ Physical model whose self-attenuating material contains the element, with the element's peaks spanning at least
+ `RelActCalc::ns_fluorescence_depth_min_span_kev`.  The nuclides of `sources`, at their ages, excite the fluorescence;
+ a nuclide with `SandiaDecayNuc::correct_for_decay_during_meas` uses its average rates over `measurement_duration`,
+ matching the yields its peaks were given.
+
+ Call after `input.peaks` (with their source lines) and the Physical-model shieldings are set.
+ */
+void add_fluorescence_depth_models( RelEffInput &input, const std::vector<SandiaDecayNuc> &sources,
+                                    const double measurement_duration );
 
 
 /** Estimates the common multiple `k` by which every peak's statistical uncertainty should be
