@@ -89,6 +89,14 @@ public:
               const double fracH,
               const std::string &data_directory );
 
+  /** Builds the grid for `energies` from a table already built for other energies, by interpolating (in
+   the log of the energy) between `other`s: for a caller with many sets of energies for one detector, for
+   which building each from the scatter database would cost too much.  An energy below `other`s lowest
+   gets zero, one above its highest the highest's values.  Features sharper than `other`s energy spacing -
+   the K edges of the heavier atomic numbers - are smoothed over that spacing.
+   */
+  void buildFrom( const ShieldScatterAugment &other, const std::vector<double> &energies );
+
   bool valid() const { return !m_energies.empty(); }
 
   /** A at (energy, AN, AD).  T is double or an AD dual number (e.g.
@@ -119,6 +127,51 @@ public:
     if( ei >= m_energies.size() )
       return T(0.0);
 
+    size_t ai = 0, di = 0;
+    T u(0.0), v(0.0);
+    gridCell( atomic_number, areal_density_gcm2, ai, di, u, v );
+
+    const double a00 = valueAt( ei, ai, di );
+    const double a10 = valueAt( ei, ai+1, di );
+    const double a01 = valueAt( ei, ai, di+1 );
+    const double a11 = valueAt( ei, ai+1, di+1 );
+
+    return (1.0 - u)*(1.0 - v)*a00 + u*(1.0 - v)*a10
+           + (1.0 - u)*v*a01 + u*v*a11;
+  }//evaluate(...)
+
+
+  /** A at (AN, AD) for every energy the table was built for, in ascending order of energy (so matching a
+   sorted, duplicate-free `energies` given to build()); `values` is sized to it.  The same as evaluate() at
+   each of them, with the (AN, AD) grid cell found once.  `values` is emptied for an un-built table.
+   */
+  template <class T>
+  void evaluateAll( const T &atomic_number, const T &areal_density_gcm2, std::vector<T> &values ) const
+  {
+    values.clear();
+    if( m_energies.empty() )
+      return;
+
+    size_t ai = 0, di = 0;
+    T u(0.0), v(0.0);
+    gridCell( atomic_number, areal_density_gcm2, ai, di, u, v );
+
+    const T w00 = (1.0 - u)*(1.0 - v), w10 = u*(1.0 - v), w01 = (1.0 - u)*v, w11 = u*v;
+    values.reserve( m_energies.size() );
+    for( size_t ei = 0; ei < m_energies.size(); ++ei )
+      values.push_back( w00*valueAt( ei, ai, di ) + w10*valueAt( ei, ai+1, di )
+                        + w01*valueAt( ei, ai, di+1 ) + w11*valueAt( ei, ai+1, di+1 ) );
+  }//evaluateAll(...)
+
+  /** The energies (keV, ascending) the table was built for. */
+  const std::vector<double> &energies() const { return m_energies; }
+
+private:
+  /** The (AN, AD) grid cell holding the point, and the point's fractional position in it. */
+  template <class T>
+  void gridCell( const T &atomic_number, const T &areal_density_gcm2,
+                 size_t &ai, size_t &di, T &u, T &v ) const
+  {
     // Clamp into the grid; constants zero the derivative lanes (hard clamp).
     T an = atomic_number;
     if( an < m_an_grid.front() )
@@ -132,26 +185,17 @@ public:
     if( ad > m_ad_grid.back() )
       ad = T( m_ad_grid.back() );
 
-    size_t ai = 0;
+    ai = 0;
     while( (ai + 2) < m_an_grid.size() && !(an < m_an_grid[ai+1]) )
       ++ai;
-    size_t di = 0;
+    di = 0;
     while( (di + 2) < m_ad_grid.size() && !(ad < m_ad_grid[di+1]) )
       ++di;
 
-    const T u = (an - m_an_grid[ai]) / (m_an_grid[ai+1] - m_an_grid[ai]);
-    const T v = (ad - m_ad_grid[di]) / (m_ad_grid[di+1] - m_ad_grid[di]);
+    u = (an - m_an_grid[ai]) / (m_an_grid[ai+1] - m_an_grid[ai]);
+    v = (ad - m_ad_grid[di]) / (m_ad_grid[di+1] - m_ad_grid[di]);
+  }//gridCell(...)
 
-    const double a00 = valueAt( ei, ai, di );
-    const double a10 = valueAt( ei, ai+1, di );
-    const double a01 = valueAt( ei, ai, di+1 );
-    const double a11 = valueAt( ei, ai+1, di+1 );
-
-    return (1.0 - u)*(1.0 - v)*a00 + u*(1.0 - v)*a10
-           + (1.0 - u)*v*a01 + u*v*a11;
-  }//evaluate(...)
-
-private:
   double valueAt( const size_t ei, const size_t ai, const size_t di ) const
   {
     return m_table[ (ei*m_an_grid.size() + ai)*m_ad_grid.size() + di ];
@@ -302,6 +346,14 @@ public:
   static double detectorTotEffAbs( const std::shared_ptr<const DetectorPeakResponse> &drf,
                                    const double energy, const double theta,
                                    const double phi, const double distance );
+
+  /** An example full-response detector (an HPGe Monte-Carlo response with total efficiency and
+   angular response; data/cascade_summing_example_response.xml), for callers whose own detector
+   response lacks total-efficiency info: they borrow its total efficiency, scaled by the ratio of
+   the full-energy efficiencies.  Loaded once from InterSpec's static data directory and cached;
+   nullptr if it can not be loaded.  Thread-safe.
+   */
+  static std::shared_ptr<const DetectorPeakResponse> exampleDetector();
 
   /** Wraps an absolute-efficiency function in a cached, log-spaced interpolation
    table, for callers that need an efficiency at many energies.

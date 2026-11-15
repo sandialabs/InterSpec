@@ -53,6 +53,9 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <iostream>
 #include <algorithm>
 #include <stdexcept>
 
@@ -60,10 +63,12 @@
 
 #include "SpecUtils/Filesystem.h"
 
+#include "io/DetectorResponse.h"
 #include "cascade/CascadeTypes.h"
 #include "cascade/AnalyticCascade.h"
 #include "cascade/SandiaDecayCascade.h"
 
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/GadrasShieldScatter.h"
@@ -168,6 +173,40 @@ void ShieldScatterAugment::build( const std::vector<double> &energies,
     }//for( AN grid )
   }//for( energies )
 }//ShieldScatterAugment::build(...)
+
+
+void ShieldScatterAugment::buildFrom( const ShieldScatterAugment &other, const std::vector<double> &energies )
+{
+  m_energies.clear();
+  m_table.clear();
+  m_an_grid = other.m_an_grid;
+  m_ad_grid = other.m_ad_grid;
+
+  if( energies.empty() || other.m_energies.empty() )
+    return;
+
+  m_energies = energies;
+  std::sort( begin(m_energies), end(m_energies) );
+
+  const size_t per_energy = m_an_grid.size() * m_ad_grid.size();
+  m_table.assign( m_energies.size() * per_energy, 0.0 );
+
+  const vector<double> &from = other.m_energies;
+  for( size_t ei = 0; ei < m_energies.size(); ++ei )
+  {
+    const double energy = m_energies[ei];
+    if( energy < from.front() )
+      continue;  //below what `other` covers: no scatter, as below build()'s own floor
+
+    const size_t upper = static_cast<size_t>( std::upper_bound( begin(from), end(from), energy ) - begin(from) );
+    const size_t lo = (upper > 0) ? (upper - 1) : size_t(0);
+    const size_t hi = std::min( upper, from.size() - 1 );
+    const double frac = (hi > lo) ? (std::log( energy/from[lo] ) / std::log( from[hi]/from[lo] )) : 0.0;
+
+    for( size_t i = 0; i < per_energy; ++i )
+      m_table[ei*per_energy + i] = (1.0 - frac)*other.m_table[lo*per_energy + i] + frac*other.m_table[hi*per_energy + i];
+  }//for( loop over energies )
+}//ShieldScatterAugment::buildFrom(...)
 
 
 // ============================ CascadeSummingCalc ============================
@@ -413,6 +452,50 @@ bool CascadeSummingCalc::drfHasNeededInfo( const std::shared_ptr<const DetectorP
 
   return drf->hasAnyTotalEfficiencyInfo();
 }
+
+
+std::shared_ptr<const DetectorPeakResponse> CascadeSummingCalc::exampleDetector()
+{
+  static std::mutex s_mutex;
+  static std::shared_ptr<const DetectorPeakResponse> s_det;
+  static std::string s_tried_dir;
+  static bool s_tried = false;
+
+  // A failure is only remembered for the data directory it was for: a call made before the directory is
+  //  set must not disable the response for the rest of the process.
+  const string data_dir = InterSpec::staticDataDirectory();
+
+  std::lock_guard<std::mutex> lock( s_mutex );
+  if( s_det || (s_tried && (s_tried_dir == data_dir)) )
+    return s_det;
+  s_tried = true;
+  s_tried_dir = data_dir;
+
+  try
+  {
+    const string path = SpecUtils::append_path( data_dir, "cascade_summing_example_response.xml" );
+    std::ifstream input( path.c_str(), std::ios::in | std::ios::binary );
+    if( !input.is_open() )
+      throw std::runtime_error( "could not open '" + path + "'" );
+
+    std::stringstream strm;
+    strm << input.rdbuf();
+
+    shared_ptr<DetectorPeakResponse> drf = make_shared<DetectorPeakResponse>( "CascadeSummingExample",
+                                                                 "cascade summing example detector" );
+    drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                                        0.0f, 0.0f,
+                                        DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setCeeloResponse( ceelo::DetectorResponse::from_xml_string( strm.str() ) );
+    s_det = drf;
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to load cascade-summing example detector: " << e.what() << endl;
+    s_det = nullptr;
+  }//try / catch
+
+  return s_det;
+}//exampleDetector()
 
 
 double CascadeSummingCalc::estimateMaxSummingMagnitude(

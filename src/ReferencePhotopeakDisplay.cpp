@@ -179,48 +179,13 @@ namespace
     ~UpdateGuard(){ m_guard = false; }
   };
 
-  /** An example full-response detector (HPGe Monte-Carlo response with total
-   efficiency + angular response), used as a fallback for cascade summing when
-   the current DRF lacks total-efficiency info (borrow its total efficiency,
-   scaled by the FEP ratio) or when there is no current DRF at all (use it
-   wholesale).  Loaded once and cached.
+  /** The example full-response detector used as a fallback for cascade summing when the current DRF
+   lacks total-efficiency info (borrow its total efficiency, scaled by the FEP ratio) or when there
+   is no current DRF at all (use it wholesale).
    */
   std::shared_ptr<const DetectorPeakResponse> example_summing_detector()
   {
-    static std::mutex s_mutex;
-    static std::shared_ptr<const DetectorPeakResponse> s_det;
-    static bool s_tried = false;
-
-    std::lock_guard<std::mutex> lock( s_mutex );
-    if( s_tried )
-      return s_det;
-    s_tried = true;
-
-    try
-    {
-      const string path = SpecUtils::append_path( InterSpec::staticDataDirectory(),
-                                                  "cascade_summing_example_response.xml" );
-      std::ifstream input( path.c_str(), std::ios::in | std::ios::binary );
-      if( !input.is_open() )
-        throw std::runtime_error( "could not open '" + path + "'" );
-
-      std::stringstream strm;
-      strm << input.rdbuf();
-
-      auto drf = std::make_shared<DetectorPeakResponse>( "CascadeSummingExample",
-                                                         "cascade summing example detector" );
-      drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV,
-                                          0.0f, 0.0f,
-                                          DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
-      drf->setCeeloResponse( ceelo::DetectorResponse::from_xml_string( strm.str() ) );
-      s_det = drf;
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to load cascade-summing example detector: " << e.what() << endl;
-      s_det = nullptr;
-    }//try / catch
-
-    return s_det;
+    return GammaInteractionCalc::CascadeSummingCalc::exampleDetector();
   }//example_summing_detector()
 
   class RefGammaCsvResource : public Wt::WResource
