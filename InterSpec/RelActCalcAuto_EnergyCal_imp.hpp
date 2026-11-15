@@ -830,6 +830,46 @@ T lowerchannel_energy( const T channel,
 }//lowerchannel_energy(...)
 
 
+/** The roots `{(-b + sqrt(disc))/(2a), (-b - sqrt(disc))/(2a)}` of `a*x^2 + b*x + c = 0`, for a
+ non-negative `discriminant` (= b^2 - 4ac) and non-zero `a`, computed without cancellation.
+
+ Energy calibrations have a tiny quadratic term (|4ac| << b^2), where the textbook formula loses most
+ of its digits in the root near the linear solution - C1 = 0.37 with C2 = -1.7E-8 loses about seven,
+ putting that channel off by up to ~1.6E-9 channels, and the scalar and Jet evaluations (which round
+ differently) apart by as much.  Instead form q = -(b + sign(b)*sqrt(disc))/2, whose roots are q/a and
+ c/q, and return them in the textbook order.  It is the same function, so the Jet derivatives are too.
+ */
+template<typename T>
+std::pair<T,T> stable_quadratic_roots( const T &a, const T &b, const T &c, const T &discriminant )
+{
+  using std::sqrt;
+
+  const T sqrt_disc = sqrt( discriminant );
+
+  double b_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    b_scalar = b;
+  else
+    b_scalar = b.a;
+
+  const T q = (b_scalar >= 0.0) ? (-0.5 * (b + sqrt_disc)) : (-0.5 * (b - sqrt_disc));
+
+  double q_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    q_scalar = q;
+  else
+    q_scalar = q.a;
+
+  if( q_scalar == 0.0 )  // b == 0 and a zero discriminant: a double root at zero
+    return { (-b + sqrt_disc) / (2.0 * a), (-b - sqrt_disc) / (2.0 * a) };
+
+  // For b >= 0, c/q == (-b + sqrt_disc)/(2a) and q/a == (-b - sqrt_disc)/(2a); for b < 0 the reverse.
+  if( b_scalar >= 0.0 )
+    return { c / q, q / a };
+  return { q / a, c / q };
+}//stable_quadratic_roots(...)
+
+
 /** Find the channel corresponding to a given energy for polynomial calibration.
 
  Templated version of SpecUtils::find_polynomial_channel that supports automatic differentiation.
@@ -932,9 +972,9 @@ T find_polynomial_channel( const T energy,
       // than returning a constant channel zero with no useful derivative.
       if( !(discriminant < 0.0) )
       {
-        const T sqrt_disc = sqrt(discriminant);
-        const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
-        const T root2 = (-b - sqrt_disc) / (T(2.0) * a);
+        const std::pair<T,T> roots = stable_quadratic_roots( a, b, c, discriminant );
+        const T &root1 = roots.first;
+        const T &root2 = roots.second;
 
         // Extract scalar values for comparison.
         double root1_val, root2_val;
@@ -1407,9 +1447,9 @@ T find_fullrangefraction_channel( const T energy,
         return vertex_bin;
       }
 
-      const T sqrt_disc = sqrt(discriminant);
-      const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
-      const T root2 = (-b - sqrt_disc) / (T(2.0) * a);
+      const std::pair<T,T> roots = stable_quadratic_roots( a, b, c, discriminant );
+      const T &root1 = roots.first;
+      const T &root2 = roots.second;
 
       // Convert from x (fractional position) to bin number
       const T bin1 = root1 * T(static_cast<double>(nchannel));

@@ -2286,3 +2286,72 @@ BOOST_AUTO_TEST_CASE( LowerChannelEnergy_StandaloneRoundTrip )
     BOOST_CHECK_SMALL( std::fabs(ch_back - ch), 1.0e-9 );
   }
 }
+
+
+BOOST_AUTO_TEST_CASE( QuadraticChannel_TinyQuadraticTerm_NoCancellation )
+{
+  // Real calibrations have a quadratic term that is tiny next to the gain (these are a JRC
+  //  Detective-EX file's coefficients), where the textbook quadratic formula loses ~7 digits in the
+  //  root that matters: the round trip was off by up to ~6E-10 keV, and the scalar and Jet
+  //  evaluations of one channel - rounded differently - disagreed by as much, failing the
+  //  RELACT_GRADIENT_CHECK scalar-vs-auto-diff residual comparison on high-statistics spectra.
+  const size_t nchannel = 8192;
+  const double n = static_cast<double>( nchannel );
+  const std::vector<double> poly_coeffs{ -0.164989993, 0.365539998, -1.73860002e-08 };
+  const std::vector<double> frf_coeffs{ poly_coeffs[0], poly_coeffs[1]*n, poly_coeffs[2]*n*n };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<CubicSplineNodeT<double>> no_spline;
+
+  // Energy in lane 0, coefficient i in lane i+1.
+  using Jet4 = ceres::Jet<double,4>;
+  const auto to_jets = []( const std::vector<double> &coeffs ) {
+    std::vector<Jet4> jets;
+    for( size_t i = 0; i < coeffs.size(); ++i )
+    {
+      Jet4 coefficient( coeffs[i] );
+      coefficient.v[i + 1] = 1.0;
+      jets.push_back( coefficient );
+    }
+    return jets;
+  };
+  const std::vector<Jet4> poly_jets = to_jets( poly_coeffs );
+  const std::vector<Jet4> frf_jets = to_jets( frf_coeffs );
+  const std::vector<std::pair<double,Jet4>> no_dev_pairs_jet;
+
+  double max_poly_round_trip = 0.0, max_frf_round_trip = 0.0;
+  double max_poly_jet_diff = 0.0, max_frf_jet_diff = 0.0;
+  for( double energy = 50.0; energy < 2950.0; energy += 0.731 )
+  {
+    const double channel = find_polynomial_channel( energy, poly_coeffs, nchannel, no_dev_pairs );
+    max_poly_round_trip = std::max( max_poly_round_trip,
+                                    std::fabs(polynomial_energy(channel, poly_coeffs, no_spline) - energy) );
+
+    const double bin = find_fullrangefraction_channel( energy, frf_coeffs, nchannel, no_dev_pairs );
+    max_frf_round_trip = std::max( max_frf_round_trip,
+                                   std::fabs(fullrangefraction_energy(bin, frf_coeffs, nchannel, no_spline) - energy) );
+
+    Jet4 energy_jet( energy );
+    energy_jet.v[0] = 1.0;
+    const Jet4 channel_jet = find_polynomial_channel( energy_jet, poly_jets, nchannel, no_dev_pairs_jet );
+    const Jet4 bin_jet = find_fullrangefraction_channel( energy_jet, frf_jets, nchannel, no_dev_pairs_jet );
+    max_poly_jet_diff = std::max( max_poly_jet_diff, std::fabs(channel_jet.a - channel) );
+    max_frf_jet_diff = std::max( max_frf_jet_diff, std::fabs(bin_jet.a - bin) );
+
+    // Implicit-function derivatives of E(ch) = C0 + C1*ch + C2*ch^2: dch/dE = 1/E'(ch), and
+    //  dch/dCi = -ch^i/E'(ch).
+    const double dE_dch = poly_coeffs[1] + 2.0*poly_coeffs[2]*channel;
+    double channel_power = 1.0;
+    for( size_t lane = 0; lane < 4; ++lane )
+    {
+      const double expected = (lane == 0) ? (1.0/dE_dch) : (-channel_power/dE_dch);
+      if( lane > 0 )
+        channel_power *= channel;
+      BOOST_CHECK_SMALL( channel_jet.v[lane] - expected, 1.0e-9*std::fabs(expected) );
+    }
+  }//for( energy )
+
+  BOOST_CHECK_SMALL( max_poly_round_trip, 1.0e-11 );
+  BOOST_CHECK_SMALL( max_frf_round_trip, 1.0e-11 );
+  BOOST_CHECK_SMALL( max_poly_jet_diff, 1.0e-10 );
+  BOOST_CHECK_SMALL( max_frf_jet_diff, 1.0e-10 );
+}

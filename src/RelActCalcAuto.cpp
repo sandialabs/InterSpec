@@ -8862,9 +8862,32 @@ struct RelActAutoCostFcn
       };
 
       evaluate_fresh( x, res_num );
+      // A channel residual is (data - model)/uncert, a small difference of large numbers on a
+      //  high-statistics spectrum, so judge the scalar/auto-diff agreement relative to the data (in
+      //  units of its uncertainty) too: on a 16 h spectrum with 2E6 counts per channel, ulp-level
+      //  differences in a peak's position already reach ~1E-10 of the residual.
+      vector<double> data_scale( n_res, 1.0 );
+      {
+        size_t r = 0;
+        for( const RoiRangeChannels &range : fcn->m_energy_ranges )
+        {
+          const pair<size_t,size_t> channels = RoiRangeChannels::channel_range( range.lower_energy,
+                                               range.upper_energy, range.num_channels, fcn->m_energy_cal );
+          double roi_scale = 1.0;
+          for( size_t channel = channels.first; channel <= channels.second; ++channel )
+          {
+            const double uncert = fcn->m_channel_count_uncerts[channel];
+            if( uncert > 0.0 )
+              roi_scale = (std::max)( roi_scale, fabs(fcn->m_channel_counts[channel]) / uncert );
+          }
+          for( size_t i = 0; (i < range.num_channels) && (r < n_res); ++i, ++r )
+            data_scale[r] = roi_scale;
+        }
+      }
+
       for( size_t r = 0; r < n_res; ++r )
       {
-        const double scale = (std::max)( 1.0, (std::max)(fabs(res_auto[r]),fabs(res_num[r])) );
+        const double scale = (std::max)( data_scale[r], (std::max)(fabs(res_auto[r]),fabs(res_num[r])) );
         if( fabs(res_auto[r] - res_num[r]) > 1.0e-10*scale )
           throw runtime_error( "RelActAuto gradient check: fresh scalar and auto-diff residuals differ." );
       }
@@ -8921,11 +8944,7 @@ struct RelActAutoCostFcn
                           / (2.0*inward_h);
       };
 
-      for( size_t c = 0; c < n_par; ++c )
-      {
-        if( is_constant(c) )
-          continue;
-
+      const auto column_step = [&]( const size_t c ) -> double {
         double h = 1.0e-4 * (1.0 + fabs(x[c]));
         const double lower = (c < lower_bounds.size() && lower_bounds[c])
                              ? *lower_bounds[c] : -std::numeric_limits<double>::infinity();
@@ -8935,13 +8954,97 @@ struct RelActAutoCostFcn
           h = (std::min)(h,0.20*(upper-lower));
         if( !(h > 32.0*std::numeric_limits<double>::epsilon()*(1.0 + fabs(x[c]))) )
           throw runtime_error( "RelActAuto gradient check: parameter interval is too narrow." );
+        return h;
+      };
 
+      for( size_t c = 0; c < n_par; ++c )
+      {
+        if( is_constant(c) )
+          continue;
+
+        const double h = column_step( c );
         vector<double> d_h, d_half;
         derivative_at_step( c,h,d_h );
         derivative_at_step( c,0.5*h,d_half );
         for( size_t r = 0; r < n_res; ++r )
           jac_num[r*n_par + c] = d_half[r] + (d_half[r] - d_h[r])/3.0;
       }
+
+      // Per-column max |Jacobian|, so we only judge entries significant within their own column
+      //  (a near-zero entry can differ by a large fraction from pure round-off and means nothing).
+      vector<double> col_max( n_par, 0.0 );
+      const auto update_col_max = [&](){
+        std::fill( begin(col_max), end(col_max), 0.0 );
+        for( size_t r = 0; r < n_res; ++r )
+          for( size_t c = 0; c < n_par; ++c )
+            col_max[c] = std::max( col_max[c], std::max( fabs(jac_auto[r*n_par + c]), fabs(jac_num[r*n_par + c]) ) );
+      };
+
+      // A column-significant entry whose two estimates differ by more than 1% (the review measured
+      //  auto-diff agreeing to <= 1% on significant entries).
+      const auto entry_disagrees = [&]( const size_t r, const size_t c ) -> bool {
+        const double ja = jac_auto[r*n_par + c], jn = jac_num[r*n_par + c];
+        if( std::max(fabs(ja),fabs(jn)) < 1.0E-3*col_max[c] )
+          return false;
+        return (fabs(ja - jn) > 1.0E-2*std::max( fabs(ja), fabs(jn) ));
+      };
+
+      update_col_max();
+
+      // The objective is only C1 in places, curving sharply on scales far below `h`:
+      //  `PeakFit::fit_continuum` floors its continuum-fit target with a hinge only 0.25 sigma wide
+      //  (and clamps a negative continuum to zero), so as a strong peak moves, channels cross that
+      //  hinge within ~1E-3 keV of energy offset and the fitted continuum - and so every residual of
+      //  the ROI, most at its edges - changes slope.  A stencil spanning those kinks measures a secant,
+      //  not the derivative: up to 60% off in the EneOffset column at the start of HPGe U fits, where
+      //  the finite differences do converge to the auto-diff value as h -> 0.  So a column that
+      //  disagrees is re-estimated from successively halved steps, each Richardson-extrapolated
+      //  against the one before, keeping per residual the level that changed least from its
+      //  predecessor (Ridders' idea).  A genuine auto-diff error - the differences then converge to a
+      //  different value - or a jump in the objective, which they never converge across, still fails.
+      size_t num_refined = 0;
+      for( size_t c = 0; c < n_par; ++c )
+      {
+        if( is_constant(c) )
+          continue;
+
+        bool any_disagree = false;
+        for( size_t r = 0; !any_disagree && (r < n_res); ++r )
+          any_disagree = entry_disagrees( r, c );
+        if( !any_disagree )
+          continue;
+
+        // Every evaluation gives all residuals, so the whole column is refined at no extra cost.
+        const double h = column_step( c );
+        const int num_levels = 12;  //down to h/4096, still far above round-off for these residuals
+        vector<double> d_prev, d_cur;
+        derivative_at_step( c, h, d_prev );
+        vector<double> prev_estimate( n_res, 0.0 ), best( n_res, 0.0 );
+        vector<double> best_change( n_res, std::numeric_limits<double>::infinity() );
+        for( int level = 1; level <= num_levels; ++level )
+        {
+          derivative_at_step( c, std::ldexp( h, -level ), d_cur );
+          for( size_t r = 0; r < n_res; ++r )
+          {
+            const double estimate = d_cur[r] + (d_cur[r] - d_prev[r])/3.0;
+            const double change = fabs( estimate - prev_estimate[r] );
+            if( (level > 1) && (change < best_change[r]) )
+            {
+              best_change[r] = change;
+              best[r] = estimate;
+            }
+            prev_estimate[r] = estimate;
+          }
+          d_prev.swap( d_cur );
+        }//for( level )
+
+        for( size_t r = 0; r < n_res; ++r )
+          jac_num[r*n_par + c] = best[r];
+        num_refined += 1;
+      }//for( size_t c = 0; c < n_par; ++c )
+
+      if( num_refined )
+        update_col_max();
 
       // Optional full-detail dump for deep debugging / regression evidence: set
       //  RELACT_CHECK_GRADIENTS=<path-prefix> to write a CSV of every (residual, parameter) Jacobian
@@ -8974,13 +9077,6 @@ struct RelActAutoCostFcn
         }
       }//if( RELACT_CHECK_GRADIENTS )
 
-      // Per-column max |Jacobian|, so we only judge entries significant within their own column
-      //  (a near-zero entry can differ by a large fraction from pure round-off and means nothing).
-      vector<double> col_max( n_par, 0.0 );
-      for( size_t r = 0; r < n_res; ++r )
-        for( size_t c = 0; c < n_par; ++c )
-          col_max[c] = std::max( col_max[c], std::max( fabs(jac_auto[r*n_par + c]), fabs(jac_num[r*n_par + c]) ) );
-
       size_t num_bad = 0;
       double worst_frac = 0.0;
       string worst_detail;
@@ -8992,13 +9088,10 @@ struct RelActAutoCostFcn
 
         for( size_t r = 0; r < n_res; ++r )
         {
-          const double ja = jac_auto[r*n_par + c], jn = jac_num[r*n_par + c];
-          if( std::max(fabs(ja),fabs(jn)) < 1.0E-3*col_max[c] )  //not column-significant
-            continue;
-
-          const double frac = fabs(ja - jn) / std::max( fabs(ja), fabs(jn) );
-          if( frac > 1.0E-2 )  //review measured auto-diff agrees to <=1% on significant entries
+          if( entry_disagrees( r, c ) )
           {
+            const double ja = jac_auto[r*n_par + c], jn = jac_num[r*n_par + c];
+            const double frac = fabs(ja - jn) / std::max( fabs(ja), fabs(jn) );
             ++num_bad;
             if( frac > worst_frac )
             {
@@ -9016,8 +9109,9 @@ struct RelActAutoCostFcn
       {
         char buffer[768];
         snprintf( buffer, sizeof(buffer),
-                 "RelActAuto auto-diff vs bounds-aware fresh-functor Jacobian disagreed on %zu column-significant entries (tag=%s); worst: %s",
-                 num_bad, tag, worst_detail.c_str() );
+                 "RelActAuto auto-diff vs bounds-aware fresh-functor Jacobian disagreed on %zu column-significant entries"
+                 " (tag=%s; %zu columns step-refined); worst: %s",
+                 num_bad, tag, num_refined, worst_detail.c_str() );
         throw runtime_error( buffer );
       }
     };//test_gradients(...)
