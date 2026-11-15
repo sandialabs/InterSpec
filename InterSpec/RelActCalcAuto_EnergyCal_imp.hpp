@@ -830,10 +830,105 @@ T lowerchannel_energy( const T channel,
 }//lowerchannel_energy(...)
 
 
+/** The roots `{(-b + sqrt(disc))/(2a), (-b - sqrt(disc))/(2a)}` of `a*x^2 + b*x + c = 0`, for a
+ non-negative `discriminant` (= b^2 - 4ac) and non-zero `a`, computed without cancellation.
+
+ Energy calibrations have a tiny quadratic term (|4ac| << b^2), where the textbook formula loses most
+ of its digits in the root near the linear solution - C1 = 0.37 with C2 = -1.7E-8 loses about seven,
+ putting that channel off by up to ~1.6E-9 channels, and the scalar and Jet evaluations (which round
+ differently) apart by as much.  Instead form q = -(b + sign(b)*sqrt(disc))/2, whose roots are q/a and
+ c/q, and return them in the textbook order.  It is the same function, so the Jet derivatives are too.
+ */
+template<typename T>
+std::pair<T,T> stable_quadratic_roots( const T &a, const T &b, const T &c, const T &discriminant )
+{
+  using std::sqrt;
+
+  const T sqrt_disc = sqrt( discriminant );
+
+  double b_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    b_scalar = b;
+  else
+    b_scalar = b.a;
+
+  const T q = (b_scalar >= 0.0) ? (-0.5 * (b + sqrt_disc)) : (-0.5 * (b - sqrt_disc));
+
+  double q_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    q_scalar = q;
+  else
+    q_scalar = q.a;
+
+  if( q_scalar == 0.0 )  // b == 0 and a zero discriminant: a double root at zero
+    return { (-b + sqrt_disc) / (2.0 * a), (-b - sqrt_disc) / (2.0 * a) };
+
+  // For b >= 0, c/q == (-b + sqrt_disc)/(2a) and q/a == (-b - sqrt_disc)/(2a); for b < 0 the reverse.
+  if( b_scalar >= 0.0 )
+    return { c / q, q / a };
+  return { q / a, c / q };
+}//stable_quadratic_roots(...)
+
+
+/** The channel in [low, high] where a monotonic scalar calibration reaches `target`, to round-off.
+
+ Newton steps from the secant through the bracket's ends, bisecting whenever a step would leave the
+ shrinking bracket.  For these nearly linear calibrations that is a few steps.  This replaced a
+ bisection that stopped as soon as it was within `accuracy` (0.001 keV) of `target`: the channel it
+ stopped at was piecewise constant in the energy and coefficients, which made the calibration
+ mapping - and so the RelActCalcAuto objective - a 0.001 keV staircase in the energy-calibration
+ parameters of any calibration with four or more terms, while the Jet path attached exact
+ implicit-function derivatives to the quantized value (RELACT_GRADIENT_CHECK measured ~0 where
+ auto-diff gave ~50).
+
+ @param value_and_slope `(ch, value, slope)`: the calibration's energy at `ch`, and dE/dch.
+ @param value_low,value_high The calibration's energies at `low` and `high`, which bracket `target`.
+ */
+template<typename ValueAndSlope>
+double bracketed_newton_root( const ValueAndSlope &value_and_slope, const double target,
+                              double low, double high, const double value_low, const double value_high )
+{
+  constexpr double eps = std::numeric_limits<double>::epsilon();
+  const bool increasing = (value_low < value_high);
+
+  double x = 0.5*(low + high);
+  if( value_high != value_low )
+  {
+    const double secant = low + (target - value_low)*(high - low)/(value_high - value_low);
+    if( (secant > low) && (secant < high) )
+      x = secant;
+  }
+
+  for( int iter = 0; iter < 100; ++iter )
+  {
+    double value = 0.0, slope = 0.0;
+    value_and_slope( x, value, slope );
+    const double residual = value - target;
+    if( std::fabs(residual) <= 4.0*eps*std::fabs(target) )  //at round-off
+      return x;
+
+    if( (residual < 0.0) == increasing )
+      low = x;
+    else
+      high = x;
+
+    double next = x - residual/slope;
+    if( !((next > low) && (next < high)) )  //also catches a zero slope and NaN
+      next = 0.5*(low + high);
+
+    if( std::fabs(next - x) <= 4.0*eps*(1.0 + std::fabs(x)) )
+      return next;
+    x = next;
+  }//for( iter )
+
+  return x;
+}//bracketed_newton_root(...)
+
+
 /** Find the channel corresponding to a given energy for polynomial calibration.
 
  Templated version of SpecUtils::find_polynomial_channel that supports automatic differentiation.
- Uses analytical solutions for low-order polynomials (order <= 2) and binary search for higher orders.
+ Uses analytical solutions for low-order polynomials (order <= 2) and a bracketed Newton solve for higher orders.
 
  TODO: when there are deviation pairs - the keeping derivatives around in `ceres::Jet<>` is kidna a hack; it seems to work, but it could likely be done better in some way
  
@@ -841,7 +936,7 @@ T lowerchannel_energy( const T channel,
  @param coeffs The polynomial coefficients (E = C₀ + C₁*ch + C₂*ch² + ...)
  @param nchannel Number of channels in the spectrum
  @param dev_pair_spline Pre-computed cubic spline nodes for deviation pairs (use empty vector if none)
- @param accuracy The accuracy in keV for the binary search (default 0.001 keV)
+ @param accuracy Unused; kept for API compatibility (the channel is converged to round-off).
  @returns The channel number (fractional) corresponding to the energy
  */
 template<typename T>
@@ -873,7 +968,7 @@ T find_polynomial_channel( const T energy,
                            const std::vector<T> &coeffs,
                            const size_t nchannel,
                            const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
-                           const double accuracy )
+                           [[maybe_unused]] const double accuracy )
 {
   using namespace std;
   using namespace ceres;
@@ -932,9 +1027,9 @@ T find_polynomial_channel( const T energy,
       // than returning a constant channel zero with no useful derivative.
       if( !(discriminant < 0.0) )
       {
-        const T sqrt_disc = sqrt(discriminant);
-        const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
-        const T root2 = (-b - sqrt_disc) / (T(2.0) * a);
+        const std::pair<T,T> roots = stable_quadratic_roots( a, b, c, discriminant );
+        const T &root1 = roots.first;
+        const T &root2 = roots.second;
 
         // Extract scalar values for comparison.
         double root1_val, root2_val;
@@ -980,14 +1075,15 @@ T find_polynomial_channel( const T energy,
     }
   }
 
-  // For higher-order polynomials or with deviation pairs, use bisection.
+  // For higher-order polynomials or with deviation pairs, solve numerically within a bracket.
   // Unified algorithm handles in-range and out-of-range uniformly:
-  //   1. If `energy` is inside [min(e_low,e_high), max(...)], bisect on
+  //   1. If `energy` is inside [min(e_low,e_high), max(...)], the bracket is
   //      [0, nchannel-1] as usual.
   //   2. Else walk outward from the nearer boundary in geometric doublings
   //      (1, 2, 4, ..., up to 10 steps). At each step, check monotonicity
   //      (dE/dch same sign as at the starting boundary). When the polynomial
-  //      value brackets `energy`, bisect in that bracketed range.
+  //      value brackets `energy`, that range is the bracket.
+  //   Within the bracket, bracketed_newton_root(...) converges to round-off.
   //   3. If monotonicity breaks (turning point) or dE/dch is 0 at the boundary,
   //      clamp at the safe side with a linear-extrap Jet derivative so Ceres
   //      has a gradient pointing back into the monotonic region.
@@ -1000,7 +1096,7 @@ T find_polynomial_channel( const T energy,
   const T e_low = polynomial_energy( T(0.0), coeffs, dev_pair_spline );
   const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), coeffs, dev_pair_spline );
 
-  // Scalar coefficients + scalar spline nodes for the scalar bisection.
+  // Scalar coefficients + scalar spline nodes for the scalar root solve.
   std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
   for( size_t i = 0; i < coeffs.size(); ++i )
   {
@@ -1182,39 +1278,19 @@ T find_polynomial_channel( const T energy,
     }
   }
 
-  // Scalar bisection on [search_lo, search_hi].
+  // Solve on [search_lo, search_hi], to round-off.
   const double e_at_search_lo = energy_at( search_lo );
   const double e_at_search_hi = energy_at( search_hi );
 
-  double low = search_lo;
-  double high = search_hi;
-  const int max_iterations = 1000;
-  int niter = 0;
-  while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
-  {
-    const double mid = 0.5 * (low + high);
-    const double e_mid_val = energy_at( mid );
-    if( std::fabs( e_mid_val - energy_scalar ) < accuracy )
-    {
-      low = mid;
-      high = mid;
-      break;
-    }
-
-    if( ((e_mid_val < energy_scalar) && (e_at_search_lo < e_at_search_hi))
-        || ((e_mid_val > energy_scalar) && (e_at_search_lo > e_at_search_hi)) )
-    {
-      low = mid;
-    }
-    else
-    {
-      high = mid;
-    }
-
-    ++niter;
-  }
-
-  double ch_val = 0.5 * (low + high);
+  static const std::vector<CubicSplineNodeT<double>> no_spline;
+  const auto energy_and_slope = [&]( const double ch, double &value, double &slope ) {
+    value = energy_at( ch );
+    slope = d_energy_d_ch_scalar( ch );
+    if( !dev_pair_spline_scalar.empty() )
+      slope *= (1.0 + eval_cubic_spline_scalar_derivative( polynomial_energy( ch, coeffs_scalar, no_spline ), dev_pair_spline_scalar ));
+  };
+  const double ch_val = bracketed_newton_root( energy_and_slope, energy_scalar, search_lo, search_hi,
+                                              e_at_search_lo, e_at_search_hi );
 
   if constexpr ( std::is_same_v<T, double> )
   {
@@ -1312,7 +1388,7 @@ T find_polynomial_channel( const T energy,
 /** Find the channel corresponding to a given energy for full range fraction calibration.
 
  Templated version of SpecUtils::find_fullrangefraction_channel that supports automatic differentiation.
- Uses analytical solutions for low-order equations and binary search for higher orders.
+ Uses analytical solutions for low-order equations and a bracketed Newton solve for higher orders.
 
  TODO: when there are deviation pairs - the keeping derivatives around in `ceres::Jet<>` is kidna a hack; it seems to work, but it could likely be done better in some way
  
@@ -1320,7 +1396,7 @@ T find_polynomial_channel( const T energy,
  @param coeffs The FRF coefficients
  @param nchannel Number of channels in the spectrum
  @param dev_pair_spline Pre-computed cubic spline nodes for deviation pairs (use empty vector if none)
- @param accuracy The accuracy in keV for the binary search (default 0.001 keV)
+ @param accuracy Unused; kept for API compatibility (the channel is converged to round-off).
  @returns The channel number (fractional) corresponding to the energy
  */
 template<typename T>
@@ -1350,7 +1426,7 @@ T find_fullrangefraction_channel( const T energy,
                                   const std::vector<T> &coeffs,
                                   const size_t nchannel,
                                   const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
-                                  const double accuracy )
+                                  [[maybe_unused]] const double accuracy )
 {
   using namespace std;
   using namespace ceres;
@@ -1407,9 +1483,9 @@ T find_fullrangefraction_channel( const T energy,
         return vertex_bin;
       }
 
-      const T sqrt_disc = sqrt(discriminant);
-      const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
-      const T root2 = (-b - sqrt_disc) / (T(2.0) * a);
+      const std::pair<T,T> roots = stable_quadratic_roots( a, b, c, discriminant );
+      const T &root1 = roots.first;
+      const T &root2 = roots.second;
 
       // Convert from x (fractional position) to bin number
       const T bin1 = root1 * T(static_cast<double>(nchannel));
@@ -1426,8 +1502,8 @@ T find_fullrangefraction_channel( const T energy,
     }
   }
 
-  // For higher-order or with deviation pairs, use extended monotonic bisection.
-  // Same algorithm as find_polynomial_channel: in-range bisect on [0, nchannel-1],
+  // For higher-order or with deviation pairs, solve within an extended monotonic bracket.
+  // Same algorithm as find_polynomial_channel: in-range bracket [0, nchannel-1],
   // out-of-range walk-out in geometric doublings (10 steps max) until either
   // bracketing or a turning point. For the C4-term case, the singularity near
   // x = -1/60 naturally manifests as a dE/dbin sign flip (turning point),
@@ -1435,7 +1511,7 @@ T find_fullrangefraction_channel( const T energy,
   const T e_low = fullrangefraction_energy( T(0.0), coeffs, nchannel, dev_pair_spline );
   const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel - 1)), coeffs, nchannel, dev_pair_spline );
 
-  // Scalar coefficients + spline nodes for the scalar bisection.
+  // Scalar coefficients + spline nodes for the scalar root solve.
   std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
   for( size_t i = 0; i < coeffs.size(); ++i )
   {
@@ -1597,39 +1673,19 @@ T find_fullrangefraction_channel( const T energy,
     }
   }
 
-  // Scalar bisection on [search_lo, search_hi].
+  // Solve on [search_lo, search_hi], to round-off.
   const double e_at_search_lo = energy_at( search_lo );
   const double e_at_search_hi = energy_at( search_hi );
 
-  double low = search_lo;
-  double high = search_hi;
-  const int max_iterations = 1000;
-  int niter = 0;
-  while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
-  {
-    const double mid = 0.5 * (low + high);
-    const double e_mid_val = energy_at( mid );
-    if( std::fabs( e_mid_val - energy_scalar ) < accuracy )
-    {
-      low = mid;
-      high = mid;
-      break;
-    }
-
-    if( ((e_mid_val < energy_scalar) && (e_at_search_lo < e_at_search_hi))
-        || ((e_mid_val > energy_scalar) && (e_at_search_lo > e_at_search_hi)) )
-    {
-      low = mid;
-    }
-    else
-    {
-      high = mid;
-    }
-
-    ++niter;
-  }
-
-  double bin_val = 0.5 * (low + high);
+  static const std::vector<CubicSplineNodeT<double>> no_spline;
+  const auto energy_and_slope = [&]( const double bin, double &value, double &slope ) {
+    value = energy_at( bin );
+    slope = d_energy_d_bin_scalar( bin );
+    if( !dev_pair_spline_scalar.empty() )
+      slope *= (1.0 + eval_cubic_spline_scalar_derivative( fullrangefraction_energy( bin, coeffs_scalar, nchannel, no_spline ), dev_pair_spline_scalar ));
+  };
+  const double bin_val = bracketed_newton_root( energy_and_slope, energy_scalar, search_lo, search_hi,
+                                              e_at_search_lo, e_at_search_hi );
 
   if constexpr ( std::is_same_v<T, double> )
   {

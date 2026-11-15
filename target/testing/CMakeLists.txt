@@ -196,6 +196,20 @@ add_test( NAME TRelActAutoReport
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_GradientCheck test_RelActCalcAuto_GradientCheck.cpp )
+target_link_libraries( test_RelActCalcAuto_GradientCheck PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_GradientCheck
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_GradientCheck> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_LineWindow test_RelActCalcAuto_LineWindow.cpp )
+target_link_libraries( test_RelActCalcAuto_LineWindow PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_LineWindow
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_LineWindow> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_ProfileApi test_RelActCalcAuto_ProfileApi.cpp )
 target_link_libraries( test_RelActCalcAuto_ProfileApi PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_ProfileApi
