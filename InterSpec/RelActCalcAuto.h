@@ -754,6 +754,48 @@ struct RelEffCurveInput
   /** Convenience: whether any empirical correction is applied (replaces the legacy `phys_model_use_hoerl`). */
   bool uses_phys_model_correction() const { return phys_model_corr.uses_correction(); }
 
+  /** True-coincidence (cascade) summing correction, for a Physical Model curve.
+
+   Gammas emitted together in one decay can be detected together, which removes counts from each of their
+   full-energy peaks (and adds them at the sum of their energies); the nearer the source, the larger the effect.
+   When enabled, each line of the curve's nuclides is corrected for it, and the coincidence-sum peaks that land
+   in the ROIs are added to the model.  The magnitude is set by one quantity, the distance from the detector's
+   face to the near side of the source: fitted (the default), or held at the given value.  It is computed for
+   the source the Physical Model describes - the self-attenuating material, behind the external attenuators -
+   with the detector response's efficiencies (see `RelActCalcCascade`), not from the fitted relative efficiency
+   curve.
+
+   A fitted distance is an effective one: that of a point source in front of the detector that would sum
+   like the actual source.  It is as good as the detector response's total efficiency is, so treat it as an
+   indication.
+
+   The correction is computed for the nuclides' starting ages (a fitted age does not change it), and has
+   been developed and tested for problems with one relative efficiency curve.
+   */
+  struct CascadeSummingInput
+  {
+    bool enabled = false;
+
+    /** Fit the distance (starting from far away, where there is no summing); otherwise `distance` is used
+     as given. */
+    bool fit_distance = true;
+
+    /** Distance from the detector's face to the near side of the source (PhysicalUnits); only used if
+     `fit_distance` is false. */
+    double distance = 100.0;   //10 cm, in the mm PhysicalUnits are in
+
+    /** Radius of the source's face, if it is a disk (PhysicalUnits); zero for a source that is small beside
+     its distance.  Lets a known `distance` be used for a wide source; with a fitted distance it only changes
+     the distance reported for the solid angle that was fit.
+     */
+    double source_radius = 0.0;
+
+    bool operator==( const CascadeSummingInput &rhs ) const;
+    bool operator!=( const CascadeSummingInput &rhs ) const { return !(*this == rhs); }
+  };//struct CascadeSummingInput
+
+  CascadeSummingInput cascade_summing;
+
   /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
    Pu isotopics).
    
@@ -888,8 +930,11 @@ struct RelEffCurveInput
    boolean `<PhysModelUseHoerl>` *and* the new elements -- whenever its correction is v0-representable (None
    or Hoerl) and no areal-density biasing is enabled; Chebyshev or any enabled AD biasing forces v1 (new
    elements only).  Reading prefers `<CorrectionFcnType>` and falls back to the legacy `<PhysModelUseHoerl>`
-   (a plain bool: true => Hoerl, false/absent => None). */
-  static const int sm_xmlSerializationVersion = 1;
+   (a plain bool: true => Hoerl, false/absent => None).
+
+   Version 2 adds `<CascadeSumming>` to `<PhysicalModelOptions>`; it is only written (and the version only
+   raised to 2) for a curve with cascade summing enabled. */
+  static const int sm_xmlSerializationVersion = 2;
 
   /** Puts this object to XML
    * 
@@ -1060,6 +1105,15 @@ struct Options
   bool iodine_escape_peaks;
   static constexpr const char *sm_iodine_escape_label_prefix = "I-escape of ";
 
+  /** Coincidence (cascade) sum peaks of a nuclide (see RelEffCurveInput::CascadeSummingInput) come back in
+   RelActAutoSolution::m_fit_peaks with no source assigned, and a user label starting with this, that names the
+   nuclide and the sum energy. */
+  static constexpr const char *sm_cascade_sum_label_prefix = "Cascade sum of ";
+
+  /** Random-sum (pile-up) peaks (see #random_sum_peaks) come back in RelActAutoSolution::m_fit_peaks with
+   no source assigned, and a user label starting with this, that names the two energies summed. */
+  static constexpr const char *sm_random_sum_label_prefix = "Random sum of ";
+
   /** Whether a source line outside the energy span the ROIs cover (below the lowest ROI's lower
    edge or above the highest's upper edge) is modelled for the tail it puts into an edge ROI.  Such a
    line's efficiency is an extrapolation no data constrains, and with the curve still unsettled at the
@@ -1086,6 +1140,29 @@ struct Options
    solves zeroed lines the data show at z of 50-170 (SAM Eagle Co57_Sh's 136 keV, Eu154_Unsh's
    1002 keV).  Must be in [0, 1). */
   double additional_br_min_yield_fraction;
+
+  /** Whether to model random-sum (pile-up) peaks: two photons of different decays detected within the
+   detector's pulse-pair resolving time, giving a count at the sum of their energies.
+
+   Their areas go as the product of the two lines' areas, so they matter at high count rates, and where a
+   strong line's sum lands on a weak one - notably uranium's 163.4 keV + U K-alpha2 at 258.0 keV, and
+   143.8 keV + U K-beta, under U-238's 258.3 keV line: for highly enriched uranium these can exceed that
+   line.  Two things are fit:
+   - the pulse-pair resolving time, which with the fitted line areas gives every gamma + gamma sum (e.g.,
+     185.7 + 185.7 at 371.4 keV);
+   - the scale of the sums of gammas with the fluorescence K x-rays of the sources' element (which are
+     usually below the ROIs, so their areas are not known): one number, with the K lines' ratios taken
+     from their intensities and the fitted relative efficiency curve - so the peak under 258.3 keV is tied
+     to its companions at 238.4, 242.2, 255.1 and 261.8 keV (and 280.4 and 284.2 keV, if a ROI has them).
+   Only sums of each nuclide's strongest lines are modeled (not those of x-ray or reaction sources).  The
+   x-rays are those of one element - the one most of the nuclides are of, the material's own fluorescence
+   being the case this is for - and are left out if that element is itself a source, whose x-rays are then
+   fit as lines.  Sums with the x-rays a decay itself emits are not random sums: they belong to the
+   cascade-summing correction (`RelEffCurveInput::CascadeSummingInput`).
+
+   The peaks come back with no source assigned, and a label starting with #sm_random_sum_label_prefix.
+   */
+  bool random_sum_peaks;
 
   /** With the #FwhmForm::NoisePlusCurvedPower form fit from a starting curve (see
    #starting_fwhm_form): when above 1, the fit's width stays under this multiple of the starting
@@ -1360,6 +1437,99 @@ struct Options
    do not use it keep their lower version. */
   std::vector<ProfileTarget> profile_targets;
 
+  /** Changes to these options that are made only for the kind of spectrum they suit - e.g., a pile-up
+   model and the ROIs that pin it down for highly enriched uranium, which do nothing for (or hurt) a fit of
+   low-enriched material.
+
+   A rule has conditions on quantities the fit itself reports (a mass fraction, an activity ratio, an
+   age), and a list of changes.  `solve()` tests the rules in order against its initial estimate of those
+   quantities - made before any fitting, so choosing costs little - and applies the changes of the first
+   rule whose conditions all hold; no more than one rule is applied, and the options are used as they are
+   if none holds.  The initial estimate can be rough, so the choice is checked against the fit's answer:
+   if that selects a different rule (or none), the problem is solved once more with that choice.
+
+   The solution says what was done (`RelActAutoSolution::m_applied_option_rule`), and its `m_options` are
+   the options that were fit - the changes made, and no rules - so solving those again repeats the fit.
+
+   The changes are steps from these options (remove these ROIs, add those, turn this on) rather than a
+   second complete set of options, so they keep working when the options they came with are edited.  What
+   a rule can change is what has been found to need changing; add members as more is.
+   */
+  struct OptionRule
+  {
+    /** Shown to the user when the rule is applied; e.g., "Highly enriched uranium". */
+    std::string name;
+
+    /** A range a quantity of the fit must be in. */
+    struct Condition
+    {
+      /** The quantity.  Any kind but `RelativeActivity`, whose value depends on the normalization of the
+       relative efficiency curve; an `ActivityRatio` must be of two sources of one curve. */
+      ProfileTarget quantity;
+
+      /** The condition holds when the quantity is at least `lower` and below `upper`, for whichever of
+       them is given (at least one must be).  A mass fraction is a fraction of its element (0.2 for 20 %);
+       an age is in PhysicalUnits. */
+      std::optional<double> lower, upper;
+
+      bool holds( const double value ) const;
+
+      bool operator==( const Condition &rhs ) const;
+      bool operator!=( const Condition &rhs ) const { return !(*this == rhs); }
+    };//struct Condition
+
+    /** All must hold for the rule to be applied; there must be at least one. */
+    std::vector<Condition> conditions;
+
+    // ---- The changes; one left empty, or unset, changes nothing ----
+
+    /** ROIs lying entirely within one of these energy ranges (keV; lower then upper) are removed. */
+    std::vector<std::pair<double,double>> remove_rois;
+
+    /** ROIs added (after the removals); one overlapping a ROI already there is not added. */
+    std::vector<RoiRange> add_rois;
+
+    /** Sets #random_sum_peaks. */
+    std::optional<bool> random_sum_peaks;
+
+    /** Changes to one relative efficiency curve; ignored if the curve is not a Physical Model one. */
+    struct CurveChange
+    {
+      size_t rel_eff_curve_index = 0;
+
+      /** Sets `RelEffCurveInput::phys_model_corr`s correction function. */
+      std::optional<RelActCalc::PhysModelCorrFcn> phys_model_corr_fcn;
+
+      /** Sets `RelEffCurveInput::cascade_summing`. */
+      std::optional<RelEffCurveInput::CascadeSummingInput> cascade_summing;
+
+      bool operator==( const CurveChange &rhs ) const;
+      bool operator!=( const CurveChange &rhs ) const { return !(*this == rhs); }
+    };//struct CurveChange
+
+    std::vector<CurveChange> curve_changes;
+
+    /** Makes the changes to `options`; its `option_rules` are not touched. */
+    void apply( Options &options ) const;
+
+    /** Checks the rule against the options it is a rule of: that its conditions name quantities those
+     options have, and that the options are still usable with its changes made.
+
+     @returns An empty string when usable, otherwise a short untranslated reason why not. */
+    std::string why_not_usable( const Options &options ) const;
+
+    /** Serialized as an `<OptionRule>` element. */
+    static const int sm_xmlSerializationVersion = 0;
+    rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
+    void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+    bool operator==( const OptionRule &rhs ) const;
+    bool operator!=( const OptionRule &rhs ) const { return !(*this == rhs); }
+  };//struct OptionRule
+
+  /** See #OptionRule.  Serialized (v8) as an optional `<OptionRules>` element. */
+  std::vector<OptionRule> option_rules;
+
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
    *
@@ -1390,11 +1560,12 @@ struct Options
    XML still parses (the new fields default to empty / no samples). v4 adds
    `auto_profile_weak_mass_fractions` and permits v1 `NucInputInfo` children.  v5 adds
    `robust_solve`.  v6 adds `profile_targets`.  v7 adds `roi_settings`, and permits v1 `RoiRange`
-   children (line-anchored ROIs, automatic continua, and edge overrides).
+   children (line-anchored ROIs, automatic continua, and edge overrides).  v8 adds `random_sum_peaks`
+   and `option_rules`.
 
    Serialization writes the lowest version a reader actually needs, so a config that leaves the
    newer options at their defaults stays byte-identical and keeps parsing in older builds. */
-  static const int sm_xmlSerializationVersion = 7;
+  static const int sm_xmlSerializationVersion = 8;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -2105,7 +2276,62 @@ struct RelActAutoSolution
   std::vector<std::vector<double>> m_fwhm_covariance;
   
   std::vector<FloatingPeakResult> m_floating_peaks;
-  
+
+  /** What the random-sum (pile-up) model (`Options::random_sum_peaks`) came to. */
+  struct RandomSumInfo
+  {
+    /** Effective pulse-pair resolving time (seconds): a line of area `A` and one of area `B` give a sum peak
+     of `2*A*B*time/live_time` counts (`A*A*time/live_time` for a line with itself).
+
+     Fit only if a ROI holds a sum of two strong lines (`pileup_time_was_fit`); otherwise this is a typical
+     value that was assumed.  The uncertainty is given only for a fitted value, and only if the fit gave one.
+     */
+    double pileup_time = 0.0;
+    bool pileup_time_was_fit = false;
+    std::optional<double> pileup_time_uncert;
+
+    /** Counts in the sum peak of a gamma with the strongest fluorescence K x-ray, per count in the gamma's
+     own peak.  Fit only if a ROI holds such a sum (`xray_fraction_was_fit`); otherwise zero - the sums with
+     x-rays are then not modeled.
+     */
+    double xray_fraction = 0.0;
+    bool xray_fraction_was_fit = false;
+    std::optional<double> xray_fraction_uncert;
+
+    /** The element whose K x-rays are summed; null if none. */
+    const SandiaDecay::Element *xray_element = nullptr;
+
+    struct Peak
+    {
+      double energy = 0.0;
+      /** The energies summed; the second is an x-ray if `with_xray`. */
+      double energy_a = 0.0, energy_b = 0.0;
+      bool with_xray = false;
+      double counts = 0.0;
+    };//struct Peak
+
+    /** The modeled random-sum peaks, largest first. */
+    std::vector<Peak> peaks;
+  };//struct RandomSumInfo
+
+  std::optional<RandomSumInfo> m_random_sums;
+
+  /** The #Options::OptionRule whose changes were made to the options before they were fit (they are the
+   options of #m_options); see #Options::option_rules.  Not set if no rule's conditions held, or none were
+   given. */
+  struct AppliedOptionRule
+  {
+    /** Index into the `Options::option_rules` the solve was given. */
+    size_t rule_index = 0;
+
+    std::string name;
+
+    /** This solution's values of the rule's conditions' quantities, in the order of the conditions. */
+    std::vector<double> condition_values;
+  };//struct AppliedOptionRule
+
+  std::optional<AppliedOptionRule> m_applied_option_rule;
+
   /** The fit peaks.
    
    If energy calibration fitting was selected, these peaks will have been adjusted back to "true" energy.
@@ -3020,6 +3246,68 @@ struct RelActAutoSolution
     double corr_lower_energy = 0.0;
     double corr_upper_energy = 0.0;
     double corr_pivot_energy = 0.0;
+
+    /** What the cascade-summing correction (`RelEffCurveInput::CascadeSummingInput`) came to. */
+    struct CascadeSummingInfo
+    {
+      /** Distance from the detector's face to the near side of the source (PhysicalUnits). */
+      double distance = 0.0;
+      bool distance_was_fit = false;
+
+      /** One-sigma range of a fitted distance, from the covariance of the fit; equal to `distance` if not fit,
+       or if the uncertainty could not be had.  The upper end is 10 m when the data do not exclude "far away".
+       */
+      double distance_lower = 0.0, distance_upper = 0.0;
+
+      /** Fraction of all directions in which the source's front sees the detector - what is actually fit. */
+      double solid_angle = 0.0;
+      std::optional<double> solid_angle_uncert;
+
+      /** The source face radius used to turn the solid angle into a distance (PhysicalUnits; zero for none). */
+      double source_radius = 0.0;
+
+      /** False if the detector response had no usable total efficiency, and a generic one was used. */
+      bool total_efficiency_from_response = true;
+
+      /** The correction to a line: the factor its full-energy counts were multiplied by. */
+      struct LineFactor
+      {
+        SrcVariant source;
+        double energy = 0.0;
+        double factor = 1.0;
+
+        /** True if the factor is from the level scheme of the decay that emits the line.  False if that
+         decay has no level scheme the calculation could use (its intensities do not balance), and the
+         factor is from the pairwise coincidence fractions tabulated with the decay data instead - an
+         approximation; on uranium's Pa-234 lines it gives about the measured change with distance, perhaps
+         somewhat more.
+         */
+        bool from_level_scheme = true;
+      };//struct LineFactor
+
+      /** The lines the correction changed, strongest correction first. */
+      std::vector<LineFactor> lines;
+
+      /** For each source with any: how many of its corrected lines have `LineFactor::from_level_scheme` false.
+       These are weak lines as a rule (for uranium: Pa-234's and Th-231's).
+       */
+      std::vector<std::pair<SrcVariant,size_t>> num_pairwise_lines;
+
+      /** A coincidence-sum peak in the model. */
+      struct SumPeak
+      {
+        SrcVariant source;
+        double energy = 0.0;
+        /** Counts of the sum peak. */
+        double counts = 0.0;
+        /** If the sum lands on a line of the source (adding to it), that line's energy; else zero. */
+        double on_line_energy = 0.0;
+      };//struct SumPeak
+
+      std::vector<SumPeak> sum_peaks;
+    };//struct CascadeSummingInfo
+
+    std::optional<CascadeSummingInfo> cascade_summing;
   };//struct PhysicalModelFitInfo
   
   /** The curve information for Physical Model curves.

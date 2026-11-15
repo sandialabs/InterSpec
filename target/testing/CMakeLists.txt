@@ -439,6 +439,20 @@ add_test( NAME TRelActCalc_FluorescenceDepth
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_PreFit test_RelActCalcAuto_PreFit.cpp )
+target_link_libraries( test_RelActCalcAuto_PreFit PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_PreFit
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_PreFit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcCascade test_RelActCalcCascade.cpp )
+target_link_libraries( test_RelActCalcCascade PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcCascade
+  COMMAND $<TARGET_FILE:test_RelActCalcCascade> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcManual_XrayFluorescence test_RelActCalcManual_XrayFluorescence.cpp )
 target_link_libraries( test_RelActCalcManual_XrayFluorescence PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcManual_XrayFluorescence

@@ -739,6 +739,7 @@ if( USE_REL_ACT_TOOL )
   list( APPEND sources
         src/PeakFitLM.cpp
         src/RelActCalc.cpp
+        src/RelActCalcCascade.cpp
         src/RelActCalcAuto.cpp
         src/RelActCalcAuto_Roi.cpp
         src/RelActCalcManual.cpp
@@ -763,11 +764,14 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActCalc.h
         InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalc_CeresJetTraits.hpp
+        InterSpec/RelActCalcCascade.h
+        InterSpec/RelActCalcCascade_imp.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
         InterSpec/RelActCalcAuto_Roi.h
         InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
         InterSpec/RelActCalcAuto_ActiveSet.hpp
+        InterSpec/RelActCalcAuto_PreFit.hpp
         InterSpec/RelActCalcAuto_Conditioning.hpp
         InterSpec/RelActCalcAuto_Search_imp.hpp
         InterSpec/RelActCalcAuto_Profile_imp.hpp

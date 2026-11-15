@@ -27,7 +27,9 @@
 #include <cmath>
 #include <array>
 #include <deque>
+#include <mutex>
 #include <tuple>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <limits>
@@ -95,6 +97,7 @@
 #include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/RelActCalcAuto_Roi.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -104,8 +107,11 @@
 
 #include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/RelActCalc_imp.hpp"
+#include "InterSpec/RelActCalcCascade.h"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
+#include "InterSpec/RelActCalcCascade_imp.hpp"
 #include "InterSpec/RelActCalcAuto_ActiveSet.hpp"
+#include "InterSpec/RelActCalcAuto_PreFit.hpp"
 #include "InterSpec/RelActCalcAuto_Conditioning.hpp"
 #include "InterSpec/RelActCalcAuto_CovarianceQuality.h"
 #include "InterSpec/RelActCalcAuto_ConvergenceAudit.h"
@@ -977,6 +983,18 @@ public:
     return ceres::CallbackReturnType::SOLVER_CONTINUE;
   }
 };//class SolveProgressReporter
+
+
+/** For `solve()` to choose among `Options::option_rules` from a solve's initial estimate of the
+ problem; see `Options::OptionRule`. */
+struct OptionRuleProbe
+{
+  /** The first rule whose conditions hold at the initial estimate; if set, the solve stopped there. */
+  std::optional<RelActCalcAuto::RelActAutoSolution::AppliedOptionRule> rule;
+
+  /** A message for each condition that could not be evaluated. */
+  std::vector<std::string> problems;
+};//struct OptionRuleProbe
 
 
 // Forward declaration
@@ -3364,7 +3382,198 @@ struct RelActAutoCostFcn
   size_t m_acts_par_start_index;
   size_t m_free_peak_par_start_index;
   size_t m_skew_par_start_index;
+
+  /** One parameter per relative efficiency curve with cascade summing enabled, right after the skew block
+   (see #CascadeCurve); `m_num_cascade_pars` is zero if no curve has it.
+   */
+  size_t m_cascade_par_start_index;
+  size_t m_num_cascade_pars;
+
+  /** The random-sum (pile-up) parameters (Options::random_sum_peaks), right after the cascade block: the
+   pulse-pair resolving time in microseconds, then a thousand times the fraction of a gamma line's counts
+   that are also in its sum peak with the strongest fluorescence K x-ray.  No parameters if not modeled.
+   */
+  size_t m_random_sum_par_start_index;
+  size_t m_num_random_sum_pars;
+
+  constexpr static double sm_random_sum_time_scale = 1.0E-6;
+  constexpr static double sm_random_sum_xray_scale = 1.0E-3;
+
+  /** Only the strongest lines of each source are summed: at most this many, each at least this fraction of
+   the source's strongest (by yield times detector efficiency). */
+  constexpr static size_t sm_random_sum_max_lines = 6;
+  constexpr static double sm_random_sum_min_line_fraction = 1.0E-2;
+
+  /** A peak found in the spectrum is left out of the initial estimate if the modeled sum peaks at its energy
+   could be more than this fraction of it (see #initial_estimate_peaks_under_sums) - "could be" being with
+   the source as close as it can be (or at its given distance), and a resolving time and x-ray scale (in the
+   units of those parameters) toward the top of what high-rate HPGe spectra have fit to.
+   */
+  constexpr static double sm_initial_estimate_max_sum_share = 0.1;
+  constexpr static double sm_initial_estimate_sum_time = 2.0;
+  constexpr static double sm_initial_estimate_sum_xray = 1.0;
+
+  /** A line whose random sums are modeled. */
+  struct RandomSumLine
+  {
+    size_t rel_eff_index = 0, source_index = 0;
+    /** Index in the source's gammas (NucInputGamma::nominal_gammas, and the same lines at a fitted age). */
+    size_t gamma_index = 0;
+    double energy = 0.0;
+    /** Rough area of the peak at this energy, from the spectrum alone; only used to decide which sums could
+     matter, before anything is fit. */
+    double estimated_counts = 0.0;
+  };//struct RandomSumLine
+
+  /** A random-sum peak: of two lines, or of a line and a fluorescence x-ray. */
+  struct RandomSumPeak
+  {
+    double energy = 0.0;
+    size_t line_a = 0;
+    /** The second line; -1 if the second photon is an x-ray, of `xray_energy` and (relative to the strongest
+     K x-ray) `xray_intensity`. */
+    int line_b = -1;
+    double xray_energy = 0.0, xray_intensity = 0.0;
+  };//struct RandomSumPeak
+
+  struct RandomSums
+  {
+    std::vector<RandomSumLine> lines;
+    std::vector<RandomSumPeak> peaks;
+    const SandiaDecay::Element *xray_element = nullptr;
+    /** Energy of the element's strongest K x-ray, which the x-ray scale parameter refers to. */
+    double xray_ref_energy = 0.0;
+
+    /** Whether a ROI holds a sum peak that can determine the resolving time (a sum of two strong lines), or
+     the x-ray scale; a parameter nothing determines is held at its starting value.
+     */
+    bool fit_time = false, fit_xray = false;
+  };//struct RandomSums
+
+  /** A gamma + gamma sum is modeled if the product of its lines' (roughly estimated) areas is at least this
+   fraction of the largest line's area squared; and can determine the resolving time if at least
+   `sm_random_sum_time_lever_fraction` of it.  A gamma + x-ray sum is modeled for lines of at least
+   `sm_random_sum_min_xray_line_fraction` of the largest line's area.
+   */
+  constexpr static double sm_random_sum_min_pair_fraction = 1.0E-4;
+  constexpr static double sm_random_sum_time_lever_fraction = 1.0E-2;
+  constexpr static double sm_random_sum_min_xray_line_fraction = 1.0E-3;
+
+  /** Starting value, and upper limit, of the resolving time parameter (microseconds): a pile-up rejector
+   resolves pulses about half a microsecond apart; a system without one sums pulses within its shaping time.
+   */
+  constexpr static double sm_random_sum_start_time = 0.5;
+  constexpr static double sm_random_sum_max_time = 20.0;
+
+  /** Starting value, and upper limit, of the x-ray scale parameter (in units of `sm_random_sum_xray_scale`):
+   one count in a line's sum with the strongest K x-ray per ten thousand in the line - what a rate of a
+   couple hundred x-rays a second gives - and no more than half the line's counts.
+   */
+  constexpr static double sm_random_sum_start_xray = 0.1;
+  constexpr static double sm_random_sum_max_xray = 500.0;
+
+  /** Built on first use (#random_sums): not every functor that is constructed is evaluated. */
+  mutable std::shared_ptr<const RandomSums> m_random_sums;
+  mutable std::mutex m_random_sum_setup_mutex;
+  mutable std::atomic<bool> m_random_sum_setup_done{ false };
+
   size_t m_add_br_uncert_start_index; //Will only be valid if `m_peak_ranges_with_uncert` is not empty
+
+  /** The cascade-summing parameter of a curve is `sm_cascade_par_offset` plus the fraction of the largest
+   possible front solid angle (a point source on the detector's face) the source's front has; so in [1, 2].
+   */
+  constexpr static double sm_cascade_par_offset = 1.0;
+
+  /** Where a fitted cascade-summing parameter starts, as a fraction of the largest possible solid angle: far
+   away (a thousandth of the summing there can be), but not on its limit - a parameter starting on a limit
+   leaves the first step to the limit, not the gradient.
+   */
+  constexpr static double sm_cascade_start_fraction = 1.0E-3;
+
+  /** Sum peaks of a nuclide weaker than this fraction of its strongest modeled line - both with the source
+   touching the detector - are not modeled.
+   */
+  constexpr static double sm_cascade_min_sum_fraction = 1.0E-5;
+
+  /** A line is corrected for cascade summing only if its rate is at least this fraction of that of the
+   nuclide's strongest line in or near the ROIs. */
+  constexpr static double sm_cascade_min_line_fraction = 1.0E-4;
+
+  /** A line of a nuclide gets a summing factor if it is within at least this (keV) of a ROI; see #line_reach. */
+  constexpr static double sm_cascade_line_margin_kev = 10.0;
+
+  /** The cascade-summing factors of a curve at one set of parameter values, with their derivatives. */
+  struct CascadeLinearization
+  {
+    /** The values of the curve's `CascadeCurve::dependent_pars` these are for. */
+    std::vector<double> key;
+
+    /** The outputs (see `CascadeCurve::line_offset` / `pair_offset`), and for each its derivative with
+     respect to each of `CascadeCurve::varying_pars`.
+     */
+    std::vector<double> values;
+    std::vector<std::vector<double>> gradients;
+  };//struct CascadeLinearization
+
+  /** Cascade-summing state of one Physical Model relative efficiency curve
+   (RelEffCurveInput::CascadeSummingInput): the summing model of its nuclides, and how its outputs are laid out.
+
+   The summing factors are functions of only a few parameters (the solid angle, and the curve's shields), so
+   they are evaluated once per set of parameter values, with their derivatives, and that is then carried into
+   whatever scalar type (double, or the solver's Jet) an evaluation is in - see #cascade_outputs.
+   */
+  struct CascadeCurve
+  {
+    std::shared_ptr<const RelActCalcCascade::SummingModel> model;
+
+    /** Index in the parameter vector of this curve's solid-angle parameter. */
+    size_t par_index = 0;
+
+    /** For each of the curve's sources (as `m_nuclides[curve]`), its index among the model's sources, or -1;
+     and the reverse.
+     */
+    std::vector<int> model_source;
+    std::vector<size_t> source_index;
+
+    /** Parameters the correction depends on: `par_index`, then the shield parameters. */
+    std::vector<size_t> dependent_pars;
+
+    /** The entries of `dependent_pars` (as indices into it) that the fit can vary; derivatives are carried
+     for these only.
+     */
+    std::vector<size_t> varying_pars;
+
+    /** Where things are in the flattened outputs: `line_offset[model source] + line` is that line's
+     summing-out factor; `pair_offset[model source][sum peak] + 2*pair` and the one after it are the pair's
+     `b_given_a` and `a_given_b` (RelActCalcCascade::SumPairValue).
+     */
+    std::vector<size_t> line_offset;
+    std::vector<std::vector<size_t>> pair_offset;
+    size_t num_outputs = 0;
+
+    /** `line_sum_peaks[model source][line]`: the source's sum peaks that land on that line of its own, and
+     so are counted with it rather than as peaks of their own.
+     */
+    std::vector<std::vector<std::vector<size_t>>> line_sum_peaks;
+
+    /** `line_has_level_scheme[model source][line]`: whether every decay branch that emits the line has a
+     level scheme the summing engine accepted.  A line of a decay it could not accept (one whose
+     intensities do not balance) is corrected from the pairwise coincidence fractions tabulated with the
+     decay data instead - an approximation, which the fit's results flag.
+     */
+    std::vector<std::vector<char>> line_has_level_scheme;
+
+    /** The most recent linearizations (a solve alternates between a few parameter points). */
+    mutable std::mutex memo_mutex;
+    mutable std::vector<std::shared_ptr<const CascadeLinearization>> memo;
+  };//struct CascadeCurve
+
+  /** Indexed by relative efficiency curve; null for a curve without cascade summing.  Built on first use
+   (#ensure_cascade_models), once the nuclides' starting ages are known.
+   */
+  mutable std::vector<std::shared_ptr<CascadeCurve>> m_cascade_curves;
+  mutable std::mutex m_cascade_setup_mutex;
+  mutable std::atomic<bool> m_cascade_setup_done{ false };
   
   bool m_skew_has_energy_dependance;
 
@@ -3623,6 +3832,10 @@ struct RelActAutoCostFcn
   m_acts_par_start_index( std::numeric_limits<size_t>::max() ),
   m_free_peak_par_start_index( std::numeric_limits<size_t>::max() ),
   m_skew_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_cascade_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_num_cascade_pars( 0 ),
+  m_random_sum_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_num_random_sum_pars( 0 ),
   m_add_br_uncert_start_index( std::numeric_limits<size_t>::max() ),
   m_skew_has_energy_dependance( false ),
   m_peak_ranges_with_uncert{},
@@ -3969,6 +4182,21 @@ struct RelActAutoCostFcn
     
     const size_t num_free_peak_par = 2*extra_peaks.size();
     m_skew_par_start_index = m_free_peak_par_start_index + num_free_peak_par;
+
+    m_cascade_par_start_index = m_skew_par_start_index + 2*PeakDef::num_skew_parameters( options.skew_type );
+    m_num_cascade_pars = 0;
+    for( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve : options.rel_eff_curves )
+    {
+      if( !rel_eff_curve.cascade_summing.enabled )
+        continue;
+      if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        throw runtime_error( "Cascade summing correction is only available for Physical Model"
+                             " relative efficiency curves." );
+      m_num_cascade_pars += 1;
+    }
+
+    m_random_sum_par_start_index = m_cascade_par_start_index + m_num_cascade_pars;
+    m_num_random_sum_pars = options.random_sum_peaks ? size_t(2) : size_t(0);
 
     // Needs the parameter start indices set just above (for nuclide_parameter_index).
     build_mass_fraction_blocks();
@@ -4665,6 +4893,11 @@ struct RelActAutoCostFcn
     //  maybe not being used
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
     num_pars += 2*num_skew;
+
+    assert( (m_cascade_par_start_index == std::numeric_limits<size_t>::max())
+           || (m_cascade_par_start_index == num_pars) );
+    num_pars += m_num_cascade_pars;
+    num_pars += m_num_random_sum_pars;
     
     // Even if `m_options.additional_br_uncert > 0.0`, m_peak_ranges_with_uncert may still be empty (but `m_add_br_uncert_start_index!=max`)
     //  if there were no photons to cluster from a source
@@ -5127,6 +5360,9 @@ struct RelActAutoCostFcn
    @param progress If non-null, this frame's steps and Ceres iterations are reported to it; the trial
           fits within a step (e.g., alternate starting points) do not pass it, so do not overwrite
           the step being reported.
+   @param option_rule_probe If non-null, and the first of the options' rules that holds for the initial
+          estimate of the problem is put there, and if there is one, the solve stops there (the returned
+          solution is not a result); see `Options::OptionRule`.
 
    TODO: currently we always live-time normalize the background spectrum - should add explicit argument for background normalization incase the user has set a custom one (e.g., bad or missing live time in a spectrum).
    */
@@ -5145,7 +5381,8 @@ struct RelActAutoCostFcn
                                                         const FrozenModelPolicy *frozen_model_policy = nullptr,
                                                         const bool all_peaks_are_frozen = false,
                                                         const bool may_host_profile = false,
-                                                        SolveProgressReporter * const progress = nullptr
+                                                        SolveProgressReporter * const progress = nullptr,
+                                                        OptionRuleProbe * const option_rule_probe = nullptr
                                                         )
   {
     if( progress )
@@ -5164,6 +5401,15 @@ struct RelActAutoCostFcn
     const size_t num_rel_eff_curves = options.rel_eff_curves.size();
     
     RelActCalcAuto::RelActAutoSolution solution;
+
+    // Whether every source's starting activity is an estimate from the data, rather than a default for want
+    //  of one; a choice among `Options::option_rules` is only made from estimates (see `option_rule_probe`).
+    bool starting_activities_estimated = true;
+
+    // The starting activities the initial estimate could not determine (its uncertainty was most of its
+    //  value), so start at an arbitrary value: {activity parameter index, the most the estimate allows, as a
+    //  multiple of the starting activity}.  A choice among option rules must not depend on these.
+    vector<pair<size_t,double>> undetermined_start_activities;
     
     DoWorkOnDestruct setFinalTime( [&solution,start_time](){
       const auto end_time = std::chrono::high_resolution_clock::now();
@@ -5544,7 +5790,83 @@ struct RelActAutoCostFcn
     
     vector<int> constant_parameters;
     vector<std::optional<double>> lower_bounds( num_pars_initial ), upper_bounds( num_pars_initial );
-    
+
+    // The cascade-summing parameter of each curve that has the correction: the solid angle of the detector
+    //  seen from the front of the source, as a fraction of the largest it can be.
+    if( cost_functor->m_num_cascade_pars )
+    {
+      try
+      {
+        cost_functor->ensure_cascade_models();
+
+        for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); ++rel_eff_index )
+        {
+          const RelActAutoCostFcn::CascadeCurve * const cascade = cost_functor->cascade_curve( rel_eff_index );
+          if( !cascade )
+            continue;
+
+          const RelActCalcAuto::RelEffCurveInput::CascadeSummingInput &input
+                                                   = options.rel_eff_curves[rel_eff_index].cascade_summing;
+          // (A distance that is to be fit is not used, so is not checked.)
+          if( !(input.source_radius >= 0.0) || (!input.fit_distance && !(input.distance >= 0.0)) )
+            throw runtime_error( "the source distance and radius can not be negative." );
+
+          // Nothing for a distance to change (e.g., sources with a single gamma): a fitted one would be a
+          //  parameter the data say nothing about.
+          const bool inert = !cascade->model->has_effect();
+          if( inert )
+            solution.m_warnings.push_back( "Cascade summing correction: none of the sources"
+                        + string( (num_rel_eff_curves > 1) ? (" of '" + options.rel_eff_curves[rel_eff_index].name + "'") : "" )
+                        + " have gammas emitted together that the detector would see, so there is nothing to"
+                          " correct" + string( input.fit_distance ? ", and no distance was fit." : "." ) );
+
+          // A fitted distance starts from far away - next to no summing - so the fit only moves from the
+          //  uncorrected answer as far as the data ask it to, and does not depend on a guessed distance.
+          const double max_solid_angle = cascade->model->max_front_solid_angle();
+          double fraction = RelActAutoCostFcn::sm_cascade_start_fraction;
+          if( inert )
+            fraction = 0.0;
+          else if( !input.fit_distance )
+            fraction = std::clamp( cascade->model->front_solid_angle( input.distance, input.source_radius ),
+                                   0.0, max_solid_angle ) / max_solid_angle;
+
+          parameters[cascade->par_index] = RelActAutoCostFcn::sm_cascade_par_offset + fraction;
+          lower_bounds[cascade->par_index] = RelActAutoCostFcn::sm_cascade_par_offset;
+          upper_bounds[cascade->par_index] = RelActAutoCostFcn::sm_cascade_par_offset + 1.0;
+          if( inert || !input.fit_distance )
+            constant_parameters.push_back( static_cast<int>(cascade->par_index) );
+        }//for( loop over relative efficiency curves )
+      }catch( std::exception &e )
+      {
+        solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+        solution.m_error_message = "Error setting up cascade summing correction: " + string(e.what());
+        restore_caller_source_order( solution, caller_options );
+        return solution;
+      }//try / catch
+    }//if( cost_functor->m_num_cascade_pars )
+
+    // The random-sum (pile-up) parameters start small and positive, and are bounded below at none.
+    if( cost_functor->m_num_random_sum_pars )
+    {
+      const std::shared_ptr<const RelActAutoCostFcn::RandomSums> sums = cost_functor->random_sums();
+      const size_t time_index = cost_functor->m_random_sum_par_start_index;
+      parameters[time_index] = RelActAutoCostFcn::sm_random_sum_start_time;   //microseconds
+      lower_bounds[time_index] = 0.0;
+      upper_bounds[time_index] = RelActAutoCostFcn::sm_random_sum_max_time;
+      parameters[time_index + 1] = RelActAutoCostFcn::sm_random_sum_start_xray;
+      lower_bounds[time_index + 1] = 0.0;
+      upper_bounds[time_index + 1] = RelActAutoCostFcn::sm_random_sum_max_xray;
+
+      // A scale no ROI can determine stays where it starts: a typical resolving time, and no x-ray sums.
+      if( !sums || !sums->fit_time )
+        constant_parameters.push_back( static_cast<int>(time_index) );
+      if( !sums || !sums->fit_xray )
+      {
+        parameters[time_index + 1] = 0.0;
+        constant_parameters.push_back( static_cast<int>(time_index + 1) );
+      }
+    }//if( cost_functor->m_num_random_sum_pars )
+
 
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
@@ -5729,7 +6051,9 @@ struct RelActAutoCostFcn
       assert( cost_functor->m_acts_par_start_index == (cost_functor->m_rel_eff_par_start_index + num_rel_eff_par) );
       assert( cost_functor->m_free_peak_par_start_index == (cost_functor->m_acts_par_start_index + num_acts_par) );
       assert( cost_functor->m_skew_par_start_index == (cost_functor->m_free_peak_par_start_index + 2*extra_peaks.size()) );
-      assert( (cost_functor->m_skew_par_start_index + 2*PeakDef::num_skew_parameters(options.skew_type)) == cost_functor->number_parameters() );
+      assert( (cost_functor->m_skew_par_start_index + 2*PeakDef::num_skew_parameters(options.skew_type)
+               + cost_functor->m_num_cascade_pars + cost_functor->m_num_random_sum_pars)
+              == cost_functor->number_parameters() );
     }//End some dev checks
 #endif //NDEBUG
 
@@ -6714,6 +7038,8 @@ struct RelActAutoCostFcn
       // NOTE: the loop body below is shared by all EM passes and keeps its pre-EM indentation.
       do
       {
+      starting_activities_estimated = true;   //each pass starts over
+      undetermined_start_activities.clear();
       for( size_t re_eff_index_index = 0; re_eff_index_index < rel_eff_indices.size(); ++re_eff_index_index )
       {
         const size_t re_eff_index = rel_eff_indices[re_eff_index_index];
@@ -6934,9 +7260,17 @@ struct RelActAutoCostFcn
             const auto peaks_with_nucs = add_nuclides_to_peaks( seed_peaks, nuc_sources, real_time, cluster_num_sigma );
 
 
+            // Peaks that may be more sum peak than line say nothing reliable about their lines' sources.
+            const vector<bool> under_sum_peak
+                    = cost_functor->initial_estimate_peaks_under_sums( peaks_with_nucs, re_eff_index, cluster_num_sigma, parameters );
+
             peaks_with_sources.clear();
-            for( const RelActCalcManual::GenericPeakInfo &p : peaks_with_nucs )
+            for( size_t peak_index = 0; peak_index < peaks_with_nucs.size(); ++peak_index )
             {
+              const RelActCalcManual::GenericPeakInfo &p = peaks_with_nucs[peak_index];
+              if( under_sum_peak[peak_index] )
+                continue;
+
               bool is_floater_peak = false;
               // TODO: - Need to deal with extra floater peaks in getting the initial "manual" solution
               //         Right now were just removing the "fit" peak if its within 1 sigma of a floating
@@ -7403,12 +7737,14 @@ struct RelActAutoCostFcn
 
               // If the rel_act has an uncertainty approaching 100%, we may get totally wild starting values of activity,
               //  so we'll arbitrarily use an initial guess of 1, which may be well-off
+              double largest_plausible_act = -1.0;  //set if the estimate did not determine the activity
               try
               {
                 const double rel_act_uncert = empirical_seed_activity_scale
                                 * manual_solution.relative_activity_uncertainty( nuc.name() ) / live_time;
                 if( rel_act_uncert > 0.75*rel_act ) //A value of 0.75 is totally arbitrary
                 {
+                  largest_plausible_act = std::max( rel_act, 0.0 ) + 2.0*rel_act_uncert;
                   rel_act = 10.0;
 
                   // TODO: we could look through `peaks_with_sources` for the peak with the largest BR for `nuc`, attribute
@@ -7530,6 +7866,10 @@ struct RelActAutoCostFcn
               assert( rel_act > 0.0 );
 
               parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+
+              if( !nuc.starting_rel_act.has_value() && std::isfinite( largest_plausible_act )
+                 && (largest_plausible_act >= 0.0) )
+                undetermined_start_activities.emplace_back( act_index, largest_plausible_act / rel_act );
             }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
 
             // Per-element sigma-block setup for this curves mass-fraction constraints (bounds,
@@ -7934,6 +8274,7 @@ struct RelActAutoCostFcn
               if( (rel_act_mult <= std::numeric_limits<double>::epsilon()) || IsNan(rel_act_mult) || IsInf(rel_act_mult) )
               {
                 rel_act_mult = 100*PhysicalUnits::bq;
+                starting_activities_estimated = false;
                 solution.m_warnings.push_back( "Could not estimate a starting activity for "
                                             + nuc.name() + ".  This may be because there are no"
                                             " significant gammas for the nuclide in the selected energy"
@@ -7942,6 +8283,7 @@ struct RelActAutoCostFcn
             }else
             {
               rel_act_mult = 100*PhysicalUnits::bq;
+              starting_activities_estimated = false;
               solution.m_warnings.push_back( "Could not estimate a starting activity for "
                                             + nuc.name() + ".  This may be because there are no"
                                             " significant gammas for the nuclide in the selected energy"
@@ -8239,7 +8581,9 @@ struct RelActAutoCostFcn
         upper_bounds.resize( num_pars );
         
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
-        cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs;
+        cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs
+                                                    + cost_functor->m_num_cascade_pars
+                                                    + cost_functor->m_num_random_sum_pars;
         
         assert( num_pars == cost_functor->number_parameters() );
         assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->m_peak_ranges_with_uncert.size()) );
@@ -8791,6 +9135,52 @@ struct RelActAutoCostFcn
       apply_search_seed_variant( search_seed_variant, parameters,
           warm_start_direction.empty() ? nullptr : &warm_start_direction );
     }//if( non-default semantic search seed )
+
+    // `solve()` chooses among `Options::option_rules` from this initial estimate (see `OptionRule`): if
+    //  one holds, this is not the problem that will be solved.
+    //  A starting activity that is only a default says nothing about the spectrum: no choice is made from
+    //  that, and `solve()` chooses from the fit's answer instead.
+    if( option_rule_probe && !options.option_rules.empty() && starting_activities_estimated )
+    {
+      // The quantities are otherwise only reported for a finished solve.
+      const bool was_reporting = cost_functor->m_profile_reporting_mode;
+      cost_functor->m_profile_reporting_mode = true;
+      std::optional<RelActCalcAuto::RelActAutoSolution::AppliedOptionRule> rule
+                    = cost_functor->first_option_rule_holding( options.option_rules, parameters,
+                                                               &(option_rule_probe->problems) );
+
+      // The choice has to be the same with each source the estimate did not determine absent, and with as
+      //  much of it as the estimate allows; otherwise it rests on an arbitrary number, and is not made.
+      bool choice_is_firm = true;
+      for( size_t i = 0; choice_is_firm && (i < undetermined_start_activities.size()); ++i )
+      {
+        for( const double multiple : { 0.0, undetermined_start_activities[i].second } )
+        {
+          try
+          {
+            vector<double> trial = parameters;
+            trial[undetermined_start_activities[i].first] = RelActAutoCostFcn::sm_activity_par_offset + multiple;
+            const std::optional<RelActCalcAuto::RelActAutoSolution::AppliedOptionRule> other
+                              = cost_functor->first_option_rule_holding( options.option_rules, trial, nullptr );
+            choice_is_firm = choice_is_firm && (other.has_value() == rule.has_value())
+                             && (!rule.has_value() || (other->rule_index == rule->rule_index));
+          }catch( std::exception & )
+          {
+            choice_is_firm = false;
+          }
+        }//for( the source absent, and at the most the estimate allows )
+      }//for( loop over the undetermined starting activities )
+      cost_functor->m_profile_reporting_mode = was_reporting;
+
+      if( choice_is_firm )
+        option_rule_probe->rule = rule;
+
+      if( option_rule_probe->rule.has_value() )
+      {
+        restore_caller_source_order( solution, caller_options );
+        return solution;
+      }
+    }//if( option_rule_probe && !options.option_rules.empty() )
 
     ceres::CostFunction *cost_function = nullptr;
 
@@ -9398,6 +9788,21 @@ struct RelActAutoCostFcn
           skew_par_indexes.push_back( index );
       }
       
+      // The cascade-summing solid angle and the random-sum scales are held with the skew: they are small
+      //  corrections, to be fit once the efficiency curve and peak shapes are near where they belong.
+      vector<size_t> sum_par_indexes;
+      for( size_t index = cost_functor->m_cascade_par_start_index;
+          index < (cost_functor->m_cascade_par_start_index + cost_functor->m_num_cascade_pars
+                   + cost_functor->m_num_random_sum_pars);
+          ++index )
+      {
+        if( !already_fixed(index) )
+        {
+          skew_par_indexes.push_back( index );
+          sum_par_indexes.push_back( index );
+        }
+      }
+
       /** lambda to evaluate the problems, holding a number of paramaters constant.
        Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
        */
@@ -9491,31 +9896,28 @@ struct RelActAutoCostFcn
       };//eval_with_constants lambda
       
       
-      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars, skew_par_indexes} );
-
-      if( !hoerl_par_indexes.empty() )
-        eval_with_constants( {hoerl_par_indexes, skew_par_indexes} );
-
-      // Staged energy calibration optimization:
-      // After the initial parameter estimates above (with all energy cal fixed), progressively
-      // free energy calibration parameters to help the optimizer converge.
-      if( !linear_cal_pars_indexes.empty() )
+      // The stages, in order (see `RelActCalcAutoImp::PreFit::stages`): the efficiency curve and activities
+      //  first, then the energy calibration's offset and gain, its deviation pairs, the widths - and, when
+      //  sum peaks are modeled, their parameters by themselves before the deviation pairs are freed.
+      RelActCalcAutoImp::PreFit::StageGroups stage_groups;
+      for( size_t index = 0; index < num_pars; ++index )
       {
-        // Stage: free linear cal (offset/gain), but keep deviation pairs fixed.
-        // This lets the optimizer find the correct offset/gain before trying to fit
-        // the non-linear deviation pair corrections.
-        eval_with_constants( {dev_pair_pars_indexes, hoerl_par_indexes, skew_par_indexes} );
-
-        // Stage: free deviation pairs too (with offset/gain already near correct values).
-        // Only do this if we have deviation pair parameters to free.
-        if( !dev_pair_pars_indexes.empty() )
-          eval_with_constants( {hoerl_par_indexes, skew_par_indexes} );
+        if( !already_fixed(index) )
+          stage_groups.free.push_back( index );
       }
+      stage_groups.energy_cal = ene_cal_pars_indexes;
+      stage_groups.linear_cal = linear_cal_pars_indexes;
+      stage_groups.dev_pairs = dev_pair_pars_indexes;
+      stage_groups.fwhm = fwhm_par_indexes;
+      stage_groups.correction = hoerl_par_indexes;
+      stage_groups.self_atten = self_atten_par_indexes;
+      stage_groups.ext_atten = ext_atten_par_indexs;
+      stage_groups.other_rel_eff = non_phys_rel_eff_pars;
+      stage_groups.skew = skew_par_indexes;
+      stage_groups.sums = sum_par_indexes;
 
-      // If no stage above freed the FWHM, fit it once with the skew still held.
-      if( !skew_par_indexes.empty() && !fwhm_par_indexes.empty()
-         && hoerl_par_indexes.empty() && linear_cal_pars_indexes.empty() )
-        eval_with_constants( {skew_par_indexes} );
+      for( const vector<size_t> &held : RelActCalcAutoImp::PreFit::stages( stage_groups ) )
+        eval_with_constants( {held} );
 
 
       if( !constant_parameters.empty() )
@@ -9664,8 +10066,6 @@ struct RelActAutoCostFcn
                 }() << "]"
              << endl;
     }
-
-
 
     switch( summary.termination_type )
     {
@@ -10117,6 +10517,11 @@ struct RelActAutoCostFcn
         {
           const string name = cost_functor->parameter_name(i);
           relevant_bound_pathology = (name.rfind("MTot",0) != 0) && (name.rfind("MFSum",0) != 0);
+
+          // Nor is a summing or pile-up scale at none of it: the source is far away, or the rate low.
+          const bool at_lower = lo.has_value() && (!hi.has_value() || ((val - *lo) <= (*hi - val)));
+          if( at_lower && cost_functor->lower_limit_is_ordinary( i ) )
+            relevant_bound_pathology = false;
         }
       }//for( flag fit parameters sitting on a fit bound )
 
@@ -11811,6 +12216,14 @@ struct RelActAutoCostFcn
           if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_iodine_escape_label_prefix ) )
             continue;
 
+          // As do coincidence-sum peaks (see RelEffCurveInput::CascadeSummingInput)
+          if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_cascade_sum_label_prefix ) )
+            continue;
+
+          // And random-sum peaks (see Options::random_sum_peaks)
+          if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_random_sum_label_prefix ) )
+            continue;
+
           bool found_matching_floating_peak = false;
           const double removed_energy = removed_peak.mean();
           double best_energy_diff = std::numeric_limits<double>::max();
@@ -12313,6 +12726,64 @@ struct RelActAutoCostFcn
     }//for( size_t i = 0; i < cost_functor->m_options.floating_peaks.size(); ++i )
     
     
+    // What the random-sum (pile-up) model came to.
+    solution.m_random_sums.reset();
+    if( const std::shared_ptr<const RelActAutoCostFcn::RandomSums> sums = cost_functor->random_sums() )
+    {
+      typedef RelActCalcAuto::RelActAutoSolution::RandomSumInfo RandomSumInfo;
+      RandomSumInfo info;
+      const size_t time_index = cost_functor->m_random_sum_par_start_index;
+      info.pileup_time = parameters[time_index] * RelActAutoCostFcn::sm_random_sum_time_scale * PhysicalUnits::second;
+      info.xray_fraction = parameters[time_index + 1] * RelActAutoCostFcn::sm_random_sum_xray_scale;
+      info.pileup_time_was_fit = sums->fit_time;
+      info.xray_fraction_was_fit = sums->fit_xray;
+
+      // An uncertainty only for what was fit, and only if the fit gave one.
+      const auto fit_uncert = [&uncertainties]( const size_t index ) -> std::optional<double> {
+        if( (index < uncertainties.size()) && std::isfinite( uncertainties[index] ) && (uncertainties[index] > 0.0) )
+          return uncertainties[index];
+        return std::nullopt;
+      };
+      if( const std::optional<double> uncert = info.pileup_time_was_fit ? fit_uncert( time_index ) : std::nullopt )
+        info.pileup_time_uncert = (*uncert) * RelActAutoCostFcn::sm_random_sum_time_scale * PhysicalUnits::second;
+      if( const std::optional<double> uncert = info.xray_fraction_was_fit ? fit_uncert( time_index + 1 ) : std::nullopt )
+        info.xray_fraction_uncert = (*uncert) * RelActAutoCostFcn::sm_random_sum_xray_scale;
+      info.xray_element = sums->xray_element;
+
+      for( const RelActAutoCostFcn::RandomSumPeak &sum : sums->peaks )
+      {
+        bool in_roi = false;
+        for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
+          in_roi = in_roi || ((sum.energy >= range.lower_energy) && (sum.energy <= range.upper_energy));
+        if( !in_roi )
+          continue;
+
+        RandomSumInfo::Peak peak;
+        peak.energy = sum.energy;
+        peak.energy_a = sums->lines[sum.line_a].energy;
+        peak.with_xray = (sum.line_b < 0);
+        peak.energy_b = peak.with_xray ? sum.xray_energy : sums->lines[sum.line_b].energy;
+        peak.counts = cost_functor->random_sum_peak_counts<double>( *sums, sum, parameters, nullptr );
+        info.peaks.push_back( peak );
+      }//for( loop over random-sum peaks )
+
+      std::sort( begin(info.peaks), end(info.peaks),
+                []( const RandomSumInfo::Peak &lhs, const RandomSumInfo::Peak &rhs ){
+        return lhs.counts > rhs.counts;
+      } );
+
+      // Sums of two gammas that were modeled with a resolving time nothing in the ROIs determines.
+      const bool has_gamma_sums = std::any_of( begin(info.peaks), end(info.peaks),
+                          []( const RandomSumInfo::Peak &peak ){ return !peak.with_xray && (peak.counts >= 1.0); } );
+      if( has_gamma_sums && !info.pileup_time_was_fit )
+        solution.m_warnings.push_back( "Random-sum peaks: no ROI holds a sum of two strong lines, so the pulse-pair"
+                    " resolving time could not be fit; "
+                    + SpecUtils::printCompact( RelActAutoCostFcn::sm_random_sum_start_time, 3 )
+                    + " microseconds was assumed for the sums of two gammas." );
+
+      solution.m_random_sums = std::move(info);
+    }//if( random sums were modeled )
+
     // Fill out PhysicalModel stuff, if we are fitting that
     solution.m_phys_model_results.clear();
     solution.m_phys_model_results.resize( num_rel_eff_curves );
@@ -12494,6 +12965,124 @@ struct RelActAutoCostFcn
             phys_model_result.hoerl_c_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_c_uncert;
           }
         }//if( report_corr_fcn != PhysModelCorrFcn::None )
+
+        // What the cascade-summing correction came to.
+        if( const RelActAutoCostFcn::CascadeCurve * const cascade = cost_functor->cascade_curve( rel_eff_index ) )
+        {
+          typedef RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::CascadeSummingInfo CascadeInfo;
+          CascadeInfo info;
+
+          const RelActCalcCascade::SummingModel &model = *cascade->model;
+          const double max_solid_angle = model.max_front_solid_angle();
+
+          info.source_radius = rel_eff_curve.cascade_summing.source_radius;
+          info.distance_was_fit = rel_eff_curve.cascade_summing.fit_distance;
+          info.solid_angle = cost_functor->cascade_solid_angle( *cascade, parameters );
+          info.distance = model.front_distance( info.solid_angle, info.source_radius );
+          info.distance_lower = info.distance_upper = info.distance;
+          info.total_efficiency_from_response
+                  = (model.detector().total_source == RelActCalcCascade::TotalEffSource::DetectorResponse);
+
+          if( info.distance_was_fit && (uncertainties.size() > cascade->par_index)
+             && std::isfinite(uncertainties[cascade->par_index]) && (uncertainties[cascade->par_index] > 0.0) )
+          {
+            const double uncert = uncertainties[cascade->par_index] * max_solid_angle;
+            info.solid_angle_uncert = uncert;
+            // A larger solid angle is a shorter distance.
+            info.distance_lower = model.front_distance( std::min( max_solid_angle, info.solid_angle + uncert ),
+                                                        info.source_radius );
+            info.distance_upper = model.front_distance( std::max( 0.0, info.solid_angle - uncert ),
+                                                        info.source_radius );
+          }
+
+          const vector<double> cascade_vals = cost_functor->cascade_outputs( rel_eff_index, parameters );
+          const vector<RelActCalcCascade::SummingModel::Source> &sum_sources = model.sources();
+          const double live_time = static_cast<double>( cost_functor->m_live_time );
+
+          for( size_t msrc = 0; msrc < sum_sources.size(); ++msrc )
+          {
+            const RelActCalcCascade::SummingModel::Source &sum_source = sum_sources[msrc];
+            const size_t source_index = cascade->source_index[msrc];
+            const RelActCalcAuto::SrcVariant &source = cost_functor->m_nuclides[rel_eff_index][source_index].source;
+            const double rel_act
+                   = cost_functor->source_eval_values<double>( rel_eff_index, source_index, parameters, nullptr ).rel_act;
+
+            size_t num_pairwise = 0;
+            for( size_t line = 0; line < sum_source.input.line_energies.size(); ++line )
+            {
+              const double factor = cascade_vals[cascade->line_offset[msrc] + line];
+              if( factor == 1.0 )
+                continue;
+              const bool level_scheme = cascade->line_has_level_scheme[msrc][line];
+              num_pairwise += !level_scheme;
+              info.lines.push_back( { source, sum_source.input.line_energies[line], factor, level_scheme } );
+            }
+            if( num_pairwise )
+              info.num_pairwise_lines.emplace_back( source, num_pairwise );
+
+            for( size_t peak_index = 0; peak_index < sum_source.sum_peaks.size(); ++peak_index )
+            {
+              const RelActCalcCascade::SumPeak &sum_peak = sum_source.sum_peaks[peak_index];
+              CascadeInfo::SumPeak peak;
+              peak.source = source;
+              peak.energy = sum_peak.energy;
+              peak.counts = rel_act * live_time
+                            * cost_functor->cascade_sum_peak_rate<double>( *cascade, cascade_vals, msrc, peak_index,
+                                                                           rel_eff_index, parameters, nullptr );
+              if( sum_peak.line_index >= 0 )
+                peak.on_line_energy = sum_source.input.line_energies[sum_peak.line_index];
+              info.sum_peaks.push_back( std::move(peak) );
+            }
+          }//for( loop over the summing model's sources )
+
+          std::sort( begin(info.lines), end(info.lines),
+                    []( const CascadeInfo::LineFactor &lhs, const CascadeInfo::LineFactor &rhs ){
+            return fabs(1.0 - lhs.factor) > fabs(1.0 - rhs.factor);
+          } );
+          std::sort( begin(info.sum_peaks), end(info.sum_peaks),
+                    []( const CascadeInfo::SumPeak &lhs, const CascadeInfo::SumPeak &rhs ){
+            return lhs.counts > rhs.counts;
+          } );
+
+          info.distance_was_fit = (info.distance_was_fit && cascade->model->has_effect());
+
+          // A fitted distance the data say little about (a solid angle under two standard deviations from
+          //  none): the correction is then as likely noise as signal.
+          if( info.distance_was_fit && !info.solid_angle_uncert.has_value() )
+          {
+            solution.m_warnings.push_back( "Cascade summing correction: the uncertainty of the fitted source"
+                         " distance could not be computed, so how well the data determine it is not known." );
+          }else if( info.distance_was_fit && (info.solid_angle < 2.0*(*info.solid_angle_uncert)) )
+          {
+            solution.m_warnings.push_back( "Cascade summing correction: the data do not determine the source"
+                         " distance (the detector fills " + SpecUtils::printCompact( 100.0*info.solid_angle, 3 )
+                         + " +- " + SpecUtils::printCompact( 100.0*(*info.solid_angle_uncert), 3 )
+                         + " % of the directions from the source); if the distance is known, enter it instead of"
+                         " fitting it." );
+          }
+
+          if( !model.models_shield_scatter() )
+            solution.m_warnings.push_back( "Cascade summing correction: the data for photons scattered in the"
+                         " attenuators (sandia.shieldscatter.db) could not be loaded, so the correction is too"
+                         " small behind thick attenuators." );
+
+          if( !info.total_efficiency_from_response )
+            solution.m_warnings.push_back( "Cascade summing correction: the detector response has no usable total"
+                                 " efficiency, so a generic one was used (" + model.detector().total_source_reason
+                                 + "); the correction, and especially the distance, are less certain." );
+
+          for( const NucInputGamma &src : cost_functor->m_nuclides[rel_eff_index] )
+          {
+            if( src.fit_age && RelActCalcAuto::nuclide(src.source) )
+            {
+              solution.m_warnings.push_back( "Cascade summing correction: computed for the starting age of "
+                                    + src.name() + ", not its fitted age." );
+              break;
+            }
+          }
+
+          phys_model_result.cascade_summing = std::move(info);
+        }//if( this curve has the cascade-summing correction )
 
         solution.m_phys_model_results[rel_eff_index] = std::move(phys_model_result);
       }//if( FramPhysicalModel )
@@ -13387,7 +13976,9 @@ struct RelActAutoCostFcn
     std::vector<std::pair<double,double>> answer;
     for( const RelActCalcAuto::PeakDefImp<double> &peak : computed.peaks )
     {
-      const bool is_source_line = (peak.m_rel_eff_index != std::numeric_limits<size_t>::max());
+      // A coincidence-sum peak belongs to a curve's source, but is not one of its lines.
+      const bool is_source_line = ((peak.m_rel_eff_index != std::numeric_limits<size_t>::max())
+                                   && !peak.m_is_cascade_sum && !peak.m_is_random_sum);
       if( is_source_line && (peak.m_src_energy >= lower) && (peak.m_src_energy <= upper) )
         answer.emplace_back( peak.m_src_energy, peak.m_amplitude );
     }
@@ -14062,6 +14653,12 @@ struct RelActAutoCostFcn
       return "FPeak_" + std::to_string(index - m_free_peak_par_start_index);
     }//if( index < m_skew_par_start_index )
     
+    if( is_cascade_parameter( index ) )
+      return "CascadeSolidAngle_" + std::to_string( cascade_parameter_curve( index ) );
+
+    if( is_random_sum_parameter( index ) )
+      return (index == m_random_sum_par_start_index) ? "RandomSumTime" : "RandomSumXray";
+
     if( index < m_add_br_uncert_start_index )
     {
       // TODO: we could give a better name for the skew parameter here
@@ -14198,6 +14795,20 @@ struct RelActAutoCostFcn
                  + SpecUtils::printCompact( m_options.floating_peaks[peak_index].energy, 5 ) + " keV";
         return name;
       }//if( a floating peak parameter )
+
+      if( is_cascade_parameter( index ) )
+      {
+        const size_t curve = cascade_parameter_curve( index );
+        std::string description = "cascade-summing solid angle (source distance)";
+        if( (m_options.rel_eff_curves.size() > 1) && (curve < m_options.rel_eff_curves.size()) )
+          description += " of relative efficiency curve '" + m_options.rel_eff_curves[curve].name + "'";
+        return description;
+      }
+
+      if( is_random_sum_parameter( index ) )
+        return (index == m_random_sum_par_start_index)
+                 ? "pulse-pair resolving time of the random-sum (pile-up) peaks"
+                 : "scale of the random sums of gammas with fluorescence x-rays";
 
       if( index < m_add_br_uncert_start_index )
       {
@@ -14368,6 +14979,19 @@ struct RelActAutoCostFcn
       return 1.0;
     }//if( index < m_skew_par_start_index )
     
+    if( is_cascade_parameter( index ) )
+    {
+      // To a fractional solid angle (the parameter is a fraction of the largest possible one).
+      ensure_cascade_models();
+      const CascadeCurve * const cascade = cascade_curve( cascade_parameter_curve( index ) );
+      assert( cascade && cascade->model );
+      return (cascade && cascade->model) ? cascade->model->max_front_solid_angle() : 1.0;
+    }
+
+    if( is_random_sum_parameter( index ) )
+      return (index == m_random_sum_par_start_index) ? (sm_random_sum_time_scale * PhysicalUnits::second)
+                                                     : sm_random_sum_xray_scale;
+
     if( index < m_add_br_uncert_start_index )
     {
       return 1.0; // No scale factor for skew parameters currently
@@ -15008,6 +15632,116 @@ struct RelActAutoCostFcn
   //  return relative_activity( input_src_info(src, rel_eff_index), rel_eff_index, x );
   //}
   
+  /** The value, for the parameters `x`, of the quantity `target` names.
+
+   The functor must be able to report: of a finished solve, or in `m_profile_reporting_mode`.
+   Throws if this problem does not have the quantity (e.g., the source is not on the curve).
+   */
+  double profile_target_value( const RelActCalcAuto::Options::ProfileTarget &target,
+                               const std::vector<double> &x ) const
+  {
+    using Kind = RelActCalcAuto::Options::ProfileTarget::Kind;
+
+    const auto check_source = [this]( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index ){
+      if( RelActCalcAuto::is_null(src) || (rel_eff_index >= m_nuclides.size()) )
+        throw std::runtime_error( "no such source or relative efficiency curve" );
+      for( const NucInputGamma &nuc : m_nuclides[rel_eff_index] )
+      {
+        if( nuc.source == src )
+          return;
+      }
+      throw std::runtime_error( RelActCalcAuto::to_name(src) + " is not a source of the relative efficiency curve" );
+    };
+
+    check_source( target.source, target.rel_eff_curve_index );
+
+    switch( target.kind )
+    {
+      case Kind::MassFraction:
+        if( !RelActCalcAuto::nuclide(target.source) )
+          throw std::runtime_error( RelActCalcAuto::to_name(target.source) + " is not a nuclide" );
+        return mass_enrichment_fraction( target.source, target.rel_eff_curve_index, x );
+
+      case Kind::RelativeActivity:
+        return relative_activity( target.source, target.rel_eff_curve_index, x );
+
+      case Kind::ActivityRatio:
+      {
+        check_source( target.denominator, target.denominator_curve_index );
+        const double num = relative_activity( target.source, target.rel_eff_curve_index, x );
+        const double den = relative_activity( target.denominator, target.denominator_curve_index, x );
+        if( !std::isfinite(num) || !std::isfinite(den) || (den == 0.0) )
+          throw std::runtime_error( "non-finite or zero-denominator ratio" );
+        return num/den;
+      }
+
+      case Kind::Age:
+        return age( input_src_info(target.source,target.rel_eff_curve_index), target.rel_eff_curve_index, x );
+    }//switch( target.kind )
+
+    assert( 0 );
+    throw std::logic_error( "profile_target_value: unknown profile-target kind." );
+  }//double profile_target_value(...)
+
+
+  /** The values, for the parameters `x`, of the quantities of `rule`s conditions, in their order; see
+   `Options::OptionRule`.  One that can not be evaluated is NaN, and (if `problems` is given) says why
+   there.  The functor must be able to report; see `profile_target_value(...)`.
+   */
+  std::vector<double> option_rule_condition_values( const RelActCalcAuto::Options::OptionRule &rule,
+                                                    const std::vector<double> &x,
+                                                    std::vector<std::string> * const problems ) const
+  {
+    std::vector<double> values;
+    for( const RelActCalcAuto::Options::OptionRule::Condition &condition : rule.conditions )
+    {
+      double value = std::numeric_limits<double>::quiet_NaN();
+      try
+      {
+        value = profile_target_value( condition.quantity, x );
+      }catch( std::exception &e )
+      {
+        if( problems )
+          problems->push_back( "Option rule '" + rule.name + "' was not used: its "
+                               + condition.quantity.display_name() + " condition could not be checked ("
+                               + std::string(e.what()) + ")." );
+      }
+      values.push_back( value );
+    }//for( loop over conditions )
+
+    return values;
+  }//option_rule_condition_values(...)
+
+
+  /** The first of `rules` whose conditions all hold for the parameters `x` (a condition that can not be
+   evaluated does not hold); see `option_rule_condition_values(...)` for the arguments. */
+  std::optional<RelActCalcAuto::RelActAutoSolution::AppliedOptionRule> first_option_rule_holding(
+                                      const std::vector<RelActCalcAuto::Options::OptionRule> &rules,
+                                      const std::vector<double> &x,
+                                      std::vector<std::string> * const problems ) const
+  {
+    for( size_t rule_index = 0; rule_index < rules.size(); ++rule_index )
+    {
+      const RelActCalcAuto::Options::OptionRule &rule = rules[rule_index];
+
+      RelActCalcAuto::RelActAutoSolution::AppliedOptionRule applied;
+      applied.rule_index = rule_index;
+      applied.name = rule.name;
+      applied.condition_values = option_rule_condition_values( rule, x, problems );
+      assert( applied.condition_values.size() == rule.conditions.size() );
+
+      bool holds = !rule.conditions.empty();
+      for( size_t i = 0; holds && (i < rule.conditions.size()); ++i )
+        holds = rule.conditions[i].holds( applied.condition_values[i] );
+
+      if( holds )
+        return applied;
+    }//for( loop over rules )
+
+    return std::nullopt;
+  }//first_option_rule_holding(...)
+
+
   /** Converts between SandiaDecay::Nuclide, SandiaDecay::Element, or Reaction to its NucInputInfo. */
   const RelActCalcAuto::NucInputInfo &input_src_info( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index ) const
   {
@@ -15170,6 +15904,10 @@ struct RelActAutoCostFcn
      them threw - rethrown only where the per-line path would have built them. */
     std::vector<std::optional<PhysModelRelEqnDef<T>>> phys_inputs;
     std::vector<std::exception_ptr> phys_input_errors;
+
+    /** The cascade-summing outputs of each curve that has the correction (see #cascade_outputs); empty for
+     the others. */
+    std::vector<std::vector<T>> cascade;
   };//struct PerEvalValues
 
 
@@ -16347,6 +17085,1044 @@ struct RelActAutoCostFcn
   }//source_eval_values(...)
 
 
+
+  /** Whether parameter `index` is one of the random-sum (pile-up) parameters. */
+  bool is_random_sum_parameter( const size_t index ) const
+  {
+    return (m_num_random_sum_pars > 0) && (index >= m_random_sum_par_start_index)
+           && (index < (m_random_sum_par_start_index + m_num_random_sum_pars));
+  }
+
+
+  /** The lines whose random sums are modeled, and the sum peaks that can reach a ROI
+   (Options::random_sum_peaks); null if not modeled.  Built on first use.
+   */
+  std::shared_ptr<const RandomSums> random_sums() const
+  {
+    if( !m_num_random_sum_pars )
+      return nullptr;
+    if( m_random_sum_setup_done.load() )
+      return m_random_sums;
+
+    std::lock_guard<std::mutex> lock( m_random_sum_setup_mutex );
+    if( m_random_sum_setup_done.load() )
+      return m_random_sums;
+
+    const std::shared_ptr<RandomSums> sums = std::make_shared<RandomSums>();
+
+    double span_lower = std::numeric_limits<double>::infinity(), span_upper = 0.0;
+    for( const RoiRangeChannels &range : m_energy_ranges )
+    {
+      span_lower = std::min( span_lower, range.lower_energy );
+      span_upper = std::max( span_upper, range.upper_energy );
+    }
+
+    // Each source's strongest lines, within the energies the ROIs span (where the fitted curve applies).
+    std::map<int,size_t> num_nucs_of_element;
+    for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
+    {
+      for( size_t source_index = 0; source_index < m_nuclides[rel_eff_index].size(); ++source_index )
+      {
+        // Nuclides only: an x-ray or reaction source's lines are not summed (their amplitudes have terms
+        //  #random_sum_line_counts does not form).
+        const NucInputGamma &src = m_nuclides[rel_eff_index][source_index];
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src.source );
+        if( !nuc || !src.nominal_gammas )
+          continue;
+        num_nucs_of_element[nuc->atomicNumber] += 1;
+
+        std::vector<double> energies;
+        std::vector<size_t> indices;
+        for( size_t i = 0; i < src.nominal_gammas->size(); ++i )
+        {
+          const NucInputGamma::EnergyYield &line = (*src.nominal_gammas)[i];
+          if( (line.energy >= span_lower) && (line.energy <= span_upper) && (line.yield > 0.0) )
+          {
+            energies.push_back( line.energy );
+            indices.push_back( i );
+          }
+        }
+        if( energies.empty() )
+          continue;
+
+        // Rank by yield times detector efficiency; by yield alone if the response can not give one.
+        std::vector<double> strength( energies.size(), 0.0 ), efficiency( energies.size(), 1.0 );
+        try
+        {
+          if( !m_drf || !m_drf->isValid() )
+            throw std::runtime_error( "no detector response" );
+          for( size_t i = 0; i < energies.size(); ++i )
+          {
+            efficiency[i] = m_drf->intrinsicEfficiencyEval( static_cast<float>(energies[i]) ).value;
+            if( !std::isfinite( efficiency[i] ) || (efficiency[i] < 0.0) )
+              throw std::runtime_error( "invalid efficiency" );
+          }
+        }catch( std::exception & )
+        {
+          std::fill( begin(efficiency), end(efficiency), 1.0 );
+        }
+        for( size_t i = 0; i < energies.size(); ++i )
+          strength[i] = (*src.nominal_gammas)[indices[i]].yield * efficiency[i];
+
+        std::vector<size_t> order( energies.size() );
+        for( size_t i = 0; i < order.size(); ++i )
+          order[i] = i;
+        std::sort( begin(order), end(order), [&strength]( const size_t lhs, const size_t rhs ){
+          return strength[lhs] > strength[rhs];
+        } );
+
+        for( size_t rank = 0; (rank < order.size()) && (rank < sm_random_sum_max_lines); ++rank )
+        {
+          const size_t i = order[rank];
+          if( !(strength[i] > 0.0) || (strength[i] < (sm_random_sum_min_line_fraction*strength[order[0]])) )
+            break;
+          RandomSumLine line;
+          line.rel_eff_index = rel_eff_index;
+          line.source_index = source_index;
+          line.gamma_index = indices[i];
+          line.energy = energies[i];
+          sums->lines.push_back( line );
+        }
+      }//for( loop over the curve's sources )
+    }//for( loop over relative efficiency curves )
+
+    // The fluorescence K x-rays are those of the element most of the nuclides are of (the heavier, if tied).
+    int xray_z = 0;
+    size_t most_nucs = 0;
+    for( const std::pair<const int,size_t> &el_count : num_nucs_of_element )
+    {
+      if( el_count.second >= most_nucs )
+      {
+        most_nucs = el_count.second;
+        xray_z = el_count.first;
+      }
+    }
+
+    std::vector<SandiaDecay::EnergyIntensityPair> xrays;
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    const SandiaDecay::Element * const element = (db && xray_z) ? db->element( xray_z ) : nullptr;
+
+    // If the element's x-rays are themselves fit (it is a source), their sums are not modeled here: the two
+    //  would be one effect with two scales.
+    bool element_is_source = false;
+    for( const std::vector<NucInputGamma> &curve_sources : m_nuclides )
+    {
+      for( const NucInputGamma &src : curve_sources )
+        element_is_source = (element_is_source || (element && (RelActCalcAuto::element( src.source ) == element)));
+    }
+
+    // The K lines, down to a couple percent of the strongest (the L lines are below 0.6 of the highest K
+    //  line's energy for every element).
+    const double min_k_energy_fraction = 0.6, min_k_intensity_fraction = 0.02;
+    if( element && !element->xrays.empty() && !element_is_source )
+    {
+      double max_intensity = 0.0, max_energy = 0.0;
+      for( const SandiaDecay::EnergyIntensityPair &xray : element->xrays )
+      {
+        max_energy = std::max( max_energy, xray.energy );
+        if( xray.intensity > max_intensity )
+        {
+          max_intensity = xray.intensity;
+          sums->xray_ref_energy = xray.energy;
+        }
+      }
+
+      for( const SandiaDecay::EnergyIntensityPair &xray : element->xrays )
+      {
+        if( (xray.energy >= min_k_energy_fraction*max_energy) && (xray.intensity >= min_k_intensity_fraction*max_intensity) )
+          xrays.push_back( { xray.energy, xray.intensity/max_intensity } );
+      }
+      sums->xray_element = element;
+    }//if( the element has x-ray data )
+
+    // A rough area for each line, from the spectrum alone: the counts within 1.25 FWHM of it (all of a
+    //  peak, bar its tail), above the level in the same width just outside.  It only decides which sums are
+    //  worth modeling.
+    double max_counts = 0.0;
+    for( RandomSumLine &line : sums->lines )
+    {
+      line.estimated_counts = rough_line_counts( line.energy );
+      max_counts = std::max( max_counts, line.estimated_counts );
+    }//for( loop over lines )
+
+    // The sums that land in, or within a peak's reach of, a ROI.
+    const auto near_roi = [this]( const double energy, const double margin ) -> bool {
+      for( const RoiRangeChannels &range : m_energy_ranges )
+      {
+        if( (energy >= (range.lower_energy - margin)) && (energy <= (range.upper_energy + margin)) )
+          return true;
+      }
+      return false;
+    };
+
+    for( size_t a = 0; a < sums->lines.size(); ++a )
+    {
+      const double counts_a = sums->lines[a].estimated_counts;
+
+      for( size_t b = a; b < sums->lines.size(); ++b )
+      {
+        const double product = counts_a * sums->lines[b].estimated_counts;
+        if( !(product > 0.0) || (product < (sm_random_sum_min_pair_fraction*max_counts*max_counts)) )
+          continue;
+
+        RandomSumPeak peak;
+        peak.energy = sums->lines[a].energy + sums->lines[b].energy;
+        peak.line_a = a;
+        peak.line_b = static_cast<int>( b );
+        if( !near_roi( peak.energy, sum_peak_reach( peak.energy ) ) )
+          continue;
+        sums->peaks.push_back( peak );
+        if( near_roi( peak.energy, 0.0 ) && (product >= (sm_random_sum_time_lever_fraction*max_counts*max_counts)) )
+          sums->fit_time = true;
+      }//for( loop over the second line )
+
+      if( !(counts_a > 0.0) || (counts_a < (sm_random_sum_min_xray_line_fraction*max_counts)) )
+        continue;
+
+      for( const SandiaDecay::EnergyIntensityPair &xray : xrays )
+      {
+        RandomSumPeak peak;
+        peak.energy = sums->lines[a].energy + xray.energy;
+        peak.line_a = a;
+        peak.line_b = -1;
+        peak.xray_energy = xray.energy;
+        peak.xray_intensity = xray.intensity;
+        if( !near_roi( peak.energy, sum_peak_reach( peak.energy ) ) )
+          continue;
+        sums->peaks.push_back( peak );
+        if( near_roi( peak.energy, 0.0 ) )
+          sums->fit_xray = true;
+      }//for( loop over x-rays )
+    }//for( loop over lines )
+
+    m_random_sums = sums;
+    m_random_sum_setup_done.store( true );
+    return m_random_sums;
+  }//random_sums()
+
+
+  /** The model's counts in a (nuclide's) line whose random sums are modeled: as the line's own peak has
+   them, with its cascade-summing correction, its branching-ratio adjustment, and - through its yield - the
+   derivative with respect to a fitted age.
+   */
+  template<typename T>
+  T random_sum_line_counts( const RandomSumLine &line, const std::vector<T> &x,
+                            const PerEvalValues<T> * const per_eval ) const
+  {
+    const size_t re = line.rel_eff_index;
+    std::optional<SourceEvalValues<T>> computed;
+    if( !per_eval )
+      computed = source_eval_values<T>( re, line.source_index, x, nullptr );
+    const SourceEvalValues<T> &src_vals = per_eval ? per_eval->sources[re][line.source_index] : *computed;
+
+    // The line at the source's (possibly fitted) age; the lines are the same ones at any age.
+    const std::vector<NucInputGamma::EnergyYield> &gammas = *src_vals.gammas;
+    size_t gamma_index = line.gamma_index;
+    if( (gamma_index >= gammas.size()) || (gammas[gamma_index].energy != line.energy) )
+    {
+      for( gamma_index = 0; gamma_index < gammas.size(); ++gamma_index )
+      {
+        if( gammas[gamma_index].energy == line.energy )
+          break;
+      }
+    }
+    if( gamma_index >= gammas.size() )
+      return T(0.0);
+
+    T yield = T( gammas[gamma_index].yield );
+    if constexpr ( !std::is_same_v<T, double> )
+    {
+      if( !src_vals.fixed_age && src_vals.age_yield_derivatives
+         && (src_vals.age_yield_derivatives->status != AgeDerivativeStatus::Failed)
+         && (gamma_index < src_vals.age_yield_derivatives->derivatives.size()) )
+        attach_age_yield_derivative( yield, src_vals.age_yield_derivatives->derivatives[gamma_index], src_vals.nuc_age );
+    }
+
+    const T rel_eff = relative_eff( line.energy, re, x, per_eval, phys_model_energy_consts( re, line.energy ) );
+
+    T per_decay = rel_eff * yield;
+    if( const CascadeCurve * const cascade = cascade_curve( re ) )
+    {
+      std::vector<T> computed_cascade_vals;
+      if( !per_eval )
+        computed_cascade_vals = cascade_outputs( re, x );
+      const std::vector<T> &cascade_vals = per_eval ? per_eval->cascade[re] : computed_cascade_vals;
+      const CascadeLine cascade_ln = cascade_line( *cascade, line.source_index, line.energy );
+      if( cascade_ln.valid() )
+        per_decay = cascade_line_per_decay( *cascade, cascade_vals, cascade_ln, rel_eff, yield, re, x, per_eval );
+    }//if( the curve has the cascade-summing correction )
+
+    return src_vals.rel_act * static_cast<double>(m_live_time) * per_decay * br_uncert_adjustment( line.energy, x );
+  }//random_sum_line_counts(...)
+
+
+  /** The model's counts in a random-sum peak.
+
+   Two lines of areas A and B sum at random `2*A*B*time/live_time` times (`A*A*time/live_time` for a line
+   with itself).  A line and a fluorescence x-ray: the line's area, times the fitted fraction for the
+   element's strongest K x-ray, times this x-ray's intensity and detection efficiency relative to that one
+   (the latter from the line's relative efficiency curve).
+   */
+  template<typename T>
+  T random_sum_peak_counts( const RandomSums &sums, const RandomSumPeak &sum, const std::vector<T> &x,
+                            const PerEvalValues<T> * const per_eval ) const
+  {
+    const RandomSumLine &line_a = sums.lines[sum.line_a];
+    const T counts_a = random_sum_line_counts( line_a, x, per_eval );
+
+    if( sum.line_b >= 0 )
+    {
+      const T counts_b = (static_cast<size_t>(sum.line_b) == sum.line_a)
+                           ? counts_a : random_sum_line_counts( sums.lines[sum.line_b], x, per_eval );
+      const double multiple = (static_cast<size_t>(sum.line_b) == sum.line_a) ? 1.0 : 2.0;
+      return multiple * counts_a * counts_b
+             * (x[m_random_sum_par_start_index] * (sm_random_sum_time_scale / static_cast<double>(m_live_time)));
+    }//if( two lines )
+
+    const size_t re = line_a.rel_eff_index;
+    const T ref_eff = relative_eff( sums.xray_ref_energy, re, x, per_eval,
+                                    phys_model_energy_consts( re, sums.xray_ref_energy ) );
+    // The x-rays are usually below the ROIs, where an empirical curve is an extrapolation; if that gives no
+    //  efficiency at the reference x-ray, there is nothing to scale the others by.
+    if( !(ref_eff > 0.0) )
+      return T(0.0);
+
+    T ratio( 1.0 );
+    if( sum.xray_energy != sums.xray_ref_energy )
+      ratio = relative_eff( sum.xray_energy, re, x, per_eval, phys_model_energy_consts( re, sum.xray_energy ) )
+              / ref_eff;
+
+    return counts_a * (x[m_random_sum_par_start_index + 1] * sm_random_sum_xray_scale) * sum.xray_intensity * ratio;
+  }//random_sum_peak_counts(...)
+
+
+  /** A rough area for the peak at `energy`, from the spectrum alone: the counts within 1.25 FWHM of it (all
+   of a peak, bar its tail), above the level in the same width just outside.  For deciding, before anything
+   is fit, which sum peaks could matter.
+   */
+  double rough_line_counts( const double energy ) const
+  {
+    const double half = 1.25*PhysicalUnits::fwhm_nsigma*starting_sigma( energy );
+    if( !(half > 0.0) )
+      return 0.0;
+
+    const double peak = m_spectrum->gamma_integral( static_cast<float>(energy - half),
+                                                    static_cast<float>(energy + half) );
+    const double sides = m_spectrum->gamma_integral( static_cast<float>(energy - 2.0*half),
+                                                     static_cast<float>(energy - half) )
+                         + m_spectrum->gamma_integral( static_cast<float>(energy + half),
+                                                       static_cast<float>(energy + 2.0*half) );
+    return std::max( 0.0, peak - sides );
+  }//rough_line_counts(...)
+
+
+  /** Which of the peaks found in the spectrum are left out of the initial estimate of a curve's relative
+   efficiencies and activities, as they may be as much sum peak as line.
+
+   Before anything is fit, a peak is taken to be the lines of the sources at its energy.  With the source
+   close to the detector, or at a high count rate, a modeled sum peak (#cascade_curve, #random_sums) on top
+   of a weak line can be several times the line (e.g., U-235's 345.9 and 387.8 keV); an estimate made from
+   such peaks can be far enough off that the fit does not recover.  So a peak is not used if the modeled sum
+   peaks within its line-matching window could be more than `sm_initial_estimate_max_sum_share` of it -
+   unless one of its sources would then be left with no peak at all (see
+   `RelActCalcAutoImp::PreFit::peaks_mostly_sums`, which makes the choice).
+
+   What a sum peak could come to is a rough number: a coincidence sum, from the area of its source's
+   strongest line in the spectrum and the summing model at the starting attenuations; a random sum, from the
+   areas of its lines.
+
+   @param peaks The peaks, with the lines of the curve's sources they were matched to
+   @param cluster_num_sigma How many of a peak's widths from it a line is matched to it
+   @param x The parameters, as they are before the initial estimate
+   @returns for each peak, whether to leave it out
+   */
+  std::vector<bool> initial_estimate_peaks_under_sums( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
+                                                       const size_t rel_eff_index,
+                                                       const double cluster_num_sigma,
+                                                       const std::vector<double> &x ) const
+  {
+    std::vector<bool> leave_out( peaks.size(), false );
+    if( rel_eff_index >= m_nuclides.size() )
+      return leave_out;
+
+    // The energy, and largest plausible counts, of each modeled sum peak.
+    std::vector<std::pair<double,double>> possible_sums;
+
+    try
+    {
+      if( const CascadeCurve * const cascade = cascade_curve( rel_eff_index ) )
+      {
+        // With the source as close as it can be, if the distance is to be fit.
+        std::vector<double> x_near = x;
+        if( m_options.rel_eff_curves[rel_eff_index].cascade_summing.fit_distance )
+          x_near[cascade->par_index] = sm_cascade_par_offset + 1.0;
+        const std::vector<double> cascade_vals = cascade_outputs( rel_eff_index, x_near );
+
+        const std::vector<RelActCalcCascade::SummingModel::Source> &sources = cascade->model->sources();
+        for( size_t msrc = 0; msrc < sources.size(); ++msrc )
+        {
+          const NucInputGamma &src = m_nuclides[rel_eff_index][cascade->source_index[msrc]];
+          if( !src.nominal_gammas || sources[msrc].sum_peaks.empty() )
+            continue;
+
+          // The source's strongest line with the starting efficiency curve: what its counts are scaled from.
+          double ref_energy = 0.0, ref_rate = 0.0;
+          for( const double energy : sources[msrc].input.line_energies )
+          {
+            for( const NucInputGamma::EnergyYield &line : *src.nominal_gammas )
+            {
+              if( line.energy != energy )
+                continue;
+              const double rate = line.yield * relative_eff<double>( energy, rel_eff_index, x_near, nullptr,
+                                                              phys_model_energy_consts( rel_eff_index, energy ) );
+              if( std::isfinite( rate ) && (rate > ref_rate) )
+              {
+                ref_rate = rate;
+                ref_energy = energy;
+              }
+              break;
+            }//for( loop over the source's gammas )
+          }//for( loop over the source's lines in the model )
+
+          if( !(ref_rate > 0.0) )
+            continue;
+          const double ref_counts = rough_line_counts( ref_energy );
+
+          for( size_t peak_index = 0; peak_index < sources[msrc].sum_peaks.size(); ++peak_index )
+          {
+            const double rate = cascade_sum_peak_rate<double>( *cascade, cascade_vals, msrc, peak_index,
+                                                               rel_eff_index, x_near, nullptr );
+            if( std::isfinite( rate ) && (rate > 0.0) )
+              possible_sums.push_back( { sources[msrc].sum_peaks[peak_index].energy, ref_counts*rate/ref_rate } );
+          }
+        }//for( loop over the summing model's sources )
+      }//if( the curve has the cascade-summing correction )
+
+      if( const std::shared_ptr<const RandomSums> sums = random_sums() )
+      {
+        const double time_scale = sm_initial_estimate_sum_time * sm_random_sum_time_scale / static_cast<double>(m_live_time);
+        const double xray_scale = sm_initial_estimate_sum_xray * sm_random_sum_xray_scale;
+        for( const RandomSumPeak &sum : sums->peaks )
+        {
+          const double counts_a = sums->lines[sum.line_a].estimated_counts;
+          double counts = counts_a * xray_scale * sum.xray_intensity;
+          if( sum.line_b >= 0 )
+            counts = ((static_cast<size_t>(sum.line_b) == sum.line_a) ? 1.0 : 2.0) * counts_a
+                     * sums->lines[sum.line_b].estimated_counts * time_scale;
+          if( std::isfinite( counts ) && (counts > 0.0) )
+            possible_sums.push_back( { sum.energy, counts } );
+        }
+      }//if( random sums are modeled )
+    }catch( std::exception & )
+    {
+      // The sums could not be sized (e.g., no efficiency curve yet at these parameters): use every peak.
+      return leave_out;
+    }//try / catch
+
+    return RelActCalcAutoImp::PreFit::peaks_mostly_sums( peaks, possible_sums, cluster_num_sigma,
+                                                         sm_initial_estimate_max_sum_share );
+  }//initial_estimate_peaks_under_sums(...)
+
+
+
+  /** A width (sigma, keV) for a peak at `energy` before anything is fit: the detector response's, kept
+   within what the detector type allows.
+   */
+  double starting_sigma( const double energy ) const
+  {
+    float min_sigma = 0.0f, max_sigma = 0.0f;
+    expected_peak_width_limits( static_cast<float>(energy), m_det_type, m_spectrum, min_sigma, max_sigma );
+    double sigma = (m_drf && m_drf->hasResolutionInfo()) ? m_drf->peakResolutionSigma( static_cast<float>(energy) )
+                                                         : std::numeric_limits<double>::quiet_NaN();
+    if( !std::isfinite(sigma) || !(sigma > 0.0) )
+      sigma = std::sqrt( std::max( 0.0f, min_sigma ) * std::max( 0.0f, max_sigma ) );
+    return std::min( std::max( sigma, static_cast<double>(min_sigma) ), static_cast<double>(max_sigma) );
+  }//starting_sigma(...)
+
+
+  /** How far (keV) outside a ROI a source's line at `energy` can be and still be modeled in it (see where
+   #peaks_for_energy_range_imp works out the lines that reach a ROI: up to 15 or 20 sigma of the fitted
+   width); such lines get a cascade-summing factor.  From the starting width, with room to spare, as the
+   set of lines is fixed before anything is fit.
+   */
+  double line_reach( const double energy ) const
+  {
+    return std::max( sm_cascade_line_margin_kev, 25.0*starting_sigma( energy ) );
+  }
+
+
+  /** How far (keV) outside a ROI a sum peak at `energy` is looked for: three starting widths, beyond which
+   a peak puts under a thousandth of itself into the ROI (the starting width is rarely under the fitted one;
+   and each one more looked for costs every evaluation).
+   */
+  double sum_peak_reach( const double energy ) const
+  {
+    return 3.0*starting_sigma( energy );
+  }
+
+
+  /** The factor the "additional branching ratio uncertainty" parameters put on the lines at `energy`; one
+   if there are none (see `Options::additional_br_uncert`).
+   */
+  template<typename T>
+  T br_uncert_adjustment( const double energy, const std::vector<T> &x ) const
+  {
+    if( !(m_options.additional_br_uncert > 0.0) || m_peak_ranges_with_uncert.empty() )
+      return T(1.0);
+
+    for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
+    {
+      const std::pair<double,double> &range = m_peak_ranges_with_uncert[range_index];
+      if( (energy >= range.first) && (energy <= range.second) )
+      {
+        const T num_sigma = (x[m_add_br_uncert_start_index + range_index] - sm_peak_range_uncert_offset)
+                            / sm_peak_range_uncert_par_scale;
+        return 1.0 + num_sigma*m_options.additional_br_uncert;
+      }
+    }//for( loop over the ranges )
+
+    return T(1.0);
+  }//br_uncert_adjustment(...)
+
+
+  /** Whether parameter `index` is a curve's cascade-summing solid-angle parameter. */
+  bool is_cascade_parameter( const size_t index ) const
+  {
+    return (m_num_cascade_pars > 0) && (index >= m_cascade_par_start_index)
+           && (index < (m_cascade_par_start_index + m_num_cascade_pars));
+  }
+
+
+  /** The relative efficiency curve cascade-summing parameter `index` is of: the parameters are in the order
+   of the curves that have the correction enabled.
+   */
+  size_t cascade_parameter_curve( const size_t index ) const
+  {
+    assert( is_cascade_parameter( index ) );
+    size_t ordinal = index - m_cascade_par_start_index;
+    for( size_t curve = 0; curve < m_options.rel_eff_curves.size(); ++curve )
+    {
+      if( !m_options.rel_eff_curves[curve].cascade_summing.enabled )
+        continue;
+      if( ordinal == 0 )
+        return curve;
+      --ordinal;
+    }
+    throw std::logic_error( "cascade_parameter_curve: not a cascade-summing parameter." );
+  }//cascade_parameter_curve(...)
+
+
+  /** Whether the lower limit of parameter `index` is an ordinary answer rather than a sign of trouble: a
+   cascade-summing solid angle of zero (the source is far away), or a random-sum scale of zero (no pile-up).
+   */
+  bool lower_limit_is_ordinary( const size_t index ) const
+  {
+    return is_cascade_parameter( index ) || is_random_sum_parameter( index );
+  }
+
+
+  /** Builds the cascade-summing model of each curve that has the correction enabled; a no-op after the first
+   call.  Built on first use rather than in the constructor: they are not cheap, and not every functor that
+   is constructed is evaluated.
+
+   Throws if the detector response can not support the correction.
+   */
+  void ensure_cascade_models() const
+  {
+    if( !m_num_cascade_pars || m_cascade_setup_done.load() )
+      return;
+
+    std::lock_guard<std::mutex> lock( m_cascade_setup_mutex );
+    if( m_cascade_setup_done.load() )
+      return;
+
+    const size_t num_curves = m_options.rel_eff_curves.size();
+    std::vector<std::shared_ptr<CascadeCurve>> curves( num_curves );
+
+    // The shield parameters of every Physical Model curve (a curve's attenuation can include another's):
+    //  atomic number then areal density, of the self-attenuator and then each external attenuator; and
+    //  whether each is fit.
+    std::vector<size_t> shield_pars;
+    std::vector<bool> shield_par_fit;
+    for( size_t re = 0; re < num_curves; ++re )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = m_options.rel_eff_curves[re];
+      if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+      const size_t start = rel_eff_eqn_start_parameter( re );
+      for( size_t shield = 0; shield < (1 + curve.phys_model_external_atten.size()); ++shield )
+      {
+        const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input
+                    = shield ? curve.phys_model_external_atten[shield - 1] : curve.phys_model_self_atten;
+        shield_pars.push_back( start + 2*shield );
+        shield_par_fit.push_back( input && input->fit_atomic_number );
+        shield_pars.push_back( start + 2*shield + 1 );
+        shield_par_fit.push_back( input && input->fit_areal_density );
+      }
+    }//for( loop over relative efficiency curves )
+
+    // The largest solid angle a source can have, for judging which sum peaks could matter (also checks the
+    //  detector response is usable).
+    const RelActCalcCascade::SummingModel no_sources( {}, m_drf );
+    const double max_solid_angle = no_sources.max_front_solid_angle();
+
+    size_t next_par = m_cascade_par_start_index;
+    for( size_t re = 0; re < num_curves; ++re )
+    {
+      if( !m_options.rel_eff_curves[re].cascade_summing.enabled )
+        continue;
+
+      const std::shared_ptr<CascadeCurve> cc = std::make_shared<CascadeCurve>();
+      cc->par_index = next_par++;
+      cc->dependent_pars.push_back( cc->par_index );
+      cc->dependent_pars.insert( end(cc->dependent_pars), begin(shield_pars), end(shield_pars) );
+      if( m_options.rel_eff_curves[re].cascade_summing.fit_distance )
+        cc->varying_pars.push_back( 0 );
+      for( size_t i = 0; i < shield_pars.size(); ++i )
+      {
+        if( shield_par_fit[i] )
+          cc->varying_pars.push_back( 1 + i );
+      }
+
+      const std::vector<NucInputGamma> &nucs = m_nuclides[re];
+      cc->model_source.assign( nucs.size(), -1 );
+
+      std::vector<RelActCalcCascade::SourceInput> inputs;
+      std::vector<std::vector<double>> weak_lines;   //per input: its lines too weak to be given a factor
+      for( size_t source_index = 0; source_index < nucs.size(); ++source_index )
+      {
+        const NucInputGamma &src = nucs[source_index];
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src.source );
+        if( !nuc || !src.nominal_gammas )
+          continue;
+
+        RelActCalcCascade::SourceInput input;
+        input.nuclide = nuc;
+
+        // The starting age (of the nuclide that controls this one's, if another does).
+        const SandiaDecay::Nuclide * const age_nuc = age_controlling_nuc( nuc, re );
+        const size_t age_index = nuclide_index( age_nuc, re );
+        // As the fit starts it: an age that was not given (a second or less) is the nuclide's default one.
+        double start_age = m_nuclides[re][age_index].age;
+        if( start_age <= 1.0*PhysicalUnits::second )
+          start_age = PeakDef::defaultDecayTime( age_nuc, nullptr );
+        input.age = std::max( 0.0, start_age );
+
+        // The gamma lines in or near a ROI.
+        std::vector<double> yields;
+        for( const NucInputGamma::EnergyYield &line : *src.nominal_gammas )
+        {
+          if( (line.gamma_type != PeakDef::SourceGammaType::NormalGamma)
+             && (line.gamma_type != PeakDef::SourceGammaType::AnnihilationGamma) )
+            continue;
+
+          const double reach = line_reach( line.energy );
+          bool near_roi = false;
+          for( size_t i = 0; !near_roi && (i < m_energy_ranges.size()); ++i )
+            near_roi = (line.energy >= (m_energy_ranges[i].lower_energy - reach))
+                       && (line.energy <= (m_energy_ranges[i].upper_energy + reach));
+          if( !near_roi )
+            continue;
+
+          input.line_energies.push_back( line.energy );
+          yields.push_back( line.yield );
+        }//for( loop over the nuclide's lines )
+
+        if( input.line_energies.empty() )
+          continue;
+
+        // The nuclide's strongest line, as a rate per decay with the source touching the detector.
+        const RelActCalcCascade::DetectorEfficiencies effs
+                                 = RelActCalcCascade::detector_efficiencies( m_drf, input.line_energies );
+        double strongest = 0.0;
+        for( size_t i = 0; i < yields.size(); ++i )
+          strongest = std::max( strongest, yields[i]*effs.fep[i]*max_solid_angle );
+
+        // Lines too weak for a correction of theirs to be seen are left as they are.
+        std::vector<double> kept_lines, dropped_lines;
+        for( size_t i = 0; i < yields.size(); ++i )
+        {
+          if( (yields[i]*effs.fep[i]*max_solid_angle) >= (sm_cascade_min_line_fraction*strongest) )
+            kept_lines.push_back( input.line_energies[i] );
+          else
+            dropped_lines.push_back( input.line_energies[i] );
+        }
+        input.line_energies.swap( kept_lines );
+        weak_lines.push_back( std::move(dropped_lines) );
+
+        // A sum peak just outside a ROI still puts counts into it.
+        for( const RoiRangeChannels &range : m_energy_ranges )
+          input.sum_ranges.push_back( { range.lower_energy - sum_peak_reach( range.lower_energy ),
+                                        range.upper_energy + sum_peak_reach( range.upper_energy ),
+                                        sm_cascade_min_sum_fraction*strongest } );
+
+        // Sorted and distinct, as #cascade_line needs.
+        std::sort( begin(input.line_energies), end(input.line_energies) );
+        input.line_energies.erase( std::unique( begin(input.line_energies), end(input.line_energies) ),
+                                   end(input.line_energies) );
+
+        cc->model_source[source_index] = static_cast<int>( inputs.size() );
+        cc->source_index.push_back( source_index );
+        inputs.push_back( std::move(input) );
+      }//for( loop over the curve's sources )
+
+      cc->model = shared_cascade_model( inputs, m_drf );
+
+      // A sum that lands on one of the source's weak lines is to be counted with that line (it can be most
+      //  of the peak there - e.g., U-235's 387.8 keV with the source close): keep those lines after all.
+      bool added_lines = false;
+      for( size_t src = 0; src < inputs.size(); ++src )
+      {
+        for( const RelActCalcCascade::SumPeak &peak : cc->model->sources()[src].sum_peaks )
+        {
+          if( peak.line_index >= 0 )
+            continue;
+          for( const double energy : weak_lines[src] )
+          {
+            if( fabs( energy - peak.energy ) <= RelActCalcCascade::SummingModel::sm_sum_on_line_kev )
+            {
+              inputs[src].line_energies.push_back( energy );
+              added_lines = true;
+            }
+          }
+        }//for( loop over the source's sum peaks )
+
+        std::sort( begin(inputs[src].line_energies), end(inputs[src].line_energies) );
+        inputs[src].line_energies.erase( std::unique( begin(inputs[src].line_energies), end(inputs[src].line_energies) ),
+                                         end(inputs[src].line_energies) );
+      }//for( loop over the model's sources )
+
+      if( added_lines )
+        cc->model = shared_cascade_model( inputs, m_drf );
+
+      const std::vector<RelActCalcCascade::SummingModel::Source> &sources = cc->model->sources();
+      size_t offset = 0;
+      for( const RelActCalcCascade::SummingModel::Source &source : sources )
+      {
+        cc->line_offset.push_back( offset );
+        offset += source.input.line_energies.size();
+      }
+      cc->pair_offset.resize( sources.size() );
+      cc->line_sum_peaks.resize( sources.size() );
+      cc->line_has_level_scheme.resize( sources.size() );
+      for( size_t src = 0; src < sources.size(); ++src )
+      {
+        const size_t num_lines = sources[src].input.line_energies.size();
+        cc->line_has_level_scheme[src].assign( num_lines, 1 );
+        for( size_t line = 0; line < num_lines; ++line )
+          cc->line_has_level_scheme[src][line] = (sources[src].line_found[line] && sources[src].line_complete[line]);
+
+        cc->line_sum_peaks[src].resize( sources[src].input.line_energies.size() );
+        for( size_t peak_index = 0; peak_index < sources[src].sum_peaks.size(); ++peak_index )
+        {
+          const RelActCalcCascade::SumPeak &peak = sources[src].sum_peaks[peak_index];
+          cc->pair_offset[src].push_back( offset );
+          offset += 2*peak.pairs.size();
+          if( peak.line_index >= 0 )
+            cc->line_sum_peaks[src][peak.line_index].push_back( peak_index );
+        }
+      }
+      cc->num_outputs = offset;
+
+      curves[re] = cc;
+    }//for( loop over relative efficiency curves )
+
+    m_cascade_curves = std::move(curves);
+    m_cascade_setup_done.store( true );
+  }//void ensure_cascade_models() const
+
+
+  /** The summing model for these sources and detector; the same solve builds this functor many times over
+   (for candidate fits, and so on), so the most recent few models are kept.
+   */
+  static std::shared_ptr<const RelActCalcCascade::SummingModel> shared_cascade_model(
+                                           const std::vector<RelActCalcCascade::SourceInput> &inputs,
+                                           const std::shared_ptr<const DetectorPeakResponse> &drf )
+  {
+    // The key is the inputs exactly (to the last digit): a model is only right for the ages, lines and
+    //  ranges it was built for, and one that is nearly right would make answers depend on what was solved
+    //  before.
+    std::string key = std::to_string( drf ? drf->hashValue() : uint64_t(0) );
+    char buffer[128];
+    for( const RelActCalcCascade::SourceInput &input : inputs )
+    {
+      snprintf( buffer, sizeof(buffer), ":%.17g", input.age );
+      key += "|" + input.nuclide->symbol + buffer;
+      for( const double energy : input.line_energies )
+      {
+        snprintf( buffer, sizeof(buffer), ",%.17g", energy );
+        key += buffer;
+      }
+      for( const RelActCalcCascade::SumRange &range : input.sum_ranges )
+      {
+        snprintf( buffer, sizeof(buffer), ";%.17g-%.17g@%.17g", range.lower_energy, range.upper_energy,
+                  range.min_rate_per_decay );
+        key += buffer;
+      }
+    }//for( loop over sources )
+
+    // The functors of one solve (its fits from other starting points, its gradient checks, ...) share a
+    //  model; a solve goes through a few (two per curve, per layout of the ROIs).
+    typedef std::pair<std::string,std::shared_ptr<const RelActCalcCascade::SummingModel>> Entry;
+    static std::mutex s_mutex;
+    static std::vector<Entry> s_models;
+    const size_t max_cached = 24;
+
+    {
+      std::lock_guard<std::mutex> lock( s_mutex );
+      for( const Entry &entry : s_models )
+      {
+        if( entry.first == key )
+          return entry.second;
+      }
+    }
+
+    const std::shared_ptr<const RelActCalcCascade::SummingModel> model
+                                  = std::make_shared<const RelActCalcCascade::SummingModel>( inputs, drf );
+
+    std::lock_guard<std::mutex> lock( s_mutex );
+    if( s_models.size() >= max_cached )
+      s_models.erase( begin(s_models) );
+    s_models.emplace_back( key, model );
+    return model;
+  }//shared_cascade_model(...)
+
+
+  /** The cascade-summing state of a curve; null if the curve does not have the correction. */
+  const CascadeCurve *cascade_curve( const size_t rel_eff_index ) const
+  {
+    if( !m_num_cascade_pars )
+      return nullptr;
+    ensure_cascade_models();
+    return (rel_eff_index < m_cascade_curves.size()) ? m_cascade_curves[rel_eff_index].get() : nullptr;
+  }
+
+
+  /** The front solid angle a curve's cascade-summing parameter stands for. */
+  template<typename T>
+  T cascade_solid_angle( const CascadeCurve &cc, const std::vector<T> &x ) const
+  {
+    return (x[cc.par_index] - sm_cascade_par_offset) * cc.model->max_front_solid_angle();
+  }
+
+
+  /** A line of one of a curve's sources, in the curve's summing model. */
+  struct CascadeLine
+  {
+    size_t model_source = std::numeric_limits<size_t>::max();
+    size_t line = std::numeric_limits<size_t>::max();
+    bool valid() const { return (line != std::numeric_limits<size_t>::max()); }
+  };//struct CascadeLine
+
+  /** Finds a line (by its energy, as in the source's gammas) of the curve's `source_index`'th source in the
+   curve's summing model; not `valid()` if the model has no such line.
+   */
+  static CascadeLine cascade_line( const CascadeCurve &cc, const size_t source_index, const double energy )
+  {
+    CascadeLine answer;
+    const int msrc = (source_index < cc.model_source.size()) ? cc.model_source[source_index] : -1;
+    if( msrc < 0 )
+      return answer;
+    const std::vector<double> &lines = cc.model->sources()[msrc].input.line_energies;
+    const std::vector<double>::const_iterator pos = std::lower_bound( begin(lines), end(lines), energy );
+    if( (pos == end(lines)) || (*pos != energy) )
+      return answer;
+    answer.model_source = static_cast<size_t>( msrc );
+    answer.line = static_cast<size_t>( pos - begin(lines) );
+    return answer;
+  }//cascade_line(...)
+
+
+  /** Counts in a coincidence-sum peak, per unit of the source's relative activity and of live time.
+
+   Each pair of photons contributes (the counts per unit yield of one member's line) x (the pair's emission
+   probability) x (the absolute efficiency for the other member, given the first was detected).  The first
+   comes from the fitted curve, the last from the summing model; with both members inside the energy range
+   the curve is fit over, the two ways of assigning them are averaged.
+
+   @param cascade_vals The curve's #cascade_outputs
+   */
+  template<typename T>
+  T cascade_sum_peak_rate( const CascadeCurve &cc, const std::vector<T> &cascade_vals,
+                           const size_t model_source, const size_t peak_index,
+                           const size_t rel_eff_index, const std::vector<T> &x,
+                           const PerEvalValues<T> * const per_eval ) const
+  {
+    const RelActCalcCascade::SumPeak &sum_peak = cc.model->sources()[model_source].sum_peaks[peak_index];
+    const std::vector<double> &energies = cc.model->energies();
+
+    T rate( 0.0 );
+    for( size_t pair_index = 0; pair_index < sum_peak.pairs.size(); ++pair_index )
+    {
+      const RelActCalcCascade::SumPair &pair = sum_peak.pairs[pair_index];
+      const double energy_a = energies[pair.energy_a], energy_b = energies[pair.energy_b];
+      const size_t out = cc.pair_offset[model_source][peak_index] + 2*pair_index;
+      const T &b_given_a = cascade_vals[out];
+      const T &a_given_b = cascade_vals[out + 1];
+
+      const bool a_in = (energy_a >= m_corr_lower_energy) && (energy_a <= m_corr_upper_energy);
+      const bool b_in = (energy_b >= m_corr_lower_energy) && (energy_b <= m_corr_upper_energy);
+      const bool use_a = a_in || !b_in;   //with neither in range, a is as good as b
+      const bool use_b = b_in || !a_in;
+
+      T pair_rate( 0.0 );
+      if( use_a )
+        pair_rate += relative_eff( energy_a, rel_eff_index, x, per_eval,
+                                   phys_model_energy_consts( rel_eff_index, energy_a ) ) * b_given_a;
+      if( use_b )
+        pair_rate += relative_eff( energy_b, rel_eff_index, x, per_eval,
+                                   phys_model_energy_consts( rel_eff_index, energy_b ) ) * a_given_b;
+      if( use_a && use_b )
+        pair_rate *= 0.5;
+
+      rate += pair.weight * pair_rate;
+    }//for( loop over the sum peak's pairs )
+
+    return rate;
+  }//cascade_sum_peak_rate(...)
+
+
+  /** A line's detected rate per decay of its source (in the units of the relative efficiency curve), with
+   the cascade-summing correction: `rel_eff*yield` times the fraction not lost to a coincident photon, plus
+   the sums of other photon pairs of the source that land on the line.
+
+   @param line A valid #cascade_line of the curve's model
+   @param cascade_vals The curve's #cascade_outputs
+   */
+  template<typename T>
+  T cascade_line_per_decay( const CascadeCurve &cc, const std::vector<T> &cascade_vals, const CascadeLine &line,
+                            const T &rel_eff, const T &yield, const size_t rel_eff_index,
+                            const std::vector<T> &x, const PerEvalValues<T> * const per_eval ) const
+  {
+    assert( line.valid() );
+    const size_t msrc = line.model_source;
+    T per_decay = rel_eff * yield * cascade_vals[cc.line_offset[msrc] + line.line];
+    for( const size_t sum_peak_index : cc.line_sum_peaks[msrc][line.line] )
+      per_decay += cascade_sum_peak_rate( cc, cascade_vals, msrc, sum_peak_index, rel_eff_index, x, per_eval );
+    return per_decay;
+  }//cascade_line_per_decay(...)
+
+
+  /** The cascade-summing outputs of a curve, and their derivatives with respect to its dependent parameters,
+   at the parameter values `x`; memoized, since a Jacobian evaluation asks for the same point once per
+   pass.
+   */
+  std::shared_ptr<const CascadeLinearization> cascade_linearization( const CascadeCurve &cc,
+                                                                    const size_t rel_eff_index,
+                                                                    const std::vector<double> &x ) const
+  {
+    const size_t num_dep = cc.dependent_pars.size();
+    std::vector<double> key( num_dep );
+    for( size_t i = 0; i < num_dep; ++i )
+      key[i] = x[cc.dependent_pars[i]];
+
+    {
+      std::lock_guard<std::mutex> lock( cc.memo_mutex );
+      for( const std::shared_ptr<const CascadeLinearization> &entry : cc.memo )
+      {
+        if( entry->key == key )
+          return entry;
+      }
+    }
+
+    const std::shared_ptr<CascadeLinearization> answer = std::make_shared<CascadeLinearization>();
+    answer->key = key;
+    const size_t num_vary = cc.varying_pars.size();
+    answer->values.assign( cc.num_outputs, 0.0 );
+    answer->gradients.assign( cc.num_outputs, std::vector<double>( num_vary, 0.0 ) );
+
+    // The model only depends on a handful of parameters: differentiate with a small Jet, a few at a time.
+    constexpr int lanes = 4;
+    typedef ceres::Jet<double,lanes> LocalJet;
+    std::vector<LocalJet> x_local( x.size() );
+
+    for( size_t first = 0; first < std::max( num_vary, size_t(1) ); first += static_cast<size_t>(lanes) )
+    {
+      for( size_t i = 0; i < x.size(); ++i )
+        x_local[i] = LocalJet( x[i] );
+      for( size_t lane = 0; (lane < static_cast<size_t>(lanes)) && ((first + lane) < num_vary); ++lane )
+        x_local[cc.dependent_pars[cc.varying_pars[first + lane]]].v[lane] = 1.0;
+
+      const PhysModelRelEqnDef<LocalJet> phys = make_phys_eqn_input( rel_eff_index, x_local );
+
+      RelActCalcCascade::EvalInput<LocalJet> input;
+      input.front_solid_angle = cascade_solid_angle( cc, x_local );
+      cc.model->set_attenuation( phys.self_atten, phys.external_attens, input );
+
+      RelActCalcCascade::EvalResult<LocalJet> result;
+      cc.model->evaluate( input, result );
+
+      auto store = [&]( const size_t out, const LocalJet &value ){
+        answer->values[out] = value.a;
+        for( size_t lane = 0; (lane < static_cast<size_t>(lanes)) && ((first + lane) < num_vary); ++lane )
+          answer->gradients[out][first + lane] = value.v[lane];
+      };
+
+      for( size_t src = 0; src < result.summing_out.size(); ++src )
+      {
+        for( size_t line = 0; line < result.summing_out[src].size(); ++line )
+          store( cc.line_offset[src] + line, result.summing_out[src][line] );
+
+        for( size_t peak = 0; peak < result.sum_pairs[src].size(); ++peak )
+        {
+          for( size_t pair = 0; pair < result.sum_pairs[src][peak].size(); ++pair )
+          {
+            store( cc.pair_offset[src][peak] + 2*pair, result.sum_pairs[src][peak][pair].b_given_a );
+            store( cc.pair_offset[src][peak] + 2*pair + 1, result.sum_pairs[src][peak][pair].a_given_b );
+          }
+        }
+      }//for( loop over the model's sources )
+    }//for( loop over batches of varying parameters )
+
+    // An evaluation's passes (the residuals, then each batch of the Jacobian's columns) are at one set of
+    //  values; a few sets are kept, for the evaluations of the threads that run at once.
+    std::lock_guard<std::mutex> lock( cc.memo_mutex );
+    const size_t max_memo = 4;
+    if( cc.memo.size() >= max_memo )
+      cc.memo.erase( begin(cc.memo) );
+    cc.memo.push_back( answer );
+    return answer;
+  }//cascade_linearization(...)
+
+
+  /** The flattened cascade-summing outputs of a curve (see `CascadeCurve`) at `x`, in the scalar type of
+   `x`: the values, with exact first derivatives carried into a Jet's lanes.
+   */
+  template<typename T>
+  std::vector<T> cascade_outputs( const size_t rel_eff_index, const std::vector<T> &x ) const
+  {
+    const CascadeCurve * const cc = cascade_curve( rel_eff_index );
+    assert( cc );
+    if( !cc )
+      return {};
+
+    std::vector<double> x_values( x.size() );
+    for( size_t i = 0; i < x.size(); ++i )
+      x_values[i] = RelActCalcCascade::scalar_value( x[i] );
+
+    const std::shared_ptr<const CascadeLinearization> lin = cascade_linearization( *cc, rel_eff_index, x_values );
+
+    std::vector<T> outputs( cc->num_outputs );
+    for( size_t out = 0; out < cc->num_outputs; ++out )
+    {
+      T value( lin->values[out] );
+      if constexpr ( !std::is_same_v<T, double> )
+      {
+        for( size_t vary = 0; vary < cc->varying_pars.size(); ++vary )
+        {
+          const double gradient = lin->gradients[out][vary];
+          const size_t dep = cc->varying_pars[vary];
+          if( gradient != 0.0 )
+            value += gradient * (x[cc->dependent_pars[dep]] - lin->key[dep]);
+        }
+      }
+      outputs[out] = value;
+    }//for( loop over outputs )
+
+    return outputs;
+  }//cascade_outputs(...)
+
+
   template<typename T>
   PerEvalValues<T> per_eval_values( const std::vector<T> &x ) const
   {
@@ -16367,6 +18143,16 @@ struct RelActAutoCostFcn
         answer.phys_input_errors[i] = std::current_exception();
       }
     }//for( loop over rel. eff. curves )
+
+    answer.cascade.resize( num_curves );
+    if( m_num_cascade_pars )
+    {
+      for( size_t i = 0; i < num_curves; ++i )
+      {
+        if( cascade_curve( i ) )
+          answer.cascade[i] = cascade_outputs( i, x );
+      }
+    }//if( m_num_cascade_pars )
 
     answer.sources.resize( m_nuclides.size() );
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
@@ -16556,6 +18342,15 @@ struct RelActAutoCostFcn
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     {
       const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
+
+      // The curve's cascade-summing factors and sum-pair values, if it has the correction.
+      const CascadeCurve * const cascade = cascade_curve( rel_eff_index );
+      std::vector<T> computed_cascade_vals;
+      if( cascade && !per_eval )
+        computed_cascade_vals = cascade_outputs( rel_eff_index, x );
+      const std::vector<T> * const cascade_vals = !cascade ? nullptr
+                                           : (per_eval ? &(per_eval->cascade[rel_eff_index]) : &computed_cascade_vals);
+
       for( size_t source_index = 0; source_index < nuclides.size(); ++source_index )
       {
         const NucInputGamma &src_info = nuclides[source_index];
@@ -16693,7 +18488,20 @@ struct RelActAutoCostFcn
           }//if( !std::is_same_v<T, double> )          
 
           const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x, cached_splines );
-          const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
+
+          T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
+
+          // Coincidence summing: the fraction of the line's full-energy counts not lost to a coincident
+          //  photon, plus the sums of other photon pairs of this source that land on the line.
+          const CascadeLine cascade_ln = cascade_vals ? cascade_line( *cascade, source_index, gamma.energy )
+                                                      : CascadeLine();
+          if( cascade_ln.valid() )
+          {
+            const T per_decay = cascade_line_per_decay( *cascade, *cascade_vals, cascade_ln, rel_eff, yield,
+                                                        rel_eff_index, x, per_eval );
+            peak_amplitude = rel_act * static_cast<double>(m_live_time) * per_decay * br_uncert_adj;
+          }//if( cascade_ln.valid() )
+
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
           // The line identity is frozen.  Reject an invalid trial through the ordinary Ceres
@@ -16823,7 +18631,89 @@ struct RelActAutoCostFcn
             peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
       }//for( const NucInputGamma &src_info : m_nuclides )
+
+      // The coincidence-sum peaks of the curve's nuclides that reach this ROI: two photons of one decay,
+      //  both fully absorbed.  Their size follows from the solid angle; there is nothing more to fit.
+      //  (Sums landing on a line of their own source were counted with that line, above.)
+      if( cascade_vals )
+      {
+        const std::vector<RelActCalcCascade::SummingModel::Source> &sum_sources = cascade->model->sources();
+
+        for( size_t msrc = 0; msrc < sum_sources.size(); ++msrc )
+        {
+          const RelActCalcCascade::SummingModel::Source &sum_source = sum_sources[msrc];
+          const size_t source_index = cascade->source_index[msrc];
+
+          for( size_t peak_index = 0; peak_index < sum_source.sum_peaks.size(); ++peak_index )
+          {
+            const RelActCalcCascade::SumPeak &sum_peak = sum_source.sum_peaks[peak_index];
+            const double energy = sum_peak.energy;
+            if( (sum_peak.line_index >= 0) || (energy < lower_mean) || (energy > upper_mean) )
+              continue;
+
+            std::optional<SourceEvalValues<T>> computed_sum_src_vals;
+            if( !per_eval )
+              computed_sum_src_vals = source_eval_values<T>( rel_eff_index, source_index, x, nullptr );
+            const T &sum_rel_act = per_eval ? per_eval->sources[rel_eff_index][source_index].rel_act
+                                            : computed_sum_src_vals->rel_act;
+
+            RelActCalcAuto::PeakDefImp<T> peak;
+            peak.m_mean = apply_energy_cal_adjustment( energy, x, cached_splines );
+            peak.m_sigma = fwhm( T(energy), x ) / 2.35482;
+            peak.m_amplitude = sum_rel_act * static_cast<double>(m_live_time)
+                               * cascade_sum_peak_rate( *cascade, *cascade_vals, msrc, peak_index,
+                                                        rel_eff_index, x, per_eval );
+            peak.m_src_energy = energy;
+            peak.m_parent_nuclide = sum_source.input.nuclide;
+            peak.m_is_cascade_sum = true;
+            peak.m_rel_eff_index = rel_eff_index;
+            set_peak_skew( peak, x );
+
+            if( isinf(peak.m_amplitude) || isnan(peak.m_amplitude)
+               || isinf(peak.m_sigma) || isnan(peak.m_sigma) || (peak.m_sigma <= T(0.0)) )
+              throw runtime_error( "peaks_for_energy_range_imp: invalid cascade sum peak at "
+                                  + std::to_string(energy) + " keV." );
+
+            peaks.push_back( std::move(peak) );
+          }//for( loop over the source's sum peaks )
+        }//for( loop over the summing model's sources )
+      }//if( cascade_vals )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
+
+    // The random-sum (pile-up) peaks that reach this ROI.
+    if( const std::shared_ptr<const RandomSums> sums = random_sums() )
+    {
+      using std::sqrt;
+      for( const RandomSumPeak &sum : sums->peaks )
+      {
+        if( (sum.energy < lower_mean) || (sum.energy > upper_mean) )
+          continue;
+
+        const RandomSumLine &line_a = sums->lines[sum.line_a];
+        const double energy_b = (sum.line_b >= 0) ? sums->lines[sum.line_b].energy : sum.xray_energy;
+
+        // Two pulses that overlapped: as wide as the two peaks' widths combined.
+        const T fwhm_a = fwhm( T(line_a.energy), x ), fwhm_b = fwhm( T(energy_b), x );
+
+        RelActCalcAuto::PeakDefImp<T> peak;
+        peak.m_mean = apply_energy_cal_adjustment( sum.energy, x, cached_splines );
+        peak.m_sigma = sqrt( fwhm_a*fwhm_a + fwhm_b*fwhm_b ) / 2.35482;
+        peak.m_amplitude = random_sum_peak_counts( *sums, sum, x, per_eval );
+        peak.m_src_energy = sum.energy;
+        peak.m_is_random_sum = true;
+        peak.m_random_sum_energies[0] = line_a.energy;
+        peak.m_random_sum_energies[1] = energy_b;
+        // Not a line of a source, so (like a floating peak) of no relative efficiency curve.
+        set_peak_skew( peak, x );
+
+        if( isinf(peak.m_amplitude) || isnan(peak.m_amplitude)
+           || isinf(peak.m_sigma) || isnan(peak.m_sigma) || (peak.m_sigma <= T(0.0)) )
+          throw runtime_error( "peaks_for_energy_range_imp: invalid random-sum peak at "
+                              + std::to_string(sum.energy) + " keV." );
+
+        peaks.push_back( std::move(peak) );
+      }//for( loop over random-sum peaks )
+    }//if( random sums are modeled )
     
     const size_t free_peaks_start_index = m_free_peak_par_start_index;
     assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
@@ -17209,7 +19099,21 @@ struct RelActAutoCostFcn
         }
       }//for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       
-      if( comp_peak.m_is_iodine_escape )
+      if( comp_peak.m_is_random_sum )
+      {
+        // Two photons of different decays piled up, not a line of a source; name the two.
+        char label[96];
+        snprintf( label, sizeof(label), "%s%.1f + %.1f keV", RelActCalcAuto::Options::sm_random_sum_label_prefix,
+                  comp_peak.m_random_sum_energies[0], comp_peak.m_random_sum_energies[1] );
+        peak.setUserLabel( label );
+      }else if( comp_peak.m_is_cascade_sum )
+      {
+        // Two photons of one decay detected together, not a line of the source; name the nuclide and the sum.
+        char energy_str[32];
+        snprintf( energy_str, sizeof(energy_str), " %.1f keV", comp_peak.m_src_energy );
+        const std::string parent = comp_peak.m_parent_nuclide ? comp_peak.m_parent_nuclide->symbol : std::string();
+        peak.setUserLabel( RelActCalcAuto::Options::sm_cascade_sum_label_prefix + parent + energy_str );
+      }else if( comp_peak.m_is_iodine_escape )
       {
         // The detector's peak, not a line of the source; name the line it escaped from.
         std::string parent = comp_peak.m_parent_nuclide ? comp_peak.m_parent_nuclide->symbol : std::string();
@@ -19153,32 +21057,8 @@ struct ProfileConditionalHost
   double reported_quantity( const RelActCalcAuto::Options::ProfileTarget &target,
                             const std::vector<double> &x ) const
   {
-    using Kind = RelActCalcAuto::Options::ProfileTarget::Kind;
     const ReportingModeGuard reporting_guard( m_cost_functor.get() );
-    switch( target.kind )
-    {
-      case Kind::MassFraction:
-        return m_cost_functor->mass_enrichment_fraction( target.source,
-                                                         target.rel_eff_curve_index, x );
-      case Kind::RelativeActivity:
-        return m_cost_functor->relative_activity( target.source, target.rel_eff_curve_index, x );
-      case Kind::ActivityRatio:
-      {
-        const double num = m_cost_functor->relative_activity( target.source,
-                                                              target.rel_eff_curve_index, x );
-        const double den = m_cost_functor->relative_activity( target.denominator,
-                                                              target.denominator_curve_index, x );
-        if( !std::isfinite(num) || !std::isfinite(den) || (den == 0.0) )
-          throw std::runtime_error( "reported_quantity: non-finite or zero-denominator ratio." );
-        return num/den;
-      }
-      case Kind::Age:
-        return m_cost_functor->age(
-                    m_cost_functor->input_src_info(target.source,target.rel_eff_curve_index),
-                    target.rel_eff_curve_index, x );
-    }
-    assert( 0 );
-    throw std::logic_error( "reported_quantity: unknown profile-target kind." );
+    return m_cost_functor->profile_target_value( target, x );
   }//double reported_quantity( const ProfileTarget &, const vector<double> & ) const
 
 
@@ -20631,6 +22511,17 @@ bool RelEffCurveInput::PhysModelCorrInput::operator==( const PhysModelCorrInput 
 }
 
 
+bool RelEffCurveInput::CascadeSummingInput::operator==( const CascadeSummingInput &rhs ) const
+{
+  // A disabled correction is the same correction whatever else it says.
+  if( !enabled && !rhs.enabled )
+    return true;
+
+  return (enabled == rhs.enabled) && (fit_distance == rhs.fit_distance)
+         && (distance == rhs.distance) && (source_radius == rhs.source_radius);
+}
+
+
 bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
 {
   if( (name != rhs.name)
@@ -20638,6 +22529,7 @@ bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
     || (rel_eff_eqn_type != rhs.rel_eff_eqn_type)
     || (rel_eff_eqn_order != rhs.rel_eff_eqn_order)
     || (phys_model_corr != rhs.phys_model_corr)
+    || (cascade_summing != rhs.cascade_summing)
     || (pu242_correlation_method != rhs.pu242_correlation_method)
     || (shielded_by_other_phys_model_curve_shieldings != rhs.shielded_by_other_phys_model_curve_shieldings)
     || (nuclides != rhs.nuclides)
@@ -20694,6 +22586,7 @@ bool Options::operator==( const Options &rhs ) const
     && (model_lines_outside_roi_span == rhs.model_lines_outside_roi_span)
     && (additional_br_uncert == rhs.additional_br_uncert)
     && (additional_br_min_yield_fraction == rhs.additional_br_min_yield_fraction)
+    && (random_sum_peaks == rhs.random_sum_peaks)
     && (fwhm_max_ratio_to_start == rhs.fwhm_max_ratio_to_start)
     && (fwhm_channel_floor_factor == rhs.fwhm_channel_floor_factor)
     && (auto_profile_weak_mass_fractions == rhs.auto_profile_weak_mass_fractions)
@@ -20704,6 +22597,7 @@ bool Options::operator==( const Options &rhs ) const
     && (auto_simplify_model == rhs.auto_simplify_model)
     && (auto_simplify_max_dchi2 == rhs.auto_simplify_max_dchi2)
     && (profile_targets == rhs.profile_targets)
+    && (option_rules == rhs.option_rules)
     && (rel_eff_curves == rhs.rel_eff_curves)
     && (rois == rhs.rois)
     && (roi_settings == rhs.roi_settings)
@@ -21322,6 +23216,13 @@ string Options::why_not_usable() const
       return reason;
   }
 
+  for( const OptionRule &rule : option_rules )
+  {
+    const string reason = rule.why_not_usable( *this );
+    if( !reason.empty() )
+      return reason;
+  }
+
   return string();
 }//string Options::why_not_usable() const
 
@@ -21795,6 +23696,373 @@ bool Options::ProfileTarget::operator!=( const ProfileTarget &rhs ) const
 }
 
 
+namespace
+{
+  /** Writes a `<CascadeSumming>` element.  In a curve a disabled correction is simply not written (the
+   element being there is what enables it); where one must be - an `Options::OptionRule` turning the
+   correction off - `write_enabled` adds an explicit `<Enabled>`. */
+  void append_cascade_summing_node( rapidxml::xml_node<char> * const parent,
+                                    const RelEffCurveInput::CascadeSummingInput &input,
+                                    const bool write_enabled )
+  {
+    assert( parent && parent->document() );
+    rapidxml::xml_node<char> * const node
+                      = parent->document()->allocate_node( rapidxml::node_element, "CascadeSumming" );
+    parent->append_node( node );
+    XmlUtils::append_attrib( node, "remark", "True-coincidence (cascade) summing correction. Distance"
+      " is from the detector face to the near side of the source, in cm; it is only used if not fit."
+      " SourceRadius (cm) is optional: the radius of a disk-shaped source face." );
+    if( write_enabled )
+      XmlUtils::append_bool_node( node, "Enabled", input.enabled );
+    XmlUtils::append_bool_node( node, "FitDistance", input.fit_distance );
+    XmlUtils::append_float_node( node, "Distance", input.distance/PhysicalUnits::cm );
+    if( input.source_radius > 0.0 )
+      XmlUtils::append_float_node( node, "SourceRadius", input.source_radius/PhysicalUnits::cm );
+  }//void append_cascade_summing_node(...)
+
+
+  /** Reads a `<CascadeSumming>` element; enabled, unless it has an `<Enabled>` saying otherwise. */
+  RelEffCurveInput::CascadeSummingInput cascade_summing_from_xml( const rapidxml::xml_node<char> * const node )
+  {
+    RelEffCurveInput::CascadeSummingInput input;
+    input.enabled = XML_FIRST_NODE( node, "Enabled" ) ? XmlUtils::get_bool_node_value( node, "Enabled" ) : true;
+    input.fit_distance = XmlUtils::get_bool_node_value( node, "FitDistance" );
+    input.distance = XmlUtils::get_float_node_value( node, "Distance" )*PhysicalUnits::cm;
+    if( XML_FIRST_NODE( node, "SourceRadius" ) )
+      input.source_radius = XmlUtils::get_float_node_value( node, "SourceRadius" )*PhysicalUnits::cm;
+    if( !(input.distance >= 0.0) || !(input.source_radius >= 0.0) )
+      throw runtime_error( "Cascade summing distance and source radius must not be negative." );
+    return input;
+  }//cascade_summing_from_xml(...)
+}//namespace
+
+
+bool Options::OptionRule::Condition::holds( const double value ) const
+{
+  return std::isfinite(value)
+         && (!lower.has_value() || (value >= lower.value()))
+         && (!upper.has_value() || (value < upper.value()));
+}
+
+
+bool Options::OptionRule::Condition::operator==( const Condition &rhs ) const
+{
+  return (quantity == rhs.quantity) && (lower == rhs.lower) && (upper == rhs.upper);
+}
+
+
+bool Options::OptionRule::CurveChange::operator==( const CurveChange &rhs ) const
+{
+  return (rel_eff_curve_index == rhs.rel_eff_curve_index)
+         && (phys_model_corr_fcn == rhs.phys_model_corr_fcn)
+         && (cascade_summing == rhs.cascade_summing);
+}
+
+
+bool Options::OptionRule::operator==( const OptionRule &rhs ) const
+{
+  return (name == rhs.name)
+         && (conditions == rhs.conditions)
+         && (remove_rois == rhs.remove_rois)
+         && (add_rois == rhs.add_rois)
+         && (random_sum_peaks == rhs.random_sum_peaks)
+         && (curve_changes == rhs.curve_changes);
+}
+
+
+void Options::OptionRule::apply( Options &options ) const
+{
+  vector<RoiRange> &rois = options.rois;
+
+  for( const pair<double,double> &range : remove_rois )
+  {
+    rois.erase( std::remove_if( begin(rois), end(rois), [&range]( const RoiRange &roi ) -> bool {
+      return (roi.lower_energy >= range.first) && (roi.upper_energy <= range.second);
+    } ), end(rois) );
+  }//for( const pair<double,double> &range : remove_rois )
+
+  const auto lower_energy_less = []( const RoiRange &lhs, const RoiRange &rhs ) -> bool {
+    return lhs.lower_energy < rhs.lower_energy;
+  };
+
+  for( const RoiRange &roi : add_rois )
+  {
+    const bool overlaps = std::any_of( begin(rois), end(rois), [&roi]( const RoiRange &other ) -> bool {
+      return (roi.lower_energy <= other.upper_energy) && (roi.upper_energy >= other.lower_energy);
+    } );
+    if( overlaps )
+      continue;
+
+    // Keep the ROIs in energy order, if they are.
+    if( std::is_sorted( begin(rois), end(rois), lower_energy_less ) )
+      rois.insert( std::upper_bound( begin(rois), end(rois), roi, lower_energy_less ), roi );
+    else
+      rois.push_back( roi );
+  }//for( const RoiRange &roi : add_rois )
+
+  if( random_sum_peaks.has_value() )
+    options.random_sum_peaks = random_sum_peaks.value();
+
+  for( const CurveChange &change : curve_changes )
+  {
+    if( change.rel_eff_curve_index >= options.rel_eff_curves.size() )
+      continue;
+
+    RelEffCurveInput &curve = options.rel_eff_curves[change.rel_eff_curve_index];
+    if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      continue;
+
+    if( change.phys_model_corr_fcn.has_value() )
+      curve.phys_model_corr.corr_fcn = change.phys_model_corr_fcn.value();
+    if( change.cascade_summing.has_value() )
+      curve.cascade_summing = change.cascade_summing.value();
+  }//for( const CurveChange &change : curve_changes )
+}//void Options::OptionRule::apply( Options &options ) const
+
+
+string Options::OptionRule::why_not_usable( const Options &options ) const
+{
+  if( name.empty() )
+    return "An option rule has no name.";
+
+  const string label = "Option rule '" + name + "'";
+  if( conditions.empty() )
+    return label + " has no conditions.";
+
+  // Whether the quantities are ones these options have is not checked here: the options a rule came with
+  //  get edited (a nuclide removed, say), and the rule then just never holds - the solution says so.
+  for( const Condition &condition : conditions )
+  {
+    const ProfileTarget &quantity = condition.quantity;
+    if( RelActCalcAuto::is_null(quantity.source) )
+      return label + " has a condition with no source.";
+
+    switch( quantity.kind )
+    {
+      case ProfileTarget::Kind::RelativeActivity:
+        return label + ": a relative activity depends on how the relative efficiency curve is normalized,"
+                       " so can not be a condition; use an activity ratio.";
+
+      case ProfileTarget::Kind::ActivityRatio:
+        if( RelActCalcAuto::is_null(quantity.denominator) || (quantity.denominator == quantity.source) )
+          return label + ": an activity ratio needs a denominator other than its source.";
+        if( quantity.denominator_curve_index != quantity.rel_eff_curve_index )
+          return label + ": an activity ratio must be of two sources of the same relative efficiency curve.";
+        break;
+
+      case ProfileTarget::Kind::MassFraction:
+      case ProfileTarget::Kind::Age:
+        if( !RelActCalcAuto::nuclide(quantity.source) )
+          return label + ": a " + string(ProfileTarget::to_str(quantity.kind)) + " condition needs a nuclide.";
+        break;
+    }//switch( quantity.kind )
+
+    if( !condition.lower.has_value() && !condition.upper.has_value() )
+      return label + ": the " + quantity.display_name() + " condition has neither a lower nor an upper limit.";
+
+    for( const std::optional<double> &limit : { condition.lower, condition.upper } )
+    {
+      if( limit.has_value() && !std::isfinite( limit.value() ) )
+        return label + ": the " + quantity.display_name() + " condition has a limit that is not a number.";
+    }
+
+    if( condition.lower.has_value() && condition.upper.has_value()
+       && !(condition.lower.value() < condition.upper.value()) )
+      return label + ": the " + quantity.display_name() + " condition's lower limit is not below its upper.";
+  }//for( const Condition &condition : conditions )
+
+  for( const pair<double,double> &range : remove_rois )
+  {
+    if( !(range.first < range.second) )
+      return label + " removes ROIs from an energy range whose lower energy is not below its upper.";
+  }
+
+  for( const RoiRange &roi : add_rois )
+  {
+    // A line-anchored ROI of one line has equal energies.
+    if( !(roi.lower_energy <= roi.upper_energy) || !(roi.lower_energy > 0.0) )
+      return label + " adds a ROI with an invalid energy range.";
+  }
+
+  for( const CurveChange &change : curve_changes )
+  {
+    if( change.cascade_summing.has_value()
+       && (!(change.cascade_summing->distance >= 0.0) || !(change.cascade_summing->source_radius >= 0.0)) )
+      return label + " sets a negative cascade-summing distance or source radius.";
+  }
+
+  Options changed = options;
+  changed.option_rules.clear();
+  apply( changed );
+  const string reason = changed.why_not_usable();
+  if( !reason.empty() )
+    return label + " leaves the options unusable: " + reason;
+
+  return string();
+}//string Options::OptionRule::why_not_usable( const Options &options ) const
+
+
+rapidxml::xml_node<char> *Options::OptionRule::toXml( rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "OptionRule::toXml: invalid parent." );
+
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "OptionRule" );
+  parent->append_node( base_node );
+  append_version_attrib( base_node, OptionRule::sm_xmlSerializationVersion );
+
+  append_string_node( base_node, "Name", name );
+
+  xml_node<char> *conditions_node = doc->allocate_node( node_element, "Conditions" );
+  base_node->append_node( conditions_node );
+  append_attrib( conditions_node, "remark", "All must hold. Each: the ProfileTarget quantity is at least"
+    " Lower and below Upper (give either or both); a mass fraction is a fraction (0.2 for 20%)." );
+  for( const Condition &condition : conditions )
+  {
+    xml_node<char> *condition_node = doc->allocate_node( node_element, "Condition" );
+    conditions_node->append_node( condition_node );
+    condition.quantity.toXml( condition_node );
+    if( condition.lower.has_value() )
+      append_float_node( condition_node, "Lower", condition.lower.value() );
+    if( condition.upper.has_value() )
+      append_float_node( condition_node, "Upper", condition.upper.value() );
+  }//for( const Condition &condition : conditions )
+
+  if( !remove_rois.empty() )
+  {
+    xml_node<char> *remove_node = doc->allocate_node( node_element, "RemoveRois" );
+    base_node->append_node( remove_node );
+    append_attrib( remove_node, "remark", "ROIs entirely within one of these energy ranges (keV) are removed." );
+    for( const pair<double,double> &range : remove_rois )
+    {
+      xml_node<char> *range_node = doc->allocate_node( node_element, "Range" );
+      remove_node->append_node( range_node );
+      append_float_node( range_node, "LowerEnergy", range.first );
+      append_float_node( range_node, "UpperEnergy", range.second );
+    }
+  }//if( !remove_rois.empty() )
+
+  if( !add_rois.empty() )
+  {
+    xml_node<char> *add_node = doc->allocate_node( node_element, "AddRois" );
+    base_node->append_node( add_node );
+    for( const RoiRange &roi : add_rois )
+      roi.toXml( add_node );
+  }//if( !add_rois.empty() )
+
+  if( random_sum_peaks.has_value() )
+    append_bool_node( base_node, "RandomSumPeaks", random_sum_peaks.value() );
+
+  if( !curve_changes.empty() )
+  {
+    xml_node<char> *changes_node = doc->allocate_node( node_element, "CurveChanges" );
+    base_node->append_node( changes_node );
+    for( const CurveChange &change : curve_changes )
+    {
+      xml_node<char> *change_node = doc->allocate_node( node_element, "CurveChange" );
+      changes_node->append_node( change_node );
+      append_int_node( change_node, "RelEffCurveIndex", static_cast<int>(change.rel_eff_curve_index) );
+      if( change.phys_model_corr_fcn.has_value() )
+        append_string_node( change_node, "CorrectionFcnType", RelActCalc::to_str( change.phys_model_corr_fcn.value() ) );
+      if( change.cascade_summing.has_value() )
+        append_cascade_summing_node( change_node, change.cascade_summing.value(), true );
+    }//for( const CurveChange &change : curve_changes )
+  }//if( !curve_changes.empty() )
+
+  return base_node;
+}//rapidxml::xml_node<char> *Options::OptionRule::toXml(...)
+
+
+void Options::OptionRule::fromXml( const ::rapidxml::xml_node<char> *parent )
+{
+  using namespace rapidxml;
+
+  if( !parent )
+    throw runtime_error( "invalid input" );
+  if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "OptionRule", 10, false ) )
+    throw std::logic_error( "invalid input node name" );
+
+  static_assert( OptionRule::sm_xmlSerializationVersion == 0,
+                 "needs to be updated for new serialization version." );
+  XmlUtils::check_xml_version( parent, OptionRule::sm_xmlSerializationVersion );
+
+  *this = OptionRule();
+
+  name = SpecUtils::xml_value_str( XML_FIRST_NODE( parent, "Name" ) );
+
+  const xml_node<char> *conditions_node = XML_FIRST_NODE( parent, "Conditions" );
+  if( conditions_node )
+  {
+    XML_FOREACH_CHILD( condition_node, conditions_node, "Condition" )
+    {
+      Condition condition;
+      const xml_node<char> *quantity_node = XML_FIRST_NODE( condition_node, "ProfileTarget" );
+      if( !quantity_node )
+        throw runtime_error( "OptionRule::fromXml: a <Condition> has no <ProfileTarget>." );
+      condition.quantity.fromXml( quantity_node );
+      if( XML_FIRST_NODE( condition_node, "Lower" ) )
+        condition.lower = XmlUtils::get_float_node_value( condition_node, "Lower" );
+      if( XML_FIRST_NODE( condition_node, "Upper" ) )
+        condition.upper = XmlUtils::get_float_node_value( condition_node, "Upper" );
+      conditions.push_back( condition );
+    }//for( each <Condition> )
+  }//if( conditions_node )
+
+  const xml_node<char> *remove_node = XML_FIRST_NODE( parent, "RemoveRois" );
+  if( remove_node )
+  {
+    XML_FOREACH_CHILD( range_node, remove_node, "Range" )
+    {
+      const double lower_energy = XmlUtils::get_float_node_value( range_node, "LowerEnergy" );
+      const double upper_energy = XmlUtils::get_float_node_value( range_node, "UpperEnergy" );
+      remove_rois.push_back( {lower_energy, upper_energy} );
+    }
+  }//if( remove_node )
+
+  const xml_node<char> *add_node = XML_FIRST_NODE( parent, "AddRois" );
+  if( add_node )
+  {
+    XML_FOREACH_CHILD( roi_node, add_node, "RoiRange" )
+    {
+      RoiRange roi;
+      roi.fromXml( roi_node );
+      add_rois.push_back( roi );
+    }
+  }//if( add_node )
+
+  if( XML_FIRST_NODE( parent, "RandomSumPeaks" ) )
+    random_sum_peaks = XmlUtils::get_bool_node_value( parent, "RandomSumPeaks" );
+
+  const xml_node<char> *changes_node = XML_FIRST_NODE( parent, "CurveChanges" );
+  if( changes_node )
+  {
+    XML_FOREACH_CHILD( change_node, changes_node, "CurveChange" )
+    {
+      CurveChange change;
+      const int curve_index = XmlUtils::get_int_node_value( change_node, "RelEffCurveIndex" );
+      if( curve_index < 0 )
+        throw runtime_error( "OptionRule::fromXml: negative <RelEffCurveIndex>." );
+      change.rel_eff_curve_index = static_cast<size_t>( curve_index );
+
+      const xml_node<char> *corr_node = XML_FIRST_NODE( change_node, "CorrectionFcnType" );
+      if( corr_node )
+        change.phys_model_corr_fcn
+                  = RelActCalc::phys_model_corr_fcn_from_str( SpecUtils::xml_value_str(corr_node).c_str() );
+
+      const xml_node<char> *cascade_node = XML_FIRST_NODE( change_node, "CascadeSumming" );
+      if( cascade_node )
+        change.cascade_summing = cascade_summing_from_xml( cascade_node );
+
+      curve_changes.push_back( change );
+    }//for( each <CurveChange> )
+  }//if( changes_node )
+}//void Options::OptionRule::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
 vector<Options::ProfileTarget::Kind> profilable_quantity_kinds(
                                                     const Options &options,
                                                     const SrcVariant &source,
@@ -21871,9 +24139,11 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
     uses_start_skew = uses_start_skew || start_lower_skew[i].has_value() || start_upper_skew[i].has_value();
   const bool uses_v7_fields = !roi_settings.is_default() || uses_v1_rois || uses_start_skew
                               || skew_from_peak_fit_prefs;
-  static_assert( Options::sm_xmlSerializationVersion == 7, "Update conditional Options version logic." );
-  append_version_attrib( base_node, uses_v7_fields ? 7 : (uses_v6_fields ? 6 : (uses_v5_fields ? 5
-                                  : (uses_v4_fields ? 4 : (uses_v3_fields ? 3 : 2)))) );
+  // v8 adds RandomSumPeaks and OptionRules; a reader that skipped either would fit a different model.
+  const bool uses_v8_fields = random_sum_peaks || !option_rules.empty();
+  static_assert( Options::sm_xmlSerializationVersion == 8, "Update conditional Options version logic." );
+  append_version_attrib( base_node, uses_v8_fields ? 8 : (uses_v7_fields ? 7 : (uses_v6_fields ? 6
+                    : (uses_v5_fields ? 5 : (uses_v4_fields ? 4 : (uses_v3_fields ? 3 : 2))))) );
 
   // Write "FitEnergyCal" for backwards compatibility
   const bool fit_any_energy_cal = (energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
@@ -21974,6 +24244,8 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_float_node( base_node, "AddUncert", additional_br_uncert );
   if( additional_br_min_yield_fraction > 0.0 )
     append_float_node( base_node, "AddUncertMinYieldFraction", additional_br_min_yield_fraction );
+  if( random_sum_peaks )
+    append_bool_node( base_node, "RandomSumPeaks", random_sum_peaks );
   if( fwhm_max_ratio_to_start > 0.0 )
     append_float_node( base_node, "FwhmMaxRatioToStart", fwhm_max_ratio_to_start );
   if( fwhm_channel_floor_factor != 1.25 )
@@ -21992,6 +24264,16 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
     for( const ProfileTarget &target : profile_targets )
       target.toXml( targets_node );
   }
+
+  if( !option_rules.empty() )
+  {
+    xml_node<char> *rules_node = doc->allocate_node( node_element, "OptionRules" );
+    base_node->append_node( rules_node );
+    append_attrib( rules_node, "remark", "Changes made to these options when the spectrum is of the kind a"
+      " rule's conditions describe; the first rule whose conditions hold is the one applied." );
+    for( const OptionRule &rule : option_rules )
+      rule.toXml( rules_node );
+  }//if( !option_rules.empty() )
 
   xml_node<char> *rel_eff_node = doc->allocate_node( node_element, "RelEffCurveInputs" );
   base_node->append_node( rel_eff_node );
@@ -22057,7 +24339,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( Options::sm_xmlSerializationVersion == 7,
+    static_assert( Options::sm_xmlSerializationVersion == 8,
                   "needs to be updated for new serialization version." );
 
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
@@ -22225,6 +24507,11 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     if( XML_FIRST_NODE(parent, "AddUncertMinYieldFraction") )
       additional_br_min_yield_fraction = std::clamp( get_float_node_value( parent, "AddUncertMinYieldFraction" ), 0.0, 0.99 );
 
+    // random_sum_peaks added 20261114; optional, defaults to false
+    random_sum_peaks = false;
+    if( XML_FIRST_NODE(parent, "RandomSumPeaks") )
+      random_sum_peaks = get_bool_node_value( parent, "RandomSumPeaks" );
+
     // fwhm_max_ratio_to_start added 20260926; optional, defaults to zero (no limit)
     fwhm_max_ratio_to_start = 0.0;
     if( XML_FIRST_NODE(parent, "FwhmMaxRatioToStart") )
@@ -22267,6 +24554,19 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
         profile_targets.push_back( target );
       }
     }//if( targets_node )
+
+    // v8 option rules.  Absent means none.
+    option_rules.clear();
+    const rapidxml::xml_node<char> *rules_node = XML_FIRST_NODE( parent, "OptionRules" );
+    if( rules_node )
+    {
+      XML_FOREACH_CHILD( rule_node, rules_node, "OptionRule" )
+      {
+        OptionRule rule;
+        rule.fromXml( rule_node );
+        option_rules.push_back( rule );
+      }
+    }//if( rules_node )
 
     rel_eff_curves.clear();
     const int version = get_int_attribute( parent, "version" );
@@ -23186,7 +25486,8 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   const bool advanced_corr = writes_phys_model
                              && ( (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev)
                                   || any_ad_biasing );
-  append_version_attrib( base_node, advanced_corr ? 1 : 0 );
+  const bool writes_cascade = writes_phys_model && cascade_summing.enabled;
+  append_version_attrib( base_node, writes_cascade ? 2 : (advanced_corr ? 1 : 0) );
 
   append_string_node( base_node, "Name", name );
 
@@ -23249,8 +25550,11 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
     // Note: the self-/external-attenuation areal-density biasing priors live on each shield
     //  (`<PhysicalModelShield><ArealDensityBias>`), written by `PhysicalModelShieldInput::toXml`.
 
+    if( cascade_summing.enabled )
+      append_cascade_summing_node( phys_node, cascade_summing, false );
+
     // Legacy boolean element, emitted only for v0-representable curves so older builds can still read them.
-    if( !advanced_corr )
+    if( !advanced_corr && !cascade_summing.enabled )
     {
       const bool uses_hoerl = (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Hoerl);
       xml_node<char> *legacy_node = doc->allocate_node( node_element, "PhysModelUseHoerl",
@@ -23353,6 +25657,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_node )
     throw runtime_error( "Missing PhysicalModelOptions node" );
     
+  cascade_summing = CascadeSummingInput{};
   if( phys_model_node )
   {
     const rapidxml::xml_node<char> *self_atten_par_node = XML_FIRST_NODE( phys_model_node, "SelfAtten" );
@@ -23409,6 +25714,10 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
       phys_model_corr.corr_fcn = uses_hoerl ? RelActCalc::PhysModelCorrFcn::Hoerl
                                             : RelActCalc::PhysModelCorrFcn::None;
     }//if( <CorrectionFcnType> ) / else (legacy <PhysModelUseHoerl>)
+
+    const rapidxml::xml_node<char> *cascade_node = XML_FIRST_NODE( phys_model_node, "CascadeSumming" );
+    if( cascade_node )
+      cascade_summing = cascade_summing_from_xml( cascade_node );
 
     // The self-/external-attenuation AD biasing priors are read per-shield by
     //  `PhysicalModelShieldInput::fromXml` (the `<ArealDensityBias>` element on each shield).
@@ -23522,6 +25831,7 @@ Options::Options()
   model_lines_outside_roi_span( true ),
   additional_br_uncert( 0.0 ),
   additional_br_min_yield_fraction( 0.0 ),
+  random_sum_peaks( false ),
   fwhm_max_ratio_to_start( 0.0 ),
   fwhm_channel_floor_factor( 1.25 ),
   auto_profile_weak_mass_fractions( true ),
@@ -25351,9 +27661,16 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     if( is_null(peak_src) )
     {
+      // A peak the model adds that is not a line of a source - a coincidence or random sum, or an iodine
+      //  escape - says what it is in its label; anything else here is a free-floating peak.
+      const std::string &label = info.userLabel();
+      const bool model_peak = SpecUtils::starts_with( label, Options::sm_cascade_sum_label_prefix )
+                              || SpecUtils::starts_with( label, Options::sm_random_sum_label_prefix )
+                              || SpecUtils::starts_with( label, Options::sm_iodine_escape_label_prefix );
+
 #if( PERFORM_DEVELOPER_CHECKS )
       // Verify that this peak corresponds to a free-floating peak
-      bool found_matching_floating_peak = false;
+      bool found_matching_floating_peak = model_peak;
       const double peak_energy = info.mean();
       
       for( const RelActCalcAuto::FloatingPeak &floating_peak : m_options.floating_peaks )
@@ -25373,7 +27690,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       
     const std::string format_str = "  <tr>"s
                  "<td>%.2f</td>"      // energy
-                 "<td></td>"          // free-floating peak (no nuclide or element)
+                 "<td>%s</td>"        // what a model-added peak is; empty for a free-floating peak
                  "<td></td>"          // yield (empty for free peaks)
                  + (have_multiple_rel_eff ? "<td></td>"s : ""s)
                  + "<td>%1.6G</td>"   // amplitude
@@ -25385,10 +27702,12 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                  "<td>%.1f-%.1f</td>" // continuum range
                  "</tr>\n"s;
       
+      // (A sum peak of a source that came out at zero - far away, no pile-up - has no relative uncertainty.)
       snprintf(buffer, sizeof(buffer), format_str.c_str(),
                  energy,
+                 (model_peak ? label.c_str() : ""),
                  info.amplitude(),
-                 info.amplitudeUncert() / info.amplitude(),
+                 ((info.amplitude() > 0.0) ? (info.amplitudeUncert() / info.amplitude()) : 0.0),
                  Wt::WString::tr(PeakContinuum::offset_type_label_tr( info.continuum()->type() )).toUTF8().c_str(),
                  info.continuum()->lowerEnergy(),
                  info.continuum()->upperEnergy()
@@ -26497,8 +28816,11 @@ void RelActAutoSolution::compute_bound_limit_messages()
 
     // An element-total slot of a mass-fraction constraint sits at a bound by construction, and the age
     //  of a nuclide judged not present is flagged only along with its activity.
+    //  A summing or pile-up scale at its lower limit is an ordinary answer (far away; no pile-up), and what
+    //  those corrections came to is reported with them.
     if( SpecUtils::istarts_with(short_name, "MTot") || SpecUtils::istarts_with(short_name, "MFSum")
-       || (SpecUtils::istarts_with(short_name, "Age") && (side == 0)) )
+       || (SpecUtils::istarts_with(short_name, "Age") && (side == 0))
+       || ((side < 0) && m_cost_functor->lower_limit_is_ordinary( par )) )
       continue;
 
     string description = m_cost_functor->describe_parameter( par, &m_final_parameters );
@@ -29154,8 +31476,25 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
   
   const vector<NuclideRelAct> &nuclides = m_rel_activities[rel_eff_index];
 
+  // Coincidence summing changes a line's counts, and adds sum peaks (see RelEffCurveInput::CascadeSummingInput).
+  const PhysicalModelFitInfo::CascadeSummingInfo *cascade = nullptr;
+  if( (rel_eff_index < m_phys_model_results.size()) && m_phys_model_results[rel_eff_index].has_value()
+     && m_phys_model_results[rel_eff_index]->cascade_summing.has_value() )
+    cascade = &(*m_phys_model_results[rel_eff_index]->cascade_summing);
+
   for( const RoiRange &range : m_final_roi_ranges )
   {
+    // Sum peaks standing on their own in this ROI; those on one of the source's lines are added with it.
+    if( cascade )
+    {
+      for( const PhysicalModelFitInfo::CascadeSummingInfo::SumPeak &peak : cascade->sum_peaks )
+      {
+        if( (peak.source == src) && (peak.on_line_energy <= 0.0) && (peak.counts > 0.0)
+           && (peak.energy >= range.lower_energy) && (peak.energy <= range.upper_energy) )
+          total_counts += peak.counts;
+      }
+    }//if( cascade )
+
     bool found_src = false;
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
@@ -29216,7 +31555,24 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
           }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
           
           
-          const double peak_amplitude = rel_act * live_time * rel_eff * yield * br_uncert_adj;
+          double peak_amplitude = rel_act * live_time * rel_eff * yield * br_uncert_adj;
+          if( cascade )
+          {
+            for( const PhysicalModelFitInfo::CascadeSummingInfo::LineFactor &line : cascade->lines )
+            {
+              if( (line.source == src) && (fabs(line.energy - energy) < 1.0E-6) )
+              {
+                peak_amplitude *= line.factor;
+                break;
+              }
+            }
+            for( const PhysicalModelFitInfo::CascadeSummingInfo::SumPeak &peak : cascade->sum_peaks )
+            {
+              if( (peak.source == src) && (peak.on_line_energy > 0.0) && (fabs(peak.on_line_energy - energy) < 1.0E-6) )
+                peak_amplitude += peak.counts * br_uncert_adj;
+            }
+          }//if( cascade )
+
           if( isinf(peak_amplitude) || isnan(peak_amplitude) )
             throw runtime_error( "nuclide_counts: inf or NaN peak amplitude for "
                                 + std::to_string(energy) + " keV.");
@@ -30123,6 +32479,26 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       if( (floater.energy >= roi_lower_energy) && (floater.energy <= roi_upper_energy) )
         fixed_amp_peaks.emplace_back( floater.energy, floater.fwhm/2.35482, floater.amplitude );
     }//for( const FloatingPeakResult &floater : solution.m_floating_peaks )
+
+    // The coincidence- and random-sum peaks of the ROI are not lines of a source at their energy: their
+    //  counts are the model's, and must not be re-fit as (so credited to) the lines beside them.
+    for( const PeakDef &sum_peak : solution.m_fit_peaks )
+    {
+      const bool is_sum = SpecUtils::starts_with( sum_peak.userLabel(), Options::sm_cascade_sum_label_prefix )
+                          || SpecUtils::starts_with( sum_peak.userLabel(), Options::sm_random_sum_label_prefix );
+      if( !is_sum || !(sum_peak.amplitude() > 0.0)
+         || (sum_peak.mean() < roi_lower_energy) || (sum_peak.mean() > roi_upper_energy) )
+        continue;
+
+      PeakDef fixed( sum_peak.mean(), sum_peak.sigma(), sum_peak.amplitude() );
+      fixed.setSkewType( sum_peak.skewType() );
+      for( size_t s = 0; s < PeakDef::num_skew_parameters( sum_peak.skewType() ); ++s )
+      {
+        const PeakDef::CoefficientType coef = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s );
+        fixed.set_coefficient( sum_peak.coefficient( coef ), coef );
+      }
+      fixed_amp_peaks.push_back( fixed );
+    }//for( const PeakDef &sum_peak : solution.m_fit_peaks )
     
     double * const peak_counts = nullptr;
     const double * const skew_parameters = peak_skews.empty() ? nullptr : peak_skews.data();
@@ -32002,7 +34378,13 @@ namespace
 }//namespace
 
 
-RelActAutoSolution solve( const Options input_options,
+/** Solves the problem for the options as given: `solve(...)`, but for `Options::option_rules`.
+
+ @param option_rule_probe If non-null, and one of the options' rules holds for the initial estimate of the
+        problem, that rule is put there and nothing is solved (the returned solution is not a result);
+        see `Options::OptionRule`.
+ */
+static RelActAutoSolution solve_given_options( const Options &input_options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> input_drf,
@@ -32010,7 +34392,8 @@ RelActAutoSolution solve( const Options input_options,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
                          std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs,
-                         const SolveProgressFcn &progress_fcn
+                         const SolveProgressFcn &progress_fcn,
+                         RelActCalcAutoImp::OptionRuleProbe * const option_rule_probe
                          )
 {
   std::optional<RelActCalcAutoImp::SolveProgressReporter> reporter;
@@ -32062,7 +34445,11 @@ RelActAutoSolution solve( const Options input_options,
                      cancel_calc,
                      RelActCalcAutoImp::SearchSeedVariant::Default,
                      false,nullptr,true,nullptr,nullptr,false,
-                     may_host_profile, progress );
+                     may_host_profile, progress, option_rule_probe );
+
+  // A rule holds for the initial estimate: `solve()` goes on with the options that rule gives.
+  if( option_rule_probe && option_rule_probe->rule.has_value() )
+    return current_sol;
 
   // ROIs that are not fixed are re-sized from the fitted peak shape (and broken-up ROIs are reduced
   //  to their significant lines), automatic continua are chosen, and the problem re-solved if that
@@ -32264,7 +34651,139 @@ RelActAutoSolution solve( const Options input_options,
   add_bound_limit_messages( current_sol );
 
   return current_sol;
-}//RelActAutoSolution
+}//RelActAutoSolution solve_given_options(...)
+
+
+RelActAutoSolution solve( const Options input_options,
+                         std::shared_ptr<const SpecUtils::Measurement> foreground,
+                         std::shared_ptr<const SpecUtils::Measurement> background,
+                         std::shared_ptr<const DetectorPeakResponse> input_drf,
+                         std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
+                         std::shared_ptr<std::atomic_bool> cancel_calc,
+                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs,
+                         const SolveProgressFcn &progress_fcn
+                         )
+{
+  using AppliedRule = RelActAutoSolution::AppliedOptionRule;
+
+  const auto solve_with = [&]( const Options &options,
+                               RelActCalcAutoImp::OptionRuleProbe * const probe ) -> RelActAutoSolution {
+    return solve_given_options( options, foreground, background, input_drf, all_peaks, det_type,
+                                cancel_calc, peak_fit_prefs, progress_fcn, probe );
+  };
+
+  const vector<Options::OptionRule> &rules = input_options.option_rules;
+  if( rules.empty() )
+    return solve_with( input_options, nullptr );
+
+  // The rest is choosing which, if any, of the option rules to apply; see `Options::OptionRule`.
+  const auto options_with = [&input_options,&rules]( const std::optional<AppliedRule> &rule ) -> Options {
+    Options options = input_options;
+    options.option_rules.clear();
+    if( rule.has_value() )
+      rules[rule->rule_index].apply( options );
+    return options;
+  };
+
+  const auto same_rule = []( const std::optional<AppliedRule> &lhs, const std::optional<AppliedRule> &rhs ) -> bool {
+    return (lhs.has_value() == rhs.has_value()) && (!lhs.has_value() || (lhs->rule_index == rhs->rule_index));
+  };
+
+  const auto has_answer = []( const RelActAutoSolution &sol ) -> bool {
+    return RelActAutoSolution::is_usable_status(sol.m_status) && sol.m_cost_functor
+           && (sol.m_final_parameters.size() == sol.m_cost_functor->number_parameters());
+  };
+
+  // The work of the solves whose results are not the ones returned.
+  int superseded_function_evals = 0, superseded_microseconds = 0, superseded_microseconds_in_eval = 0;
+  const auto note_superseded = [&]( const RelActAutoSolution &sol ){
+    superseded_function_evals += sol.m_num_function_eval_total;
+    superseded_microseconds += sol.m_num_microseconds_eval;
+    superseded_microseconds_in_eval += sol.m_num_microseconds_in_eval;
+  };
+
+  // If no rule holds for the initial estimate, this solves the problem as given; otherwise it stops at
+  //  that estimate, and the problem is solved with the rule's changes made.
+  RelActCalcAutoImp::OptionRuleProbe probe;
+  RelActAutoSolution sol = solve_with( input_options, &probe );
+  std::optional<AppliedRule> applied = probe.rule;
+  if( applied.has_value() )
+  {
+    note_superseded( sol );
+    sol = solve_with( options_with(applied), nullptr );
+  }
+
+  vector<string> notes = probe.problems;
+
+  // The initial estimate can be rough: if the fit's own answer selects other options, go by that, once.
+  if( has_answer(sol) && (!cancel_calc || !cancel_calc->load()) )
+  {
+    const std::optional<AppliedRule> selected
+                    = sol.m_cost_functor->first_option_rule_holding( rules, sol.m_final_parameters, nullptr );
+    if( !same_rule( selected, applied ) )
+    {
+      const auto described = []( const std::optional<AppliedRule> &rule ) -> string {
+        return rule.has_value() ? ("the '" + rule->name + "' option rule") : string("no option rule");
+      };
+
+      RelActAutoSolution refit = solve_with( options_with(selected), nullptr );
+      if( has_answer(refit) || (refit.m_status == RelActAutoSolution::Status::UserCanceled) )
+      {
+        notes.push_back( "The initial estimate of the spectrum selected " + described(applied)
+                         + ", but the fit's answer selects " + described(selected)
+                         + ", so the fit was redone that way." );
+        note_superseded( sol );
+        sol = std::move( refit );
+        applied = selected;
+
+        if( has_answer(sol)
+           && !same_rule( sol.m_cost_functor->first_option_rule_holding( rules, sol.m_final_parameters, nullptr ),
+                          applied ) )
+          notes.push_back( "The spectrum is at the boundary between option rules: the answer of this fit, made with "
+                           + described(applied) + ", would again select different options." );
+      }else
+      {
+        note_superseded( refit );
+        notes.push_back( "The fit's answer selects " + described(selected) + ", but the fit could not be redone"
+                         " that way (" + refit.m_error_message + "); the results are with "
+                         + described(applied) + "." );
+      }
+    }//if( the fit selects other options than were used )
+  }//if( the fit has an answer to check the choice against )
+
+  if( applied.has_value() )
+  {
+    const Options::OptionRule &rule = rules[applied->rule_index];
+
+    // Report the fit's values of the rule's quantities, rather than the initial estimate's.
+    if( has_answer(sol) )
+      applied->condition_values = sol.m_cost_functor->option_rule_condition_values( rule, sol.m_final_parameters, nullptr );
+
+    string note = "The '" + rule.name + "' option rule was applied";
+    for( size_t i = 0; (i < rule.conditions.size()) && (i < applied->condition_values.size()); ++i )
+      note += string(i ? ", " : " (") + rule.conditions[i].quantity.display_name() + " of "
+              + SpecUtils::printCompact( applied->condition_values[i], 4 );
+    notes.push_back( note + (rule.conditions.empty() ? "." : ").") );
+
+    sol.m_applied_option_rule = applied;
+  }//if( applied.has_value() )
+
+  for( const string &note : notes )
+  {
+    if( std::find( begin(sol.m_warnings), end(sol.m_warnings), note ) == end(sol.m_warnings) )
+      sol.m_warnings.push_back( note );
+  }
+
+  sol.m_num_function_eval_total += superseded_function_evals;
+  sol.m_num_microseconds_eval += superseded_microseconds;
+  sol.m_num_microseconds_in_eval += superseded_microseconds_in_eval;
+
+  // The options that were fit: any rule's changes made, and no rules - solving them again repeats the fit.
+  sol.m_options.option_rules.clear();
+
+  return sol;
+}//RelActAutoSolution solve(...)
 
   
 string NuclideRelAct::name() const
@@ -32413,6 +34932,17 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
   if( lhs.phys_model_corr != rhs.phys_model_corr )
     throw std::runtime_error( "Physical model correction options in lhs and rhs are not the same" );
 
+  if( lhs.cascade_summing.enabled != rhs.cascade_summing.enabled )
+    throw std::runtime_error( "Cascade summing enabled in lhs and rhs are not the same" );
+  if( lhs.cascade_summing.enabled )
+  {
+    if( lhs.cascade_summing.fit_distance != rhs.cascade_summing.fit_distance )
+      throw std::runtime_error( "Cascade summing fit-distance in lhs and rhs are not the same" );
+    if( (fabs( lhs.cascade_summing.distance - rhs.cascade_summing.distance ) > 1.0E-6*PhysicalUnits::cm)
+       || (fabs( lhs.cascade_summing.source_radius - rhs.cascade_summing.source_radius ) > 1.0E-6*PhysicalUnits::cm) )
+      throw std::runtime_error( "Cascade summing distance or source radius in lhs and rhs are not the same" );
+  }//if( lhs.cascade_summing.enabled )
+
   if( lhs.pu242_correlation_method != rhs.pu242_correlation_method )
     throw std::runtime_error( "Pu242 correlation method in lhs and rhs are not the same" );
   
@@ -32496,6 +35026,9 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( fabs(lhs.additional_br_min_yield_fraction - rhs.additional_br_min_yield_fraction) > 1.0e-5 )
     throw std::runtime_error( "Additional BR minimum yield fraction in lhs and rhs are not the same" );
 
+  if( lhs.random_sum_peaks != rhs.random_sum_peaks )
+    throw std::runtime_error( "Random-sum peak modeling in lhs and rhs are not the same" );
+
   if( fabs(lhs.fwhm_max_ratio_to_start - rhs.fwhm_max_ratio_to_start) > 1.0e-5 )
     throw std::runtime_error( "FWHM maximum ratio to the starting curve in lhs and rhs are not the same" );
 
@@ -32510,6 +35043,52 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
 
   if( lhs.profile_targets != rhs.profile_targets )
     throw std::runtime_error( "Profile targets in lhs and rhs are not the same" );
+
+  // Limits and energies are written to XML with nine significant figures.
+  {
+    const auto close_enough = []( const double a, const double b ) -> bool {
+      return fabs(a - b) <= 1.0E-7*std::max( 1.0, std::max( fabs(a), fabs(b) ) );
+    };
+    const auto close_enough_opt = [&close_enough]( const std::optional<double> &a, const std::optional<double> &b ) -> bool {
+      return (a.has_value() == b.has_value()) && (!a.has_value() || close_enough( a.value(), b.value() ));
+    };
+
+    if( lhs.option_rules.size() != rhs.option_rules.size() )
+      throw std::runtime_error( "Number of option rules in lhs and rhs are not the same" );
+
+    for( size_t i = 0; i < lhs.option_rules.size(); ++i )
+    {
+      const OptionRule &l = lhs.option_rules[i], &r = rhs.option_rules[i];
+      bool same = (l.name == r.name) && (l.conditions.size() == r.conditions.size())
+                  && (l.remove_rois.size() == r.remove_rois.size()) && (l.add_rois.size() == r.add_rois.size())
+                  && (l.random_sum_peaks == r.random_sum_peaks)
+                  && (l.curve_changes.size() == r.curve_changes.size());
+      for( size_t j = 0; same && (j < l.conditions.size()); ++j )
+        same = (l.conditions[j].quantity == r.conditions[j].quantity)
+               && close_enough_opt( l.conditions[j].lower, r.conditions[j].lower )
+               && close_enough_opt( l.conditions[j].upper, r.conditions[j].upper );
+      for( size_t j = 0; same && (j < l.remove_rois.size()); ++j )
+        same = close_enough( l.remove_rois[j].first, r.remove_rois[j].first )
+               && close_enough( l.remove_rois[j].second, r.remove_rois[j].second );
+      for( size_t j = 0; same && (j < l.curve_changes.size()); ++j )
+      {
+        const OptionRule::CurveChange &lc = l.curve_changes[j], &rc = r.curve_changes[j];
+        same = (lc.rel_eff_curve_index == rc.rel_eff_curve_index)
+               && (lc.phys_model_corr_fcn == rc.phys_model_corr_fcn)
+               && (lc.cascade_summing.has_value() == rc.cascade_summing.has_value());
+        if( same && lc.cascade_summing.has_value() )
+          same = (lc.cascade_summing->enabled == rc.cascade_summing->enabled)
+                 && (lc.cascade_summing->fit_distance == rc.cascade_summing->fit_distance)
+                 && close_enough( lc.cascade_summing->distance, rc.cascade_summing->distance )
+                 && close_enough( lc.cascade_summing->source_radius, rc.cascade_summing->source_radius );
+      }
+      if( !same )
+        throw std::runtime_error( "Option rule '" + l.name + "' in lhs and rhs are not the same" );
+
+      for( size_t j = 0; j < l.add_rois.size(); ++j )
+        RelActCalcAuto::RoiRange::equalEnough( l.add_rois[j], r.add_rois[j] );
+    }//for( loop over option rules )
+  }
 
   if( lhs.auto_simplify_model != rhs.auto_simplify_model )
     throw std::runtime_error( "Auto-simplify model flag in lhs and rhs are not the same" );
