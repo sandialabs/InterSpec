@@ -2355,3 +2355,73 @@ BOOST_AUTO_TEST_CASE( QuadraticChannel_TinyQuadraticTerm_NoCancellation )
   BOOST_CHECK_SMALL( max_poly_jet_diff, 1.0e-10 );
   BOOST_CHECK_SMALL( max_frf_jet_diff, 1.0e-10 );
 }
+
+
+BOOST_AUTO_TEST_CASE( HigherOrderChannel_IsExactAndSmooth )
+{
+  // Calibrations with four or more terms are inverted by bisection, which used to stop within
+  //  0.001 keV: the round trip was off by up to that, and the channel was a staircase in the energy -
+  //  a small change of energy mostly moved it not at all - so finite differences of anything built
+  //  on it (e.g. RelActCalcAuto's objective, in its energy-calibration parameters) saw ~0 where the
+  //  Jet's implicit-function derivative is ~1/gain.
+  const size_t nchannel = 8192;
+  const double n = static_cast<double>( nchannel );
+  const std::vector<double> poly_coeffs{ -0.32, 0.488827, 2.0e-8, 1.0e-12 };
+  const std::vector<double> frf_coeffs{ -0.32, 0.488827*n, 1.5, -0.8, 0.3 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<std::pair<double,double>> dev_pairs{ {50.0, 0.5}, {300.0, 1.0}, {1000.0, -0.6}, {2600.0, 0.0} };
+
+  using Jet1 = ceres::Jet<double,1>;
+  const auto to_jets = []( const std::vector<double> &values ) {
+    std::vector<Jet1> jets;
+    for( const double v : values )
+      jets.push_back( Jet1( v ) );
+    return jets;
+  };
+  const auto to_jet_pairs = []( const std::vector<std::pair<double,double>> &pairs ) {
+    std::vector<std::pair<double,Jet1>> jets;
+    for( const auto &p : pairs )
+      jets.emplace_back( p.first, Jet1( p.second ) );
+    return jets;
+  };
+
+  for( const bool frf : { false, true } )
+  {
+    const std::vector<double> &coeffs = frf ? frf_coeffs : poly_coeffs;
+    for( const std::vector<std::pair<double,double>> *devs : { &no_dev_pairs, &dev_pairs } )
+    {
+      const std::vector<CubicSplineNodeT<double>> spline = devs->empty()
+                                       ? std::vector<CubicSplineNodeT<double>>{} : create_cubic_spline( *devs );
+      const auto find_channel = [&]( const double energy ) -> double {
+        return frf ? find_fullrangefraction_channel( energy, coeffs, nchannel, *devs )
+                   : find_polynomial_channel( energy, coeffs, nchannel, *devs );
+      };
+
+      double max_round_trip = 0.0, max_deriv_frac = 0.0;
+      for( double energy = 61.3; energy < 3500.0; energy += 17.17 )
+      {
+        const double channel = find_channel( energy );
+        const double back = frf ? fullrangefraction_energy( channel, coeffs, nchannel, spline )
+                                : polynomial_energy( channel, coeffs, spline );
+        max_round_trip = std::max( max_round_trip, std::fabs(back - energy) );
+
+        // A 1E-5 keV finite difference against the Jet's implicit-function derivative.
+        const double delta = 1.0e-5;
+        const double finite_diff = (find_channel( energy + delta ) - find_channel( energy - delta )) / (2.0*delta);
+
+        Jet1 energy_jet( energy );
+        energy_jet.v[0] = 1.0;
+        const Jet1 channel_jet = frf
+            ? find_fullrangefraction_channel( energy_jet, to_jets( coeffs ), nchannel, to_jet_pairs( *devs ) )
+            : find_polynomial_channel( energy_jet, to_jets( coeffs ), nchannel, to_jet_pairs( *devs ) );
+        BOOST_CHECK_SMALL( channel_jet.a - channel, 1.0e-9 );
+        max_deriv_frac = std::max( max_deriv_frac, std::fabs(finite_diff - channel_jet.v[0]) / std::fabs(channel_jet.v[0]) );
+      }//for( energy )
+
+      BOOST_CHECK_MESSAGE( max_round_trip < 1.0e-9, (frf ? "FRF" : "polynomial") << (devs->empty() ? "" : " with deviation pairs")
+                           << ": round trip off by up to " << max_round_trip << " keV" );
+      BOOST_CHECK_MESSAGE( max_deriv_frac < 1.0e-4, (frf ? "FRF" : "polynomial") << (devs->empty() ? "" : " with deviation pairs")
+                           << ": finite-difference dchannel/dE off from the Jet by up to " << max_deriv_frac );
+    }//for( with and without deviation pairs )
+  }//for( polynomial, FRF )
+}

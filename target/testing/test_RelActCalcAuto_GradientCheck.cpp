@@ -25,6 +25,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 #include <cstdlib>
 #include <iostream>
 
@@ -34,6 +35,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -114,9 +116,14 @@ static void set_data_dir()
  using `cal_type`, with solve_ceres's derivative oracle (RELACT_GRADIENT_CHECK) turned on.  The
  oracle throws on a significant auto-diff vs finite-difference disagreement, at the start point and
  at convergence.
+
+ A non-zero `cubic_term` re-expresses the file's linear polynomial calibration as {c0, c1, 0,
+ cubic_term}: practically the same energies, but four terms, so channels are found numerically
+ (`bracketed_newton_root`) rather than analytically.
  */
 static void solve_with_gradient_check( const string &n42_basename,
-                                       const RelActCalcAuto::EnergyCalFitType cal_type )
+                                       const RelActCalcAuto::EnergyCalFitType cal_type,
+                                       const float cubic_term = 0.0f )
 {
   set_data_dir();
 
@@ -139,6 +146,30 @@ static void solve_with_gradient_check( const string &n42_basename,
   }
   BOOST_REQUIRE( foreground );
   BOOST_REQUIRE( meas->detector() );
+
+  if( cubic_term != 0.0f )
+  {
+    const shared_ptr<const SpecUtils::EnergyCalibration> orig = foreground->energy_calibration();
+    BOOST_REQUIRE( orig && (orig->type() == SpecUtils::EnergyCalType::Polynomial) );
+    vector<float> coefs = orig->coefficients();
+    BOOST_REQUIRE_EQUAL( coefs.size(), 2 );
+    coefs.push_back( 0.0f );
+    coefs.push_back( cubic_term );
+
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_polynomial( orig->num_channels(), coefs, orig->deviation_pairs() );
+    BOOST_REQUIRE_EQUAL( cal->coefficients().size(), 4 );
+
+    auto fg = make_shared<SpecUtils::Measurement>( *foreground );
+    fg->set_energy_calibration( cal );
+    foreground = fg;
+    if( background )
+    {
+      auto bg = make_shared<SpecUtils::Measurement>( *background );
+      bg->set_energy_calibration( cal );
+      background = bg;
+    }
+  }//if( cubic_term != 0.0f )
 
   unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = meas->getRelActAutoGuiState();
   BOOST_REQUIRE( state );
@@ -193,3 +224,13 @@ BOOST_AUTO_TEST_CASE( FittedEnergyCal_Linear )
   solve_with_gradient_check( "U235_Unshielded_6000.n42", RelActCalcAuto::EnergyCalFitType::LinearFit );
 }
 
+
+// A four-term calibration is inverted numerically.  That was a bisection stopping 0.001 keV short of
+//  the root, which made the calibration mapping a staircase in the energy-calibration parameters: the
+//  oracle saw ~0 where auto-diff gave ~50 (1312 bad entries), and with LinearFit the scalar and
+//  auto-diff residuals differed.  The 1E-16 cubic term moves the top of this spectrum by ~5E-5 keV.
+BOOST_AUTO_TEST_CASE( FittedEnergyCal_FourTermCalibration )
+{
+  solve_with_gradient_check( "U235_Unshielded_6000.n42", RelActCalcAuto::EnergyCalFitType::NonLinearFit, 1.0e-16f );
+  solve_with_gradient_check( "U235_Unshielded_6000.n42", RelActCalcAuto::EnergyCalFitType::LinearFit, 1.0e-16f );
+}
