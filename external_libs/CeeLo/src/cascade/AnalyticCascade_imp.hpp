@@ -440,6 +440,100 @@ inline bool wsp_key(std::initializer_list<int> subset, const WeakOutcomeKind* ki
     return true;
 }
 
+/// Unnormalised joint P_B(x ∧ y) that occurrences `x` and `y` of branch `pb` are
+/// both emitted in one decay of the branch: 0 when they are mutually exclusive
+/// (same transition or vacancy, one positron's two 511s, one capture's vacancy).
+/// Conditional on the branch firing; multiply by DecayCascade::branch_weight for
+/// a per-parent-decay probability.  `wsp(subset, kind = nullptr, shell = 0)` is
+/// the branch's weak_subset_probability (AnalyticCascadeModel's, or a caller's
+/// memo of it).  The summing-in pair enumeration of compute_cascade_analytic and
+/// coincidence_sum_pairs() both use this, so they cannot drift apart.
+template <class Wsp>
+double occurrence_pair_joint(const PreparedBranch& pb, const Occ& x, const Occ& y,
+                             Wsp&& wsp) {
+    const DecayCascade& dc = *pb.dc;
+    const LevelDag& dag = pb.dag;
+    const LegacyEcShellStarts& legacy_ec = pb.legacy_ec;
+    if (x.src == y.src) return 0.0;  // same transition / same vacancy
+    // annih vs annih: two 511s of one positron are one physical event
+    // (handled specially below); different-member 511s are rare -> skip.
+    if (x.is_annih && y.is_annih) return 0.0;
+    if (x.is_ec && y.is_ec) return 0.0;  // one capture => one vacancy
+    auto ecmarg = [&](bool isL) {
+        if (dc.weak_outcome_law.usable()) {
+            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
+            return wsp({}, &ec, isL ? 2 : 1);
+        }
+        return isL ? legacy_ec.total_l : legacy_ec.total_k;
+    };
+    // Residual transition outcomes are independent of the matched
+    // topology and weak mode. Their factors are absolute, whereas
+    // DAG gamma/IC factors remain conditional on reaching `trans`.
+    if (x.residual >= 0 || y.residual >= 0) {
+        const Occ& r = x.residual >= 0 ? x : y;
+        const Occ& o = x.residual >= 0 ? y : x;
+        if (o.residual >= 0)
+            return r.factor * o.factor;
+        if (o.trans >= 0)
+            return wsp({o.trans})
+                 * r.factor * o.factor;
+        if (o.is_ec)
+            return ecmarg(o.ec_isL) * r.factor * o.factor;
+        if (o.is_annih) {
+            const double pm = dc.weak_outcome_law.usable()
+                ? detail::weak_kind_mass(dc, WeakOutcomeKind::Positron)
+                : 1.0;  // legacy annihilation intensity is in factor
+            return pm * r.factor * o.factor;
+        }
+        return 0.0;
+    }
+    // Order so `a` is the transition-attached one when possible.
+    const Occ& t = (x.trans >= 0) ? x : y;
+    const Occ& o = (x.trans >= 0) ? y : x;
+    if (t.trans < 0) {
+        // neither is a real transition: (ec/annih) x (ec/annih)
+        if ((x.is_ec && y.is_annih) || (x.is_annih && y.is_ec)) {
+            if (dc.weak_outcome_law.usable()) return 0.0;
+            return ecmarg(x.is_ec ? x.ec_isL : y.ec_isL) * x.factor * y.factor;
+        }
+        return 0.0;
+    }
+    if (o.trans >= 0)            // gamma/IC × gamma/IC
+        return wsp({t.trans, o.trans}) * t.factor * o.factor;
+    if (o.is_ec) {               // gamma/IC × EC-feed vacancy
+        if (dc.weak_outcome_law.usable()) {
+            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
+            return wsp({t.trans}, &ec, o.ec_isL ? 2 : 1) *
+                   t.factor * o.factor;
+        }
+        return dc.level_scheme.entry_probability *
+               dag.up_reach_ec(t.trans, dc.level_scheme, o.ec_isL) *
+               t.factor * o.factor;
+    }
+    // gamma/IC × annih-511: exact beta+ mode joint when available.
+    if (dc.weak_outcome_law.usable()) {
+        const WeakOutcomeKind pos = WeakOutcomeKind::Positron;
+        return wsp({t.trans}, &pos) * t.factor * o.factor;
+    }
+    return dc.level_scheme.entry_probability * dag.pass(t.trans) *
+           t.factor * o.factor;
+}
+
+/// Angular a2/a4 of the coincidence link between members `ma` and `mb` of `dc`
+/// (searched in both directions); {0,0} if there is no correlated link.
+inline std::pair<double, double> member_link_a2a4(const DecayCascade& dc, int ma, int mb) {
+    auto scan = [&](int from, int to) -> std::pair<double, double> {
+        if (from < 0 || from >= static_cast<int>(dc.members.size()))
+            return {0.0, 0.0};
+        for (const CoincidenceLink& lk : dc.members[static_cast<std::size_t>(from)].coincident)
+            if (lk.partner == to && lk.has_correlation) return {lk.a2, lk.a4};
+        return {0.0, 0.0};
+    };
+    std::pair<double, double> r = scan(ma, mb);
+    if (r.first == 0.0 && r.second == 0.0) r = scan(mb, ma);
+    return r;
+}
+
 }  // namespace detail
 
 // ===================== AnalyticCascadeModel ================================
@@ -534,16 +628,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
     // Angular a2/a4 for the coincidence link member_a -> member_b within branch b
     // (searched both directions); {0,0} if no correlated link.
     auto link_a2a4 = [&](int b, int ma, int mb) -> std::pair<double, double> {
-        auto scan = [&](int from, int to) -> std::pair<double, double> {
-            if (from < 0 || from >= (int)branches[b].dc->members.size())
-                return {0.0, 0.0};
-            for (const CoincidenceLink& lk : branches[b].dc->members[from].coincident)
-                if (lk.partner == to && lk.has_correlation) return {lk.a2, lk.a4};
-            return {0.0, 0.0};
-        };
-        auto r = scan(ma, mb);
-        if (r.first == 0.0 && r.second == 0.0) r = scan(mb, ma);
-        return r;
+        return detail::member_link_a2a4(*branches[b].dc, ma, mb);
     };
 
     // Memoized weak_subset_probability for branch b: a lock-free memo for this call, backed by
@@ -1292,9 +1377,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
             for (int b = 0; b < (int)branches.size(); ++b) {
                 const detail::PreparedBranch& pb = branches[b];
                 const DecayCascade& dc = *pb.dc;
-                const LevelDag& dag = pb.dag;
                 const std::vector<Occ>& occ = pb.occ;
-                const detail::LegacyEcShellStarts& legacy_ec = pb.legacy_ec;
 
                 // A sum-in partner cannot be the primary line itself (an occurrence at
                 // any component line is a peak line itself, already in R_no).
@@ -1306,69 +1389,11 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
 
                 // Unnormalised joint P_B(x ∧ y) for two occurrences of this branch.
                 auto joint = [&](const Occ& x, const Occ& y) -> double {
-                    if (x.src == y.src) return 0.0;  // same transition / same vacancy
-                    // annih vs annih: two 511s of one positron are one physical event
-                    // (handled specially below); different-member 511s are rare -> skip.
-                    if (x.is_annih && y.is_annih) return 0.0;
-                    if (x.is_ec && y.is_ec) return 0.0;  // one capture => one vacancy
-                    auto ecmarg = [&](bool isL) {
-                        if (dc.weak_outcome_law.usable()) {
-                            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                            return wsp(b, {}, &ec, isL ? 2 : 1);
-                        }
-                        return isL ? legacy_ec.total_l : legacy_ec.total_k;
-                    };
-                    // Residual transition outcomes are independent of the matched
-                    // topology and weak mode. Their factors are absolute, whereas
-                    // DAG gamma/IC factors remain conditional on reaching `trans`.
-                    if (x.residual >= 0 || y.residual >= 0) {
-                        const Occ& r = x.residual >= 0 ? x : y;
-                        const Occ& o = x.residual >= 0 ? y : x;
-                        if (o.residual >= 0)
-                            return r.factor * o.factor;
-                        if (o.trans >= 0)
-                            return wsp(b, {o.trans})
-                                 * r.factor * o.factor;
-                        if (o.is_ec)
-                            return ecmarg(o.ec_isL) * r.factor * o.factor;
-                        if (o.is_annih) {
-                            const double pm = dc.weak_outcome_law.usable()
-                                ? detail::weak_kind_mass(dc, WeakOutcomeKind::Positron)
-                                : 1.0;  // legacy annihilation intensity is in factor
-                            return pm * r.factor * o.factor;
-                        }
-                        return 0.0;
-                    }
-                    // Order so `a` is the transition-attached one when possible.
-                    const Occ& t = (x.trans >= 0) ? x : y;
-                    const Occ& o = (x.trans >= 0) ? y : x;
-                    if (t.trans < 0) {
-                        // neither is a real transition: (ec/annih) x (ec/annih)
-                        if ((x.is_ec && y.is_annih) || (x.is_annih && y.is_ec)) {
-                            if (dc.weak_outcome_law.usable()) return 0.0;
-                            return ecmarg(x.is_ec ? x.ec_isL : y.ec_isL) * x.factor * y.factor;
-                        }
-                        return 0.0;
-                    }
-                    if (o.trans >= 0)            // gamma/IC × gamma/IC
-                        return wsp(b, {t.trans, o.trans}) * t.factor * o.factor;
-                    if (o.is_ec) {               // gamma/IC × EC-feed vacancy
-                        if (dc.weak_outcome_law.usable()) {
-                            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                            return wsp(b, {t.trans}, &ec, o.ec_isL ? 2 : 1) *
-                                   t.factor * o.factor;
-                        }
-                        return dc.level_scheme.entry_probability *
-                               dag.up_reach_ec(t.trans, dc.level_scheme, o.ec_isL) *
-                               t.factor * o.factor;
-                    }
-                    // gamma/IC × annih-511: exact beta+ mode joint when available.
-                    if (dc.weak_outcome_law.usable()) {
-                        const WeakOutcomeKind pos = WeakOutcomeKind::Positron;
-                        return wsp(b, {t.trans}, &pos) * t.factor * o.factor;
-                    }
-                    return dc.level_scheme.entry_probability * dag.pass(t.trans) *
-                           t.factor * o.factor;
+                    return detail::occurrence_pair_joint(pb, x, y,
+                        [&](std::initializer_list<int> subset,
+                            const WeakOutcomeKind* kind = nullptr, int shell = 0) -> double {
+                            return wsp(b, subset, kind, shell);
+                        });
                 };
 
                 in_state(b);

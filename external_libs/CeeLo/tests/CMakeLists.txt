@@ -159,6 +159,19 @@ if(CEELO_WITH_SANDIADECAY)
         SANDIA_DECAY_XML_PATH="${CEELO_SANDIADECAY_DIR}/sandia.decay.xml"
         ANALYTIC_MC_REF="${CMAKE_CURRENT_SOURCE_DIR}/data/ceelo_reference/analytic_cascade_mc.csv")
     add_test(NAME test_analytic_cascade_nuclides COMMAND test_analytic_cascade_nuclides)
+
+    # SummingOutProgram / coincidence_sum_pairs vs the analytic engine they repackage.
+    add_executable(test_cascade_summing_program test_cascade_summing_program.cpp)
+    target_link_libraries(test_cascade_summing_program PRIVATE
+        CeeLoCascade
+        Boost::unit_test_framework
+    )
+    if(_btf_type STREQUAL "SHARED_LIBRARY")
+        target_compile_definitions(test_cascade_summing_program PRIVATE BOOST_TEST_DYN_LINK)
+    endif()
+    target_compile_definitions(test_cascade_summing_program PRIVATE
+        SANDIA_DECAY_XML_PATH="${CEELO_SANDIADECAY_DIR}/sandia.decay.xml")
+    add_test(NAME test_cascade_summing_program COMMAND test_cascade_summing_program)
 endif()
 
 # Benchmark (not a test, just a utility)

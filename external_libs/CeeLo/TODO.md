@@ -857,6 +857,26 @@ Found by review on 2026-11-03 and measured there with direct Monte Carlo; not ye
 - **Shows up:** U/Pu-chain nuclides with strongly converted low-energy transitions; the
   calibration set is unaffected.
 
+### `SummingOutProgram`: pair survivals are still most of a sum-heavy evaluation
+`[low]`
+- **Effect:** with a few hundred sum pairs (U-235 + U-238 + U-232 + U-234 near a dozen ROIs:
+  ~320 pairs, ~90 lines, ~600 partner energies) the pair survivals remain the larger part of
+  an `evaluate` call, after the transfer passes were shared between pairs with one target
+  (which took the whole call from ~65 us to ~25 us in double).
+- **Fix:** skip the exact survival for pairs below a caller-given rate (the member-line
+  estimate is within a few percent).
+- **Shows up:** InterSpec's RelActCalcAuto cascade correction, where it sets the solve time.
+
+### `coincidence_sum_pairs` omits sums of three photons, and rejected branches
+`[low]`
+- **Effect:** a sum peak fed by three-photon sums is under-predicted: order eps^3, so
+  nothing by a few cm, and at contact 0.4% of a two-photon peak for U-235 but up to 21% for
+  Eu-152 (`test_RelActCalcCascade`'s `sum_peaks_match_engine` prints it). The pairs of a
+  branch without an accepted level scheme are not listed at all, and nothing says so (the
+  engine has `cascade_invalid_branch_can_feed_peak` -> `summing_model_complete`).
+- **Fix:** export the engine's `sum_three` occurrences the same way; return, per range, a
+  flag that a rejected branch can feed it.
+
 ### Analytic cascade summing: remaining approximations
 `[low]`
 - **Effect:** `compute_cascade_analytic` matches FullRealization to ≲1% at all geometries

@@ -505,6 +505,31 @@ build it once. Each primary's summing-out factor and each summing-in pair key's 
 survival are memoized, so a U-235/U-238 evaluation over ~300 windows takes tens of ms.
 Providers must be deterministic and side-effect free.
 
+`cascade/CascadeSummingProgram.h` packages the same physics for a caller that evaluates it
+inside an optimizer (InterSpec's relative-efficiency fit): thousands of evaluations of one
+nuclide at changing efficiencies, in a differentiable scalar type.
+- `SummingOutProgram` is built once from an `AnalyticCascadeModel` and a list of line
+  energies. `energies()` lists the photon energies whose total efficiency it needs;
+  `evaluate<T>( tot_eff, out, workspace )` then returns each line's summing-out factor with
+  no hashing or provider calls, and no allocation once the caller's workspace has grown to
+  size - the per-branch work (off-scheme primaries, the product of residual survivals, one
+  up-pass with an outcome-weighted start vector) is shared by the branch's lines. It equals
+  `compute_cascade_analytic`'s summing-out to ~1e-15 (`tests/test_cascade_summing_program.cpp`,
+  16 nuclides; a CeeLo test, so not built in InterSpec's tree, which sets
+  `CEELO_BUILD_TESTS OFF` - InterSpec's `test_RelActCalcCascade` repeats the comparison
+  through its kernel). Given transition pairs it also returns each pair's exact coincident
+  survival, factored as one transfer pass per distinct pair target and a per-pair tail (the
+  engine's `constrained_survival_table`), the quantity a sum peak's rate needs.
+  `first_order_coefficients()` gives d(factor)/d(eff) at zero efficiency, for a caller to
+  drop partners that cannot matter.
+- `coincidence_sum_pairs( model, lo, hi )` lists the photon pairs whose energies sum into a
+  range, each with its joint emission probability times the angular factor
+  (`detail::occurrence_pair_joint`, the function the engine's summing-in uses, lifted out of
+  its lambda) - the engine's pure-sum rate is the sum of `weight x fep_a x fep_b x survival`.
+Sums of three or more photons are not listed (the engine's `sum_three` has them), nor are
+the pairs of a branch without an accepted level scheme (the engine flags a peak such a
+branch can feed with `summing_model_complete = false`; this list carries no such flag).
+
 The MC estimators (`compute_cascade`) can also deposit **internal-conversion electrons**
 and the coincident K-Auger (`CascadeConfig::enable_ic_electrons`, default OFF, off path
 bit-identical): the conversion electron is transported through the source geometry and
