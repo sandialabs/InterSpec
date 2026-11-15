@@ -20,6 +20,10 @@
 
 namespace RelActCalcAutoImp
 {
+/** The default minimum width, in channels, of `resolvable_fwhm_continuation(...)`; it is the identity at and above
+ twice this. */
+constexpr double sm_resolvable_fwhm_min_channels = 1.25;
+
 /** Maps an unconstrained trial FWHM to a strictly positive, resolvable width.
 
  The mapping is exactly the identity above twice the minimum width.  Below that join it is a
@@ -27,7 +31,7 @@ namespace RelActCalcAutoImp
  make the peak model throw and normal persisted FWHM semantics remain unchanged. */
 template<typename T>
 T resolvable_fwhm_continuation( const T &raw_fwhm, const double channel_width,
-                                const double minimum_channels = 1.25 )
+                                const double minimum_channels = sm_resolvable_fwhm_min_channels )
 {
   assert( std::isfinite(channel_width) && (channel_width > 0.0) );
   assert( std::isfinite(minimum_channels) && (minimum_channels > 0.0) );

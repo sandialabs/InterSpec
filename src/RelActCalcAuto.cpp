@@ -3324,6 +3324,9 @@ struct RelActAutoCostFcn
   std::vector<std::vector<MassFracBlock>> m_mass_frac_blocks;
   
   const std::shared_ptr<const SpecUtils::Measurement> m_spectrum;
+
+  /** The widest channel of `m_spectrum`; see `make_fwhm_resolvable(...)`. */
+  double m_max_channel_width = 0.0;
   
   const float m_live_time;
   const vector<float> m_channel_counts; //background subtracted channel counts
@@ -3654,6 +3657,13 @@ struct RelActAutoCostFcn
     
     if( spectrum->num_gamma_channels() != channel_counts_uncert.size() )
       throw runtime_error( "RelActAutoCostFcn: Diff number of spectrum channels and channel counts uncert." );
+
+    for( size_t channel = 0; channel < spectrum->num_gamma_channels(); ++channel )
+    {
+      const double width = spectrum->gamma_channel_width( channel );
+      if( std::isfinite(width) )
+        m_max_channel_width = std::max( m_max_channel_width, width );
+    }
     
     vector<RelActCalcAuto::RoiRange> energy_ranges = options.rois;
     vector<RelActCalcAuto::FloatingPeak> extra_peaks = options.floating_peaks;
@@ -13355,6 +13365,17 @@ struct RelActAutoCostFcn
     // Normal detector widths are many times the join, so their persisted/evaluated model is
     // unchanged; only otherwise-invalid optimizer trials take this continuation.
     if( !m_spectrum || !m_spectrum->num_gamma_channels() )
+      return raw_fwhm;
+
+    // No channel is wider than `m_max_channel_width`, so a width at or above the continuation's join for that
+    //  is returned as is - without looking up its channel, which is most of the cost of this function.
+    double raw_scalar = 0.0;
+    if constexpr ( std::is_same_v<T,double> )
+      raw_scalar = raw_fwhm;
+    else
+      raw_scalar = raw_fwhm.a;
+    if( (m_max_channel_width > 0.0)
+       && (raw_scalar >= 2.0*RelActCalcAutoImp::sm_resolvable_fwhm_min_channels*m_max_channel_width) )
       return raw_fwhm;
 
     double energy_scalar = 0.0;
