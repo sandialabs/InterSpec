@@ -105,9 +105,12 @@ if not exist %BOOST_BUILT_FILE% (
         GOTO :cmderr
     )
 
+    rem Not `tar`: Windows' bsdtar converts entry names to the ANSI code page, so it skips the two
+    rem  UTF-8 named Boost.Wave test entries (libs/wave/test/testwave/testfiles/utf8-test-...) and
+    rem  exits non-zero.  .NET's ZipFile honors the zip's UTF-8 name flag.
     if not exist %BOOST_DIR% (
-        tar -xzvf %BOOST_TAR% && (
-            echo Un-tarred %BOOST_TAR%
+        powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('!CD!\%BOOST_TAR%', '!CD!')" && (
+            echo Unzipped %BOOST_TAR%
         ) || (
             echo "Failed to unzip boost"
             GOTO :cmderr
