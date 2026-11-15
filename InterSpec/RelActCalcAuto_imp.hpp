@@ -61,7 +61,14 @@ struct PeakDefImp
 {
   T m_mean = T(0.0);
   T m_sigma = T(0.0);
+
+  /** The amplitude this peak contributes to its ROI's model: `m_line_amplitude` times the weight
+   RelActCalcAuto gives a line outside the ROI (see RelActCalcAuto_LineWindow_imp.hpp), and equal to it
+   for a line inside. */
   T m_amplitude = T(0.0);
+
+  /** The line's full amplitude - what is reported for the peak. */
+  T m_line_amplitude = T(0.0);
   T m_skew_pars[6] = { T(0.0), T(0.0), T(0.0), T(0.0), T(0.0), T(0.0) };
 
   const SandiaDecay::Nuclide *m_parent_nuclide = nullptr;

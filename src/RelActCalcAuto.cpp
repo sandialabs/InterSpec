@@ -115,6 +115,7 @@
 #include "InterSpec/RelActCalcAuto_AgeDerivative.h"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
 #include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
+#include "InterSpec/RelActCalcAuto_LineWindow_imp.hpp"
 
 #ifdef _MSC_VER
 #undef isinf
@@ -4159,9 +4160,9 @@ struct RelActAutoCostFcn
    window.  Two solves agreeing on this evaluated the same lines against the same ROIs, which is
    what the candidate-search and profile identity guards need.
 
-   Which of those lines a given ROI actually integrates is decided at evaluation time from the
-   peak-coverage limits (see `peaks_for_energy_range_imp`), so it is deliberately NOT part of this
-   fingerprint - it is a function of the parameters, not of the problem. */
+   Which of those lines a given ROI actually integrates, and with what weight, is decided at evaluation
+   time from each line's peak shape and strength (see `peaks_for_energy_range_imp`), so it is deliberately
+   NOT part of this fingerprint - it is a (continuous) function of the parameters, not of the problem. */
   std::uint64_t frozen_gamma_membership_hash() const
   {
     StableProblemHash hash;
@@ -13504,7 +13505,7 @@ struct RelActAutoCostFcn
     {
       const bool is_source_line = (peak.m_rel_eff_index != std::numeric_limits<size_t>::max());
       if( is_source_line && (peak.m_src_energy >= lower) && (peak.m_src_energy <= upper) )
-        answer.emplace_back( peak.m_src_energy, peak.m_amplitude );
+        answer.emplace_back( peak.m_src_energy, peak.m_line_amplitude );
     }
 
     return answer;
@@ -16495,14 +16496,209 @@ struct RelActAutoCostFcn
   }//per_eval_values(...)
 
 
+  /** The value parts of an evaluation's inputs, from which `peaks_for_energy_range_imp(...)` decides which lines
+   outside a ROI to model (see RelActCalcAuto_LineWindow_imp.hpp).  A Jet evaluation decides from these, the
+   values its derivatives are taken at, so every pass at a parameter point (scalar, and each Jet stride) models
+   the same lines. */
+  struct ScalarScreenInputs
+  {
+    std::vector<double> x;
+    RelActCalcAutoImp::CachedEnergyCalSplines<double> splines;
+    PerEvalValues<double> per_eval;
+  };//struct ScalarScreenInputs
+
+
+  template<typename T>
+  ScalarScreenInputs scalar_screen_inputs( const std::vector<T> &x ) const
+  {
+    ScalarScreenInputs answer;
+    answer.x.reserve( x.size() );
+    for( const T &value : x )
+      answer.x.push_back( RelActCalcAutoImp::LineWindow::scalar_part( value ) );
+    answer.splines = compute_energy_cal_splines( answer.x );
+    answer.per_eval = per_eval_values( answer.x );
+    return answer;
+  }//scalar_screen_inputs(...)
+
+
+  /** A source line's relative efficiency, including the fluorescence self-attenuation correction of an
+   element's x-rays when it applies. */
+  template<typename U>
+  U source_line_rel_eff( const double energy, const size_t rel_eff_index, const SourceEvalValues<U> &src_vals,
+                         const std::vector<U> &x, const PerEvalValues<U> * const per_eval ) const
+  {
+    const FluorescenceDepth * const fluor_depth = src_vals.fluor_depth;
+    return relative_eff( energy, rel_eff_index, x, per_eval, phys_model_energy_consts( rel_eff_index, energy ) )
+          * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( src_vals.fluor_profile,
+                                                                            fluor_depth->model.mu_at( energy ) )
+                         : U(1.0));
+  }//source_line_rel_eff(...)
+
+
+  /** The branching-ratio nuisance factor (see `Options::additional_br_uncert`) of a line at `energy`; 1 if none. */
+  template<typename U>
+  U br_uncert_factor( const double energy, const std::vector<U> &x ) const
+  {
+    U br_uncert_adj(1.0);
+    if( (m_options.additional_br_uncert > 0.0) && !m_peak_ranges_with_uncert.empty() )
+    {
+      assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
+      assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == number_parameters() );
+
+      // TODO: we could use std::lower_bound to find the applicable `m_peak_ranges_with_uncert` element
+      for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
+      {
+        const pair<double,double> &range = m_peak_ranges_with_uncert[range_index];
+
+        if( (energy >= range.first) && (energy <= range.second) )
+        {
+          const U par_value = x[m_add_br_uncert_start_index + range_index];
+          const U num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+
+          // This parameter has a Ceres lower bound at (by default exactly) zero yield.  Do not clamp the
+          // expression here: at equality, max(U(0), expression) selects the constant Jet and
+          // erases the feasible inward derivative that lets the solver leave the bound.
+          br_uncert_adj = 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert;
+
+          break;
+        }//
+      }//for( find range this gamma belongs to, if any )
+    }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
+
+    return br_uncert_adj;
+  }//br_uncert_factor(...)
+
+
+  /** Sets the mean, sigma, and skew of the peak of a source line of true `energy`, for parameters `x` - with
+   the line's Lorentzian width for an x-ray, under `Options::lorentzian_xrays`. */
+  template<typename U>
+  void set_source_line_shape( RelActCalcAuto::PeakDefImp<U> &peak, const double energy,
+                              const PeakDef::SourceGammaType gamma_type,
+                              const SandiaDecay::Nuclide * const nuc,
+                              const SandiaDecay::Transition * const transition,
+                              const SandiaDecay::Element * const el,
+                              const std::vector<U> &x,
+                              const RelActCalcAutoImp::CachedEnergyCalSplines<U> &splines ) const
+  {
+    peak.m_mean = apply_energy_cal_adjustment( energy, x, splines );
+    peak.m_sigma = fwhm( U(energy), x ) / 2.35482;
+    set_peak_skew( peak, x );
+
+    // Add in Lorentzian widths for X-rays
+    if( m_options.lorentzian_xrays
+       && (gamma_type == PeakDef::SourceGammaType::XrayGamma)
+       && ((m_options.skew_type == PeakDef::SkewType::NoSkew)
+           || (m_options.skew_type == PeakDef::SkewType::GaussPlusBortel)) )
+    {
+      double width = -1.0;
+      if( nuc )
+      {
+        assert( transition );
+        if( transition )
+          width = XRayWidths::get_xray_total_width_for_decay( transition, energy );
+      }else if( el )
+      {
+        width = XRayWidths::get_xray_lorentzian_width( el, energy, 0.5 );
+      }else
+      {
+        assert( 0 );
+      }
+
+      if( width >= 0.0 )
+      {
+        // R=0 gives pure Voigt; `tau` is Exp*Gauss exponential decay constant
+        // The skew parameters were already set by set_peak_skew() above
+        U skew_R(0.0), skew_tau(0.0);
+        if( m_options.skew_type == PeakDef::SkewType::GaussPlusBortel )
+        {
+          // GaussPlusBortel uses skew_pars[0]=R, skew_pars[1]=tau
+          skew_R = peak.m_skew_pars[0];
+          skew_tau = peak.m_skew_pars[1];
+        }
+
+        check_jet_for_NaN( skew_R );
+        check_jet_for_NaN( skew_tau );
+
+        peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
+        // VoigtPlusBortel uses: skew_pars[0]=gamma_lor (Lorentzian HWHM),
+        //                       skew_pars[1]=R, skew_pars[2]=tau
+        peak.set_coefficient( U(width), PeakDef::CoefficientType::SkewPar0 );
+        peak.set_coefficient( skew_R, PeakDef::CoefficientType::SkewPar1 );
+        peak.set_coefficient( skew_tau, PeakDef::CoefficientType::SkewPar2 );
+      }else
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        cerr << "Failed to get Lorentzian width for " << energy << " keV." << endl;//temporary for debug
+#endif
+      }
+    }//if( make x-rays Lorentzian )
+  }//set_source_line_shape(...)
+
+
+  /** Sets the mean, sigma, and skew of an iodine-escape peak, at the energy actually deposited. */
+  template<typename U>
+  void set_escape_shape( RelActCalcAuto::PeakDefImp<U> &peak, const double escape_energy, const std::vector<U> &x,
+                         const RelActCalcAutoImp::CachedEnergyCalSplines<U> &splines ) const
+  {
+    peak.m_mean = apply_energy_cal_adjustment( escape_energy, x, splines );
+    peak.m_sigma = fwhm( U(escape_energy), x ) / 2.35482;
+    set_peak_skew( peak, x );
+  }//set_escape_shape(...)
+
+
+  /** Sets the mean, sigma, and skew of floating peak `index`. */
+  template<typename U>
+  void set_floating_peak_shape( RelActCalcAuto::PeakDefImp<U> &peak, const size_t index, const std::vector<U> &x,
+                                const RelActCalcAutoImp::CachedEnergyCalSplines<U> &splines ) const
+  {
+    const RelActCalcAuto::FloatingPeak &floating = m_options.floating_peaks[index];
+    const size_t fwhm_index = m_free_peak_par_start_index + 2*index + 1;
+    assert( fwhm_index < x.size() );
+
+    U peak_mean( floating.energy );
+    if( floating.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known )
+      peak_mean = apply_energy_cal_adjustment( floating.energy, x, splines );
+
+    const U raw_peak_fwhm = (floating.release_fwhm ? x[fwhm_index] : U(1.0)) * fwhm(peak_mean, x);
+    const U peak_fwhm = make_fwhm_resolvable( raw_peak_fwhm, peak_mean );
+
+    peak.m_mean = peak_mean;
+    peak.m_sigma = peak_fwhm/2.35482;
+    set_peak_skew( peak, x );
+  }//set_floating_peak_shape(...)
+
+
+  /** The peaks and continuum of one ROI, for parameters `x`.
+
+   The ROI models every source line (and floating peak) whose nominal energy is inside it, and also those
+   outside it whose peaks reach into it enough to matter - each weighted smoothly by how much it matters
+   (see RelActCalcAuto_LineWindow_imp.hpp), so the objective is continuous in every parameter.
+
+   @param per_eval The parameter-only source and physical-model values `eval()` computes once for every ROI;
+          computed here if null.
+   @param scalar_inputs For a Jet `T`: the value parts of the inputs, which `eval()` computes once for every
+          ROI; computed here if null.  Unused for `double`.
+   */
   template<typename T>
   RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
                                                        const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cached_splines,
                                                        const bool multithread,
                                                        const bool sort_peaks = true,
-                                                       const PerEvalValues<T> * const per_eval = nullptr ) const
+                                                       const PerEvalValues<T> *per_eval = nullptr,
+                                                       const ScalarScreenInputs *scalar_inputs = nullptr ) const
   {
+    namespace LineWindow = RelActCalcAutoImp::LineWindow;
+
+    // The source values are computed once here, rather than for each source (and, for a physical model, each
+    //  line) - the same code computes them, so the values are identical.
+    std::optional<PerEvalValues<T>> local_per_eval;
+    if( !per_eval )
+    {
+      local_per_eval.emplace( per_eval_values( x ) );
+      per_eval = &(*local_per_eval);
+    }
+
     const size_t num_channels = range.num_channels;
 
     // We will use "adjusted" to refer to energies that have been mapped into the spectrums original
@@ -16582,11 +16778,8 @@ struct RelActAutoCostFcn
 
     };//auto check_peak_reasonable
 
-    // We will accept peaks outside the ROI range, if they will still effect the ROI, so here we will define
-    //  a peak for the lower and upper edges of the ROI, and use thier extent to approximate peaks
-    //  above and below the ROI (in principle we should search around, but its not too important).
-    //
-    //  TODO: We are including peaks such that 1E-4 of them make it into the ROI - this is totally arbitrary, and instead we should take into account the peak area.
+    // Peaks at the ROI edges, with the widths there; a width too narrow to resolve makes this an invalid
+    //  trial (thrown, so Ceres rejects the step).
     RelActCalcAuto::PeakDefImp<T> lower_range_peak, upper_range_peak;
     lower_range_peak.m_mean = T(range.lower_energy);
     lower_range_peak.m_sigma = fwhm( T(range.lower_energy), x ) / 2.35482;
@@ -16601,47 +16794,36 @@ struct RelActAutoCostFcn
     check_peak_reasonable( lower_range_peak, range.lower_energy );
     check_peak_reasonable( upper_range_peak, range.upper_energy );
 
-    // The Cyrstal Ball distributions can have reallllly long tails, so we will use a smaller coverage function
-    //  for these.
+    // How many of its own sigma from the ROI a line outside it is looked at (see LineWindow::cap_weight).  The
+    //  Crystal Ball distributions can have reallllly long tails, so they get a larger cap; GADRAS CZT shapes
+    //  routinely have >10% of their area beyond 15 sigma (e.g., ~12% below -15 sigma at 1.4 MeV), which is real
+    //  peak area that must be modelled, so they get 60 sigma.  Beyond these, the strength weight decides.
     const bool is_crystal_ball = ((m_options.skew_type == PeakDef::SkewType::CrystalBall)
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
+    double cap_nsigma = is_crystal_ball ? 20.0 : 15.0;
 
-    const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
-
-    // GADRAS CZT shapes routinely have >10% of their area beyond 15 sigma (e.g., ~12% below -15
-    //  sigma at 1.4 MeV), which is real peak area that must be modelled.  With truncation the GADRAS
-    //  tails are bounded anyway; without it, cap only extreme (e.g., RapiScan RPM) tails.
+    // The Crystal Ball shapes keep ten times more of a line's tail out of a ROI (LineWindow::fraction_weight).
+    const double fraction_scale = is_crystal_ball ? 10.0 : 1.0;
     if( (m_options.skew_type == PeakDef::SkewType::GadrasGeneric)
        || (m_options.skew_type == PeakDef::SkewType::GadrasCZT) )
     {
-#if( USE_GADRAS_TRUNCATION )
-      max_nsigma = 0.0;   //no cap
-#else
-      max_nsigma = 60.0;
-#endif
+      cap_nsigma = 60.0;
     }//if( a GADRAS skew type )
-    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
-    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 
-    assert( range.lower_energy >= lower_peak_limits.first );
-    assert( range.upper_energy <= upper_peak_limits.second );
-
-    // We will approximate what peaks might affect this ROI, using the coverage limits of the lower and upper peaks
-    // TODO: for Crystal Ball dists, they can have really far-reaching tails - perhaps we should limit the max extent of peaks to save CPU, or whatever
-    //const double lower_mean = lower_peak_limits.first;
-    //const double upper_mean = upper_peak_limits.second;
-    double lower_mean, upper_mean;
-    if constexpr ( !std::is_same_v<T, double> )
-    {
-      lower_mean = range.lower_energy - (lower_peak_limits.second - lower_range_peak.m_mean.a);
-      upper_mean = range.upper_energy + (upper_range_peak.m_mean.a - upper_peak_limits.first);
-    }else
-    {
-      lower_mean = range.lower_energy - (lower_peak_limits.second - lower_range_peak.m_mean);
-      upper_mean = range.upper_energy + (upper_range_peak.m_mean - upper_peak_limits.first);
-    }
-
+    // A line below the ROI reaches into it only with its high-energy side, and one above only with its low-energy
+    //  side; where that side is Gaussian, nothing comes from beyond LineWindow::sm_gaussian_side_nsigma.
+    const PeakDef::SkewType skew_type = m_options.skew_type;
+    const bool gaussian_high_side = (skew_type == PeakDef::SkewType::NoSkew)
+                                    || (skew_type == PeakDef::SkewType::Bortel)
+                                    || (skew_type == PeakDef::SkewType::GaussExp)
+                                    || (skew_type == PeakDef::SkewType::CrystalBall)
+                                    || (skew_type == PeakDef::SkewType::GaussPlusBortel)
+                                    || (skew_type == PeakDef::SkewType::DoubleBortel);
+    const bool gaussian_low_side = (skew_type == PeakDef::SkewType::NoSkew);
+    const double below_cap_nsigma = gaussian_high_side ? std::min( cap_nsigma, LineWindow::sm_gaussian_side_nsigma )
+                                                       : cap_nsigma;
+    const double above_cap_nsigma = gaussian_low_side ? std::min( cap_nsigma, LineWindow::sm_gaussian_side_nsigma )
+                                                      : cap_nsigma;
 
     size_t num_free_peak_pars = 0;
     
@@ -16666,6 +16848,125 @@ struct RelActAutoCostFcn
         span_upper = std::max( span_upper, r.upper_energy );
       }
     }//if( only lines within the ROI span )
+
+    // Value-only inputs for deciding which lines outside the ROI to model: `x` itself for a scalar evaluation.
+    std::optional<ScalarScreenInputs> local_scalar_inputs;
+    const std::vector<double> *xs = nullptr;
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> *splines_s = nullptr;
+    const PerEvalValues<double> *per_eval_s = nullptr;
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      xs = &x;
+      splines_s = &cached_splines;
+      per_eval_s = per_eval;
+    }else
+    {
+      if( !scalar_inputs )
+      {
+        local_scalar_inputs.emplace( scalar_screen_inputs( x ) );
+        scalar_inputs = &(*local_scalar_inputs);
+      }
+      xs = &(scalar_inputs->x);
+      splines_s = &(scalar_inputs->splines);
+      per_eval_s = &(scalar_inputs->per_eval);
+    }//if constexpr ( double ) / else
+
+    // The ROI's extent in the spectrum's (native) energy calibration, which its channels are fixed in, and the
+    //  noise scale a line's counts are compared to at each edge.
+    const float * const channel_energies = &((*m_energy_cal->channel_energies())[0]);
+    const float roi_edges[2] = { channel_energies[first_channel], channel_energies[last_channel + 1] };
+    const double lower_noise = LineWindow::edge_noise( &(m_channel_count_uncerts[first_channel]), num_channels, true );
+    const double upper_noise = LineWindow::edge_noise( &(m_channel_count_uncerts[first_channel]), num_channels, false );
+
+    // Lines further below or above the ROI than these have a cap weight of zero, so are not looked at.
+    const auto scalar_sigma = [this,xs]( const double energy ) -> double {
+      return fwhm( energy, *xs ) / 2.35482;
+    };
+    const double reach_below = LineWindow::reach_beyond_edge( scalar_sigma, range.lower_energy, -1, below_cap_nsigma,
+                                  std::isfinite(span_lower) ? (range.lower_energy - span_lower) : range.lower_energy );
+    const double reach_above = LineWindow::reach_beyond_edge( scalar_sigma, range.upper_energy, +1, above_cap_nsigma,
+                                  std::isfinite(span_upper) ? (span_upper - range.upper_energy) : 1.0E5 );
+    const double window_lower = range.lower_energy - reach_below;
+    const double window_upper = range.upper_energy + reach_above;
+
+    const auto in_roi = [&range]( const double energy ) -> bool {
+      return (energy >= range.lower_energy) && (energy <= range.upper_energy);
+    };
+
+    // Whether a line outside the ROI at nominal `energy` can have a non-zero weight.  A Voigt x-ray's Lorentzian
+    //  wings reach past its Gaussian sigma - with a micro-calorimeter's ~30 eV sigma that is only ~0.5 keV, while
+    //  a K x-ray has 2-3 % of its area beyond that - so the cap does not apply within sm_lorentzian_xray_reach_kev.
+    const auto may_reach = [&]( const double energy, const bool lorentzian ) -> bool {
+      if( (energy >= window_lower) && (energy <= window_upper) )
+        return true;
+      return lorentzian && (energy >= (range.lower_energy - sm_lorentzian_xray_reach_kev))
+                        && (energy <= (range.upper_energy + sm_lorentzian_xray_reach_kev));
+    };
+
+    const auto distance_from_roi = [&range]( const double energy ) -> double {
+      return (energy < range.lower_energy) ? (range.lower_energy - energy) : (energy - range.upper_energy);
+    };
+
+    const auto side_cap_nsigma = [&]( const double energy ) -> double {
+      return (energy < range.lower_energy) ? below_cap_nsigma : above_cap_nsigma;
+    };
+
+    const auto side_noise = [&]( const double energy ) -> double {
+      return (energy < range.lower_energy) ? lower_noise : upper_noise;
+    };
+
+    // The cap weight, from scalar values, of a line outside the ROI at nominal `energy`, with sigma `sigma`.
+    const auto cap_weight_s = [&]( const double energy, const double sigma, const bool lorentzian ) -> double {
+      const double distance = distance_from_roi( energy );
+      if( lorentzian && (distance <= sm_lorentzian_xray_reach_kev) )
+        return 1.0;
+      if( !std::isfinite(sigma) || !(sigma > 0.0) )
+        return 1.0; //An invalid trial width; the full computation of the peak rejects it.
+      return LineWindow::cap_weight( distance / sigma, side_cap_nsigma(energy) );
+    };
+
+    // The fraction and strength weights, from scalar values, of a line outside the ROI at nominal `energy` with
+    //  peak `shape` and full amplitude `amplitude`.
+    const auto content_weight_s = [&]( const RelActCalcAuto::PeakDefImp<double> &shape, const double energy,
+                                        const double amplitude ) -> double {
+      const double noise = side_noise( energy );
+      const double abs_amplitude = std::fabs( amplitude );
+      if( !std::isfinite(abs_amplitude) || !std::isfinite(shape.m_mean) || !std::isfinite(shape.m_sigma)
+         || !(shape.m_sigma > 0.0) )
+        return 1.0; //An invalid trial; the full computation of the peak rejects it.
+
+      // The line can put at most its whole area into the ROI.
+      if( !(abs_amplitude > LineWindow::sm_min_counts_in_noise*noise) )
+        return 0.0;
+
+      double fraction = 0.0;
+      PeakDists::photopeak_function_integral( shape.m_mean, shape.m_sigma, 1.0, shape.m_skew_type, shape.m_skew_pars,
+                                              size_t(1), roi_edges, &fraction );
+      if( !std::isfinite(fraction) )
+        return 1.0;
+
+      return LineWindow::fraction_weight( fraction, fraction_scale )
+             * LineWindow::strength_weight( fraction * abs_amplitude / noise );
+    };
+
+    // The weight of a modelled peak outside the ROI (at nominal `energy`), with its derivatives; only needed when
+    //  its scalar weight is strictly between 0 and 1 (outside that, the weight is constant).
+    const auto outside_weight = [&]( const RelActCalcAuto::PeakDefImp<T> &peak, const double energy,
+                                     const bool lorentzian ) -> T {
+      const double distance = distance_from_roi( energy );
+      const T cap = (lorentzian && (distance <= sm_lorentzian_xray_reach_kev))
+                    ? T(1.0) : LineWindow::cap_weight( T(distance / peak.m_sigma), side_cap_nsigma(energy) );
+      if( !(LineWindow::scalar_part(cap) > 0.0) )
+        return T(0.0);
+
+      const double noise = side_noise( energy );
+      using std::abs;
+      T fraction( 0.0 );
+      PeakDists::photopeak_function_integral( peak.m_mean, peak.m_sigma, T(1.0), peak.m_skew_type, peak.m_skew_pars,
+                                              size_t(1), roi_edges, &fraction );
+      return cap * LineWindow::fraction_weight( fraction, fraction_scale )
+                 * LineWindow::strength_weight( T(fraction * abs(peak.m_line_amplitude) / noise) );
+    };
 
     // Go through and create peaks based on rel act, eff, etc
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
@@ -16695,6 +16996,14 @@ struct RelActAutoCostFcn
         const std::shared_ptr<const AgeDerivativeResult> &age_yield_derivatives = src_vals.age_yield_derivatives;
         assert( gammas );
 
+        // The same source's value-only quantities, for deciding which lines outside the ROI to model.
+        const SourceEvalValues<double> *src_vals_s = nullptr;
+        if constexpr ( std::is_same_v<T, double> )
+          src_vals_s = &src_vals;
+        else
+          src_vals_s = &(per_eval_s->sources[rel_eff_index][source_index]);
+        assert( src_vals_s );
+
         for( size_t gamma_index = 0; gamma_index < gammas->size(); ++gamma_index )
         {
           // TODO: gammas right next to eachother may have exactly, or really close energies that we could combine into a single peak to save a little time - should consider doing this
@@ -16711,25 +17020,75 @@ struct RelActAutoCostFcn
             PeakFitUtils::nai_iodine_escape_fractions( energy, escape_fractions[0], escape_fractions[1] );
           const double escape_energies[2] = { energy - PeakFitUtils::sm_iodine_kalpha_escape_kev,
                                               energy - PeakFitUtils::sm_iodine_kbeta_escape_kev };
-          bool escape_in_range[2] = { false, false };
-          for( size_t i = 0; i < 2; ++i )
-            escape_in_range[i] = (escape_fractions[i] > 0.0)
-                                 && (escape_energies[i] >= lower_mean) && (escape_energies[i] <= upper_mean);
 
-          // Which lines this ROI integrates is decided here, from the peak-coverage limits
-          // computed above for exactly this purpose ("what peaks might affect this ROI":
-          // `missing_frac` of the peak area lies outside `max_nsigma`).  `energy` is the nominal
-          // line energy - a fixed input - and `lower_mean`/`upper_mean` come from scalar parts, so
-          // scalar and every Jet lane of one evaluation make the identical decision.
-          // A Voigt x-ray's Lorentzian wings can reach past the detector-shape coverage `lower_mean`/`upper_mean`
-          //  come from - with a micro-calorimeter's ~30 eV sigma that is only ~0.5 keV, while a K x-ray has 2-3 % of
-          //  its area beyond that - so an x-ray within sm_lorentzian_xray_reach_kev of the ROI is always included.
-          const double reach = (m_options.lorentzian_xrays && (gamma.gamma_type == PeakDef::SourceGammaType::XrayGamma))
-                               ? sm_lorentzian_xray_reach_kev : 0.0;
-          const bool line_in_range = ((energy >= std::min( lower_mean, range.lower_energy - reach ))
-                                      && (energy <= std::max( upper_mean, range.upper_energy + reach )));
-          if( !line_in_range && !escape_in_range[0] && !escape_in_range[1] )
+          // Which of the line and its escapes this ROI models, and their weights: 1 for one inside the ROI, and for
+          //  one outside it the product of its cap and strength weights (see LineWindow), from scalar values.  The
+          //  cheap rejections come first - the cap needs only the width, then the amplitude, then the shape.
+          const bool lorentzian = m_options.lorentzian_xrays && (gamma.gamma_type == PeakDef::SourceGammaType::XrayGamma);
+          const bool line_inside = in_roi( energy );
+          const bool line_outside_may_reach = !line_inside && may_reach( energy, lorentzian );
+          bool escape_inside[2] = { false, false }, escape_outside_may_reach[2] = { false, false };
+          for( size_t i = 0; i < 2; ++i )
+          {
+            if( !(escape_fractions[i] > 0.0) )
+              continue;
+            escape_inside[i] = in_roi( escape_energies[i] );
+            escape_outside_may_reach[i] = !escape_inside[i] && may_reach( escape_energies[i], false );
+          }
+
+          if( !line_inside && !line_outside_may_reach
+             && !escape_inside[0] && !escape_outside_may_reach[0]
+             && !escape_inside[1] && !escape_outside_may_reach[1] )
             continue;
+
+          double line_weight_s = line_inside ? 1.0 : 0.0;
+          double escape_weight_s[2] = { (escape_inside[0] ? 1.0 : 0.0), (escape_inside[1] ? 1.0 : 0.0) };
+          if( line_outside_may_reach || escape_outside_may_reach[0] || escape_outside_may_reach[1] )
+          {
+            const double line_cap = line_outside_may_reach
+                                    ? cap_weight_s( energy, scalar_sigma(energy), lorentzian ) : 0.0;
+            double escape_cap[2] = { 0.0, 0.0 };
+            for( size_t i = 0; i < 2; ++i )
+            {
+              if( escape_outside_may_reach[i] )
+                escape_cap[i] = cap_weight_s( escape_energies[i], scalar_sigma(escape_energies[i]), false );
+            }
+
+            if( (line_cap > 0.0) || (escape_cap[0] > 0.0) || (escape_cap[1] > 0.0) )
+            {
+              const double amplitude_s = src_vals_s->rel_act * static_cast<double>(m_live_time)
+                                         * source_line_rel_eff( energy, rel_eff_index, *src_vals_s, *xs, per_eval_s )
+                                         * gamma.yield * br_uncert_factor( energy, *xs );
+
+              // A line can put at most its whole area into the ROI, so is not looked at further if that is too
+              //  little (or is an invalid trial, which the full computation below rejects).
+              const auto may_matter = [&]( const double energy, const double amplitude ) -> bool {
+                return !std::isfinite(amplitude)
+                       || (std::fabs(amplitude) > LineWindow::sm_min_counts_in_noise*side_noise(energy));
+              };
+
+              if( (line_cap > 0.0) && may_matter( energy, amplitude_s ) )
+              {
+                RelActCalcAuto::PeakDefImp<double> shape;
+                set_source_line_shape( shape, energy, gamma.gamma_type, nuc, gamma.transition, el, *xs, *splines_s );
+                line_weight_s = line_cap * content_weight_s( shape, energy, amplitude_s );
+              }//if( line_cap > 0.0 )
+
+              for( size_t i = 0; i < 2; ++i )
+              {
+                if( !(escape_cap[i] > 0.0) || !may_matter( escape_energies[i], amplitude_s * escape_fractions[i] ) )
+                  continue;
+                RelActCalcAuto::PeakDefImp<double> shape;
+                set_escape_shape( shape, escape_energies[i], *xs, *splines_s );
+                escape_weight_s[i] = escape_cap[i] * content_weight_s( shape, escape_energies[i],
+                                                                        amplitude_s * escape_fractions[i] );
+              }//for( size_t i = 0; i < 2; ++i )
+            }//if( any cap weight )
+          }//if( the line or an escape is outside the ROI )
+
+          if( !(line_weight_s > 0.0) && !(escape_weight_s[0] > 0.0) && !(escape_weight_s[1] > 0.0) )
+            continue;
+
           T yield = T(gamma.yield);
           const size_t transition_index = gamma.transition_index;
           const SandiaDecay::Transition * const transition = gamma.transition;
@@ -16745,44 +17104,15 @@ struct RelActAutoCostFcn
           assert( nuc || el || rctn );
           
           // We compute the relative efficiency and FWHM based off of "true" energy
-          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x, per_eval,
-                                          phys_model_energy_consts( rel_eff_index, gamma.energy ) )
-                * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_profile,
-                                                                                  fluor_depth->model.mu_at( gamma.energy ) )
-                               : T(1.0));
-          // Membership and fixed detector-domain exclusions were frozen in the constructor.  A
-          // non-finite value here therefore describes an invalid trial, not a reason to mutate the
-          // model by dropping this line for one scalar/Jet pass.
+          const T rel_eff = source_line_rel_eff( gamma.energy, rel_eff_index, src_vals, x, per_eval );
+          // Fixed detector-domain exclusions were frozen in the constructor.  A non-finite value here therefore
+          // describes an invalid trial, not a reason to mutate the model by dropping this line for one scalar/Jet
+          // pass.
           if( isinf(rel_eff) || isnan(rel_eff) )
             throw runtime_error( "peaks_for_energy_range_imp: non-finite relative efficiency for "
                                 + std::to_string(gamma.energy) + " keV gamma." );
 
-          
-          T br_uncert_adj(1.0);
-          if( (m_options.additional_br_uncert > 0.0) && !m_peak_ranges_with_uncert.empty() )
-          {
-            assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
-            assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == number_parameters() );
-            
-            // TODO: we could use std::lower_bound to find the applicable `m_peak_ranges_with_uncert` element
-            for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
-            {
-              const pair<double,double> &range = m_peak_ranges_with_uncert[range_index];
-              
-              if( (gamma.energy >= range.first) && (gamma.energy <= range.second) )
-              {
-                const T par_value = x[m_add_br_uncert_start_index + range_index];
-                const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
-
-                // This parameter has a Ceres lower bound at (by default exactly) zero yield.  Do not clamp the
-                // expression here: at equality, max(T(0), expression) selects the constant Jet and
-                // erases the feasible inward derivative that lets the solver leave the bound.
-                br_uncert_adj = 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert;
-                
-                break;
-              }//
-            }//for( find range this gamma belongs to, if any )
-          }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
+          const T br_uncert_adj = br_uncert_factor( gamma.energy, x );
 
           if constexpr ( !std::is_same_v<T, double> )
           {
@@ -16807,15 +17137,16 @@ struct RelActAutoCostFcn
             }//if( is_fixed_age(src_info.nuclide, rel_eff_index) )
           }//if( !std::is_same_v<T, double> )          
 
-          const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x, cached_splines );
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
-          const T peak_fwhm = fwhm( T(gamma.energy), x );
+
+          RelActCalcAuto::PeakDefImp<T> peak;
+          set_source_line_shape( peak, gamma.energy, gamma_type, nuc, transition, el, x, cached_splines );
 
           // The line identity is frozen.  Reject an invalid trial through the ordinary Ceres
           // evaluation-failure path instead of silently removing the line and changing the physical
           // objective/Jacobian between parameter points or DynamicAutoDiff passes.
           if( isinf(peak_amplitude) || isnan(peak_amplitude)
-             || isinf(peak_fwhm) || isnan(peak_fwhm) || (peak_fwhm <= T(0.0)) )
+             || isinf(peak.m_sigma) || isnan(peak.m_sigma) || (peak.m_sigma <= T(0.0)) )
             throw runtime_error( "peaks_for_energy_range_imp: invalid amplitude or FWHM for "
                                 + std::to_string(gamma.energy) + " keV gamma." );
 
@@ -16824,13 +17155,11 @@ struct RelActAutoCostFcn
           check_jet_for_NaN( yield );
           check_jet_for_NaN( br_uncert_adj );
           check_jet_for_NaN( peak_amplitude );
-          check_jet_for_NaN( peak_mean );
-          check_jet_for_NaN( peak_fwhm );
+          check_jet_for_NaN( peak.m_mean );
+          check_jet_for_NaN( peak.m_sigma );
 
-          RelActCalcAuto::PeakDefImp<T> peak;
-          peak.m_mean = peak_mean;
-          peak.m_sigma = peak_fwhm/2.35482;
           peak.m_amplitude = peak_amplitude;
+          peak.m_line_amplitude = peak_amplitude;
           peak.m_src_energy = gamma.energy;
           
           if( transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma) )
@@ -16850,58 +17179,6 @@ struct RelActAutoCostFcn
             peak.m_gamma_type = gamma_type;
           }
           
-          set_peak_skew( peak, x );
-          
-          // Add in Lorentzian widths for X-rays
-          if( m_options.lorentzian_xrays
-             && (gamma_type == PeakDef::SourceGammaType::XrayGamma)
-             && ((m_options.skew_type == PeakDef::SkewType::NoSkew)
-                 || (m_options.skew_type == PeakDef::SkewType::GaussPlusBortel)) )
-          {
-            double width = -1.0;
-            if( nuc )
-            {
-              assert( transition );
-              if( transition )
-                width = XRayWidths::get_xray_total_width_for_decay( transition, gamma.energy );
-            }else if( el )
-            {
-              width = XRayWidths::get_xray_lorentzian_width( el, gamma.energy, 0.5 );
-            }else
-            {
-              assert( 0 );
-            }
-            
-            if( width >= 0.0 )
-            {
-              // R=0 gives pure Voigt; `tau` is Exp*Gauss exponential decay constant
-              // The skew parameters were already set by set_peak_skew() above
-              T skew_R(0.0), skew_tau(0.0);
-              if( m_options.skew_type == PeakDef::SkewType::GaussPlusBortel )
-              {
-                // GaussPlusBortel uses skew_pars[0]=R, skew_pars[1]=tau
-                skew_R = peak.m_skew_pars[0];
-                skew_tau = peak.m_skew_pars[1];
-              }
-
-              check_jet_for_NaN( skew_R );
-              check_jet_for_NaN( skew_tau );
-              
-              peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
-              // VoigtPlusBortel uses: skew_pars[0]=gamma_lor (Lorentzian HWHM),
-              //                       skew_pars[1]=R, skew_pars[2]=tau
-              peak.set_coefficient( T(width), PeakDef::CoefficientType::SkewPar0 );
-              peak.set_coefficient( skew_R, PeakDef::CoefficientType::SkewPar1 );
-              peak.set_coefficient( skew_tau, PeakDef::CoefficientType::SkewPar2 );
-            }else
-            {
-#if( PERFORM_DEVELOPER_CHECKS )
-              cerr << "Failed to get Lorentzian width for " << gamma.energy << " keV." << endl;//temporary for debug
-#endif
-            }
-          }//if( make x-rays Lorentzian )
-          
-          
           peak.m_rel_eff_index = rel_eff_index;
 
           check_peak_reasonable( peak, gamma.energy );
@@ -16916,26 +17193,32 @@ struct RelActAutoCostFcn
           //  energy actually deposited.  No channel-count check - they add no width freedom.
           for( size_t i = 0; i < 2; ++i )
           {
-            if( !escape_in_range[i] )
+            if( !(escape_weight_s[i] > 0.0) )
               continue;
 
             RelActCalcAuto::PeakDefImp<T> escape = peak;
-            escape.m_mean = apply_energy_cal_adjustment( escape_energies[i], x, cached_splines );
-            escape.m_sigma = fwhm( T(escape_energies[i]), x ) / 2.35482;
+            set_escape_shape( escape, escape_energies[i], x, cached_splines );
             escape.m_amplitude = peak_amplitude * escape_fractions[i];
+            escape.m_line_amplitude = escape.m_amplitude;
             escape.m_is_iodine_escape = true;
-            set_peak_skew( escape, x );
 
             if( isinf(escape.m_sigma) || isnan(escape.m_sigma) || (escape.m_sigma <= T(0.0))
                || isinf(escape.m_amplitude) || isnan(escape.m_amplitude) )
               throw runtime_error( "peaks_for_energy_range_imp: invalid escape peak for "
                                   + std::to_string(gamma.energy) + " keV gamma." );
 
+            if( escape_weight_s[i] < 1.0 )
+              escape.m_amplitude *= outside_weight( escape, escape_energies[i], false );
+
             peaks.push_back( std::move(escape) );
           }//for( the K-alpha and K-beta escapes )
 
-          if( line_in_range )
+          if( line_weight_s > 0.0 )
+          {
+            if( line_weight_s < 1.0 )
+              peak.m_amplitude *= outside_weight( peak, gamma.energy, lorentzian );
             peaks.push_back( std::move(peak) );
+          }//if( line_weight_s > 0.0 )
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
       }//for( const NucInputGamma &src_info : m_nuclides )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
@@ -16946,14 +17229,25 @@ struct RelActAutoCostFcn
     for( size_t index = 0; index < m_options.floating_peaks.size(); ++index )
     {
       const RelActCalcAuto::FloatingPeak &peak = m_options.floating_peaks[index];
-      if( (peak.energy < lower_mean) || (peak.energy > upper_mean) )
-        continue;
       
       const size_t amp_index = free_peaks_start_index + 2*index + 0;
       const size_t fwhm_index = free_peaks_start_index + 2*index + 1;
       assert( fwhm_index < x.size() );
 
       const double area_multiple = m_free_peak_area_multiples[index];
+
+      // A floating peak outside the ROI is weighted as a source line is; its width can be released from the
+      //  detector's, so its cap is judged from its own width rather than the ROI's window.
+      double weight_s = 1.0;
+      if( !in_roi( peak.energy ) )
+      {
+        RelActCalcAuto::PeakDefImp<double> shape;
+        set_floating_peak_shape( shape, index, *xs, *splines_s );
+        const double cap = cap_weight_s( peak.energy, shape.m_sigma, false );
+        weight_s = (cap > 0.0) ? cap * content_weight_s( shape, peak.energy, (*xs)[amp_index] * area_multiple ) : 0.0;
+        if( !(weight_s > 0.0) )
+          continue;
+      }//if( outside the ROI )
       
       num_free_peak_pars += 1;
       // TODO: we should use some sort of a scale-factor for the peak amplitude
@@ -16962,18 +17256,14 @@ struct RelActAutoCostFcn
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak amplitude for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      T peak_mean( peak.energy );
-      if( peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known )
-        peak_mean = apply_energy_cal_adjustment( peak.energy, x, cached_splines );
-      
-      if( isinf(peak_mean) || isnan(peak_mean) )
+      RelActCalcAuto::PeakDefImp<T> imp_peak;
+      set_floating_peak_shape( imp_peak, index, x, cached_splines );
+
+      if( isinf(imp_peak.m_mean) || isnan(imp_peak.m_mean) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      const T raw_peak_fwhm = (peak.release_fwhm ? x[fwhm_index] : T(1.0)) * fwhm(peak_mean, x);
-      const T peak_fwhm = make_fwhm_resolvable( raw_peak_fwhm, peak_mean );
-      
-      if( isinf(peak_fwhm) || isnan(peak_fwhm) )
+      if( isinf(imp_peak.m_sigma) || isnan(imp_peak.m_sigma) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak FWHM for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
@@ -16981,17 +17271,14 @@ struct RelActAutoCostFcn
       
       num_free_peak_pars += peak.release_fwhm;
       
-      check_jet_for_NaN( peak_mean );
-      check_jet_for_NaN( peak_fwhm );
+      check_jet_for_NaN( imp_peak.m_mean );
+      check_jet_for_NaN( imp_peak.m_sigma );
       check_jet_for_NaN( peak_amp );
       
-      //cout << "peaks_for_energy_range_imp: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
-      RelActCalcAuto::PeakDefImp<T> imp_peak;
-      imp_peak.m_mean = peak_mean;
-      imp_peak.m_sigma = peak_fwhm/2.35482;
       imp_peak.m_amplitude = peak_amp;
-      
-      set_peak_skew( imp_peak, x );
+      imp_peak.m_line_amplitude = peak_amp;
+      if( weight_s < 1.0 )
+        imp_peak.m_amplitude *= outside_weight( imp_peak, peak.energy, false );
       
       peaks.push_back( std::move(imp_peak) );
     }//for( const RelActCalcAuto::FloatingPeak &peak : m_options.floating_peaks )
@@ -17022,6 +17309,7 @@ struct RelActAutoCostFcn
       peak.m_mean = T(middle_energy);
       peak.m_sigma = T(middle_fwhm/2.35482);
       peak.m_amplitude = T(0.0);
+      peak.m_line_amplitude = T(0.0);
       peak.m_rel_eff_index = std::numeric_limits<size_t>::max(); //should already be this value
       
       peaks.push_back( std::move(peak) );
@@ -17219,7 +17507,7 @@ struct RelActAutoCostFcn
           {
             peak_jacobians[peak_idx][0][i+j] = peak_jet.m_mean.v[j];        // mean jacobian
             peak_jacobians[peak_idx][1][i+j] = peak_jet.m_sigma.v[j];       // sigma jacobian  
-            peak_jacobians[peak_idx][2][i+j] = peak_jet.m_amplitude.v[j];   // amplitude jacobian
+            peak_jacobians[peak_idx][2][i+j] = peak_jet.m_line_amplitude.v[j];   // amplitude jacobian
             
             for( size_t skew_idx = 0; skew_idx < 6; ++skew_idx )
               peak_jacobians[peak_idx][3 + skew_idx][i+j] = peak_jet.m_skew_pars[skew_idx].v[j];
@@ -17291,7 +17579,7 @@ struct RelActAutoCostFcn
     for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
     {
       const RelActCalcAuto::PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
-      PeakDef peak( comp_peak.m_mean, comp_peak.m_sigma, comp_peak.m_amplitude );
+      PeakDef peak( comp_peak.m_mean, comp_peak.m_sigma, comp_peak.m_line_amplitude );
       
       // Set uncertainties if they were computed
       if( i < peak_uncertainties.size() )
@@ -17441,13 +17729,18 @@ struct RelActAutoCostFcn
 
     // A failure here is reported the same way a failure inside a ROI task is (see below).
     PerEvalValues<T> per_eval;
+    // For a Jet evaluation, the value-only inputs every ROI decides which lines to model from.
+    std::optional<ScalarScreenInputs> scalar_inputs;
     try
     {
       per_eval = per_eval_values( x );
+      if constexpr ( !std::is_same_v<T, double> )
+        scalar_inputs.emplace( scalar_screen_inputs( x ) );
     }catch( std::exception &e )
     {
       throw runtime_error( e.what() );
     }
+    const ScalarScreenInputs * const scalar_inputs_ptr = scalar_inputs ? &(*scalar_inputs) : nullptr;
     
     // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `PeakFit::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
     // Only fan out within a ROI when we're allowed >1 thread; when solves run
@@ -17471,7 +17764,7 @@ struct RelActAutoCostFcn
         try
         {
           peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines,
-                                                               multhread_each_roi, false, &per_eval );
+                                                               multhread_each_roi, false, &per_eval, scalar_inputs_ptr );
         }catch( std::exception &e )
         {
           exception_msg = e.what();
@@ -17482,11 +17775,11 @@ struct RelActAutoCostFcn
       for( size_t i = 0; i < num_energy_ranges; ++i )
       {
         boost::asio::post( m_pool,
-                          [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines,&per_eval](){
+                          [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines,&per_eval,scalar_inputs_ptr](){
           try
           {
             peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines,
-                                                                 multhread_each_roi, false, &per_eval );
+                                                                 multhread_each_roi, false, &per_eval, scalar_inputs_ptr );
           }catch( std::exception &e )
           {
             std::lock_guard<std::mutex> lock(cv_mutex);
@@ -29798,6 +30091,41 @@ string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index
   
   return fcn;
 }//string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn(i)
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+double RelActAutoSolution::objective_chi2( const std::vector<double> &parameters, size_t *num_modelled_peaks ) const
+{
+  if( !m_cost_functor )
+    throw std::runtime_error( "RelActAutoSolution::objective_chi2: no cost function." );
+
+  const RelActCalcAutoImp::RelActAutoCostFcn &fcn = *m_cost_functor;
+  if( parameters.size() != fcn.number_parameters() )
+    throw std::runtime_error( "RelActAutoSolution::objective_chi2: wrong number of parameters." );
+
+  std::vector<double> residuals( fcn.number_residuals(), 0.0 );
+  fcn.eval( parameters, residuals.data() );
+
+  double chi2 = 0.0;
+  for( const double r : residuals )
+    chi2 += r*r;
+
+  if( num_modelled_peaks )
+  {
+    *num_modelled_peaks = 0;
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> splines = fcn.compute_energy_cal_splines( parameters );
+    for( const RelActCalcAutoImp::RoiRangeChannels &range : fcn.m_energy_ranges )
+    {
+      const RelActCalcAuto::PeaksForEnergyRangeImp<double> peaks
+                                 = fcn.peaks_for_energy_range_imp( range, parameters, splines, false, false );
+      if( !peaks.no_gammas_in_range )
+        *num_modelled_peaks += peaks.peaks.size();
+    }
+  }//if( num_modelled_peaks )
+
+  return chi2;
+}//RelActAutoSolution::objective_chi2(...)
+#endif //PERFORM_DEVELOPER_CHECKS
 
 
 std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_energy_cal() const

@@ -1882,6 +1882,13 @@ struct RelActAutoSolution
    Will throw exception if runs into any issues.
    */
   std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  /** For tests: the chi2 the solve minimized, evaluated at `parameters` (laid out as `m_final_parameters`),
+   and, if `num_modelled_peaks` is non-null, how many peaks the ROIs model there - each ROI's own lines, plus
+   the lines outside it that it models.  Throws if the solution has no cost function. */
+  double objective_chi2( const std::vector<double> &parameters, size_t *num_modelled_peaks = nullptr ) const;
+#endif
   
   static std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
   fit_free_peak_amplitudes( const RelActCalcAuto::Options &options,
