@@ -2073,7 +2073,10 @@ Use get_isotopics_config to see the current nuclides, then use this tool to add/
 Actions:
 - add: Add new nuclides to the configuration. Only 'name' is required; other fields use defaults if not specified.
 - remove: Remove nuclides by name. Only the 'name' field is needed.
-- update: Modify properties of existing nuclides. Only specify fields you want to change.</Description>
+- update: Modify properties of existing nuclides. Only specify fields you want to change.
+
+Ages: age_min/age_max only apply when fit_age is true; setting fit_age=false removes them, and an empty string removes a bound.
+When the curve's nucs_of_el_same_age is true (the default), all nuclides of an element share the same age, fit_age, age_min, and age_max - so setting these for one nuclide (e.g., U235) applies them to the others of that element (e.g., U234, U238); the result lists them in 'age_synced'.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -2102,11 +2105,11 @@ Actions:
               },
               "age_min": {
                 "type": "string",
-                "description": "Optional. Minimum age bound for fitting (with units). Required if fit_age=true."
+                "description": "Optional. Minimum age bound for fitting (with units), when fit_age is true. Empty string removes the bound."
               },
               "age_max": {
                 "type": "string",
-                "description": "Optional. Maximum age bound for fitting (with units). Required if fit_age=true."
+                "description": "Optional. Maximum age bound for fitting (with units), when fit_age is true. Empty string removes the bound."
               },
               "min_rel_act": {
                 "type": "number",

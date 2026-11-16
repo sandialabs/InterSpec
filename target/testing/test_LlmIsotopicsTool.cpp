@@ -687,6 +687,119 @@ BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsNuclides_Update )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsNuclides_AgeBoundsAndSameElementAge )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "reset_isotopics_config", json::object(), fixture.m_interspec ) );
+
+  const auto modify = [&]( const string &action, const json &nuclides ) -> json {
+    json params;
+    params["action"] = action;
+    params["nuclides"] = nuclides;
+    return registry.executeTool( "modify_isotopics_nuclides", params, fixture.m_interspec );
+  };
+
+  const auto get_nuc = [&]( const string &name ) -> json {
+    const json config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec );
+    for( const json &nuc : config["nuclides"] )
+    {
+      if( nuc["name"] == name )
+        return nuc;
+    }
+    BOOST_FAIL( "Nuclide " + name + " not in config" );
+    return json();
+  };
+
+  // nucs_of_el_same_age defaults to true
+  BOOST_REQUIRE_NO_THROW( modify( "add", json::parse( R"([{"name":"U235","age":"20 years"},{"name":"U238","age":"20 years"}])" ) ) );
+
+  // Setting age fitting for just U235 applies it to U238 too (used to fail, as U238 then differed)
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = modify( "update", json::parse(
+    R"([{"name":"U235","age":"2 days","fit_age":true,"age_min":"1 day","age_max":"5 days"}])" ) ) );
+  BOOST_CHECK( result["age_synced"] == json::array( {"U238"} ) );
+  BOOST_CHECK( result.contains( "notes" ) );
+  BOOST_CHECK( get_nuc( "U238" )["fit_age"].get<bool>() );
+  BOOST_CHECK_CLOSE( get_nuc( "U238" )["age_days"].get<double>(), 2.0, 1.0E-6 );
+  BOOST_CHECK( get_nuc( "U238" ).contains( "age_min" ) && get_nuc( "U238" ).contains( "age_max" ) );
+
+  // Turning off age fitting removes the bounds (used to fail: bounds set but fit_age false)
+  BOOST_REQUIRE_NO_THROW( modify( "update", json::parse( R"([{"name":"U235","fit_age":false}])" ) ) );
+  BOOST_CHECK( !get_nuc( "U235" ).contains( "age_min" ) && !get_nuc( "U238" ).contains( "age_max" ) );
+  BOOST_CHECK( !get_nuc( "U238" )["fit_age"].get<bool>() );
+
+  // Placeholder values the LLM sent when the API forced every field to be given (from logs)
+  BOOST_REQUIRE_NO_THROW( result = modify( "update", json::parse( R"([
+    {"name":"U235","age":"2 days","age_max":"","age_min":"","fit_age":false,"max_rel_act":1e12,"min_rel_act":0},
+    {"name":"U238","age":"2 days","age_max":"","age_min":"","fit_age":false,"max_rel_act":1e12,"min_rel_act":0}])" ) ) );
+  BOOST_CHECK( !result.contains( "age_synced" ) );
+  BOOST_REQUIRE_NO_THROW( result = modify( "update", json::parse(
+    R"([{"name":"U235","age":"2 days","age_max":"2.001 days","age_min":"1.999 days","fit_age":false}])" ) ) );
+  BOOST_CHECK( result.contains( "notes" ) );  //Note that the bounds were ignored
+  BOOST_CHECK( !get_nuc( "U235" ).contains( "age_min" ) );
+
+  // An empty bound removes just that bound, while still fitting age
+  BOOST_REQUIRE_NO_THROW( modify( "update", json::parse(
+    R"([{"name":"U235","fit_age":true,"age_min":"1 day","age_max":"5 days"}])" ) ) );
+  BOOST_REQUIRE_NO_THROW( modify( "update", json::parse( R"([{"name":"U235","age_min":""}])" ) ) );
+  BOOST_CHECK( !get_nuc( "U238" ).contains( "age_min" ) && get_nuc( "U238" ).contains( "age_max" ) );
+
+  // Conflicting ages for nuclides of the same element is an error, and leaves the config unchanged
+  BOOST_CHECK_THROW( modify( "update", json::parse( R"([{"name":"U235","age":"3 days"},{"name":"U238","age":"4 days"}])" ) ),
+                     std::exception );
+  BOOST_CHECK_CLOSE( get_nuc( "U235" )["age_days"].get<double>(), 2.0, 1.0E-6 );
+
+  // A nuclide added without age settings takes them from the existing nuclides of its element
+  BOOST_REQUIRE_NO_THROW( result = modify( "add", json::parse( R"([{"name":"U234"}])" ) ) );
+  BOOST_CHECK( result["age_synced"] == json::array( {"U234"} ) );
+  BOOST_CHECK_CLOSE( get_nuc( "U234" )["age_days"].get<double>(), 2.0, 1.0E-6 );
+  BOOST_CHECK( get_nuc( "U234" )["fit_age"].get<bool>() );
+
+  // Updating a source not in the config names the ones that are
+  try
+  {
+    modify( "update", json::parse( R"([{"name":"U232","age":"2 days"}])" ) );
+    BOOST_ERROR( "Expected updating U232 to throw" );
+  }catch( const std::exception &e )
+  {
+    BOOST_CHECK_MESSAGE( string( e.what() ).find( "U234" ) != string::npos, "Message: " << e.what() );
+  }
+
+  // Invalid values give a message naming the field and nuclide, and leave the config unchanged
+  const vector<pair<string,string>> bad_inputs = {
+    { R"([{"name":"U234"},{"name":"U238","age_max":"5 dayz"}])", "age_max" },  //bad unit
+    { R"([{"name":"U238","age":"2"}])", "age" },                               //no units
+    { R"([{"name":"U238","age_min":2}])", "age_min" },                         //not a string
+    { R"([{"name":"U238","fit_age":"false"}])", "fit_age" },                   //not a bool
+    { R"([{"name":"U238","age":"-2 days"}])", "age" }                          //negative
+  };
+  for( const pair<string,string> &bad : bad_inputs )
+  {
+    try
+    {
+      modify( "update", json::parse( bad.first ) );
+      BOOST_ERROR( "Expected " << bad.first << " to throw" );
+    }catch( const std::exception &e )
+    {
+      const string msg = e.what();
+      cout << "Invalid input message: " << msg << endl;
+      BOOST_CHECK_MESSAGE( (msg.find( bad.second ) != string::npos) && (msg.find( "U238" ) != string::npos),
+                           "Input " << bad.first << " gave message: " << msg );
+    }
+  }//for( const pair<string,string> &bad : bad_inputs )
+  BOOST_CHECK( get_nuc( "U238" ).contains( "age_max" ) && get_nuc( "U238" )["fit_age"].get<bool>() );
+
+  // Without nucs_of_el_same_age, nuclides of an element may have different ages
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "modify_isotopics_curve_settings",
+                                                json::parse( R"({"nucs_of_el_same_age":false})" ), fixture.m_interspec ) );
+  BOOST_REQUIRE_NO_THROW( result = modify( "update", json::parse( R"([{"name":"U235","age":"3 days","fit_age":false}])" ) ) );
+  BOOST_CHECK( !result.contains( "age_synced" ) );
+  BOOST_CHECK_CLOSE( get_nuc( "U238" )["age_days"].get<double>(), 2.0, 1.0E-6 );
+}
+
+
 BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsNuclides_Remove )
 {
   InterSpecTestFixture fixture;

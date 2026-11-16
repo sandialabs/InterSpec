@@ -3,6 +3,8 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <map>
+#include <set>
 #include <cmath>
 #include <limits>
 #include <algorithm>
@@ -262,7 +264,16 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
         nuc_json["age_days"] = nuc_input.age / PhysicalUnits::day;
         nuc_json["age"] = PhysicalUnits::printToBestTimeUnits( nuc_input.age, 6 );
         nuc_json["fit_age"] = nuc_input.fit_age;
+        if( nuc_input.fit_age_min.has_value() )
+          nuc_json["age_min"] = PhysicalUnits::printToBestTimeUnits( nuc_input.fit_age_min.value(), 6 );
+        if( nuc_input.fit_age_max.has_value() )
+          nuc_json["age_max"] = PhysicalUnits::printToBestTimeUnits( nuc_input.fit_age_max.value(), 6 );
       }
+
+      if( nuc_input.min_rel_act.has_value() )
+        nuc_json["min_rel_act"] = nuc_input.min_rel_act.value();
+      if( nuc_input.max_rel_act.has_value() )
+        nuc_json["max_rel_act"] = nuc_input.max_rel_act.value();
 
       result["nuclides"].push_back( nuc_json );
     }
@@ -1661,10 +1672,197 @@ namespace
   }//getSingleCurve()
 
 
+  /** Returns true if `nuc_json[key]` is absent, null, or a blank string - which LLMs commonly send
+   for "no value" (and are forced to, by APIs that make every field required).
+   */
+  bool isUnsetValue( const nlohmann::json &nuc_json, const char * const key )
+  {
+    const nlohmann::json::const_iterator iter = nuc_json.find( key );
+    if( (iter == nuc_json.end()) || iter->is_null() )
+      return true;
+
+    if( !iter->is_string() )
+      return false;
+
+    std::string val = iter->get<std::string>();
+    SpecUtils::trim( val );
+    return val.empty();
+  }//isUnsetValue(...)
+
+
+  /** Applies the "age", "fit_age", "age_min", and "age_max" fields of `nuc_json` to `nuc`.
+
+   A null or blank "age_min"/"age_max" removes that bound.  Bounds only apply when fitting age, so
+   if `nuc` ends up with `fit_age == false`, its bounds are removed (with a note, if bounds were given).
+
+   @returns Whether any age field was given (i.e., the age settings of `nuc` were specified).
+   */
+  bool applyAgeFieldsFromJson( const nlohmann::json &nuc_json,
+                               RelActCalcAuto::NucInputInfo &nuc,
+                               std::vector<std::string> &notes )
+  {
+    using namespace std;
+
+    const string name = nuc.name();
+    const bool has_age = !isUnsetValue( nuc_json, "age" );
+    const bool has_fit_age = !isUnsetValue( nuc_json, "fit_age" );
+    const bool has_min = nuc_json.contains( "age_min" );
+    const bool has_max = nuc_json.contains( "age_max" );
+    const bool min_given = !isUnsetValue( nuc_json, "age_min" );
+    const bool max_given = !isUnsetValue( nuc_json, "age_max" );
+
+    // A non-boolean would otherwise give an opaque JSON type error, that doesn't name the field
+    const auto fit_age_value = [&]() -> bool {
+      const nlohmann::json &val = nuc_json.at( "fit_age" );
+      if( !val.is_boolean() )
+        throw runtime_error( "Invalid fit_age for '" + name + "': must be true or false (got " + val.dump() + ")." );
+      return val.get<bool>();
+    };
+
+    if( !RelActCalcAuto::nuclide( nuc.source ) )
+    {
+      // X-ray and reaction sources have no age; tolerate "unset"-style values for these fields.
+      const bool fit_age_true = has_fit_age && fit_age_value();
+      if( has_age || fit_age_true || min_given || max_given )
+        throw runtime_error( "Cannot set age, fit_age, age_min, or age_max for x-ray or reaction source '"
+                             + name + "'" );
+      return false;
+    }//if( not a nuclide )
+
+    // Converts a duration string, with errors naming the field and nuclide (the conversion's own
+    //  messages, e.g. "cant identify label 'dayz' as a unit of time", don't say which input was bad).
+    const auto parse_duration = [&name]( const nlohmann::json &val, const char * const field ) -> double {
+      const string prefix = "Invalid " + string(field) + " for '" + name + "': ";
+      if( !val.is_string() )
+        throw runtime_error( prefix + "must be a string with units, e.g. '20 days' or '5 years' (got "
+                             + val.dump() + ")." );
+
+      const string str = val.get<string>();
+      double duration = 0.0;
+      try
+      {
+        duration = PhysicalUnitsLocalized::stringToTimeDuration( str );
+      }catch( const std::exception &e )
+      {
+        throw runtime_error( prefix + "could not interpret '" + str + "' as a time duration ("
+                             + string( e.what() ) + "); use a number with units, e.g. '20 days' or '5 years'." );
+      }
+
+      if( duration < 0.0 )
+        throw runtime_error( prefix + "must be zero or greater (got '" + str + "')." );
+      return duration;
+    };
+
+    if( has_age )
+      nuc.age = parse_duration( nuc_json.at( "age" ), "age" );
+
+    if( has_fit_age )
+      nuc.fit_age = fit_age_value();
+
+    if( has_min )
+      nuc.fit_age_min = min_given ? optional<double>( parse_duration( nuc_json.at( "age_min" ), "age_min" ) )
+                                  : optional<double>();
+    if( has_max )
+      nuc.fit_age_max = max_given ? optional<double>( parse_duration( nuc_json.at( "age_max" ), "age_max" ) )
+                                  : optional<double>();
+
+    if( !nuc.fit_age && (nuc.fit_age_min.has_value() || nuc.fit_age_max.has_value()) )
+    {
+      if( min_given || max_given )
+        notes.push_back( "age_min/age_max for " + name + " were ignored, since fit_age is false." );
+      nuc.fit_age_min.reset();
+      nuc.fit_age_max.reset();
+    }
+
+    return (has_age || has_fit_age || has_min || has_max);
+  }//applyAgeFieldsFromJson(...)
+
+
+  /** When `curve.nucs_of_el_same_age` is true, all nuclides of an element must have identical age
+   settings; this makes them so, by copying them from one nuclide of each element to the others.
+
+   The age settings are copied from (in order of preference): a nuclide in `specified` (whose age
+   settings were given in this tool call), a nuclide not in `added`, or the first nuclide of the element.
+   Throws if nuclides of an element in `specified` were given conflicting settings.
+
+   @returns The names of the nuclides whose age settings were changed.
+   */
+  std::vector<std::string> syncSameElementAges( RelActCalcAuto::RelEffCurveInput &curve,
+                                                const std::set<std::string> &specified,
+                                                const std::set<std::string> &added )
+  {
+    using namespace std;
+
+    vector<string> synced;
+    if( !curve.nucs_of_el_same_age )
+      return synced;
+
+    const auto same_settings = []( const RelActCalcAuto::NucInputInfo &a, const RelActCalcAuto::NucInputInfo &b ) {
+      return (a.age == b.age) && (a.fit_age == b.fit_age)
+             && (a.fit_age_min == b.fit_age_min) && (a.fit_age_max == b.fit_age_max);
+    };
+
+    // Group the nuclides by element
+    map<short, vector<RelActCalcAuto::NucInputInfo *>> by_element;
+    for( RelActCalcAuto::NucInputInfo &nuc : curve.nuclides )
+    {
+      const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide( nuc.source );
+      if( nuclide )
+        by_element[nuclide->atomicNumber].push_back( &nuc );
+    }
+
+    for( const auto &z_nucs : by_element )
+    {
+      const vector<RelActCalcAuto::NucInputInfo *> &nucs = z_nucs.second;
+
+      const RelActCalcAuto::NucInputInfo *src = nullptr;
+      for( const RelActCalcAuto::NucInputInfo *nuc : nucs )
+      {
+        if( !specified.count( nuc->name() ) )
+          continue;
+
+        if( !src )
+          src = nuc;
+        else if( !same_settings( *src, *nuc ) )
+          throw runtime_error( "nucs_of_el_same_age is true, so " + src->name() + " and " + nuc->name()
+                               + " must have the same age, fit_age, age_min, and age_max - but different"
+                               " values were given.  Either give them the same values, or specify them for"
+                               " just one nuclide of the element (they are then applied to all of them)." );
+      }//for( loop over nuclides of this element )
+
+      for( size_t i = 0; !src && (i < nucs.size()); ++i )
+      {
+        if( !added.count( nucs[i]->name() ) )
+          src = nucs[i];
+      }
+
+      if( !src )
+        src = nucs.front();
+
+      for( RelActCalcAuto::NucInputInfo *nuc : nucs )
+      {
+        if( (nuc == src) || same_settings( *src, *nuc ) )
+          continue;
+
+        nuc->age = src->age;
+        nuc->fit_age = src->fit_age;
+        nuc->fit_age_min = src->fit_age_min;
+        nuc->fit_age_max = src->fit_age_max;
+        synced.push_back( nuc->name() );
+      }//for( loop over nuclides of this element )
+    }//for( loop over elements )
+
+    return synced;
+  }//syncSameElementAges(...)
+
+
   // Helper to parse a nuclide/element/reaction from JSON and create a NucInputInfo entry.
   // Handles the "name" field which can be a nuclide symbol (e.g., "Pu239"),
   // an element symbol for x-rays (e.g., "Pu"), or a reaction name (e.g., "Fe(n,n')").
-  RelActCalcAuto::NucInputInfo parseNuclideFromJson( const nlohmann::json &nuc_json )
+  // `age_specified` is set to whether any age field was given; notes about ignored input are added to `notes`.
+  RelActCalcAuto::NucInputInfo parseNuclideFromJson( const nlohmann::json &nuc_json,
+                                                     bool &age_specified,
+                                                     std::vector<std::string> &notes )
   {
     using namespace std;
 
@@ -1685,45 +1883,10 @@ namespace
     const SandiaDecay::Element *el = RelActCalcAuto::element( source );
     const ReactionGamma::Reaction *rxn = RelActCalcAuto::reaction( source );
 
-    // Handle age - only applicable for nuclides
+    // Age is only applicable for nuclides; start from the default age, then apply any given fields
     if( nuc )
     {
-      if( nuc_json.contains( "age" ) )
-      {
-        const string age_str = nuc_json.at( "age" ).get<string>();
-        nuc_info.age = PhysicalUnitsLocalized::stringToTimeDuration( age_str );
-        if( nuc_info.age < 0 )
-          throw runtime_error( "Age must be >= 0 for nuclide '" + source_name + "'" );
-      }
-      else
-      {
-        // Use default age for the nuclide
-        nuc_info.age = PeakDef::defaultDecayTime( nuc );
-      }
-
-      // Handle fit_age
-      if( nuc_json.contains( "fit_age" ) )
-        nuc_info.fit_age = nuc_json.at( "fit_age" ).get<bool>();
-
-      // Handle age bounds - only if fit_age is true
-      if( nuc_info.fit_age )
-      {
-        if( nuc_json.contains( "age_min" ) )
-        {
-          const string age_min_str = nuc_json.at( "age_min" ).get<string>();
-          nuc_info.fit_age_min = PhysicalUnitsLocalized::stringToTimeDuration( age_min_str );
-          if( *nuc_info.fit_age_min < 0 )
-            throw runtime_error( "age_min must be >= 0" );
-        }
-
-        if( nuc_json.contains( "age_max" ) )
-        {
-          const string age_max_str = nuc_json.at( "age_max" ).get<string>();
-          nuc_info.fit_age_max = PhysicalUnitsLocalized::stringToTimeDuration( age_max_str );
-          if( nuc_info.fit_age_min && (*nuc_info.fit_age_max <= *nuc_info.fit_age_min) )
-            throw runtime_error( "age_max must be > age_min" );
-        }
-      }//if( fit_age )
+      nuc_info.age = PeakDef::defaultDecayTime( nuc );
     }
     else if( el || rxn )
     {
@@ -1731,6 +1894,8 @@ namespace
       nuc_info.age = -1.0;
       nuc_info.fit_age = false;
     }
+
+    age_specified = applyAgeFieldsFromJson( nuc_json, nuc_info, notes );
 
     // Handle activity bounds (applicable to all source types)
     if( nuc_json.contains( "min_rel_act" ) )
@@ -1991,11 +2156,15 @@ nlohmann::json executeModifyIsotopicsNuclides(
   json result;
   result["modified"] = json::array();
 
+  vector<string> notes;
+  set<string> age_specified_nucs, added_nucs;  //For keeping nuclides of an element the same age
+
   if( action == "add" )
   {
     for( const auto &nuc_json : nuclides_array )
     {
-      RelActCalcAuto::NucInputInfo nuc_info = parseNuclideFromJson( nuc_json );
+      bool age_specified = false;
+      RelActCalcAuto::NucInputInfo nuc_info = parseNuclideFromJson( nuc_json, age_specified, notes );
 
       // Check if nuclide already exists
       const string nuc_name = nuc_info.name();
@@ -2013,6 +2182,9 @@ nlohmann::json executeModifyIsotopicsNuclides(
         throw runtime_error( "Source '" + nuc_name + "' already exists in configuration. Use 'update' action to modify." );
 
       curve.nuclides.push_back( nuc_info );
+      added_nucs.insert( nuc_name );
+      if( age_specified )
+        age_specified_nucs.insert( nuc_name );
       result["modified"].push_back( nuc_name );
     }
   }
@@ -2046,40 +2218,18 @@ nlohmann::json executeModifyIsotopicsNuclides(
         });
 
       if( it == curve.nuclides.end() )
-        throw runtime_error( "Source '" + nuc_name + "' not found in configuration. Use 'add' action to add new sources." );
+      {
+        string current;
+        for( const RelActCalcAuto::NucInputInfo &n : curve.nuclides )
+          current += (current.empty() ? "" : ", ") + n.name();
+        throw runtime_error( "Source '" + nuc_name + "' not found in configuration (current sources: "
+                             + (current.empty() ? string("none") : current )
+                             + "). Use 'add' action to add new sources." );
+      }
 
       // Update only the fields that are specified
-      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( it->source );
-
-      if( nuc_json.contains( "age" ) )
-      {
-        if( !nuc )
-          throw runtime_error( "Cannot set age for x-ray or reaction source '" + nuc_name + "'" );
-
-        const string age_str = nuc_json.at( "age" ).get<string>();
-        it->age = PhysicalUnitsLocalized::stringToTimeDuration( age_str );
-        if( it->age < 0 )
-          throw runtime_error( "Age must be >= 0" );
-      }
-
-      if( nuc_json.contains( "fit_age" ) )
-      {
-        if( !nuc )
-          throw runtime_error( "Cannot set fit_age for x-ray or reaction source '" + nuc_name + "'" );
-        it->fit_age = nuc_json.at( "fit_age" ).get<bool>();
-      }
-
-      if( nuc_json.contains( "age_min" ) )
-      {
-        const string age_min_str = nuc_json.at( "age_min" ).get<string>();
-        it->fit_age_min = PhysicalUnitsLocalized::stringToTimeDuration( age_min_str );
-      }
-
-      if( nuc_json.contains( "age_max" ) )
-      {
-        const string age_max_str = nuc_json.at( "age_max" ).get<string>();
-        it->fit_age_max = PhysicalUnitsLocalized::stringToTimeDuration( age_max_str );
-      }
+      if( applyAgeFieldsFromJson( nuc_json, *it, notes ) )
+        age_specified_nucs.insert( nuc_name );
 
       if( nuc_json.contains( "min_rel_act" ) )
         it->min_rel_act = nuc_json.at( "min_rel_act" ).get<double>();
@@ -2095,6 +2245,18 @@ nlohmann::json executeModifyIsotopicsNuclides(
     throw runtime_error( "Unknown action '" + action + "'. Valid actions: add, remove, update" );
   }
 
+  // With nucs_of_el_same_age, age settings given for one nuclide apply to all nuclides of its element
+  const vector<string> synced = syncSameElementAges( curve, age_specified_nucs, added_nucs );
+  if( !synced.empty() )
+  {
+    string names;
+    for( const string &name : synced )
+      names += (names.empty() ? "" : ", ") + name;
+    notes.push_back( "Since nucs_of_el_same_age is true, the age settings (age, fit_age, age_min, age_max)"
+                     " were also applied to: " + names + "." );
+    result["age_synced"] = synced;
+  }
+
   // Validate constraints after modification
   curve.check_nuclide_constraints();
 
@@ -2103,6 +2265,8 @@ nlohmann::json executeModifyIsotopicsNuclides(
 
   result["success"] = true;
   result["message"] = "Nuclides " + action + " successful";
+  if( !notes.empty() )
+    result["notes"] = notes;
   result["nuclide_count"] = curve.nuclides.size();
 
   return result;
@@ -2802,8 +2966,8 @@ nlohmann::json executeGetIsotopicsConfigSchema(
     "Affects relative intensities of gamma lines from decay chain. Not applicable for x-rays or reactions.";
   result["nuclides"]["fields"]["age_days"] = "(Nuclides only) Alternative to 'age' - numeric age in days.";
   result["nuclides"]["fields"]["fit_age"] = "(Nuclides only) If true, age will be fitted during analysis within age_min/age_max bounds.";
-  result["nuclides"]["fields"]["age_min"] = "(Nuclides only) Minimum age bound for fitting (with units). Required if fit_age=true.";
-  result["nuclides"]["fields"]["age_max"] = "(Nuclides only) Maximum age bound for fitting (with units). Required if fit_age=true.";
+  result["nuclides"]["fields"]["age_min"] = "(Nuclides only) Optional minimum age bound for fitting (with units), when fit_age is true.";
+  result["nuclides"]["fields"]["age_max"] = "(Nuclides only) Optional maximum age bound for fitting (with units), when fit_age is true.";
   result["nuclides"]["fields"]["min_rel_act"] = "Minimum relative activity constraint for fitting.";
   result["nuclides"]["fields"]["max_rel_act"] = "Maximum relative activity constraint for fitting.";
 

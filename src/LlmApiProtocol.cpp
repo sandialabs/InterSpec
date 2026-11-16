@@ -1347,6 +1347,11 @@ public:
         toolDef["name"] = t.name;
         toolDef["description"] = t.description;
         toolDef["parameters"] = t.parameters;
+        // The Responses API defaults `strict` to true, which makes every property required: the
+        //  model then has to fill in optional and mutually-exclusive fields (e.g., `use_hoerl` and
+        //  `rel_eff_eqn_order`, or `material` and `atomic_number`) with placeholder values, which
+        //  the tools rightly reject.  Our schemas are written for non-strict use.
+        toolDef["strict"] = false;
         toolsArr.push_back( toolDef );
       }
       request["tools"] = toolsArr;

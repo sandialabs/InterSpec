@@ -540,6 +540,8 @@ BOOST_AUTO_TEST_CASE( AnthropicStripsTopLevelSchemaCombinators )
   const json responsesReq = LlmApiProtocol::create( ApiFormat::OpenAiResponses )
                                 ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
   BOOST_CHECK( responsesReq["tools"][0]["parameters"] == tool.parameters );
+  // Responses defaults `strict` to true (forcing every property to be required); we opt out.
+  BOOST_CHECK( responsesReq["tools"][0].value( "strict", true ) == false );
 }//AnthropicStripsTopLevelSchemaCombinators
 
 
