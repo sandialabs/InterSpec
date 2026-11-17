@@ -227,7 +227,7 @@ void DetectorGeometryDiagram::defineJavaScript()
   //  stub, so the object gets built then instead.
   setJavaScriptMember( "xs", "(function(){const e=" + jsRef()
                              + ";return e ? new DetectorGeometryDiagram(e,"
-                               " {minPx: 2, minRoomPx: 200, minRoomHeightPx: 120}) : null;})()" );
+                               " {minPx: 2, minRoomPx: 80, minRoomHeightPx: 120}) : null;})()" );
 
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"

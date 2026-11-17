@@ -54,7 +54,7 @@ DetectorGeometryDiagram = function( elem, options )
   this.options = options || {};
   this.minPx = this.options.minPx || 2;
   // Below this much room beside the form, the drawing hides itself rather than being squeezed.
-  this.minRoomPx = this.options.minRoomPx || 200;
+  this.minRoomPx = this.options.minRoomPx || 80;
   // The drawing takes its height from the form; below this it is a sliver, so hide it instead.
   this.minRoomHeightPx = this.options.minRoomHeightPx || 120;
   this.data = null;
@@ -362,6 +362,19 @@ DetectorGeometryDiagram.prototype.render = function()
     label.attr('transform', 'translate(' + labelPos[0] + ',' + labelPos[1] + ') rotate(' + labelRotate + ')');
   else
     label.attr('x', labelPos[0]).attr('y', labelPos[1]);
+
+  // In a narrow drawing the label can be wider than the box (which clips it): shrink its font to
+  //  fit, and drop it entirely if it would be unreadably small.
+  const labelRoom = (vertical ? w : h) - 4;
+  const labelLen = label.node().getComputedTextLength ? label.node().getComputedTextLength() : 0;
+  if( labelLen > labelRoom )
+  {
+    const fontPx = 11 * labelRoom / labelLen;
+    if( fontPx < 7 )
+      label.remove();
+    else
+      label.style('font-size', fontPx.toFixed(1) + 'px');
+  }
 
   // Tooltips: title plus one line per fact, as text nodes (the material name is user text).
   const showTip = function( r ){
